@@ -4,7 +4,7 @@
 // denormalised name snapshot) changes.
 import Feather from "@expo/vector-icons/Feather";
 import { useEffect, useMemo, useState } from "react";
-import { Pressable, StyleSheet, View } from "react-native";
+import { Platform, Pressable, StyleSheet, View } from "react-native";
 import { Text, TextInput } from "@/src/components/AppText";
 
 import { BottomSheet } from "@/src/components/BottomSheet";
@@ -147,7 +147,7 @@ export function CustomerSwitcherSheet() {
         </View>
       ) : (
         <View style={{ gap: spacing.md }}>
-          <View style={styles.searchWrap}>
+          <View {...(Platform.OS === "web" ? { dataSet: { fieldShell: "true" } } : {})} style={styles.searchWrap}>
             <Feather name="search" size={14} color={colors.onSurfaceMuted} />
             <TextInput
               testID="customer-switcher-search"

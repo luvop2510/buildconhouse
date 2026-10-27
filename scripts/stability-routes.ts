@@ -40,7 +40,7 @@ export const requiredStabilityScenarios: Record<string, string[]> = {
     'a stalled font request reaches bounded recovery and late completion cannot reveal the form',
   ],
   'redesign-input-focus-shape.spec.ts': [
-    ...['text', 'textarea', 'search', 'kitchen'].map(kind => `focused ${kind} indicator follows its outer field shape`),
+    ...['text', 'textarea', 'search', 'kitchen', 'purchases', 'catalog'].map(kind => `focused ${kind} indicator follows its outer field shape`),
   ],
   'redesign-kitchen-request-recovery.spec.ts': [
     ...[true,false].flatMap(confirmed => ['quotation', 'order', 'production'].map(stage => `Kitchen ${stage} opens after a dropped read and Next ${confirmed?'confirms a saved stage':'reuses its receipt'} after a lost response`)),

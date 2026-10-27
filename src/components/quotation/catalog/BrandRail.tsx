@@ -10,7 +10,7 @@
 import Feather from "@expo/vector-icons/Feather";
 import { Image } from "expo-image";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Platform, ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { Text, TextInput } from "@/src/components/AppText";
 
 import { catalogReferences } from "@/src/services/catalogService";
@@ -144,7 +144,7 @@ export function BrandRail({ collapsed = false, onToggleCollapsed, compact = fals
           {!collapsed ? <Text style={styles.collapseLabel}>Brands</Text> : null}
         </Pressable>
         {!collapsed ? (
-          <View style={styles.searchWrap}>
+          <View {...(Platform.OS === "web" ? { dataSet: { fieldShell: "true" } } : {})} style={styles.searchWrap}>
             <Feather name="search" size={13} color={colors.onSurfaceMuted} />
             <TextInput
               value={q}

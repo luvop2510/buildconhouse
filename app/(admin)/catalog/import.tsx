@@ -4,7 +4,7 @@ import Feather from "@expo/vector-icons/Feather";
 import * as DocumentPicker from "expo-document-picker";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, FlatList, Pressable, StyleSheet, View } from "react-native";
+import { Platform, ActivityIndicator, FlatList, Pressable, StyleSheet, View } from "react-native";
 import { Text, TextInput } from "@/src/components/AppText";
 
 import { AdminPage } from "@/src/components/AdminPage";
@@ -561,7 +561,7 @@ function FieldInput({ label, value, onCommit, keyboardType = "default", testID, 
 }) {
   const display = value === MISSING || value === undefined || value === null ? "" : String(value);
   return (
-    <View style={styles.field}>
+    <View {...(Platform.OS === "web" ? { dataSet: { fieldShell: "true" } } : {})} style={styles.field}>
       <Text style={styles.fieldLabel}>{label}</Text>
       <TextInput
         defaultValue={display}

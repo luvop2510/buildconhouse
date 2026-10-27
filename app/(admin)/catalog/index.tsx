@@ -402,7 +402,7 @@ export default function Catalog() {
   const catalogHeader = (
     <View style={{ paddingTop: spacing.md, paddingBottom: spacing.md, gap: spacing.md }}>
       <View style={{ flexDirection: "row", gap: 8 }}>
-        <View style={styles.searchWrap}>
+        <View {...(Platform.OS === "web" ? { dataSet: { fieldShell: "true" } } : {})} style={styles.searchWrap}>
           <Feather name="search" size={16} color={colors.onSurfaceMuted} />
           <TextInput
             ref={searchRef}

@@ -117,7 +117,7 @@ export function ProductExplorer({ showCompactFilters = true }: { showCompactFilt
           {!b.productLoading && !b.productError ? <Text testID="explorer-product-count" style={styles.crumbCount}>· {b.productTotal} products</Text> : null}
         </View>
 
-        <View style={styles.searchWrap}>
+        <View {...(Platform.OS === "web" ? { dataSet: { fieldShell: "true" } } : {})} style={styles.searchWrap}>
           <Feather name="search" size={14} color={colors.onSurfaceMuted} />
           <TextInput
             ref={b.searchRef}

@@ -155,7 +155,7 @@ export function SearchField({
 }) {
   const { isPhone } = useBreakpoint();
   return (
-    <View style={[styles.searchWrap, isPhone ? styles.searchWrapPhone : null]}>
+    <View {...(Platform.OS === "web" ? { dataSet: { fieldShell: "true" } } : {})} style={[styles.searchWrap, isPhone ? styles.searchWrapPhone : null]}>
       <Feather name="search" size={18} color={colors.onSurfaceMuted} />
       <TextInput
         testID={testID}

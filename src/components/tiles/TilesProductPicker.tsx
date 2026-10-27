@@ -175,7 +175,7 @@ export function TilesProductPicker({
             <Text style={styles.subtitle}>{total > 0 ? `${total.toLocaleString("en-IN")} products · ` : ""}Choose a product to add it to this document</Text>
           </View>
         </View>
-        <View style={styles.searchWrap}>
+        <View {...(Platform.OS === "web" ? { dataSet: { fieldShell: "true" } } : {})} style={styles.searchWrap}>
           <Feather name="search" size={17} color={colors.onSurfaceMuted} />
           <TextInput
             autoFocus

@@ -155,3 +155,18 @@ Candidate 4200ca0f (`dpl_3enH12oaNY83yS9nuAgDT6CF3wDr`) settled READY despite
 a CLI observation read ETIMEDOUT. It is unpromoted and predates this reconciliation
 follow-up. Its CLI error was not a deployment failure. A new candidate is required
 for the final source. Production remains unchanged by this run.
+
+## Immediate-publication instruction and custom focus coverage
+
+The user explicitly instructed publication to the live site without further delay
+after the six existing high security findings and unpromoted candidate status were
+disclosed. This is fresh authority for this release; no historical exception is
+reused, and repository security checks/branch protections are not changed.
+The final full audit of 52daf55b was intentionally interrupted at 624 passed cases
+when the remaining custom focus wrappers were identified; it is not a full pass.
+The previous timing phase passed all 60 cases. Final low-impact changes add the
+existing web-only field-shell marker to 14 custom single-field controls, including
+purchase/catalog searches, quotation fields/quantities and tile searches. Native
+behavior, shapes and values are unchanged. Changed-file lint and TypeScript pass.
+Final publication uses focused current-source build/browser checks and preserves
+the incomplete broad-audit status rather than manufacturing a green result.

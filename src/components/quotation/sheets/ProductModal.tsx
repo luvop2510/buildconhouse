@@ -8,7 +8,7 @@ import { Overlay } from "@/src/design/Overlay";
 // -----------------------------------------------------------------------------
 import Feather from "@expo/vector-icons/Feather";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { Text, TextInput } from "@/src/components/AppText";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -565,7 +565,7 @@ export function ProductModal() {
                   <Text style={styles.sectionLabel}>Godown stock</Text>
                   <View style={styles.qtyRow}>
                     <Text style={styles.autoPartHint}>Quantity to add</Text>
-                    <View style={styles.qtyStepper}>
+                    <View {...(Platform.OS === "web" ? { dataSet: { fieldShell: "true" } } : {})} style={styles.qtyStepper}>
                       <Pressable onPress={() => setStockQty((n) => Math.max(1, n - 1))} style={styles.qtyBtn}><Feather name="minus" size={14} color={colors.onSurface} /></Pressable>
                       <TextInput value={String(stockQty)} onChangeText={(value) => setStockQty(Math.max(1, Math.floor(Number(value.replace(/[^0-9]/g, "")) || 1)))} style={styles.qtyInput} keyboardType="number-pad" testID="pm-godown-qty" />
                       <Pressable onPress={() => setStockQty((n) => n + 1)} style={styles.qtyBtn}><Feather name="plus" size={14} color={colors.onSurface} /></Pressable>
@@ -580,7 +580,7 @@ export function ProductModal() {
                 {/* Quantity */}
                 <View style={styles.qtyRow}>
                   <Text style={styles.sectionLabel}>Quantity</Text>
-                  <View style={styles.qtyStepper}>
+                  <View {...(Platform.OS === "web" ? { dataSet: { fieldShell: "true" } } : {})} style={styles.qtyStepper}>
                     <Pressable onPress={() => setQty((n) => Math.max(1, n - 1))} style={styles.qtyBtn} testID="pm-qty-minus">
                       <Feather name="minus" size={14} color={colors.onSurface} />
                     </Pressable>

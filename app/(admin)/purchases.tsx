@@ -495,7 +495,7 @@ export default function PurchasesScreen() {
                 ))}
               </ScrollView>
               <View style={styles.mobileControlRow}>
-                <View style={styles.mobileSearch}>
+                <View {...(Platform.OS === "web" ? { dataSet: { fieldShell: "true" } } : {})} style={styles.mobileSearch}>
                   <Feather name="search" size={18} color={colors.onSurfaceMuted} />
                   <TextInput accessibilityLabel="Search purchases by product, SKU or customer" testID="purchases-search" value={q} onChangeText={setQ} placeholder="Product, SKU or customer" placeholderTextColor={colors.onSurfaceMuted} style={styles.mobileSearchInput} autoCorrect={false} autoCapitalize="none" returnKeyType="search" onSubmitEditing={() => setCommittedQ(q.trim())} />
                   {q ? <Pressable accessibilityLabel="Clear search" onPress={() => setQ("")} style={styles.mobileClear}><Feather name="x" size={18} color={colors.onSurfaceMuted} /></Pressable> : null}
@@ -579,7 +579,7 @@ export default function PurchasesScreen() {
           </View>
           <View style={styles.topActions}>
             <Pressable accessibilityRole="button" accessibilityLabel="Open 100 percent complete customers" testID="purchases-completed-entry" onPress={() => router.push("/(admin)/purchases-completed" as never)} style={styles.completedLink}><Feather name="check-circle" size={16} color={colors.success} /><Text style={styles.completedLinkText}>100% Customers</Text><Feather name="arrow-right" size={16} color={colors.success} /></Pressable>
-            <View style={styles.search}>
+            <View {...(Platform.OS === "web" ? { dataSet: { fieldShell: "true" } } : {})} style={styles.search}>
               <Feather name="search" size={14} color={colors.onSurfaceMuted} />
               <TextInput
                 testID="purchases-search"

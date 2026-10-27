@@ -194,7 +194,7 @@ function CompactTextField({
   label: string; value: string; onChange: (value: string) => void; placeholder: string; testID: string; wide?: boolean;
 }) {
   return (
-    <View style={[styles.compactField, wide && styles.compactFieldWide]}>
+    <View {...(Platform.OS === "web" ? { dataSet: { fieldShell: "true" } } : {})} style={[styles.compactField, wide && styles.compactFieldWide]}>
       <Text style={styles.fieldLabel}>{label}</Text>
       <TextInput
         value={value}

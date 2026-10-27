@@ -159,11 +159,11 @@ function LineRowImpl({
           {isIncluded ? (
             <Text style={styles.includedHint}>Quantity follows its selected product</Text>
           ) : <>
-            <View style={styles.mini}>
+            <View {...(Platform.OS === "web" ? { dataSet: { fieldShell: "true" } } : {})} style={styles.mini}>
               <Text style={styles.miniLabel}>QTY</Text>
               <TextInput testID={`qty-${l.id}`} value={qtyDraft} keyboardType="number-pad" onChangeText={setQtyDraft} onBlur={commitQty} onSubmitEditing={commitQty} style={[styles.miniVal, isPhone && { fontSize: 16 }]} selectTextOnFocus />
             </View>
-            <View style={styles.mini}>
+            <View {...(Platform.OS === "web" ? { dataSet: { fieldShell: "true" } } : {})} style={styles.mini}>
               <Text style={styles.miniLabel}>RATE</Text>
               <TextInput testID={`rate-${l.id}`} value={rateDraft} keyboardType="decimal-pad" onChangeText={setRateDraft} onBlur={commitRate} onSubmitEditing={commitRate} style={[styles.miniVal, isPhone && { fontSize: 16 }]} selectTextOnFocus />
             </View>
