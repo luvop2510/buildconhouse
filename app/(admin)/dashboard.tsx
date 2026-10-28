@@ -1,8 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Today — the workday home.
-// Answers one question: "What is the single most important thing right now?"
-// A ranked queue (powered by the follow-up engine), the business in one quiet
-// column, and nothing else.
+// Dashboard combines confirmed sales with the workday's next actions.
 // ─────────────────────────────────────────────────────────────────────────────
 import Feather from "@expo/vector-icons/Feather";
 import { useRouter } from "expo-router";
@@ -21,6 +18,8 @@ import { color, layout, space } from "@/src/design/tokens";
 import { useAuth } from "@/src/state/auth";
 import { useActionAccess } from "@/src/hooks/use-permissions";
 import { useFloorAccess } from "@/src/hooks/use-floor-access";
+import { AnalyticsDashboardPreview } from "@/src/components/salesAnalytics/AnalyticsDashboard";
+import { Banner } from "@/src/components/ui/Banner";
 
 type Mission = {
   due_count: number; revenue_at_risk: number; revenue_at_risk_short: string;
@@ -45,6 +44,7 @@ function greeting(): string {
 }
 
 const todayLabel = () => new Intl.DateTimeFormat("en-IN", {
+  timeZone: "Asia/Kolkata",
   weekday: "long", day: "numeric", month: "long",
 }).format(new Date());
 
@@ -125,6 +125,7 @@ export default function Today() {
   const canPayments = useActionAccess("payments", "view");
   const hasPurchasesAccess = useActionAccess("purchases", "view");
   const canPurchases = selectedFloorId === "first-floor" && hasPurchasesAccess;
+  const canViewSalesAnalytics = useActionAccess("sales_data", "view", !!staff && ["owner", "admin", "manager"].includes(staff.role));
 
   const [mission, setMission] = useState<Mission | null>(null);
   const [queueRows, setQueue] = useState<Fu[] | null>(null);
@@ -452,6 +453,11 @@ export default function Today() {
             ) : null}
           </View>
         </FadeIn>
+
+        {canViewSalesAnalytics && selectedFloorId ? <View style={{ gap: space.x4, marginBottom: space.x6 }}>
+          <Banner id="dashboard-confirmed-sales-v1" message="Sales analytics traces confirmed customer orders across the business. Select a figure or chart to view the supporting records." />
+          <AnalyticsDashboardPreview floorId={selectedFloorId} />
+        </View> : null}
 
         {/* ── Body ── */}
         <FadeIn delay={60}>

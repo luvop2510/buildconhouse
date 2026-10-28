@@ -1,6 +1,7 @@
 import {expect,test} from '@playwright/test';
 import {mockSession} from './audit-fixtures';
-import {mockSalesSummary} from './sales-fixtures';
+import {mockSalesAnalytics} from './sales-analytics-fixtures';
+import {analyticsCustomRange} from './sales-analytics-helpers';
 import {stabilityRoutes,stabilityRouteTitle} from '../scripts/stability-routes';
 import {captureRuntimeHealth} from './runtime-health';
 const routes=stabilityRoutes();
@@ -43,21 +44,15 @@ test('critical customer request failure retries into honest empty state',async({
 });
 
 test('critical Sales Data keeps product evidence and validates dates',async({page},info)=>{
- await mockSalesSummary(page);
+ await mockSalesAnalytics(page);
  await page.goto('/sales-data');
- await expect(page.getByTestId('sales-data-kpis')).toContainText('12');
- await expect(page.getByTestId('sales-brands')).toContainText('Hansgrohe');
- await expect(page.getByTestId('sales-products')).toContainText('Talis basin mixer');
- const filters=page.getByTestId('sales-data-filters');
- const toggle=page.getByTestId('sales-data-filters-toggle');
- if(await toggle.getAttribute('aria-expanded')==='false') await toggle.click();
- await page.getByTestId('sales-data-period-picker').click();
- await page.getByRole('dialog',{name:'Reporting period',exact:true}).getByRole('button',{name:'Custom range',exact:true}).click();
- await filters.getByLabel('From',{exact:true}).fill('2026-02-30');
- await filters.getByLabel('To',{exact:true}).fill('2026-03-01');
- await filters.getByRole('button',{name:'Apply range',exact:true}).click();
- await expect(page.getByRole('alert')).toContainText('Enter valid dates');
- await filters.getByRole('button',{name:'Cancel',exact:true}).click();
+ await expect(page.getByTestId('analytics-kpis')).toContainText('3');
+ await expect(page.getByTestId('analytics-entity-company-a')).toContainText('Hansgrohe');
+ await expect(page.getByTestId('analytics-entity-product-a')).toContainText('Talis basin mixer');
+ await analyticsCustomRange(page, '2026-09-17', '2026-09-03');
+ await page.getByTestId('analytics-filter-apply').click();
+ await expect(page.getByRole('alert')).toContainText(/valid|after/i);
+ await page.getByRole('button',{name:'Cancel',exact:true}).click();
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);
  await page.screenshot({path:info.outputPath('sales-fixture.png'),fullPage:true});
 });

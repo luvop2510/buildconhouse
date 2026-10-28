@@ -1,2 +1,2 @@
-import { CustomersWorkspace } from "@/src/components/salesData/CustomersWorkspace";
-export default CustomersWorkspace;
+import { AnalyticsEntities } from "@/src/components/salesAnalytics/AnalyticsEntities";
+export default function Page() { return <AnalyticsEntities kind="customers" />; }

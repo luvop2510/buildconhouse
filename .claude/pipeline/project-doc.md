@@ -121,3 +121,19 @@ policy; mutable authenticated reads retain no-store. Detailed measurements,
 current acceptance and remaining limits belong in
 docs/audits/2026-10-28-application-performance.md. No AGENTS.md architecture
 change is required.
+
+## Unified Sales Analytics — 29 October 2026
+
+Native fallback delta scan: existing Expo/FastAPI/Mongo architecture, dependencies,
+API transport and authentication are retained. The supplied PDF replaces the
+three-view sales simplification with five dashboards, shared entity profiles,
+source drilldowns, reports and PDF/Excel exports. New route/service files follow
+existing analytics layering. Stable IDs, customer confirmations and currency
+separation drive all financial views; quotation history is an independent read.
+Owner-only duplicate reviews reuse settings IDs and optimistic concurrency, with
+append-only decision events; canonical identities are never silently merged.
+No schema migration, backfill or production data rewrite is introduced.
+Verification includes hermetic unit/HTTP tests, disposable Mongo integration,
+real browser fixtures at five widths and the unchanged full performance gate.
+Coverage percentage is not measured. Current evidence and limits:
+docs/audits/2026-10-29-sales-analytics.md.

@@ -270,7 +270,7 @@ def resource_for_api_path(path: str) -> str | None:
         ("/api/tile-orders", "orders"), ("/api/walkins", "walkins"),
         ("/api/reports", "reports"),
         ("/api/analytics", "sales_data"), ("/api/executive-analytics", "sales_data"),
-        ("/api/sales-data", "sales_data"),
+        ("/api/sales-data", "sales_data"), ("/api/sales-analytics", "sales_data"),
     ):
         if path == prefix or path.startswith(f"{prefix}/"):
             return resource

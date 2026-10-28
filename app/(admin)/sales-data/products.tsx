@@ -1,2 +1,2 @@
-import { Redirect } from "expo-router";
-export default function LegacyRanking() { return <Redirect href={{ pathname: "/(admin)/sales-data", params: { view: "products" } }} />; }
+import { AnalyticsEntities } from "@/src/components/salesAnalytics/AnalyticsEntities";
+export default function Page() { return <AnalyticsEntities kind="products" />; }

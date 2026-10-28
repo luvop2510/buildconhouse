@@ -1,42 +1,38 @@
 import { expect, test } from '@playwright/test';
 import { mockSession } from './audit-fixtures';
-import { emptySalesSummary, mockSalesSummary } from './sales-fixtures';
+import { mockSalesAnalytics } from './sales-analytics-fixtures';
+import { analyticsChoice } from './sales-analytics-helpers';
 
 test('critical mobile sales filters retain selected business units and unfinished date ranges while hidden', async ({ page }) => {
   let latest = new URLSearchParams();
   let requests = 0;
-  await mockSalesSummary(page, { onSummary: route => {
-    latest = new URL(route.request().url()).searchParams;
-    requests += 1;
-    return route.fulfill({ json: emptySalesSummary() });
+  await mockSalesAnalytics(page, { onRequest: url => {
+    if (url.pathname.endsWith('/dashboard')) { latest = url.searchParams; requests += 1; }
   } });
   await page.goto('/sales-data/sales');
-  const filters = page.getByTestId('sales-data-filters');
-  const toggle = page.getByTestId('sales-data-filters-toggle');
-  if (await toggle.getAttribute('aria-expanded') === 'false') await toggle.click();
-  await page.getByTestId('sales-data-floor-picker').click();
-  await page.getByRole('dialog', { name: 'Business unit', exact: true }).getByRole('button', { name: 'Tiles', exact: true }).click();
+  await expect(page.getByTestId('analytics-kpi-orders')).toBeVisible();
+  await page.getByTestId('analytics-filter-open').click();
+  await analyticsChoice(page, 'analytics-floor-picker', 'ground-floor');
+  await page.getByTestId('analytics-filter-apply').click();
   await expect.poll(() => latest.get('floor_id')).toBe('ground-floor');
-  await page.getByTestId('sales-data-period-picker').click();
-  await page.getByRole('dialog', { name: 'Reporting period', exact: true }).getByRole('button', { name: 'Custom range', exact: true }).click();
-  await filters.getByLabel('From', { exact: true }).fill('2026-09-03');
-  await filters.getByLabel('To', { exact: true }).fill('2026-09-17');
-  await toggle.click();
-  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-  await expect(page.getByTestId('sales-data-filters-content')).toBeHidden();
-  await expect(page.getByTestId('sales-kpi-products')).toContainText('0');
+  await page.getByTestId('analytics-filter-open').click();
+  await analyticsChoice(page, 'analytics-period', 'custom');
+  await page.getByTestId('analytics-date-from').fill('2026-09-03');
+  await page.getByTestId('analytics-date-to').fill('2026-09-17');
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog', { name: 'Filter sales analytics', exact: true })).toHaveCount(0);
+  await expect(page.getByTestId('analytics-kpi-sales')).toContainText('₹60,000.5');
   const beforeRestore = requests;
-  await toggle.click();
-  await expect(filters.getByLabel('From', { exact: true })).toHaveValue('2026-09-03');
-  await expect(filters.getByLabel('To', { exact: true })).toHaveValue('2026-09-17');
-  await expect(page.getByTestId('sales-data-floor-picker')).toContainText('Tiles');
+  await page.getByTestId('analytics-filter-open').click();
+  await expect(page.getByTestId('analytics-date-from')).toHaveValue('2026-09-03');
+  await expect(page.getByTestId('analytics-date-to')).toHaveValue('2026-09-17');
+  await expect(page.getByTestId('analytics-floor-picker')).toContainText('Tiles');
   expect(requests).toBe(beforeRestore);
-  await filters.getByRole('button', { name: 'Apply range', exact: true }).click();
+  await page.getByTestId('analytics-filter-apply').click();
   await expect.poll(() => latest.get('preset')).toBe('custom');
-  expect(latest.get('date_from')).toBe('2026-09-03T00:00:00+00:00');
-  expect(latest.get('date_to')).toBe('2026-09-18T00:00:00+00:00');
-  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
-  await expect(page.getByTestId('sales-data-filters-content')).toBeVisible();
+  expect(latest.get('date_from')).toBe('2026-09-03');
+  expect(latest.get('date_to')).toBe('2026-09-17');
+  await expect(page.getByRole('dialog', { name: 'Filter sales analytics', exact: true })).toHaveCount(0);
 });
 
 test('critical phone tile content scrolls normally and its action footer hides throughout quantity editing', async ({ page }) => {

@@ -1,263 +1,150 @@
-import { expect, test, type Locator, type Page } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import { captureRuntimeHealth } from './runtime-health';
-import { emptySalesSummary, fourDepartmentSummary, mockSalesSummary, salesSummaryFixture } from './sales-fixtures';
+import { mockSalesSummary } from './sales-fixtures';
+import { analyticsDashboard, mockSalesAnalytics } from './sales-analytics-fixtures';
+import { analyticsChoice, analyticsCustomRange, analyticsExport, analyticsFitsViewport, analyticsFloor } from './sales-analytics-helpers';
 
-async function assertWithinViewport(page: Page, controls: Locator[] = []) {
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'Page fits its viewport').toBe(true);
-  for (const control of controls) {
-    await expect(control).toBeVisible();
-    const box = await control.boundingBox();
-    expect(box!.x).toBeGreaterThanOrEqual(-1);
-    expect(box!.x + box!.width).toBeLessThanOrEqual(page.viewportSize()!.width + 1);
-    expect(box!.height).toBeGreaterThanOrEqual(43.999);
-    expect(box!.width).toBeGreaterThanOrEqual(43.999);
-  }
-}
-
-async function openFilters(page: Page) {
-  const toggle = page.getByTestId('sales-data-filters-toggle');
-  if (await toggle.getAttribute('aria-expanded') === 'false') await toggle.click();
-  await expect(page.getByTestId('sales-data-filters-content')).toBeVisible();
-}
-
-async function selectFloor(page: Page, label: string) {
-  await openFilters(page);
-  await page.getByTestId('sales-data-floor-picker').click();
-  await page.getByRole('dialog', { name: 'Business unit', exact: true }).getByRole('button', { name: label, exact: true }).click();
-}
-
-async function openCustomRange(page: Page) {
-  await openFilters(page);
-  await page.getByTestId('sales-data-period-picker').click();
-  await page.getByRole('dialog', { name: 'Reporting period', exact: true }).getByRole('button', { name: 'Custom range', exact: true }).click();
-}
-
-test('critical streamlined sales presents real product and brand evidence with three usable destinations', async ({ page }, info) => {
+// The complete analytics specification supersedes the former three-view layout.
+// These release regressions retain the original financial, scope and recovery checks.
+test('critical analytics presents confirmed sales and every shared entity destination', async ({ page }, info) => {
   const health = captureRuntimeHealth(page);
-  await mockSalesSummary(page);
-  await page.route('**/api/analytics/default-period?**', route => route.fulfill({ json: {
-    preset: 'custom', date_from: '2025-01-01T00:00:00+00:00', date_to: '2025-02-01T00:00:00+00:00',
-    label: 'January 2025', fallback_applied: true, latest_order_at: '2025-01-10T10:00:00+00:00',
-  } }));
-  const reportRequest = page.waitForRequest(request => new URL(request.url()).pathname === '/api/analytics/sales-summary');
+  await mockSalesAnalytics(page);
   await page.goto('/sales-data');
-  expect(new URL((await reportRequest).url()).searchParams.get('preset')).toBe('this_month');
-  await expect(page.getByTestId('sales-kpi-products')).toContainText('3');
-  await expect(page.getByTestId('sales-brands')).toContainText('Hansgrohe');
-  await expect(page.getByTestId('sales-products')).toContainText('Talis basin mixer');
-  await expect(page.getByTestId('sales-products')).toContainText('Piece');
-  await expect(page.getByTestId('sales-products')).toContainText('Set');
-  const navigation = ['sales', 'references', 'customers'].map(name => page.getByTestId(`sales-nav-${name}`));
-  await assertWithinViewport(page, navigation);
-  for (const retired of ['Executive', "Today's Priorities", 'Forecasting', 'Suppliers', 'Operations']) {
-    await expect(page.getByRole('link', { name: retired, exact: true })).toHaveCount(0);
-  }
+  await expect(page.getByTestId('analytics-kpi-orders')).toContainText('3');
+  await expect(page.getByTestId('analytics-entity-company-a')).toContainText('Hansgrohe');
+  await expect(page.getByTestId('analytics-entity-product-a')).toContainText('Talis basin mixer');
+  await analyticsFitsViewport(page, ['dashboard','companies','products','architects','customers','reports'].map(name => page.getByTestId(`analytics-nav-${name}`)));
   await health.assertHealthy();
-  await page.screenshot({ path: info.outputPath('sales.png'), fullPage: true });
+  await page.screenshot({ path: info.outputPath('sales-analytics.png'), fullPage: true });
 });
 
-test('critical sales navigation works with keyboard and exposes customers follow-ups and unpaid balances', async ({ page }, info) => {
-  const health = captureRuntimeHealth(page);
-  await mockSalesSummary(page);
+test('critical analytics destinations work with keyboard and open shared customer profiles', async ({ page }) => {
+  await mockSalesAnalytics(page);
   await page.goto('/sales-data');
-  const references = page.getByTestId('sales-nav-references');
-  await references.focus();
-  await expect(references).toBeFocused();
-  await page.keyboard.press('Enter');
-  await expect(page).toHaveURL(/\/sales-data\/relationships(?:\?|$)/);
-  await expect(page.getByRole('heading', { name: 'References', exact: true })).toBeVisible();
-  await page.screenshot({ path: info.outputPath('references.png'), fullPage: true });
-  const customers = page.getByTestId('sales-nav-customers');
+  const customers = page.getByTestId('analytics-nav-customers');
   await customers.focus();
+  await expect(customers).toBeFocused();
   await page.keyboard.press('Enter');
   await expect(page).toHaveURL(/\/sales-data\/customers(?:\?|$)/);
-  await expect(page.getByTestId('sales-kpi-customers')).toContainText('3');
-  await expect(page.getByTestId('sales-kpi-followups')).toContainText('5');
-  await expect(page.getByTestId('sales-kpi-outstanding')).toContainText('60,000');
-  await expect(page.getByTestId('sales-customers-list')).toContainText('Ananya Shah');
-  await assertWithinViewport(page);
-  await health.assertHealthy();
-  await page.screenshot({ path: info.outputPath('customers.png'), fullPage: true });
+  await page.getByTestId('analytics-entity-customer-a').click();
+  await expect(page).toHaveURL(/\/profile\/customers\/customer-a(?:\?|$)/);
+  await expect(page.getByRole('heading', { name: 'Ananya Shah', exact: true })).toBeVisible();
+  await analyticsFitsViewport(page);
 });
 
 test('critical summary failures retry and genuine zeros retain an honest empty state', async ({ page }) => {
   let fail = true;
-  await mockSalesSummary(page, { onSummary: route => fail
+  const empty = analyticsDashboard('second-floor');
+  await mockSalesAnalytics(page, { dashboard: route => fail
     ? route.fulfill({ status: 503, json: { detail: 'Sales temporarily unavailable' } })
-    : route.fulfill({ json: emptySalesSummary() }) });
+    : route.fulfill({ json: empty }) });
   await page.goto('/sales-data');
-  await expect(page.getByText('Sales temporarily unavailable', { exact: true })).toBeVisible();
-  await expect(page.getByTestId('sales-kpi-products')).toHaveCount(0);
+  await expect(page.getByRole('alert')).toContainText('Sales temporarily unavailable');
+  await expect(page.getByTestId('analytics-kpi-orders')).toHaveCount(0);
   fail = false;
-  await page.getByTestId('sales-summary-retry').click();
-  await expect(page.getByTestId('sales-kpi-products')).toContainText('0');
-  await expect(page.getByTestId('sales-brands')).toContainText(/No .*(sales|brands)/i);
-  await expect(page.getByTestId('sales-products')).toContainText(/No .*(sales|products)/i);
-  await expect(page.getByText('Sales temporarily unavailable', { exact: true })).toHaveCount(0);
-  await assertWithinViewport(page);
+  await page.getByTestId('analytics-retry').click();
+  await expect(page.getByTestId('analytics-kpi-orders')).toContainText('0');
+  await expect(page.getByTestId('analytics-empty').first()).toBeVisible();
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  await analyticsFitsViewport(page);
 });
 
 test('critical reporting range validates dates and remains selected across tabs and reload', async ({ page }) => {
-  const queries: URLSearchParams[] = [];
-  await mockSalesSummary(page, { onSummary: route => {
-    queries.push(new URL(route.request().url()).searchParams);
-    return route.fulfill({ json: salesSummaryFixture });
-  } });
+  const requests: URL[] = [];
+  await mockSalesAnalytics(page, { onRequest: url => requests.push(url) });
   await page.goto('/sales-data');
-  await expect(page.getByTestId('sales-kpi-products')).toBeVisible();
-  await openCustomRange(page);
-  await page.getByLabel('From', { exact: true }).fill('2026-02-30');
-  await page.getByLabel('To', { exact: true }).fill('2026-03-01');
-  await page.getByRole('button', { name: 'Apply range', exact: true }).click();
-  await expect(page.getByRole('alert')).toContainText('Enter valid dates');
-  await page.getByLabel('From', { exact: true }).fill('2026-09-03');
-  await page.getByLabel('To', { exact: true }).fill('2026-09-17');
-  await page.getByRole('button', { name: 'Apply range', exact: true }).click();
-  await expect.poll(() => queries.at(-1)?.get('preset')).toBe('custom');
-  expect(queries.at(-1)?.get('date_from')).toBe('2026-09-03T00:00:00+00:00');
-  expect(queries.at(-1)?.get('date_to')).toBe('2026-09-18T00:00:00+00:00');
-  await page.getByTestId('sales-nav-customers').click();
-  await expect(page.getByTestId('sales-customers-list')).toContainText('Ananya Shah');
-  expect(queries.at(-1)?.get('preset')).toBe('custom');
+  await expect(page.getByTestId('analytics-kpi-orders')).toBeVisible();
+  await analyticsCustomRange(page, '2026-09-17', '2026-09-03');
+  await page.getByTestId('analytics-filter-apply').click();
+  await expect(page.getByRole('alert')).toContainText(/valid|after/i);
+  await page.getByTestId('analytics-date-from').fill('2026-09-03');
+  await page.getByTestId('analytics-date-to').fill('2026-09-17');
+  await analyticsChoice(page, 'analytics-date-basis', 'payment');
+  await page.getByTestId('analytics-filter-apply').click();
+  await expect.poll(() => requests.at(-1)?.searchParams.get('date_basis')).toBe('payment');
+  await page.getByTestId('analytics-nav-customers').click();
+  await expect(page.getByTestId('analytics-entity-customer-a')).toBeVisible();
   await page.reload();
-  await expect(page.getByTestId('sales-customers-list')).toContainText('Ananya Shah');
-  expect(queries.at(-1)?.get('date_from')).toBe('2026-09-03T00:00:00+00:00');
-  expect(queries.at(-1)?.get('date_to')).toBe('2026-09-18T00:00:00+00:00');
-  await assertWithinViewport(page);
+  await expect(page.getByTestId('analytics-entity-customer-a')).toBeVisible();
+  for (const [key, value] of [['preset','custom'],['date_from','2026-09-03'],['date_to','2026-09-17'],['date_basis','payment']]) {
+    expect(new URL(page.url()).searchParams.get(key)).toBe(value);
+    expect(requests.at(-1)?.searchParams.get(key)).toBe(value);
+  }
+  await analyticsFitsViewport(page);
 });
 
 test('critical late previous-floor reads cannot relabel the selected floor', async ({ page }) => {
   let release!: () => void;
   const held = new Promise<void>(resolve => { release = resolve; });
   let firstReadStarted = false;
-  await mockSalesSummary(page, { onSummary: async route => {
-    const floor = new URL(route.request().url()).searchParams.get('floor_id');
-    if (floor === 'first-floor') {
-      firstReadStarted = true;
-      await held;
-      return route.fulfill({ json: salesSummaryFixture }).catch(() => undefined);
-    }
-    const current = {
-      ...salesSummaryFixture,
-      brands: [{ ...salesSummaryFixture.brands[0], name: 'Current Tiles scope' }],
-    };
-    return route.fulfill({ json: current });
+  await mockSalesAnalytics(page, { dashboard: async route => {
+    const floor = new URL(route.request().url()).searchParams.get('floor_id') || 'all';
+    if (floor === 'first-floor') { firstReadStarted = true; await held; }
+    return route.fulfill({ json: analyticsDashboard(floor) }).catch(() => undefined);
   } });
-  await page.goto('/sales-data');
+  await page.goto('/sales-data?floor_id=first-floor');
   await expect.poll(() => firstReadStarted).toBe(true);
   try {
-    await selectFloor(page, 'Tiles');
-    await expect(page.getByTestId('sales-brands')).toContainText('Current Tiles scope');
+    await analyticsFloor(page, 'ground-floor');
+    await expect(page.getByTestId('analytics-kpi-sales')).toContainText('60,000.5');
     release();
-    await expect(page.getByTestId('sales-brands')).not.toContainText('Hansgrohe');
-    await expect(page.getByTestId('sales-data-floor-picker')).toContainText('Tiles');
+    await expect(page.getByTestId('analytics-kpi-sales')).not.toContainText('2,40,000');
+    expect(new URL(page.url()).searchParams.get('floor_id')).toBe('ground-floor');
   } finally { release(); }
-  await assertWithinViewport(page);
+  await analyticsFitsViewport(page);
 });
 
-test('critical project departments keep financial reporting when product attribution is unavailable', async ({ page }) => {
-  const summary = fourDepartmentSummary('second-floor');
-  await mockSalesSummary(page, { summary, floorId: 'second-floor' });
-  await page.goto('/sales-data');
-  await expect(page.getByText(summary.coverage.note, { exact: true })).toBeVisible();
-  await expect(page.getByTestId('sales-kpi-revenue')).toContainText('₹3,00,000.25');
-  await expect(page.getByTestId('sales-kpi-orders')).toContainText('1');
-  await expect(page.getByTestId('sales-kpi-products')).toHaveCount(0);
-  if (page.viewportSize()!.width >= 768) {
-    await expect(page.getByTestId('nav-sales-data')).toBeVisible();
-    await expect(page.getByTestId('nav-sales-data')).toHaveAttribute('aria-current', 'page');
-  } else {
-    await page.getByRole('button', { name: 'All stages', exact: true }).click();
-    const sharedReport = page.getByRole('dialog', { name: 'Kitchen stages', exact: true }).getByRole('link', { name: 'Sales Data', exact: true });
-    await expect(sharedReport).toBeVisible();
-    await sharedReport.click();
-    await expect(page).toHaveURL(/\/sales-data(?:\?|$)/);
-  }
-  await page.getByTestId('sales-nav-customers').click();
-  await expect(page.getByTestId('sales-kpi-outstanding')).toContainText('₹1,00,000.25');
-  await expect(page.getByTestId('sales-customers-list')).toContainText('Kavya Kitchen Client');
-  await assertWithinViewport(page);
+test('critical project departments identify unavailable product attribution without inventing zero', async ({ page }) => {
+  await mockSalesAnalytics(page);
+  await page.goto('/sales-data/floor/second-floor?floor_id=second-floor');
+  await expect(page.getByText('Product attribution unavailable for this workflow.', { exact: true })).toBeVisible();
+  await expect(page.getByTestId('analytics-kpi-sales')).toContainText('₹0');
+  await expect(page.getByTestId('analytics-kpi-aov')).toContainText('Unavailable');
+  await expect(page.getByTestId('analytics-entity-product-a')).toHaveCount(0);
+  await analyticsFitsViewport(page);
 });
 
-test('critical all four departments preserve separate INR and RNB totals and customer identities', async ({ page }, info) => {
-  await mockSalesSummary(page, { onSummary: route => route.fulfill({
-    json: fourDepartmentSummary(new URL(route.request().url()).searchParams.get('floor_id') || 'all'),
-  }) });
-  await page.goto('/sales-data');
-  await selectFloor(page, 'All units');
-  const revenue = page.getByTestId('sales-kpi-revenue');
-  await expect(revenue).toContainText('₹6,40,000.25');
-  await expect(revenue).toContainText('RNB 75,000.5');
-  await expect(revenue).not.toContainText('7,15,000.75');
-  await expect(page.getByTestId('sales-kpi-orders')).toContainText('16');
-  await expect(page.getByTestId('sales-kpi-products')).toContainText('4');
-  await page.screenshot({ path: info.outputPath('all-departments-sales.png'), fullPage: true });
-  await page.getByTestId('sales-nav-customers').click();
-  await expect(page.getByTestId('sales-kpi-customers')).toContainText('7');
-  await expect(page.getByTestId('sales-kpi-followups')).toContainText('14');
-  const outstanding = page.getByTestId('sales-kpi-outstanding');
-  await expect(outstanding).toContainText('₹1,85,000.25');
-  await expect(outstanding).toContainText('RNB 12,500.5');
-  await expect(outstanding).not.toContainText('1,97,500.75');
-  const balances = page.getByTestId('sales-customers-list');
-  await expect(balances).toContainText('Kavya Kitchen Client');
-  await expect(balances).toContainText('Falguni Furniture Client');
-  await expect(balances).toContainText('RNB 12,500.5');
-  await assertWithinViewport(page);
-  await page.screenshot({ path: info.outputPath('all-departments-customers.png'), fullPage: true });
+test('critical all four departments preserve separate INR and RNB totals and customer identities', async ({ page }) => {
+  await mockSalesAnalytics(page);
+  await page.goto('/sales-data?floor_id=all');
+  const sales = page.getByTestId('analytics-kpi-sales');
+  await expect(sales).toContainText('₹3,00,000.5');
+  await expect(sales).toContainText('RNB 75,000.5');
+  await expect(sales).not.toContainText('3,75,001');
+  await expect(page.getByTestId('analytics-kpi-orders')).toContainText('3');
+  await page.getByTestId('analytics-nav-customers').click();
+  await expect(page.getByTestId('analytics-entity-customer-a')).toContainText('Ananya Shah');
+  await expect(page.getByTestId('analytics-entity-customer-c')).toContainText('RNB 75,000.5');
+  await analyticsFitsViewport(page);
 });
 
-for (const [floor, label, amount, customer, path] of [
-  ['first-floor', 'Sanitary', '₹60,000', 'Ananya Shah', '/payments'],
-  ['ground-floor', 'Tiles', '₹25,000', 'Aarav Joshi', '/payments'],
-  ['second-floor', 'Kitchen', '₹1,00,000.25', 'Kavya Kitchen Client', '/kitchen'],
-  ['third-floor', 'Furniture', 'RNB 12,500.5', 'Falguni Furniture Client', '/notebook/furniture-quotations'],
-]) {
-  test(label === "Kitchen" ? "critical Kitchen reporting omits follow-ups and opens its account workspace" : `critical ${label} reporting opens its own follow-ups and account workspace`, async ({ page }) => {
-    const requests: string[] = [];
-    const followupFloors: string[] = [];
-    page.on('request', request => {
-      if (/^\/api\/followups(?:\/page)?$/.test(new URL(request.url()).pathname)) followupFloors.push(request.headers()['x-floor-id'] || '');
-    });
-    await mockSalesSummary(page, { onSummary: route => {
-      const requestedFloor = new URL(route.request().url()).searchParams.get('floor_id') || 'all';
-      requests.push(requestedFloor);
-      return route.fulfill({ json: fourDepartmentSummary(requestedFloor) });
-    } });
-    await page.goto('/sales-data/customers');
-    await selectFloor(page, label);
-    await expect.poll(() => requests.at(-1)).toBe(floor);
-    await expect(page.getByTestId('sales-kpi-outstanding')).toContainText(amount);
-    await expect(page.getByTestId('sales-customers-list')).toContainText(customer);
-    await assertWithinViewport(page);
-    if (floor === 'second-floor') {
-      await expect(page.getByTestId('sales-kpi-followups')).toHaveCount(0);
-      expect(followupFloors).toEqual([]);
-    } else {
-      await page.getByTestId('sales-kpi-followups').click();
-      await expect(page).toHaveURL(/\/followups(?:\?|$)/);
-      await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('forge.active-floor') || 'null'))).toBe(floor);
-      await expect.poll(() => followupFloors.at(-1)).toBe(floor);
-      await page.goto('/sales-data/customers');
-      await expect(page.getByTestId('sales-customers-list')).toContainText(customer);
-    }
-    await page.getByTestId('sales-kpi-outstanding').click();
-    await expect(page).toHaveURL(new RegExp(`${path}(?:\\?|$)`));
-    await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('forge.active-floor') || 'null'))).toBe(floor);
-  });
-}
+for (const [floor, label, amount] of [
+  ['first-floor','Sanitary','₹2,40,000'], ['ground-floor','Tiles','₹60,000.5'],
+  ['second-floor','Kitchen','₹0'], ['third-floor','Furniture','RNB 75,000.5'],
+]) test(`critical ${label} dashboard drills to its own confirmed source records`, async ({ page }) => {
+  const requests: URL[] = [];
+  await mockSalesAnalytics(page, { onRequest: url => requests.push(url) });
+  await page.goto(`/sales-data/floor/${floor}?floor_id=${floor}&date_basis=confirmation`);
+  await expect(page.getByTestId('analytics-kpi-sales')).toContainText(amount);
+  await page.getByTestId('analytics-kpi-orders').click();
+  await expect(page).toHaveURL(/\/sales-data\/records\?/);
+  await expect.poll(() => requests.filter(url => url.pathname.endsWith('/records')).at(-1)?.searchParams.get('floor_id')).toBe(floor);
+  expect(new URL(page.url()).searchParams.get('metric')).toBe('orders');
+  await analyticsFitsViewport(page);
+});
 
-test('critical all-department accounts asks for a business unit before opening its own ledger', async ({ page }) => {
-  await mockSalesSummary(page, { onSummary: route => route.fulfill({
-    json: fourDepartmentSummary(new URL(route.request().url()).searchParams.get('floor_id') || 'all'),
-  }) });
-  await page.goto('/sales-data/customers');
-  await selectFloor(page, 'All units');
-  await expect(page.getByTestId('sales-kpi-outstanding')).toContainText('RNB 12,500.5');
-  await page.getByTestId('sales-kpi-outstanding').click();
-  await page.getByRole('dialog', { name: 'Choose a business unit', exact: true }).getByRole('button', { name: 'Furniture', exact: true }).click();
-  await expect(page).toHaveURL(/\/notebook\/furniture-quotations(?:\?|$)/);
-  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('forge.active-floor') || 'null'))).toBe('third-floor');
+test('critical floor and trend chart drills preserve the selected date basis and source dimension', async ({ page }) => {
+  await mockSalesAnalytics(page);
+  await page.goto('/sales-data?floor_id=all&date_basis=payment');
+  await page.getByTestId('analytics-point-2026-10-10').click();
+  await expect(page).toHaveURL(/\/sales-data\/records\?/);
+  const query = new URL(page.url()).searchParams;
+  expect(query.get('date_basis')).toBe('payment');
+  expect(query.get('preset')).toBe('custom');
+  expect(query.get('dimension')).toBe('2026-10-10');
+  expect(query.get('date_from')).toBe('2026-10-10T06:00:00Z');
+  expect(query.get('date_to')).toBe('2026-10-11T06:00:00Z');
+  await analyticsFitsViewport(page);
 });
 
 test('critical reference search keeps pre-order clients and the chosen reporting period in its detail link', async ({ page }) => {
@@ -284,36 +171,24 @@ test('critical reference search keeps pre-order clients and the chosen reporting
   await expect(row).toBeVisible();
 });
 
-test('critical export sends the exact displayed brand data and reporting scope', async ({ page }) => {
-  await mockSalesSummary(page);
-  let posted: any;
-  let floor: string | undefined;
-  await page.route('**/api/exports/page.xlsx', route => {
-    posted = route.request().postDataJSON();
-    floor = route.request().headers()['x-floor-id'];
-    return route.fulfill({ status: 200, contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', body: Buffer.from('synthetic download') });
-  });
-  await page.goto('/sales-data');
-  const download = page.waitForEvent('download');
-  await page.getByTestId('sales-brands-export-xlsx').click();
-  await download;
-  expect(posted.sections[0].rows[1]).toEqual(['Hansgrohe', '180000', '2', '8', '24 Piece · 8 Set']);
-  expect(floor).toBe('first-floor');
+test('critical selected profile export preserves entity identity and the exact reporting scope', async ({ page }) => {
+  let exported: URL | undefined;
+  await mockSalesAnalytics(page, { onRequest: url => { if (url.pathname.endsWith('/export')) exported = url; } });
+  await page.goto('/sales-data/profile/companies/company-a?floor_id=first-floor&preset=custom&date_from=2026-09-03&date_to=2026-09-17&date_basis=confirmation');
+  await expect(page.getByRole('heading', { name: 'Hansgrohe', exact: true })).toBeVisible();
+  const download = await analyticsExport(page, 'xlsx');
+  expect(download.suggestedFilename()).toContain('company-a');
+  for (const [key, value] of [['view','profile'],['kind','companies'],['entity_id','company-a'],['floor_id','first-floor'],['preset','custom'],['date_from','2026-09-03'],['date_to','2026-09-17'],['date_basis','confirmation'],['format','xlsx']]) expect(exported?.searchParams.get(key)).toBe(value);
 });
 
-test('critical customer balances retain paise and select only Sales Data in the desktop sidebar', async ({ page }) => {
-  const summary = {
-    ...salesSummaryFixture,
-    kpis: { ...salesSummaryFixture.kpis, outstanding: 60000.5 },
-    customers: salesSummaryFixture.customers.map((row, i) => i ? row : { ...row, outstanding: 20000.5 }),
-  };
-  await mockSalesSummary(page, { summary });
-  await page.goto('/sales-data/customers');
-  await expect(page.getByTestId('sales-kpi-outstanding')).toContainText('60,000.5');
-  await expect(page.getByTestId('sales-customers-list')).toContainText('20,000.5');
-  const selected = page.locator('[aria-current="page"]');
+test('critical order balances retain paise and Sales Data stays selected in the desktop sidebar', async ({ page }) => {
+  await mockSalesAnalytics(page);
+  await page.goto('/sales-data/order/order-b?floor_id=ground-floor');
+  await expect(page.getByText(/20,000.5/).first()).toBeVisible();
   if (page.viewportSize()!.width >= 768) {
+    const selected = page.locator('[aria-current="page"]');
     await expect(selected.filter({ hasText: 'Sales Data' })).toHaveCount(1);
     await expect(selected.filter({ hasText: 'Customers' })).toHaveCount(0);
   }
+  await analyticsFitsViewport(page);
 });

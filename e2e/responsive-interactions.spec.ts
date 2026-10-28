@@ -1,6 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { mockSession } from './audit-fixtures';
-import { mockSalesSummary } from './sales-fixtures';
+import { mockSalesAnalytics } from './sales-analytics-fixtures';
 
 async function targetSize(control: Locator) {
   await expect(control).toBeVisible();
@@ -12,7 +12,7 @@ async function targetSize(control: Locator) {
 }
 
 async function salesFixture(page: Page) {
-  await mockSalesSummary(page, { path: '/sales-data/customers' });
+  await mockSalesAnalytics(page);
 }
 
 test.beforeEach(async ({ context }) => {
@@ -21,18 +21,20 @@ test.beforeEach(async ({ context }) => {
 });
 
 for (const key of ['Enter', 'Space']) {
-  test(`actionable KPI has button semantics and opens payments with ${key}`, async ({ page }) => {
+  test(`actionable KPI preserves standard link keyboard behavior with ${key}`, async ({ page }) => {
     await salesFixture(page);
-    await page.goto('/sales-data/customers');
-    const card = page.getByTestId('sales-kpi-outstanding');
-    await expect(card).toHaveAttribute('data-testid', 'sales-kpi-outstanding');
+    await page.goto('/sales-data');
+    const card = page.getByTestId('analytics-kpi-orders');
+    await expect(card).toHaveRole('link');
     await card.focus();
     await expect(card).toBeFocused();
     await page.keyboard.press(key);
-    await expect(page).toHaveURL(/\/payments(?:\?|$)/);
-    // Desktop/tablet payments includes a second nested overview header with
-    // the same title; the workspace's primary heading is the first match.
-    await expect(page.getByRole('heading', { name: 'Payments', exact: true }).first()).toBeVisible();
+    if (key === 'Space') {
+      await expect(page).not.toHaveURL(/\/sales-data\/records(?:\?|$)/);
+      await page.keyboard.press('Enter');
+    }
+    await expect(page).toHaveURL(/\/sales-data\/records(?:\?|$)/);
+    await expect(page.getByRole('heading', { name: 'Supporting records', exact: true })).toBeVisible();
   });
 }
 

@@ -1,2 +1,1 @@
-import { SalesWorkspace } from "@/src/components/salesData/SalesWorkspace";
-export default SalesWorkspace;
+export { AnalyticsDashboard as default } from "@/src/components/salesAnalytics/AnalyticsDashboard";

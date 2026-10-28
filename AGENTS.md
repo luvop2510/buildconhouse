@@ -1,5 +1,27 @@
 # AGENTS.md — BuildCon House ERP (forge2.0)
 
+## Unified Sales Analytics specification — 2026-10-29
+
+The supplied Complete Sales Analytics specification supersedes the historical
+three-view Sales Data simplification below. Sales Data now has overall and four
+floor dashboards, Companies, Products, Architects, Customers, Reports and an
+owner-reviewed Data quality directory. Existing reference editing and old
+bookmarks remain available. Shared confirmed-order reads live under
+`/sales-analytics`; the homepage uses the same foundation. Preserve stable-ID
+joins, India calendar boundaries, exact supporting-record filters, direct source
+links, backend role/floor/export grants, separate Furniture RNB and INR amounts,
+and explicit unavailable historical data. Quotation histories may include drafts;
+confirmed-sales KPIs must exclude them and supplier purchase orders.
+
+PDF/Excel exports share the report model and selected entity/filter scope.
+Datasets above the explicit row caps fail without partial totals. Customer
+contacts stay redacted for custom-access accounts. Identity review records only
+owner decisions with expected revision, replay and append-only audit history in
+settings; it never merges or rewrites canonical customers/products/brands.
+No migration is required. See docs/sales-analytics-design.md and
+docs/audits/2026-10-29-sales-analytics.md for source mapping and verification.
+
+
 ## Kitchen design/quotation simplification — 2026-10-28
 
 Quotation shows its finalized design PDF once and the latest quotation, with

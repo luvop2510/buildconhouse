@@ -1,7 +1,7 @@
 import { Slot } from "expo-router";
 import { View } from "react-native";
 
-import { WorkspaceSwitcher } from "@/src/components/analytics/WorkspaceSwitcher";
+import { AnalyticsNavigation } from "@/src/components/salesAnalytics/AnalyticsNavigation";
 import { SalesScopeProvider } from "@/src/components/salesData/SalesScope";
 
 /**
@@ -14,7 +14,7 @@ export default function SalesDataLayout() {
     // a hairline rule, so an extra gap here would float that rule in dead
     // space instead of seating it against the page below.
     <SalesScopeProvider><View style={{ flex: 1, minHeight: 0 }}>
-      <WorkspaceSwitcher />
+      <AnalyticsNavigation />
       <View style={{ flex: 1, minHeight: 0 }}>
         <Slot />
       </View>
