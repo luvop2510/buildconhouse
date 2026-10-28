@@ -60,12 +60,16 @@ def test_directory_client_history_opens_shared_identity_on_another_floor(monkeyp
     database = SimpleNamespace(referrers=Collection([shared]))
     monkeypatch.setattr(sales, 'db', database)
     scopes = []
-    async def confirmed(floor_ids, *_args):
+    async def confirmed(floor_ids, *_args, **_kwargs):
         assert floor_ids == ['ground-floor']
         return []
     async def kitchen(_database, query):
         scopes.append(query)
         return []
+    async def acquired(_db, _filter, floor_ids, window, **_kwargs):
+        assert floor_ids == ['ground-floor']
+        return {"total": 0, "people": []}
+    monkeypatch.setattr(sales, 'gather_acquired_people', acquired)
     monkeypatch.setattr(sales, '_confirmed_quotations', confirmed)
     monkeypatch.setattr(sales, 'kitchen_referral_records', kitchen)
     worker = UserPublic(id='admin', full_name='Admin', role='admin', floor_ids=['ground-floor'])

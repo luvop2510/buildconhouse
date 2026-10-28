@@ -300,6 +300,7 @@ async def gather_financial_summary(db, f: AnalyticsFilter, floors, period) -> di
 
 async def gather_followup_summary(db, f: AnalyticsFilter, floors, now: datetime) -> dict:
     scope = build_match(AnalyticsFilter(floor_id=f.floor_id, status="any"), floors, (None, None))
+    scope = {"$and": [scope, {"floor_id": {"$ne": "second-floor"}}]}
     rows = await db.followups.aggregate(followup_pipeline(scope, now)).to_list(1)
     return {"followups": int(rows[0].get("count") or 0) if rows else 0,
             "overdue_followups": int(rows[0].get("overdue") or 0) if rows else 0}

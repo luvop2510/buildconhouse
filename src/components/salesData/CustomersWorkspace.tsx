@@ -25,6 +25,7 @@ export function CustomersWorkspace() {
   const workspace = (floor: string, kind: "followups" | "payments") => kind === "followups" ? "/(admin)/followups" : floor === "second-floor" ? "/(admin)/kitchen" : floor === "third-floor" ? "/(admin)/notebook/furniture-quotations" : "/(admin)/payments";
   const rows = data?.customers.filter(row => (!onlyUnpaid || row.outstanding > 0) && row.name.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase())) || [];
   const openWork = async (kind: "followups" | "payments") => {
+    if (kind === "followups" && floorId === "second-floor") return;
     if (floorId === "all") { setWorkDestination(kind); return; }
     if (floorId) await setSelectedFloorId(floorId);
     router.push(workspace(floorId, kind) as never);
@@ -35,17 +36,17 @@ export function CustomersWorkspace() {
     {accessError ? <SummaryError error={accessError} retry={() => void retryAccess()} /> : error ? <SummaryError error={error} retry={refresh} /> : null}
     {!data && !error && !accessError ? <SummaryLoading /> : null}
     <Sheet open={workDestination !== null} onClose={() => setWorkDestination(null)} title="Choose a business unit">
-      <View style={{ gap: spacing.s8 }}>{floors.map(floor => <Pressable key={floor.id} accessibilityRole="button" accessibilityLabel={FLOOR_LABEL[floor.id] || floor.name}
+      <View style={{ gap: spacing.s8 }}>{floors.filter(floor => workDestination !== "followups" || floor.id !== "second-floor").map(floor => <Pressable key={floor.id} accessibilityRole="button" accessibilityLabel={FLOOR_LABEL[floor.id] || floor.name}
         onPress={() => { const destination = workDestination; setWorkDestination(null); if (destination) void setSelectedFloorId(floor.id).then(() => router.push(workspace(floor.id, destination) as never)); }}
         style={{ minHeight: 48, padding: spacing.s12 }}><Text style={type.body}>{FLOOR_LABEL[floor.id] || floor.name}</Text></Pressable>)}</View>
     </Sheet>
     {data ? <>
       <View style={{ flexDirection: "row", flexWrap: "wrap", backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border, borderRadius: 8 }}>
         <Metric label="Customers" testID="sales-kpi-customers" value={data.coverage.sales_available ? count(data.kpis.total_customers) : "—"} detail={`${count(data.kpis.customers)} bought in this period`} />
-        <Metric label="Follow-ups" testID="sales-kpi-followups" value={count(data.kpis.followups)} detail={`${count(data.kpis.overdue_followups)} overdue · Open follow-ups`} onPress={() => void openWork("followups")} />
+        {floorId !== "second-floor" ? <Metric label="Follow-ups" testID="sales-kpi-followups" value={count(data.kpis.followups)} detail={`${count(data.kpis.overdue_followups)} overdue · Open follow-ups`} onPress={() => void openWork("followups")} /> : null}
         <Metric label="Outstanding" testID="sales-kpi-outstanding" value={data.coverage.outstanding_available ? money(currency === "RNB" ? data.kpis.outstanding_rnb : data.kpis.outstanding, currency) : "—"} secondaryValue={currency === "INR" && data.departments.some(unit => unit.currency === "RNB") ? money(data.kpis.outstanding_rnb, "RNB") : undefined} detail="Current unpaid balance · Open accounts" onPress={data.coverage.outstanding_available ? () => void openWork("payments") : undefined} />
       </View>
-      <Text style={type.bodySm}>Follow-ups and outstanding balances are current, across all dates.{floorId === "all" ? " Open a business unit to work its follow-ups or payments." : ""}</Text>
+      <Text style={type.bodySm}>{floorId === "second-floor" ? "Outstanding balances are current, across all dates." : "Follow-ups and outstanding balances are current, across all dates."}{floorId === "all" ? " Open a business unit to work its follow-ups or payments." : ""}</Text>
       {data.coverage.note ? <Text style={type.bodySm}>{data.coverage.note}</Text> : null}
       <ReportPanel title="Customer balances" testID="sales-customers-list" actions={rows.length ? <SectionExcelButton testID="sales-customers-export-xlsx" page="Customers" section={`Customer balances · ${period?.label}`} filename="customer-balances.xlsx" floorId={floorId === "all" ? undefined : floorId} rows={[["Customer", "Currency", "Departments", "Sales in period", "Orders in period", "Current outstanding"], ...rows.map(row => [row.name, row.currency, row.floor_ids.map(id => FLOOR_LABEL[id] || id).join(", "), row.revenue, row.orders, row.outstanding])]} /> : undefined}>
         <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "flex-end", gap: spacing.s12 }}>

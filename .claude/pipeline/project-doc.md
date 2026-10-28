@@ -81,3 +81,21 @@ Meaningful verification includes the real disposable-Mongo accounting test,
 unit shaping/access tests, populated five-width browser scenarios and mandatory
 four-device stability/performance gates. AGENTS.md records the new three-view and
 four-department contract. Detailed contract: docs/sales-design-contract.md.
+
+
+## Reliability and stock/reference workflow — 28 October 2026
+
+Native fallback delta scan against main 923578e1. No new framework, dependency,
+authentication pattern or architectural layer. PyMongo receives only the 4.18.3
+security patch in both existing requirement sets. Kitchen flushes routine Lead/Visit/
+CAD drafts before leaving those stages; commercial decisions keep explicit save.
+Notifications are retired; Kitchen Follow-ups routes redirect before data reads.
+Purchases revalidates on focus and optional exact-product previews have a one-second
+budget, preserving recorded images and primary rows on preview failure.
+Godown manual intake registers reusable catalog identities; receipts and outgoing
+adjustments use atomic lot guards and actor-bound replay receipts. Reference detail
+now lists and pages the same deduplicated acquisition cohort used in counts,
+including non-converted walk-ins with custom UTC date windows. Migration 0040 adds
+only read indexes for these exact-reference queries. The new real-Mongo stock and
+reference workflows run in CI against its isolated service. Verification and
+publication evidence: docs/audits/2026-10-28-reliability-stock-references.md.

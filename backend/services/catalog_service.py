@@ -756,7 +756,7 @@ def hydrate_product(product: dict, snapshot: CatalogSnapshot) -> dict:
 
 def _is_catalog_product(product: dict, snapshot: CatalogSnapshot) -> bool:
     brand = next((b for b in getattr(snapshot, "brands", ()) if b.get("id") == product.get("brand_id")), {})
-    return not brand.get("catalog_authoritative") or bool(
+    return product.get("catalog_source") == "godown_intake" or not brand.get("catalog_authoritative") or bool(
         product.get("catalog_source") == brand.get("catalog_source") and product.get("catalog_entries")
     )
 
@@ -1585,9 +1585,10 @@ async def media_for_product(product_id: str, floor_ids: Optional[list[str]] = No
 
 async def snapshot_for_product_ids(product_ids: list[str], floor_ids: Optional[list[str]] = None) -> CatalogSnapshot:
     """Batch media ownership for quotation/purchase consumers in either mode."""
-    snapshot = await get_catalog_snapshot()
-    if not getattr(snapshot, "database_backed", False):
-        return snapshot
+    # A small document page must not wait for a cold, full-catalog rebuild.
+    snapshot = _snapshot_override.get() or _snapshot
+    if snapshot is not None and not getattr(snapshot, "database_backed", False):
+        return await get_catalog_snapshot()
     from services.catalog_database import context
     return await context([], product_ids=product_ids, floor_ids=floor_ids)
 

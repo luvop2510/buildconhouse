@@ -2,7 +2,7 @@ import { NavigationLink } from "@/src/design/NavigationLink";
 import { STAGE_LABELS, type KitchenStage } from "@/src/api/kitchenProjects";
 import { referrerCode } from "@/src/utils/referrer";
 import { MobileFilterSection } from "@/src/components/MobileFilterSection";
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { View } from "react-native";
 import { Text } from "@/src/components/AppText";
@@ -18,6 +18,8 @@ import { TrendChart } from "@/src/components/salesData/TrendChart";
 import { downloadSectionExcel } from "@/src/utils/sectionExcel";
 import { toast } from "@/src/components/Toast";
 import { useAnalyticsDetailPeriod } from "@/src/components/salesData/useAnalyticsDetailPeriod";
+import { SalesFilters } from "@/src/components/salesData/SalesFilters";
+import { useFloorAccess } from "@/src/hooks/use-floor-access";
 import type { Granularity } from "@/src/components/salesData/salesDataApi";
 
 const fmtMoney = (value: number) => value.toLocaleString("en-IN", { maximumFractionDigits: 2 });
@@ -25,6 +27,9 @@ const fmtMoney = (value: number) => value.toLocaleString("en-IN", { maximumFract
 type ReferrerDetailResponse = {
   referrer: { id: string; name: string; type: string; phone?: string | null; company?: string | null };
   kitchen_projects?: { id: string; number: string; customer_name: string; kitchen_stage: KitchenStage; status: string; grand_total: number }[];
+  customers_acquired?: number;
+  referred_people?: { customer_name: string | null; first_referred_at: string | null; confirmed: number; sources: string[]; floor_ids: string[] }[];
+  people_offset?: number;
   total_revenue: number;
   total_revenue_rnb?: number;
   furniture_quotations_total?: number;
@@ -35,7 +40,11 @@ type ReferrerDetailResponse = {
 
 export default function ReferrerDetail() {
   const { id, floorId } = useLocalSearchParams<{ id: string; floorId?: string }>();
-  const { query: periodQuery, label: periodLabel } = useAnalyticsDetailPeriod();
+  const { query: periodQuery, label: periodLabel, period, floorId: reportFloor } = useAnalyticsDetailPeriod();
+  const router = useRouter();
+  const { floors } = useFloorAccess();
+  const [peopleOffset, setPeopleOffset] = useState(0);
+  useEffect(() => { setPeopleOffset(0); }, [id, periodQuery]);
   const generation = useRef(0);
   const controller = useRef<AbortController | null>(null);
   const [granularity, setGranularity] = useState<Granularity>("month");
@@ -50,10 +59,10 @@ export default function ReferrerDetail() {
     controller.current?.abort();
     const request = new AbortController(); controller.current = request;
     setError(null); setData(null);
-    api.get<ReferrerDetailResponse>(`/sales-data/referrers/${encodeURIComponent(id)}?${periodQuery}&granularity=${granularity}`, { signal: request.signal })
+    api.get<ReferrerDetailResponse>(`/sales-data/referrers/${encodeURIComponent(id)}?${periodQuery}&granularity=${granularity}&people_offset=${peopleOffset}`, { signal: request.signal })
       .then(value => { if (version === generation.current) setData(value); })
       .catch((cause: unknown) => { if (version === generation.current && !request.signal.aborted) setError(typeof (cause as { detail?: unknown })?.detail === "string" ? (cause as { detail: string }).detail : "Could not load reference"); });
-  }, [id, granularity, periodQuery]);
+  }, [id, granularity, periodQuery, peopleOffset]);
   useEffect(() => { load(); return () => { generation.current += 1; controller.current?.abort(); }; }, [load]);
 
   const exportData = (section: string, rows: (string | number | null)[][]) => {
@@ -66,6 +75,8 @@ export default function ReferrerDetail() {
       title={data?.referrer.name || "Referrer"}
       subtitle={data ? `${floorId === "third-floor" ? "" : `₹${fmtMoney(data.total_revenue)} sales · `}${data.total_revenue_rnb || floorId === "third-floor" ? `RNB ${fmtMoney(data.total_revenue_rnb || 0)} Furniture sales · ` : ""}${periodLabel}` : undefined}
     >
+      {period ? <SalesFilters floors={floors} floorId={reportFloor} onFloorChange={floorId => router.setParams({ floorId })} period={period}
+        onPeriodChange={next => router.setParams({ preset: next.preset, dateFrom: next.dateFrom || "", dateTo: next.dateTo || "", date_from: "", date_to: "" })} /> : null}
       <MobileFilterSection testID="referrer-filters">
       <PillTabs
         testID="referrer-detail-granularity"
@@ -82,6 +93,19 @@ export default function ReferrerDetail() {
       {data ? (
         <View style={{ gap: spacing.lg }}>
           <Text style={type.body}>{[data.referrer.company, referrerCode(data.referrer.id, data.referrer.type)].filter(Boolean).join(" · ")}</Text>
+          {data.referred_people ? <View testID="referrer-clients" style={{ gap: spacing.s12, minWidth: 0 }}>
+            <Text accessibilityRole="header" aria-level={2} style={type.titleSm}>Clients brought · {(data.customers_acquired || 0).toLocaleString("en-IN")}</Text>
+            <Text style={type.bodySm}>Walk-ins and confirmed or non-confirmed customers, counted once per person in {periodLabel}. Sales below use order confirmation dates.</Text>
+            {data.referred_people.map((person, index) => <View key={index} testID={`referrer-client-${index}`} style={{ gap: spacing.s4, paddingVertical: spacing.s12, borderBottomWidth: 1, borderBottomColor: colors.border, minWidth: 0 }}>
+              <Text style={type.bodyStrong}>{person.customer_name || "Unnamed customer"}</Text>
+              <Text style={type.bodySm}>{person.confirmed ? "Confirmed customer" : person.sources.includes("walkins") ? "Walk-in · Not confirmed" : "Not confirmed"}{person.first_referred_at ? ` · ${new Date(person.first_referred_at).toLocaleDateString("en-IN", { timeZone: "UTC", day: "numeric", month: "short", year: "numeric" })}` : ""}</Text>
+            </View>)}
+            {!data.customers_acquired ? <Text style={type.body}>No referred people in this range.</Text> : <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.s8, alignItems: "center" }}>
+              <Text style={type.bodySm}>Showing {peopleOffset + 1}–{peopleOffset + data.referred_people.length} of {data.customers_acquired}</Text>
+              {peopleOffset ? <Button label="Previous clients" variant="secondary" onPress={() => setPeopleOffset(offset => Math.max(0, offset - 100))} /> : null}
+              {peopleOffset + data.referred_people.length < data.customers_acquired! ? <Button label="More clients" variant="secondary" onPress={() => setPeopleOffset(offset => offset + 100)} /> : null}
+            </View>}
+          </View> : null}
           {data.furniture_quotations?.length ? <View style={{ gap: spacing.s12 }}>
             <Text accessibilityRole="header" aria-level={2} style={type.titleSm}>Furniture final ledgers</Text>
             <Text style={type.bodySm}>{data.furniture_quotations_total || data.furniture_quotations.length} final ledgers · RNB {fmtMoney(data.total_revenue_rnb || 0)} sales</Text>
@@ -110,7 +134,7 @@ export default function ReferrerDetail() {
                 {data.quotations.map((q) => (
                   <View key={q.id} testID={`referrer-quote-row-${q.id}`} style={{ minHeight: 56, paddingVertical: spacing.xs, borderBottomWidth: 1, borderBottomColor: colors.border, flexDirection: "row", alignItems: "center", gap: spacing.md }}>
                     <View style={{ flex: 1, minWidth: 0, gap: 2 }}><Text style={type.bodyStrong} numberOfLines={2}>{q.customer_name}</Text><Text style={[type.caption, { color: colors.onSurfaceMuted }]} numberOfLines={1}>{q.number}</Text></View>
-                    <Text style={[type.bodyStrong, { fontVariant: ["tabular-nums"] }]}>₹{fmtMoney(q.grand_total)}</Text>
+                    <Text style={[type.bodyStrong, { flexShrink: 1, minWidth: 0, textAlign: "right", fontVariant: ["tabular-nums"] }]}>₹{fmtMoney(q.grand_total)}</Text>
                   </View>
                 ))}
               </View>

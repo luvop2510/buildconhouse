@@ -39,3 +39,21 @@ def test_brand_scope_uses_the_filtered_order_cohort():
 def test_forbidden_floor_is_rejected_before_any_read():
     with pytest.raises(FloorAccessError):
         acquisition_pipeline(AnalyticsFilter(floor_id="first-floor"), ["ground-floor"], (None, None))
+
+
+def test_reference_people_timeout_is_bounded_and_returns_a_retryable_error():
+    import asyncio
+    from fastapi import HTTPException
+    from pymongo.errors import ExecutionTimeout
+    from services.analytics.lead_referrals import gather_acquired_people
+    class Cursor:
+        async def to_list(self, size):
+            raise ExecutionTimeout("query budget expired")
+    class Collection:
+        def aggregate(self, pipeline, **options):
+            assert options == {"maxTimeMS": 10000, "allowDiskUse": True}
+            assert pipeline[0]["$match"]["floor_id"] == {"$in": ["first-floor"]}
+            return Cursor()
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(gather_acquired_people({"customers": Collection()}, AnalyticsFilter(referrer_id="r"), ["first-floor"], (None, None)))
+    assert error.value.status_code == 503

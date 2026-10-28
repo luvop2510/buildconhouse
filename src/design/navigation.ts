@@ -33,12 +33,11 @@ export const PRIMARY: NavItem[] = [
   { href: "/(admin)/godown-stock", label: "Godown stock", icon: "archive", match: "godown-stock", floors: [SANITARY_FLOOR_ID] },
   { href: "/(admin)/payments", label: "Payments", icon: "credit-card", match: "payments" },
   { href: "/(admin)/payments-list", label: "Fully paid orders", icon: "list", match: "payments-list" },
-  { href: "/(admin)/followups", label: "Follow-ups", icon: "phone-call", match: "followups" },
+  { href: "/(admin)/followups", label: "Follow-ups", icon: "phone-call", match: "followups", floors: [SANITARY_FLOOR_ID, TILES_FLOOR_ID, FURNITURE_FLOOR_ID] },
   { href: "/(admin)/notebook/furniture-quotations", label: "RNB quotations", icon: "file-text", match: "furniture-quotations", floors: [FURNITURE_FLOOR_ID] },
 ];
 
 export const SECONDARY: NavItem[] = [
-  { href: "/(admin)/notifications", label: "Notifications", icon: "bell", match: "notifications" },
   { href: "/(admin)/sales-data", label: "Sales Data", icon: "trending-up", match: "sales-data" },
   { href: "/(admin)/team-assign", label: "Team assign", icon: "users", match: "team-assign", roles: ["owner"] },
   { href: "/(admin)/team", label: "Team", icon: "user-check", match: "team", roles: ["owner"] },

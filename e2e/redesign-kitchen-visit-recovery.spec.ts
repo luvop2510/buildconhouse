@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { mockSession } from './audit-fixtures';
 
-for (const mode of ['autosave', 'manual'] as const) {
+for (const mode of ['autosave', 'manual', 'next'] as const) {
   test(`critical Kitchen Visit ${mode} confirms a lost saved response before Next CAD`, async ({ page }) => {
     await mockSession(page, '/kitchen/visit-recovery/stages/visit', false, { floorId: 'second-floor' });
     let project: any = {
@@ -43,9 +43,10 @@ for (const mode of ['autosave', 'manual'] as const) {
     if (mode === 'manual') await page.getByTestId('kitchen-visit-status-visited').click();
     await page.getByTestId('kitchen-visit-notes').fill('Saved visit notes must survive a lost response');
     if (mode === 'manual') await page.getByTestId('kitchen-visit-save').click();
-    await expect(page.getByTestId('kitchen-visit-autosave')).toHaveText('Details saved');
+    if (mode === 'next') await page.getByTestId('kitchen-advance-cad').click();
+    else await expect(page.getByTestId('kitchen-visit-autosave')).toHaveText('Details saved');
     await expect(page.getByText('Could not save', { exact: true })).toHaveCount(0);
-    await page.getByTestId('kitchen-advance-cad').click();
+    if (mode !== 'next') await page.getByTestId('kitchen-advance-cad').click();
     await expect(page).toHaveURL(/\/stages\/cad(?:\?|$)/);
     expect(writes.map(body => body.command)).toEqual(['save_visit', 'move_stage']);
     expect(writes[1].expected_version).toBe(2);

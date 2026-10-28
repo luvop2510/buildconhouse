@@ -122,13 +122,32 @@ export function KitchenProjectProvider({ id, returnTo, children }: { id: string;
     return () => controller.abort();
   }, [id, retry, acceptProject]);
   const updateProject = acceptProject;
-  const command = (name: KitchenCommand, payload: Record<string, unknown>, background = false) => {
+  const command = (name: KitchenCommand, payload: Record<string, unknown>, background = false): Promise<boolean> => {
     const current = saved.current;
     if (!current || loading || failure || commandPending.current) return Promise.resolve(false);
     // A response/reload can publish before React rerenders the timer that captured this draft.
     if (background && current.version !== project?.version) return Promise.resolve(false);
     // Completing legacy installation may already advance the saved project.
     if (name === "move_stage" && current.stage === payload.target_stage) return Promise.resolve(true);
+    // Next can arrive before the debounce; acknowledge routine entries before leaving their editable stage.
+    if (name === "move_stage" && ["lead", "visit", "cad"].includes(current.stage)) {
+      const stage = current.stage as "lead" | "visit" | "cad";
+      const key = `${stage}.value`;
+      const draft = liveDrafts.current[key] as Record<string, unknown> | undefined;
+      if (draft && !sameDraft(draft, current[stage]) && !isDraftStale(key)) {
+        const savedFields = current[stage] as unknown as Record<string, unknown>;
+        const decisionFields = stage === "lead" ? ["status", "lost_reason", "referrer_id", "referrer_type"]
+          : stage === "visit" ? ["status"] : ["received"];
+        const decisionsUnchanged = decisionFields.every(field => (draft[field] ?? "") === (savedFields[field] ?? ""));
+        const progressUnchanged = stage !== "cad" || !isDraftStale("cad.progress")
+          && (liveDrafts.current["cad.progress"] ?? String(current.cad.progress)) === String(current.cad.progress);
+        if (decisionsUnchanged && progressUnchanged && (stage !== "lead" || String(draft.site_location || "").trim())) {
+          const fields = stage === "visit" ? Object.fromEntries(["status", "visit_date", "display_model", "notes"].filter(field => draft[field] !== undefined).map(field => [field, draft[field]])) : draft;
+          return command(stage === "lead" ? "edit_lead" : stage === "visit" ? "save_visit" : "save_cad", fields)
+            .then(accepted => accepted ? command(name, payload) : false);
+        }
+      }
+    }
     // Responses acknowledge only the request snapshot, never entries typed while it was pending.
     const submittedDrafts = { ...liveDrafts.current };
     const submittedBaselines = { ...baselines.current };

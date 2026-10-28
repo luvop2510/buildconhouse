@@ -8,7 +8,7 @@ import { filterValues, matchesFilter, toggleFilterValue } from "@/src/utils/filt
 // destination). Layout follows the FORGE V2 reference — Forge design language.
 // -----------------------------------------------------------------------------
 import Feather from "@expo/vector-icons/Feather";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { type Dispatch, type SetStateAction, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, FlatList, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { Text, TextInput } from "@/src/components/AppText";
@@ -111,6 +111,8 @@ export default function PurchasesScreen() {
   const { selectedFloorId } = useFloorAccess();
   const insets = useSafeAreaInsets();
   const activeFloor = useRef(selectedFloorId);
+  const floorGeneration = useRef(0);
+  if (activeFloor.current !== selectedFloorId) floorGeneration.current += 1;
   activeFloor.current = selectedFloorId;
 
   // View + filter state
@@ -200,15 +202,19 @@ export default function PurchasesScreen() {
   // -----------------------------------
   // Data loaders
   // -----------------------------------
+  const facetSequence = useRef(0);
   const loadFacets = useCallback(async ({ throwOnError = false }: { throwOnError?: boolean } = {}) => {
     if (!selectedFloorId || activeFloor.current !== selectedFloorId || !mounted.current) return;
+    const sequence = ++facetSequence.current;
+    const generation = floorGeneration.current;
+    const current = () => mounted.current && generation === floorGeneration.current && sequence === facetSequence.current;
     try {
-      const [b, s] = await Promise.all([
-        api.get<{ all: number; brands: BrandFacet[] }>("/purchases/brands", { floorId: selectedFloorId }),
-        api.get<StageMeta[]>("/purchases/stages", { floorId: selectedFloorId }),
+      await Promise.all([
+        api.get<{ all: number; brands: BrandFacet[] }>("/purchases/brands", { floorId: selectedFloorId })
+          .then(b => { if (current()) { setBrands(b.brands); setBrandsTotal(b.all); } }),
+        api.get<StageMeta[]>("/purchases/stages", { floorId: selectedFloorId })
+          .then(s => { if (current()) setStages(s); }),
       ]);
-      if (!mounted.current || activeFloor.current !== selectedFloorId) return;
-      setBrands(b.brands); setBrandsTotal(b.all); setStages(s);
     } catch (e) {
       if (throwOnError) throw e;
       /* Purchases remains usable when a secondary facet cannot load. */
@@ -219,14 +225,15 @@ export default function PurchasesScreen() {
   const loadCustomers = useCallback(async () => {
     if (!selectedFloorId || activeFloor.current !== selectedFloorId || !mounted.current) return;
     const sequence = ++customerRequestSequence.current;
+    const generation = floorGeneration.current;
     setLoadingCustomers(true);
     setCustomersError(null);
     try {
       const loadedCustomers = await getPurchaseCustomers(undefined, false, selectedFloorId);
-      if (mounted.current && activeFloor.current === selectedFloorId && sequence === customerRequestSequence.current) { setCustomers(loadedCustomers); setCustomersError(null); }
+      if (mounted.current && generation === floorGeneration.current && sequence === customerRequestSequence.current) { setCustomers(loadedCustomers); setCustomersError(null); }
     }
-    catch (e: any) { if (mounted.current && activeFloor.current === selectedFloorId && sequence === customerRequestSequence.current) setCustomersError(e?.detail || "Could not load customers"); }
-    finally { if (mounted.current && activeFloor.current === selectedFloorId && sequence === customerRequestSequence.current) setLoadingCustomers(false); }
+    catch (e: any) { if (mounted.current && generation === floorGeneration.current && sequence === customerRequestSequence.current) setCustomersError(e?.detail || "Could not load customers"); }
+    finally { if (mounted.current && generation === floorGeneration.current && sequence === customerRequestSequence.current) setLoadingCustomers(false); }
   }, [selectedFloorId]);
 
   const loadItems = useCallback(async ({ throwOnError = false, append = false, quiet = false }: { throwOnError?: boolean; append?: boolean; quiet?: boolean } = {}) => {
@@ -266,9 +273,9 @@ export default function PurchasesScreen() {
     }
   }, [view, brand, customerFilter, committedQ, stage, isDesktop, selectedFloorId]);
 
-  useEffect(() => { loadFacets(); }, [loadFacets]);
-  useEffect(() => { if (view === "customers" || view === "stock") void loadCustomers(); }, [loadCustomers, view]);
-  useEffect(() => { loadShortages(); }, [loadShortages]);
+  useFocusEffect(useCallback(() => { void loadFacets(); }, [loadFacets]));
+  useFocusEffect(useCallback(() => { if (view === "customers" || view === "stock") void loadCustomers(); }, [loadCustomers, view]));
+  useFocusEffect(useCallback(() => { void loadShortages(); }, [loadShortages]));
   useEffect(() => {
     if (!customerWorkspaceId || !selectedFloorId) { setCustomerWorkspace(null); return; }
     const controller = new AbortController();
@@ -283,11 +290,12 @@ export default function PurchasesScreen() {
     const t = setTimeout(() => setCommittedQ(q.trim()), 300);
     return () => clearTimeout(t);
   }, [q]);
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     if (view === "customers") return;
-    loadItems();
+    // Navigator screens may stay mounted; returning must revalidate live stock.
+    void loadItems({ quiet: true });
     return () => requestController.current?.abort();
-  }, [loadItems, view]);
+  }, [loadItems, view]));
 
   const refreshPurchases = useCallback(async ({ strict = false }: { strict?: boolean } = {}) => {
     await Promise.all([

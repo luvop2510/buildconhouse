@@ -134,6 +134,10 @@ jobs:
         env:
           SALES_TEST_MONGO_URL: mongodb://127.0.0.1:27017
         run: python -m pytest tests/integration/test_sales_summary_mongo.py tests/integration/test_furniture_reference_analytics_mongo.py -v
+      - name: Verify stock receipt races, catalog reuse and reference walk-ins
+        env:
+          DISPOSABLE_MONGO_TEST_URL: mongodb://127.0.0.1:27017
+        run: python -m pytest tests/integration/test_godown_movements_mongo.py tests/integration/test_reference_people_mongo.py -v
       - name: Start isolated customer deletion replica
         run: |
           docker run -d --name customer-deletion-mongo --network host mongo:7.0 \

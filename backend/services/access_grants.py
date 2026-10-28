@@ -39,7 +39,7 @@ RESOURCE_REGISTRY["orders"].update(floor_ids=["ground-floor"], description="Mana
 RESOURCE_REGISTRY["godown_stock"].update(floor_ids=["first-floor"], description="Manage godown stock and customer transfers.")
 RESOURCE_REGISTRY["purchases"].update(floor_ids=["first-floor"], description="Manage Sanitary Bathroom purchases and purchasing stages.")
 RESOURCE_REGISTRY["payments"].update(description="Manage payments and the Fully paid orders page.")
-RESOURCE_REGISTRY["notifications"].update(actions=["view"], description="View your notifications for the selected floor.")
+RESOURCE_REGISTRY["notifications"].update(retired=True, actions=["view"], description="Retired Notifications page; existing grants remain available for revocation.")
 RESOURCE_REGISTRY["reports"].update(actions=["view", "export"])
 RESOURCE_REGISTRY["followups"].update(floor_ids=["ground-floor", "first-floor", "second-floor", "third-floor"], description="Manage the selected floor's sales follow-up inbox.")
 for _resource in ("catalog", "purchases", "godown_stock", "payments", "orders", "walkins"):
@@ -130,6 +130,7 @@ POST_UPDATE_ROUTE_PATTERNS = (
     r"/api/godown-stock/[^/]+/allocate",
     r"/api/godown-stock/[^/]+/image",
     r"/api/godown-stock/[^/]+/quantity-count",
+    r"/api/godown-stock/[^/]+/movements",
     r"/api/quotations/[^/]+/items/[^/]+/cancel",
     r"/api/quotations/[^/]+/move-to-quotation",
     r"/api/quotations/[^/]+/place-order/confirm",

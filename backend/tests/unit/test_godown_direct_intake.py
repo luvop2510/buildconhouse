@@ -9,6 +9,19 @@ from fastapi import HTTPException
 from routes import godown_stock_routes as godown
 from routes import purchases_tracker as tracker
 from routes import quotation_routes as quotation
+from routes.godown_stock_routes import _intake_catalog_product
+
+
+@pytest.fixture(autouse=True)
+def catalog_identity(monkeypatch):
+    async def register(body, floor):
+        return {"id": "catalog-manual", "floor_id": floor, "sku": body.sku, "name": body.name, "brand_name": body.brand,
+                "mrp": body.unit_price, "images": [str(body.image)] if body.image else [], "size": body.size}
+    async def images(products):
+        return {product["id"]: (product.get("images") or [None])[0] for product in products}
+    monkeypatch.setattr(godown, "_catalog_images", images)
+    monkeypatch.setattr(godown, "_intake_catalog_product", register)
+    monkeypatch.setattr(godown.catalog_service, "schedule_catalog_refresh", lambda: None)
 
 
 class Cursor:
@@ -38,7 +51,7 @@ def test_direct_manual_intake_has_no_customer_source(monkeypatch):
     monkeypatch.setattr(godown, "log_event", lambda **_kwargs: asyncio.sleep(0))
     row = asyncio.run(godown.direct_intake(godown.DirectIntake(qty=3, sku="321", name="Valve", brand="Acme", image="https://example.com/valve.jpg", size="10mm", feature="brass", category="Fittings", unit_price=125, price_variants=[{"label": "Chrome", "price": 140}]), user()))
     assert row["floor_id"] == "first-floor"
-    assert row["product_id"] == f"godown:{row['id']}"
+    assert row["product_id"] == "catalog-manual"
     assert row["available_qty"] == 3
     assert row["source_type"] == "manual"
     assert row["unit_price"] == 125
@@ -246,3 +259,20 @@ def test_stock_only_quotation_line_requires_matching_lot_and_floor(monkeypatch):
     assert scoped == {"id": "lot-1", "product_id": "godown:lot-1", "source_type": {"$in": ["manual", "warehouse_import"]}, "floor_id": "first-floor"}
     forged = matching.model_copy(update={"product_id": "godown:another-lot"})
     assert asyncio.run(quotation._manual_stock_line(forged, user())) is None
+
+
+def test_manual_intake_accepts_the_forms_empty_optional_photo_but_rejects_unsafe_urls():
+    from pydantic import ValidationError
+    for value in ("", "   ", None):
+        assert godown.DirectIntake(qty=1, sku="SKU", name="Basin", unit_price=20, image=value).image is None
+    for value in ("http://example.com/photo.jpg", "https://user:password@example.com/photo.jpg"):
+        with pytest.raises(ValidationError):
+            godown.DirectIntake(qty=1, sku="SKU", name="Basin", unit_price=20, image=value)
+
+
+@pytest.mark.parametrize("changes", [{"sku": "  ", "name": "Basin"}, {"sku": "BASIN", "name": None}])
+def test_reusable_catalog_registration_requires_labelled_material_before_writes(monkeypatch, changes):
+    monkeypatch.setattr(godown, "db", SimpleNamespace())
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(_intake_catalog_product(godown.DirectIntake(qty=1, **changes), "first-floor"))
+    assert error.value.status_code == 422

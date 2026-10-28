@@ -299,3 +299,33 @@ test('critical a godown quotation deep link rejects an unrecorded price instead 
   await expect(page.getByText('Record a unit price in Godown stock before adding this lot to a quotation.', { exact: true })).toBeVisible();
   await expect(page.locator('[data-testid^="qty-godown-unpriced-"]')).toHaveCount(0);
 });
+
+
+test('critical restock an empty product and retry the same stock movement after a lost response', async ({ page }, info) => {
+  await mockSession(page, '/godown-stock', false);
+  let lot: any = { id: 'empty-lot', product_id: 'catalog-id', sku: 'EMPTY-1', name: 'Restock basin', qty_received: 2, available_qty: 0, unit_price: 100, updated_at: 'v1', stock_movements: [] };
+  await page.route('**/api/godown-stock?**', route => route.fulfill({ json: { lots: [lot], brands: [], total_available_qty: lot.available_qty, total_stock_value: lot.available_qty * 100, unpriced_lot_count: 0 } }));
+  const commands: any[] = [];
+  await page.route('**/api/godown-stock/empty-lot/movements', route => {
+    commands.push(route.request().postDataJSON());
+    if (commands.length === 1) {
+      lot = { ...lot, available_qty: 4, qty_received: 6, updated_at: 'v2', stock_movements: [{ id: 'movement', kind: 'receipt', qty: 4, occurred_on: '2026-10-28', actor_name: 'QA user', reason: 'Supplier delivery' }] };
+      return route.fulfill({ status: 504, json: { detail: 'Response lost after commit. Retry this movement.' } });
+    }
+    expect(commands[1]).toEqual(commands[0]);
+    return route.fulfill({ json: { ...lot, idempotent: true } });
+  });
+  await page.goto('/godown-stock');
+  await page.getByTestId('godown-movement-empty-lot').click();
+  await page.getByTestId('godown-movement-qty-empty-lot').fill('4');
+  await page.getByTestId('godown-movement-date-empty-lot').fill('2026-10-28');
+  await page.getByTestId('godown-movement-reason-empty-lot').fill('Supplier delivery');
+  await page.getByTestId('godown-movement-save-empty-lot').click();
+  await expect(page.getByRole('button', { name: 'Retry same movement', exact: true })).toBeVisible();
+  await expect(page.getByTestId('godown-movement-qty-empty-lot')).toHaveJSProperty('readOnly', true);
+  await page.getByTestId('godown-movement-save-empty-lot').click();
+  await expect(page.getByTestId('godown-movement-save-empty-lot')).toHaveCount(0);
+  expect(commands).toHaveLength(2);
+  expect(lot.available_qty).toBe(4);
+  await page.screenshot({ path: info.outputPath('restocked-product.png'), fullPage: true });
+});

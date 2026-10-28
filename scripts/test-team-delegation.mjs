@@ -133,3 +133,8 @@ assert.deepEqual(togglePage({ floorIds: ['second-floor'], grants: [] }, 'second-
 assert.equal(isDelegationCatalog({ resources: [{ ...currentKitchen, assignable_floor_ids: ['first-floor'] }], action_descriptions: {view:'Read',create:'Add',update:'Edit',export:'Download'} }, floors.map(id => ({id,name:id}))), false);
 await import('./test-kitchen-workspace-pages.mjs');
 console.log('Kitchen catalog preserves existing access and rejects obsolete new assignments');
+
+for (const floor of floors) {
+  assert.equal(staffLandingPath(null, [{ resource: 'notifications', floor_id: floor, actions: ['view'] }], floor), '/(admin)/access', 'Retired-only notification grants have a stable landing');
+}
+assert.equal(staffLandingPath(null, [{ resource: 'followups', floor_id: 'second-floor', actions: ['view'] }], 'second-floor'), '/(admin)/access', 'Kitchen follow-up grants cannot choose a retired page');

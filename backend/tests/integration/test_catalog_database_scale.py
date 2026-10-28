@@ -193,7 +193,6 @@ def test_database_matches_warm_cache_for_sort_details_related_sizes_media_and_us
             await catalog.note_product_usage('user', ['p1'], '2026-10-11')
             assert (await catalog.get_catalog_snapshot()).database_backed
             assert await catalog.product_by_id('p4', ['first-floor']) is None
-            monkeypatch.setattr(purchase_images, 'get_catalog_snapshot', catalog.get_catalog_snapshot)
             rows = [{'product_id':'p0','floor_id':'first-floor','sku':'SKU-00000','image':'old.png'}]
             await hydrate_purchase_images(rows)
             assert rows[0]['image'] == image['public_url']

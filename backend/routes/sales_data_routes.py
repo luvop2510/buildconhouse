@@ -11,8 +11,8 @@ from __future__ import annotations
 from services.multi_filters import filter_values, filter_condition
 
 from collections import defaultdict
-from datetime import datetime
-from typing import Literal, Optional
+from datetime import datetime, timezone
+from typing import Annotated, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -23,6 +23,7 @@ from services.pricing import per_line_net_amounts
 from services.analytics.kitchen_referrals import kitchen_referral_records
 from services.analytics.filters import AnalyticsFilter, FloorAccessError, build_match
 from services.analytics.furniture import gather_furniture_reference_records
+from services.analytics.lead_referrals import gather_acquired_people
 
 router = APIRouter(prefix="/sales-data", tags=["sales-data"])
 
@@ -92,9 +93,11 @@ def _report_floor_ids(user: UserPublic, floor_id: Optional[str]) -> Optional[lis
 
 
 async def _confirmed_quotations(
-    floor_ids: Optional[list[str]], date_from: Optional[str], date_to: Optional[str],
+    floor_ids: Optional[list[str]], date_from: Optional[str], date_to: Optional[str], *, referrer_id: Optional[str] = None,
 ) -> list[dict]:
     query: dict = {"status": {"$in": list(CONFIRMED_STATUSES)}}
+    if referrer_id:
+        query["referrer_id"] = referrer_id
     if floor_ids is not None:
         query["floor_id"] = {"$in": floor_ids}
     if date_from or date_to:
@@ -175,9 +178,23 @@ async def referrer_detail(
     date_to: Optional[str] = Query(None),
     granularity: Granularity = Query("month"),
     preset: Optional[str] = None,
+    people_offset: Annotated[int, Query(ge=0)] = 0,
     user: UserPublic = Depends(require_roles("owner", "admin", "manager")),
 ):
     floor_ids = _report_floor_ids(user, floor_id)
+    if preset == "custom" and (not date_from or not date_to):
+        raise HTTPException(422, "Custom ranges require start and end dates")
+    try:
+        def normalized(value):
+            if value is None:
+                return None
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            return parsed.replace(tzinfo=parsed.tzinfo or timezone.utc).astimezone(timezone.utc).isoformat()
+        date_from, date_to = normalized(date_from), normalized(date_to)
+        if date_from and date_to and (date_to < date_from or (preset == "custom" and date_to == date_from)):
+            raise ValueError("reversed date range")
+    except (ValueError, TypeError):
+        raise HTTPException(422, "Enter a valid date range with the end after the start") from None
     furniture_end = date_to
     if preset:
         from services.analytics.periods import resolve
@@ -190,7 +207,10 @@ async def referrer_detail(
     elif furniture_end:
         from datetime import timedelta
         furniture_end = (datetime.fromisoformat(furniture_end.replace("Z", "+00:00")) + timedelta(microseconds=1)).isoformat()
-    quotations = await _confirmed_quotations(floor_ids, date_from, date_to)
+    acquired = await gather_acquired_people(
+        db, AnalyticsFilter(referrer_id=referrer_id), floor_ids, (date_from, furniture_end), offset=people_offset,
+    )
+    quotations = await _confirmed_quotations(floor_ids, date_from, date_to, referrer_id=referrer_id)
     quotations = [q for q in quotations if q.get("referrer_id") == referrer_id and q.get("floor_id") in {"ground-floor", "first-floor"}]
     kitchen_scope = {"referrer_id": referrer_id, **({"floor_id": {"$in": floor_ids}} if floor_ids is not None else {})}
     bounds = {key: value for key, value in (("$gte", date_from), ("$lte", date_to)) if value}
@@ -210,13 +230,13 @@ async def referrer_detail(
     from services.referrer_identity import referrer_query as directory_query
     referrer = await db.referrers.find_one(directory_query(referrer_query), {"_id": 0})
     if not referrer:
-        if not quotations and not furniture_rows:
+        if not quotations and not furniture_rows and not acquired["people"]:
             raise HTTPException(status_code=404, detail="Referrer not found")
         # The referrer record was renamed/deleted after being credited on a
         # won quotation — a real revenue history shouldn't dead-end into a
         # 404 just because the lookup doc is gone; fall back to whatever
         # was already denormalized onto the quotation at the time.
-        sample = quotations[0] if quotations else furniture_rows[0]
+        sample = quotations[0] if quotations else furniture_rows[0] if furniture_rows else acquired["people"][0]
         referrer = {
             "id": referrer_id, "name": sample.get("referrer_name") or "Unknown",
             "type": sample.get("referrer_type"), "phone": None, "company": None,
@@ -242,6 +262,9 @@ async def referrer_detail(
 
     return {
         "referrer": referrer,
+        "customers_acquired": acquired["total"],
+        "referred_people": acquired["people"],
+        "people_offset": people_offset,
         "total_revenue": round(sum(q.get("grand_total", 0) for q in quotations), 2),
         "trend": trend,
         "quotations": quotes,

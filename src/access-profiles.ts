@@ -52,7 +52,7 @@ export function staffLandingPath(profile?: AccessProfile | null, grants?: Person
       payments: "/(admin)/payments", quotations: "/(admin)/quotations", catalog: "/(admin)/catalog",
       customers: "/(admin)/customers", purchases: "/(admin)/purchases", followups: "/(admin)/followups",
       orders: "/(admin)/tiles/orders", walkins: "/(admin)/walkins", dashboard: "/(admin)/dashboard",
-      notifications: "/(admin)/notifications", tiles: "/(admin)/tiles", godown_stock: "/(admin)/godown-stock",
+      tiles: "/(admin)/tiles", godown_stock: "/(admin)/godown-stock",
       kitchen_projects: "/(admin)/kitchen",
       furniture_quotations: "/(admin)/notebook/furniture-quotations", sales_data: "/(admin)/sales-data",
   };

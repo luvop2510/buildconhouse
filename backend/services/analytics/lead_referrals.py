@@ -6,10 +6,13 @@ records without a phone retain their explicit customer/lead identity.
 """
 from dataclasses import replace
 
+from fastapi import HTTPException
+from pymongo.errors import ExecutionTimeout
+
 from services.analytics.filters import AnalyticsFilter, build_match
 
 
-def acquisition_pipeline(f: AnalyticsFilter, floors, window, kind=None, order_match=None, *, limit=100):
+def _acquisition_sources(f: AnalyticsFilter, floors, window, kind=None, order_match=None, *, details=False):
     def source(collection):
         match = build_match(replace(f, status="any", referrer_type=kind), floors, window)
         if collection == "customers" and "customer_id" in match:
@@ -31,6 +34,9 @@ def acquisition_pipeline(f: AnalyticsFilter, floors, window, kind=None, order_ma
         for character in ("+", " ", "-", "(", ")", "."):
             phone = {"$replaceAll": {"input": phone, "find": character, "replacement": ""}}
         stages = [{"$match": match}]
+        if details and collection == "kitchen_projects":
+            from services.analytics.kitchen_referrals import kitchen_referral_pipeline
+            stages.extend(kitchen_referral_pipeline({}, include_leads=True))
         if collection == "quotations":
             stages.extend([
                 {"$lookup": {"from": "customers", "localField": "customer_id", "foreignField": "id", "as": "customer_identity"}},
@@ -40,7 +46,14 @@ def acquisition_pipeline(f: AnalyticsFilter, floors, window, kind=None, order_ma
             *stages,
             {"$project": {"referrer_id": 1, "referrer_name": 1, "referrer_type": 1,
                           "phone_key": phone,
-                          "identity": {"$ifNull": ["$customer_id", {"$ifNull": ["$lead_group_id", "$id"]}]}}},
+                          "identity": {"$ifNull": ["$customer_id", {"$ifNull": ["$lead_group_id", "$id"]}]},
+                          "customer_name": {"$ifNull": ["$customer_name", {"$ifNull": ["$name", "$customer.name"]}]}, "created_at": 1,
+                          "source": {"$literal": collection}, "floor_id": 1,
+                          "confirmed": {"$cond": [{"$or": [
+                              {"$in": ["$status", ["ordered", "won"]]},
+                              {"$and": [{"$eq": [{"$literal": collection}, "furniture_quotations"]},
+                                         {"$ne": [{"$ifNull": ["$finalized_at", None]}, None]}]},
+                          ]}, 1, 0]}}},
             {"$set": {"person": {"$cond": [
                 {"$gte": [{"$strLenCP": "$phone_key"}, 10]},
                 {"$concat": ["phone:", {"$substrCP": ["$phone_key", {"$subtract": [{"$strLenCP": "$phone_key"}, 10]}, 10]}]},
@@ -53,6 +66,11 @@ def acquisition_pipeline(f: AnalyticsFilter, floors, window, kind=None, order_ma
     if not f.brand_id:
         for collection in ("walkins", "followups", "quotations", "furniture_quotations", "kitchen_projects"):
             pipeline.append({"$unionWith": {"coll": collection, "pipeline": source(collection)}})
+    return first, pipeline
+
+
+def acquisition_pipeline(f: AnalyticsFilter, floors, window, kind=None, order_match=None, *, limit=100):
+    first, pipeline = _acquisition_sources(f, floors, window, kind, order_match)
     pipeline.extend([
         {"$group": {"_id": {"referrer": "$referrer_id", "person": "$person"},
                     "name": {"$max": "$referrer_name"}, "type": {"$max": "$referrer_type"}}},
@@ -85,3 +103,25 @@ def merge_acquisitions(relationships, acquired):
         if row.get("name"):
             existing["name"] = row["name"]
     return sorted(by_id.values(), key=lambda row: (-row.get("revenue", 0), -row.get("customers_acquired", 0), row["id"]))[:100]
+
+
+async def gather_acquired_people(db, f: AnalyticsFilter, floors, window, *, offset=0, limit=100):
+    """Exact total and bounded, deduplicated people for one reference drilldown."""
+    collection, pipeline = _acquisition_sources(f, floors, window, details=True)
+    pipeline.extend([
+        {"$group": {"_id": "$person", "customer_name": {"$max": "$customer_name"},
+                    "referrer_name": {"$max": "$referrer_name"}, "referrer_type": {"$max": "$referrer_type"},
+                    "first_referred_at": {"$min": "$created_at"}, "confirmed": {"$max": "$confirmed"},
+                    "sources": {"$addToSet": "$source"}, "floor_ids": {"$addToSet": "$floor_id"}}},
+        {"$facet": {
+            "total": [{"$count": "count"}],
+            "people": [{"$sort": {"first_referred_at": -1, "_id": 1}}, {"$skip": offset}, {"$limit": limit},
+                       {"$project": {"_id": 0}}],
+        }},
+    ])
+    try:
+        rows = await db[collection].aggregate(pipeline, maxTimeMS=10000, allowDiskUse=True).to_list(1)
+    except ExecutionTimeout:
+        raise HTTPException(503, "Reference details took too long. Narrow the date range and retry.") from None
+    result = rows[0] if rows else {}
+    return {"total": next(iter(result.get("total", [])), {}).get("count", 0), "people": result.get("people", [])}

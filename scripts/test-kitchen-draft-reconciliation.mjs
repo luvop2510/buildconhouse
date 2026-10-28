@@ -266,8 +266,44 @@ for (const confirm of [false, true]) for (const background of [false, true]) for
   assert.equal(view.state.dirty, newerTyping, 'Confirmation acknowledges only the submitted snapshot');
   assert.equal(view.state.isDraftStale('visit.value'), false);
   assert.equal(await view.state.command('move_stage', { target_stage: 'cad' }), true);
-  assert.equal(view.writes.length, 2, 'Visit confirmation must never repeat its POST');
-  assert.equal(view.writes[1].version, original.version + 1, 'Next CAD uses the confirmed saved version');
+  assert.deepEqual(view.writes.map(write => write.command), newerTyping ? ['save_visit', 'save_visit', 'move_stage'] : ['save_visit', 'move_stage'], 'Only newer unsaved typing adds a fresh save before Next; confirmation never replays the old POST');
+  assert.equal(view.writes.at(-1).version, original.version + (newerTyping ? 2 : 1), 'Next CAD uses the latest acknowledged version');
+  assert.equal(persisted.visit.notes, newerTyping ? 'Typed while confirming' : 'Submitted visit');
   assert.equal(view.render().project.stage, 'cad');
 }
 console.log('Actual Kitchen provider and API: manual/autosave lost Visit acknowledgements confirm once, retain newer typing and let Next CAD use the current version.');
+
+for (const [stage, field, changed] of [['lead', 'lead', { site_location: 'Immediate next location' }], ['visit', 'visit', { notes: 'Immediate next visit' }], ['cad', 'cad', { notes: 'Immediate next CAD' }]]) {
+  const original = { ...initial, stage, lead: { status: 'New', site_location: 'Original' }, visit: { status: 'Scheduled', notes: 'Original' }, cad: { received: false, progress: 0, status: 'Not Started', ready: false, notes: 'Original' } };
+  let persisted = structuredClone(original);
+  const view = await harness(source, original, async (_id, version, _key, name, payload) => {
+    assert.equal(version, persisted.version);
+    persisted = { ...persisted, version: persisted.version + 1, ...(name === 'move_stage' ? { stage: payload.target_stage } : { [field]: { ...persisted[field], ...payload } }) };
+    return persisted;
+  });
+  view.state.setDraftValue(`${stage}.value`, original[field], { ...original[field], ...changed });
+  view.render();
+  assert.equal(await view.state.command('move_stage', { target_stage: stages[stages.indexOf(stage) + 1] }), true);
+  assert.deepEqual(view.writes.map(write => write.command), [stage === 'lead' ? 'edit_lead' : `save_${stage}`, 'move_stage'], 'Immediate Next saves routine entries even before debounce');
+  assert.equal(view.writes[1].version, original.version + 1);
+  assert.deepEqual(persisted[field], { ...original[field], ...changed });
+  assert.equal(view.render().dirty, false);
+}
+for (const [stage, changed, progress] of [['lead', { status: 'Lost', lost_reason: 'Needs explicit save' }], ['visit', { status: 'Visited' }], ['cad', { received: true }], ['cad', { notes: 'Changed note' }, '20']]) {
+  const original = { ...initial, stage, lead: { status: 'New', site_location: 'Original' }, visit: { status: 'Scheduled' }, cad: { received: false, progress: 0 } };
+  const view = await harness(source, original, async (_id, _version, _key, _name, payload) => ({ ...original, version: 8, stage: payload.target_stage }));
+  view.state.setDraftValue(`${stage}.value`, original[stage], { ...original[stage], ...changed });
+  if (progress) view.state.setDraftValue('cad.progress', '0', progress);
+  view.render();
+  await view.state.command('move_stage', { target_stage: stages[stages.indexOf(stage) + 1] });
+  assert.deepEqual(view.writes.map(write => write.command), ['move_stage'], 'Next never autosubmits consequential status, reference or CAD progress');
+  assert.equal(view.render().dirty, true, 'The explicit decision draft is retained');
+}
+const failedFlush = await harness(source, { ...initial, stage: 'visit' }, async () => { throw Error('Offline'); });
+failedFlush.state.setDraftValue('visit.value', initial.visit, { notes: 'Keep this before Next' });
+failedFlush.render();
+assert.equal(await failedFlush.state.command('move_stage', { target_stage: 'cad' }), false);
+assert.deepEqual(failedFlush.writes.map(write => write.command), ['save_visit']);
+assert.equal(failedFlush.render().project.stage, 'visit');
+assert.equal(failedFlush.state.dirty, true);
+console.log('Kitchen immediate Next saves routine drafts before movement, rebases versions, retains explicit decisions, and stops safely on failed autosave.');

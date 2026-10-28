@@ -4,6 +4,7 @@ import { appendImageUpload, type UploadImage } from "@/src/utils/appendImageUplo
 export type GodownLot = {
   idempotent?: boolean;
   updated_at?: string | null;
+  stock_movements?: { id: string; kind: "receipt" | "adjustment_out"; qty: number; occurred_on: string; reason: string; actor_name: string; recorded_at: string }[];
   quantity_counts?: { id: string; qty: number; unit: string; counted_on: string; reason: string; actor_name: string; recorded_at: string }[];
   id: string; product_id: string | null; sku: string; name: string; image?: string | null; finish?: string | null;
   size?: string | null; feature?: string | null; category?: string | null; quantity_missing?: boolean; archived?: boolean;
@@ -35,7 +36,7 @@ export type PoFinalMatch = {
 };
 export type GodownStockResponse = { lots: GodownLot[]; brands: { id?: string | null; name: string; lot_count: number; available_qty: number }[]; total_available_qty: number; total_stock_value: number; unpriced_lot_count: number; total_lots?: number; available_lot_count?: number; unknown_quantity_count?: number; zero_lot_count?: number; next_offset?: number | null };
 export const getGodownStock = (params = "", floorId?: string) => api.get<GodownStockResponse>(`/godown-stock${params}`, { floorId });
-export type GodownHistory = { allocations: NonNullable<GodownLot["allocations"]>; customer_transfers: CustomerStockTransfer[]; next_offset: number | null };
+export type GodownHistory = { stock_movements?: GodownLot["stock_movements"]; allocations: NonNullable<GodownLot["allocations"]>; customer_transfers: CustomerStockTransfer[]; next_offset: number | null };
 export const getGodownHistory = (id: string, offset: number, signal?: AbortSignal, floorId?: string) => api.get<GodownHistory>(`/godown-stock/${encodeURIComponent(id)}/history?offset=${offset}&limit=60`, { signal, floorId, cacheMs: 0 });
 export const getGodownLot = (id: string, signal?: AbortSignal, floorId?: string) => api.get<GodownLot>(`/godown-stock/${encodeURIComponent(id)}`, { signal, floorId, cacheMs: 0 });
 export type SkuSuggestion = { id: string; sku: string; name: string; brand_name?: string | null; image?: string | null; size?: string | null; category_id?: string | null };
@@ -61,3 +62,6 @@ export async function uploadGodownImage(id: string, image: UploadImage, signal?:
   if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
   return api.upload<GodownLot>(`/godown-stock/${encodeURIComponent(id)}/image`, form, { signal, floorId });
 }
+
+export type StockMovementInput = { kind: "receipt" | "adjustment_out"; qty: number; occurred_on: string; reason: string; expected_updated_at: string | null; idempotency_key: string };
+export const recordGodownMovement = (id: string, body: StockMovementInput, signal?: AbortSignal, floorId?: string) => api.post<GodownLot>(`/godown-stock/${encodeURIComponent(id)}/movements`, body, { signal, floorId });

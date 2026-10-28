@@ -175,20 +175,19 @@ test('last customer opens payment history in view on desktop, tablet, and phone'
   await expect(history).toBeInViewport();
 });
 
-test('critical notifications link to existing records and offline state does not replay writes', async ({ page }) => {
+test('critical retired notification bookmark preserves offline recovery without replaying writes', async ({ page }) => {
   await mockSession(page, '/notifications');
   let writes = 0;
   page.on('request', request => { if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method())) writes++; });
   await page.route('**/api/notifications', route => route.fulfill({ json: [{ id: 'n-one', title: 'Quotation updated', body: 'Review the latest customer quotation.', kind: 'info', read: false, created_at: '2026-09-01T12:00:00Z', link: '/quotations/q-one' }] }));
   await page.goto('/notifications');
-  await expect(page.getByRole('link', { name: 'Unread: Quotation updated. Open record' })).toBeVisible();
+  await expect(page).toHaveURL(/\/dashboard$/);
   await page.context().setOffline(true);
   await expect(page.getByRole('status')).toContainText('offline');
   await page.context().setOffline(false);
   await expect(page.getByRole('status')).toHaveCount(0);
   expect(writes).toBe(0);
-  await page.getByRole('link', { name: 'Unread: Quotation updated. Open record' }).click();
-  await expect(page).toHaveURL(/\/quotations\/q-one/);
+  await expect(page.getByRole('link', { name: 'Unread: Quotation updated. Open record' })).toHaveCount(0);
 });
 
 test('critical payment tabs expose selection and support keyboard navigation with reduced motion', async ({ page }) => {

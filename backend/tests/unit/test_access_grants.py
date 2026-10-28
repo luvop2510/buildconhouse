@@ -147,3 +147,17 @@ def test_quotation_direct_pdf_delivery_requires_export_grant():
     from services.access_grants import action_for_api_request
     assert action_for_api_request("POST", "/api/quotations/q1/whatsapp-send") == "export"
     assert action_for_api_request("POST", "/api/quotations/q1/whatsapp-send/other") == "create"
+
+
+def test_stock_receipt_command_uses_update_grant_without_broadening_child_routes():
+    from services.access_grants import action_for_api_request
+    assert action_for_api_request("POST", "/api/godown-stock/lot/movements") == "update"
+    assert action_for_api_request("POST", "/api/godown-stock/lot/movements/other") == "create"
+
+
+def test_retired_notification_page_has_no_new_assignment_choices():
+    from services.access_grants import delegation_resource_catalog
+    floors = ["ground-floor", "first-floor", "second-floor", "third-floor"]
+    resource = next(row for row in delegation_resource_catalog(floors) if row["key"] == "notifications")
+    assert resource["retired"] and resource["assignable_floor_ids"] == []
+    assert resource["floor_ids"] == floors

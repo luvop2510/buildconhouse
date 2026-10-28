@@ -18,7 +18,7 @@ const response = name => ({ items: [{ item_id: name, name }], total: 1, next_ski
 
 function screen() {
   const hooks = [], effects = [], pages = [], customerReads = [], facets = [];
-  let index = 0, dirty = false, state, floor = 'first-floor';
+  let index = 0, dirty = false, state, floor = 'first-floor', focused = true;
   const same = (a, b) => a && b && a.length === b.length && a.every((v, i) => Object.is(v, b[i]));
   const react = {
     memo: value => value,
@@ -31,7 +31,7 @@ function screen() {
   const modules = {
     react, '@/src/utils/filters': filters,
     'react-native': { StyleSheet: { create: value => value, hairlineWidth: 1 }, Platform: { OS: 'web' } },
-    'expo-router': { useRouter: () => ({}) },
+    'expo-router': { useRouter: () => ({}), useFocusEffect: fn => react.useEffect(() => focused ? fn() : undefined, [fn, focused]) },
     'react-native-safe-area-context': { useSafeAreaInsets: () => ({ bottom: 0 }) },
     '@/src/design/responsive': { useBp: () => ({ isDesktop: true, width: 1400 }) },
     '@/src/hooks/use-floor-access': { useFloorAccess: () => ({ selectedFloorId: floor }) },
@@ -48,6 +48,7 @@ function screen() {
   const flush = () => { while (effects.length) effects.shift()(); };
   const render = (withEffects = true) => { index = 0; dirty = false; state = exports.default(); if (withEffects) flush(); return state; };
   return { pages, facets, customerReads, render, flush, get state() { return state; },
+    focus(value) { focused = value; render(); },
     switchFloor(value, withEffects = true) { floor = value; render(withEffects); },
     unmount() { hooks.forEach(hook => hook.cleanup?.()); },
     async settle() { for (let pass = 0; pass < 12; pass++) { await Promise.resolve(); if (dirty) render(false); } },
@@ -84,4 +85,39 @@ test('old purchase failures and late results cannot publish after floor change o
   fixture.flush(); fixture.unmount();
   fixture.pages.at(-1).resolve(response('Late kitchen purchase')); await fixture.settle();
   assert.equal(fixture.state.items.length, 0);
+});
+
+
+test('old purchase facets cannot overwrite a later same-floor refresh', async () => {
+  const fixture = screen(); fixture.render();
+  const initial = fixture.facets.filter(read => read.path === '/purchases/brands')[0];
+  const refresh = fixture.state.loadFacets();
+  fixture.facets.at(-2).resolve({ all: 1, brands: [{ id: 'new', name: 'Current brand' }] });
+  fixture.facets.at(-1).resolve([]);
+  await refresh; await fixture.settle();
+  initial.resolve({ all: 1, brands: [{ id: 'old', name: 'Stale brand' }] });
+  await fixture.settle();
+  assert.equal(fixture.state.brands[0].name, 'Current brand'); fixture.unmount();
+});
+
+test('successful purchase facets publish independently of failed secondary facets', async () => {
+  const fixture = screen(); fixture.render();
+  fixture.facets.find(read => read.path === '/purchases/stages').reject(new Error('stage facet unavailable'));
+  fixture.facets.find(read => read.path === '/purchases/brands').resolve({ all: 1, brands: [{ id: 'brand', name: 'Usable brand' }] });
+  await fixture.settle();
+  assert.equal(fixture.state.brands[0].name, 'Usable brand'); fixture.unmount();
+});
+
+
+test('returning to a mounted Purchases page revalidates stock and cancels the hidden read', async () => {
+  const fixture = screen(); fixture.render();
+  const initial = fixture.pages[0];
+  fixture.focus(false);
+  assert.equal(initial.signal.aborted, true);
+  fixture.focus(true);
+  assert.equal(fixture.pages.length, 2);
+  fixture.pages[1].resolve(response('Freshly moved purchase')); await fixture.settle();
+  initial.resolve(response('Stale purchase')); await fixture.settle();
+  assert.equal(fixture.state.items[0].name, 'Freshly moved purchase');
+  fixture.unmount();
 });

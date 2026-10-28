@@ -10,6 +10,7 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View, type Dimens
 import { Text, TextInput } from "@/src/components/AppText";
 
 import { addDirectGodownStock, getGodownHistory, getGodownLot, getGodownStock, getPoFinalMatches, getSkuSuggestions, recordGodownQuantity, updateGodownDetails, uploadGodownImage, type GodownHistory, type GodownLot, type GodownStockResponse, type PoFinalMatch, type SkuSuggestion } from "@/src/api/godownStock";
+import { StockMovementEditor } from "@/src/components/godown/StockMovementEditor";
 import { CustomerTransferSheet } from "@/src/components/godown/CustomerTransferSheet";
 import { Sheet } from "@/src/design/components";
 import { ProductImage } from "@/src/components/ProductImage";
@@ -196,6 +197,7 @@ export default function GodownStockScreen() {
       const rows = section === "inventory"
         ? [["SKU", "Product", "Brand", "Received / counted opening balance", "Available", "Transferable", "Unit price (INR)", "Stock value (INR)"], ...exportLots.map(lot => [lot.sku, lot.name, lot.brand_name, lot.quantity_missing ? "Not recorded" : lot.qty_received, lot.quantity_missing ? "Not recorded" : lot.available_qty, lot.quantity_missing ? "Not recorded" : lot.transferable_qty ?? lot.available_qty, lot.unit_price, lot.stock_value])]
         : [["SKU", "Product", "Event", "Customer / quotation", "Quantity", "Date"], ...exportLots.flatMap(lot => [
+          ...(lot.stock_movements || []).map(row => [lot.sku, lot.name, row.kind === "receipt" ? "Received" : "Stock adjustment out", row.reason, row.qty, row.occurred_on]),
           ...(lot.allocations || []).map(row => [lot.sku, lot.name, "Allocated", row.customer_name || row.quotation_number || row.quotation_id, row.qty, row.allocated_at]),
           ...(lot.customer_transfers || []).map(row => [lot.sku, lot.name, "Transferred", row.recipient_customer_name, row.qty, row.created_at]),
         ])];
@@ -217,6 +219,7 @@ export default function GodownStockScreen() {
     <View style={[styles.hero, !isDesktop && styles.heroPhone]}><View style={{ flex: 1, gap: 5 }}><Text style={type.overline}>INVENTORY</Text><Text style={type.displayMd}>Godown stock</Text><Text style={type.bodyMuted}>Stock history stays visible at zero quantity. Available units can be reused in a quotation.</Text></View><View style={[styles.actions, !isDesktop && styles.totalsPhone]}><View accessibilityLabel={`${money(data?.total_stock_value || 0)} priced stock value`} style={[styles.total, !isDesktop && styles.totalPhone]}><Text style={styles.totalNumber} numberOfLines={1} adjustsFontSizeToFit>{money(data?.total_stock_value || 0)}</Text><Text style={styles.totalLabel}>{data?.unpriced_lot_count ? `priced value · ${data.unpriced_lot_count} unpriced lot${data.unpriced_lot_count === 1 ? "" : "s"}` : "total available value"}</Text></View><View accessibilityLabel={`${data?.total_available_qty || 0} units available`} style={[styles.total, !isDesktop && styles.totalPhone]}><Text style={styles.totalNumber}>{data?.total_available_qty || 0}</Text><Text style={styles.totalLabel}>units available</Text></View></View></View>
     <Pressable accessibilityRole="button" accessibilityLabel={adding ? "Close stock intake" : "Add product to godown"} onPress={() => setAdding(!adding)} style={styles.add}><Feather name={adding ? "x" : "plus"} size={17} color={colors.onBrand} /><Text style={styles.addText}>{adding ? "Close" : "Add product to godown"}</Text></Pressable>
     {adding ? <View style={styles.form}>
+      <Text style={type.caption}>Products entered here are saved to the catalog for future quotations.</Text>
       <View style={styles.actions}><Chip label="From catalog" selected={mode === "catalog"} onPress={() => { setMode("catalog"); setSku(""); setSelected(null); }} /><Chip label="Product not in catalog" selected={mode === "manual"} onPress={() => { setMode("manual"); setSku(""); setSelected(null); }} /></View>
       <TextInput accessibilityLabel="SKU code" value={sku} onChangeText={value => { setSku(value); setSelected(null); }} placeholder="Type SKU code" style={styles.search} />
       {mode === "catalog" ? <View>{suggestions.map(row => <Pressable key={row.id} accessibilityRole="button" onPress={() => { setSelected(row); setSku(row.sku); setSuggestions([]); }} style={styles.suggestion}><Text style={type.body}>{row.sku} · {row.name}</Text><Text style={type.caption}>{row.brand_name || ""}</Text></Pressable>)}{selected ? <Text style={type.body}>Selected: {selected.name}</Text> : null}</View> : <View style={styles.manualFields}>
@@ -287,9 +290,9 @@ function LotCard({ lot, floorId, width, compact, canEditPricing, onUpdated, onVi
   const historyGeneration = useRef(0);
   useEffect(() => {
     historyGeneration.current += 1; historyPending.current = null; setLoadingHistory(false); setHistoryError("");
-    setHistory(lot.history_loaded === false ? null : { allocations: lot.allocations || [], customer_transfers: lot.customer_transfers || [], next_offset: null });
+    setHistory(lot.history_loaded === false ? null : { stock_movements: lot.stock_movements || [], allocations: lot.allocations || [], customer_transfers: lot.customer_transfers || [], next_offset: null });
     return () => { historyGeneration.current += 1; };
-  }, [lot.id, lot.updated_at, lot.history_loaded, lot.allocations, lot.customer_transfers, floorId]);
+  }, [lot.id, lot.updated_at, lot.history_loaded, lot.allocations, lot.customer_transfers, lot.stock_movements, floorId]);
   const loadHistory = useCallback(async (offset = 0) => {
     const controller = lifecycle.current;
     if (!controller || controller.signal.aborted || historyPending.current) return;
@@ -299,7 +302,7 @@ function LotCard({ lot, floorId, width, compact, canEditPricing, onUpdated, onVi
     try {
       const result = await getGodownHistory(lot.id, offset, controller.signal, floorId);
       if (controller.signal.aborted || generation !== historyGeneration.current) return;
-      setHistory(current => offset === 0 || !current ? result : { ...result, allocations: [...current.allocations, ...result.allocations], customer_transfers: [...current.customer_transfers, ...result.customer_transfers] });
+      setHistory(current => offset === 0 || !current ? result : { ...result, stock_movements: [...(current.stock_movements || []), ...(result.stock_movements || [])], allocations: [...current.allocations, ...result.allocations], customer_transfers: [...current.customer_transfers, ...result.customer_transfers] });
     } catch (e: any) { if (!controller.signal.aborted && generation === historyGeneration.current) setHistoryError(e?.detail || e?.message || "Could not load stock movements"); }
     finally { if (historyPending.current === token) { historyPending.current = null; setLoadingHistory(false); } }
   }, [lot.id, floorId]);
@@ -402,6 +405,7 @@ function LotCard({ lot, floorId, width, compact, canEditPricing, onUpdated, onVi
       {countError ? <View style={{ gap: spacing.sm }}><Text accessibilityRole="alert" style={[type.body, { color: colors.error }]}>{countError}</Text><Pressable accessibilityRole="button" accessibilityLabel={`Refresh quantity details for ${lot.name}`} disabled={savingCount || savingPrice} onPress={() => void refreshCountLot()} style={styles.details}><Text style={styles.detailsText}>Refresh this lot</Text></Pressable></View> : null}
       <Pressable accessibilityRole="button" accessibilityLabel={`Save quantity count for ${lot.name}`} testID={`godown-count-save-${lot.id}`} disabled={savingCount || savingPrice} onPress={() => void saveCount()} style={styles.details}><Text style={styles.detailsText}>{savingCount ? "Recording count…" : "Save quantity count"}</Text></Pressable>
     </View> : null}
+    {canEditPricing ? <StockMovementEditor lot={lot} floorId={floorId} onUpdated={onUpdated} /> : null}
     <Text style={type.body}>Unit price: {lot.unit_price == null ? "Not recorded" : money(lot.unit_price)}</Text>
     {canEditPricing ? <Pressable accessibilityRole="button" testID={`godown-edit-${lot.id}`} disabled={savingPrice} accessibilityLabel={`Edit price and image for ${lot.name}`} onPress={() => { if (editingPrice) { setEditingPrice(false); setAddAfterPricing(false); } else openEditor(); }} style={styles.editControl}><Text style={styles.detailsText}>{editingPrice ? "Cancel edit" : "Edit price & image"}</Text></Pressable> : null}
     {editingPrice ? <View style={styles.editForm}>
@@ -429,6 +433,7 @@ function LotCard({ lot, floorId, width, compact, canEditPricing, onUpdated, onVi
       {lot.transferred_by_name ? <Text style={type.caption}>Recorded by {lot.transferred_by_name}</Text> : null}
       <Text style={[styles.provenanceTitle, { marginTop: 8 }]}>Stock cycle</Text><Text style={type.caption}>{lot.quantity_missing ? "Quantity not recorded" : `${lot.quantity_counts?.length ? "Counted opening balance" : "Received"} ${lot.qty_received} · Allocated ${lot.qty_received - lot.available_qty} · Available ${lot.available_qty}`}</Text>
       {(lot.quantity_counts || []).map(count => <Text key={count.id} style={type.caption}>Counted {count.qty} stock units on {count.counted_on} · {count.actor_name} · {count.reason}</Text>)}
+      {(history?.stock_movements || lot.stock_movements || []).map(movement => <Text key={movement.id} style={type.caption}>{movement.occurred_on} · {movement.kind === "receipt" ? "Received" : "Removed"} {movement.qty} · {movement.actor_name} · {movement.reason}</Text>)}
       {loadingHistory ? <Text accessibilityLiveRegion="polite" style={type.body}>Loading stock movements…</Text> : null}
       {historyError ? <View><Text accessibilityRole="alert" style={type.body}>{historyError}</Text><Pressable accessibilityRole="button" accessibilityLabel={`Retry stock history for ${lot.name}`} onPress={() => void loadHistory(history?.next_offset ?? 0)} style={styles.details}><Text style={styles.detailsText}>Retry stock history</Text></Pressable></View> : null}
       {(history?.allocations || lot.allocations || []).map(allocation => <Text key={allocation.id} style={type.caption}>{fmt(allocation.allocated_at)} · {allocation.qty} to {allocation.quotation_number || allocation.quotation_id || "quotation"}{allocation.customer_name ? ` for ${allocation.customer_name}` : ""}{allocation.allocated_by_name ? ` · ${allocation.allocated_by_name}` : ""}</Text>)}

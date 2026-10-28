@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Pressable, View } from "react-native";
+import { Platform, Pressable, View } from "react-native";
 import { Text } from "@/src/components/AppText";
 import { Button, SkeletonCard } from "@/src/components/ui";
 import { useBp } from "@/src/design/responsive";
@@ -26,7 +26,7 @@ export function Metric({ label, value, secondaryValue, detail, testID, onPress, 
   const { isPhone, isTabletPortrait } = useBp();
   const compact = isPhone || isTabletPortrait;
   const body = <><Text style={[type.bodySm, { color: colors.onSurfaceSecondary }]}>{label}</Text>
-    <Text style={[lead ? type.displayLg : type.displayMd, { fontWeight: "500", fontVariant: ["tabular-nums"] }]}>{value}</Text>
+    <Text style={[lead ? type.displayLg : type.displayMd, Platform.OS === "web" ? { overflowWrap: "anywhere" } as never : null, { fontWeight: "500", fontVariant: ["tabular-nums"] }]}>{value}</Text>
     {secondaryValue ? <Text style={[type.titleLg, { fontVariant: ["tabular-nums"] }]}>{secondaryValue}</Text> : null}
     {detail && !(compact && lead) ? <Text style={type.caption}>{detail}</Text> : null}</>;
   const style = { flex: compact ? undefined : 1, flexGrow: 1, flexBasis: compact ? (lead ? "100%" as const : "45%" as const) : 0, minWidth: 0, gap: spacing.s4, padding: isPhone ? spacing.s12 : spacing.s16 };
@@ -50,7 +50,7 @@ export function RankingRow({ name, detail, value, proportion, onPress, testID }:
   const body = <>
     <View style={{ flexDirection: "row", gap: spacing.s12, alignItems: "flex-start" }}>
       <View style={{ flex: 1, minWidth: 0, gap: spacing.s4 }}><Text style={type.bodyStrong}>{name}</Text>{detail ? <Text style={type.bodySm}>{detail}</Text> : null}</View>
-      <Text accessibilityLabel={money(value)} style={[type.bodyStrong, { textAlign: "right", fontVariant: ["tabular-nums"] }]}>{money(value)}</Text>
+      <Text accessibilityLabel={money(value)} style={[type.bodyStrong, { flexShrink: 1, minWidth: 0, textAlign: "right", fontVariant: ["tabular-nums"] }]}>{money(value)}</Text>
     </View>
     {proportion !== undefined ? <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={{ height: 3, backgroundColor: colors.surfaceTertiary }}><View style={{ height: 3, width: `${Math.max(0, Math.min(1, proportion)) * 100}%`, backgroundColor: colors.brand }} /></View> : null}
   </>;
@@ -61,7 +61,7 @@ export function RankingRow({ name, detail, value, proportion, onPress, testID }:
 export function ReportHeader({ title, subtitle, updating, refresh }: { title: string; subtitle: string; updating?: boolean; refresh: () => void }) {
   return <View style={{ gap: spacing.s4 }}>
     <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.s12 }}>
-      <Text accessibilityRole="header" aria-level={1} style={type.displayMd}>{title}</Text>
+      <Text accessibilityRole="header" aria-level={1} style={[type.displayMd, { flexShrink: 1, minWidth: 0 }]}>{title}</Text>
       <Button label={updating ? "Updating…" : "Refresh"} icon="refresh-cw" variant="ghost" disabled={updating} onPress={refresh} />
     </View><Text style={type.bodyMuted}>{subtitle}</Text>
   </View>;

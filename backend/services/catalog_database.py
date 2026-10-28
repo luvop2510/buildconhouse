@@ -61,6 +61,7 @@ def listing_pipeline(filters=None, *, floor_ids=None, q=None, per_category=False
         {"$lookup": {"from": "brands", "localField": "brand_id", "foreignField": "id", "as": "_brand"}},
         {"$set": {"_brand": {"$arrayElemAt": ["$_brand", 0]}}},
         {"$match": {"_brand.name": {"$not": {"$regex": r"^\s*axor\s*$", "$options": "i"}}, "_brand.slug": {"$not": {"$regex": r"^\s*axor\s*$", "$options": "i"}}, "$expr": {"$or": [
+            {"$eq": ["$catalog_source", "godown_intake"]},
             {"$ne": [{"$ifNull": ["$_brand.catalog_authoritative", False]}, True]},
             {"$and": [{"$eq": ["$catalog_source", "$_brand.catalog_source"]}, {"$gt": [{"$size": {"$ifNull": ["$catalog_entries", []]}}, 0]}]},
         ]}}},

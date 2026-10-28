@@ -21,8 +21,9 @@ for (const [floor, label] of [['ground-floor', 'Ground Floor'], ['first-floor', 
       return route.fulfill({ json: { items: [], page: 1, page_size: 100, has_more: false } });
     });
     await page.goto('/followups');
-    await expect(page).toHaveURL(/\/followups$/);
-    await expect.poll(() => followupReadFloor).toBe(floor);
+    await expect(page).toHaveURL(floor === 'second-floor' ? /\/kitchen$/ : /\/followups$/);
+    if (floor === 'second-floor') expect(followupReadFloor).toBeUndefined();
+    else await expect.poll(() => followupReadFloor).toBe(floor);
     await expect(page.getByTestId('floor-switcher')).toHaveAccessibleName(`Switch workspace. Current workspace: ${label}`);
     const kitchen = floor === 'second-floor';
     if (kitchen) {
@@ -49,7 +50,8 @@ for (const [floor, label] of [['ground-floor', 'Ground Floor'], ['first-floor', 
       for (const retired of ['Overview', 'Projects', 'Workflow', 'Customers', 'Walk-ins', 'Payments', 'Team', 'Settings']) expect(labels.has(retired), `${retired} is not a Kitchen page`).toBe(false);
     } else await expect(page.locator('a[href="/kitchen/stages/lead"]')).toHaveCount(0);
     expect(labels.has('Walk-ins')).toBe(!kitchen);
-    expect(labels.has('Follow-ups')).toBe(true);
+    expect(labels.has('Follow-ups')).toBe(!kitchen);
+    expect(labels.has('Notifications')).toBe(false);
     expect(labels.has('Sales Data')).toBe(true);
     expect(labels.has('Purchases')).toBe(floor === 'first-floor');
     expect(labels.has('Catalog')).toBe(['first-floor', 'ground-floor'].includes(floor));
@@ -178,3 +180,18 @@ test('critical Ground catalog product avoids sanitary purchasing pipeline reques
   await expect(page.getByText('Scoped Product', { exact: true }).first()).toBeVisible();
   expect(forbidden).toEqual([]);
 });
+
+for (const floor of ['ground-floor', 'first-floor', 'second-floor', 'third-floor']) {
+  test(`critical ${floor} retired Notifications bookmark redirects without alert reads`, async ({ page }) => {
+    await mockSession(page, '/notifications', false);
+    await kitchenReads(page);
+    await page.addInitScript(id => localStorage.setItem('forge.active-floor', JSON.stringify(id)), floor);
+    let alertReads = 0;
+    await page.route('**/api/notifications**', route => { alertReads++; return route.fulfill({ json: [] }); });
+    await page.goto('/notifications');
+    const landing = ({ 'ground-floor': '/tiles', 'first-floor': '/dashboard', 'second-floor': '/kitchen', 'third-floor': '/walkins' } as Record<string, string>)[floor];
+    await expect(page).toHaveURL(new RegExp(`${landing}$`));
+    expect(alertReads).toBe(0);
+    expect(await page.evaluate(() => JSON.parse(localStorage.getItem('forge.active-floor')!))).toBe(floor);
+  });
+}

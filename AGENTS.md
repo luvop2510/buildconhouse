@@ -1,5 +1,33 @@
 # AGENTS.md — BuildCon House ERP (forge2.0)
 
+## Reliability, stock movements and reference clients — 2026-10-28
+
+The latest user instruction keeps implementation on `main` with no separate
+branches. Respect remote protections; report a rejected direct push rather than
+changing protection or silently creating a branch. Stability remains the primary
+acceptance criterion: run the existing full performance/stability gate unchanged.
+
+Kitchen Next/Previous flush routine unsaved Lead/Visit/CAD fields before moving;
+retain drafts and stay at the current stage if acknowledgement fails. Explicit
+status/reference/progress/commercial decisions remain manual. Notifications has
+no page on any floor; Kitchen has no shared Follow-ups page. Retired bookmarks
+redirect before business reads without changing the selected floor.
+
+Purchase rows must not depend on a cold full-catalog warmup. Refresh exact-product
+images with a one-second optional budget; preserve recorded images and usable
+primary data on failure. Revisit revalidates live stock and obsolete reads cannot
+replace current data. New godown manual intake persists a real catalog identity,
+including under supplier-managed brands. Stock receipts/restocking and outgoing
+adjustments preserve history, loan reservations, current-balance CAS and actor-bound
+replay receipts; uncertain retries keep the exact submitted body. Large movement
+exports fail explicitly at their existing ceiling instead of truncating.
+
+Reference drilldowns include all deduplicated acquired people, including walk-ins
+without orders, under the same floor/referrer/custom-date bounds as counts. Keep
+current sales values separate from acquisition dates. Migration 0040 adds only
+read indexes; apply through the controlled migration job before backend rollout.
+See docs/audits/2026-10-28-reliability-stock-references.md for evidence and limits.
+
 ## Sales Data simplification — 2026-10-27
 
 Sales Data has three views: Sales, References and Customers. Keep legacy report
@@ -10,7 +38,8 @@ selected quotation/design versions. Label current balances/follow-ups separately
 from period sales and identify Kitchen's recorded-advance limit. Start at This month
 unless a period was explicitly saved. Report and drilldown reads share role/floor
 access; combined views never broaden assigned floors. Kitchen allows Sales Data
-and shared Follow-ups alongside its unchanged nine-stage workspace.
+alongside its nine-stage workspace; Follow-ups is removed at the user's explicit
+request on 28 October 2026.
 
 ## Main is the release source — 2026-10-27
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib
+import os
 import shutil
 import socket
 import subprocess
@@ -18,6 +19,11 @@ from routes import purchases_tracker as tracker
 
 @pytest.fixture
 def mongo_url(tmp_path):
+    explicit = os.environ.get("DISPOSABLE_MONGO_TEST_URL", "")
+    if explicit:
+        assert explicit.startswith(("mongodb://127.0.0.1:", "mongodb://localhost:")), "Only disposable local Mongo is allowed"
+        yield explicit
+        return
     binary = shutil.which("mongod")
     if not binary:
         pytest.skip("Disposable local Mongo binary unavailable")

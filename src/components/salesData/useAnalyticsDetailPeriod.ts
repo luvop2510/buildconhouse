@@ -11,8 +11,8 @@ export function useAnalyticsDetailPeriod() {
   const [floor, setFloor] = useState(requestedFloor || "");
   useEffect(() => { if (requestedFloor) setFloor(requestedFloor); }, [requestedFloor]);
   useEffect(() => { if (!floor) void getSelectedFloorId().then(id => setFloor(id || "all")); }, [floor]);
-  const { period } = useSalesPeriod(floor);
-  if (!period) return { query: "", label: "Loading period…" };
+  const { period } = useSalesPeriod(floor, false);
+  if (!period) return { query: "", label: "Loading period…", period: null, floorId: floor };
   const preset = params.preset || period.preset;
   const query = new URLSearchParams({ preset });
   if (floor && floor !== "all" && floor !== "both") query.set("floor_id", floor);
@@ -21,5 +21,5 @@ export function useAnalyticsDetailPeriod() {
   if (from) query.set("date_from", from);
   if (to) query.set("date_to", to);
   const label = from && to ? rangeLabel(from, to) : PERIOD_PRESETS.find(option => option.value === preset)?.label || period.label;
-  return { query: query.toString(), label };
+  return { query: query.toString(), label, period: { preset, dateFrom: from || null, dateTo: to || null, label }, floorId: floor };
 }

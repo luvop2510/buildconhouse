@@ -12,7 +12,8 @@ import json
 import logging
 import re
 from datetime import date, datetime, timezone
-from uuid import uuid4
+from typing import Literal
+from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, HttpUrl, field_validator
@@ -23,7 +24,7 @@ from db import client, db
 from pymongo import ReturnDocument
 from models import (
     CustomerPublic, Payment, PurchaseOrder, PurchaseOrderItem, PurchaseStageEvent,
-    Quotation, QuotationLineItem, QuotationRevision, RoomDiscountCfg, UserPublic, now_iso,
+    Product, Quotation, QuotationLineItem, QuotationRevision, RoomDiscountCfg, UserPublic, now_iso,
 )
 from services.activity_log import log_event
 from services.analytics import cache
@@ -31,7 +32,7 @@ from services.followup_engine import reconcile_followups
 from services.notifications import notify
 from services.sequence import next_number
 from services.pricing import per_line_net_amounts, recalc_quotation_totals, stamp_net_amounts
-from services import godown_media_service
+from services import catalog_service, godown_media_service
 from services.multi_filters import filter_values
 from services.product_image_normalizer import ProductImageNormalizationError
 from services.godown_transfer_receipts import completion_receipt, receipt_id as transfer_receipt_id, removed_history_result
@@ -100,13 +101,23 @@ class DirectIntake(BaseModel):
     product_id: str | None = None
     qty: float = Field(gt=0, allow_inf_nan=False)
     reason: str = Field(default="Added to godown stock", min_length=2, max_length=280)
-    sku: str | None = None
-    name: str | None = None
-    brand: str | None = None
-    image: str | None = None
-    size: str | None = None
-    feature: str | None = None
-    category: str | None = None
+    sku: str | None = Field(default=None, max_length=80)
+    name: str | None = Field(default=None, max_length=200)
+    brand: str | None = Field(default=None, max_length=120)
+    image: HttpUrl | None = None
+    size: str | None = Field(default=None, max_length=120)
+    feature: str | None = Field(default=None, max_length=280)
+    category: str | None = Field(default=None, max_length=120)
+
+    @field_validator("image", mode="before")
+    @classmethod
+    def blank_image(cls, value):
+        return None if isinstance(value, str) and not value.strip() else value
+
+    @field_validator("image")
+    @classmethod
+    def public_image_url(cls, value):
+        return StockDetailsUpdate.public_image_url(value)
     unit_price: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     price_variants: list[StockPriceVariant] = Field(default_factory=list, max_length=20)
 
@@ -124,6 +135,23 @@ class MissingQuantityCount(BaseModel):
     def meaningful_reason(cls, value):
         if len(value.strip()) < 3:
             raise ValueError("Explain the count source")
+        return value.strip()
+
+
+class StockMovement(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    kind: Literal["receipt", "adjustment_out"]
+    qty: float = Field(gt=0, allow_inf_nan=False)
+    occurred_on: date
+    reason: str = Field(min_length=3, max_length=280)
+    expected_updated_at: str | None = None
+    idempotency_key: str = Field(min_length=8, max_length=160)
+
+    @field_validator("reason")
+    @classmethod
+    def meaningful_reason(cls, value):
+        if len(value.strip()) < 3:
+            raise ValueError("Explain the stock movement")
         return value.strip()
 
 
@@ -162,6 +190,8 @@ def _stock_view(lot: dict) -> dict:
     row = {key: value for key, value in lot.items() if key not in {"_id", "intake_command", "source_provenance", "catalog_provenance", "image_local"}}
     if "quantity_counts" in row:
         row["quantity_counts"] = [{key: value for key, value in count.items() if key not in {"command_key", "payload_sha256"}} for count in row["quantity_counts"]]
+    if "stock_movements" in row:
+        row["stock_movements"] = [{key: value for key, value in movement.items() if key not in {"command_key", "payload_sha256"}} for movement in row["stock_movements"]]
     row["stock_value"] = round(float(row.get("available_qty") or 0) * float(row["unit_price"]), 2) if row.get("unit_price") is not None and not row.get("quantity_missing") else None
     row["transferable_qty"] = 0 if row.get("quantity_missing") or row.get("archived") else max(0.0, round(float(row.get("available_qty") or 0) - float(row.get("loaned_out_qty") or 0), 4))
     return row
@@ -387,16 +417,22 @@ async def list_stock(
                         for field in ("name", "sku", "brand_name")]
     if brands:
         query = {"$and": [query, _stock_choices(brands)]}
-    lots = await db.godown_stock.find(query, {"_id": 0, "source_provenance": 0, "catalog_provenance": 0, "image_local": 0}).sort("transferred_at", -1).to_list(2001)
+    projection = {"_id": 0, "source_provenance": 0, "catalog_provenance": 0, "image_local": 0}
+    if not with_movements:
+        projection.update(allocations=0, stock_movements=0)
+    lots = await db.godown_stock.find(query, projection).sort("transferred_at", -1).to_list(2001)
     if len(lots) > 2000:
         raise HTTPException(status_code=409, detail="More than 2,000 stock lots match. Select a brand or search to narrow the list.")
     await _hydrate_missing_stock_catalog_images(lots)
     transfer_map: dict[str, list[dict]] = {}
     if include_history and with_movements and lots:
+        recorded_count = sum(len(lot.get("allocations") or []) + len(lot.get("stock_movements") or []) for lot in lots)
+        if recorded_count > 2000:
+            raise HTTPException(409, "More than 2,000 movements match. Narrow the stock selection before exporting movements.")
         transfers = await db.godown_customer_transfers.find(
             floor_query(user, {"stock_id": {"$in": [lot["id"] for lot in lots]}}), {"_id": 0},
         ).sort("created_at", -1).to_list(2001)
-        if len(transfers) > 2000:
+        if recorded_count + len(transfers) > 2000:
             raise HTTPException(409, "More than 2,000 movements match. Narrow the stock selection before exporting movements.")
         for transfer in transfers:
             transfer_map.setdefault(transfer["stock_id"], []).append(_transfer_view(transfer))
@@ -444,7 +480,7 @@ async def _stock_page(user, include_history, q, brands, limit, offset):
     async def page():
         lots = await db.godown_stock.find({"$and": [base, filtered]}, {
             "_id": 0, "source_provenance": 0, "catalog_provenance": 0, "image_local": 0,
-            "allocations": 0, "customer_transfers": 0, "intake_command": 0,
+            "allocations": 0, "customer_transfers": 0, "stock_movements": 0, "intake_command": 0,
         }).sort([("transferred_at", -1), ("id", 1)]).skip(offset).to_list(limit)
         await _hydrate_missing_stock_catalog_images(lots)
         return [{**_stock_view(lot), "history_loaded": False} for lot in lots]
@@ -461,13 +497,14 @@ async def _stock_page(user, include_history, q, brands, limit, offset):
 async def stock_history(stock_id: str, offset: int = 0, limit: int = 60, user: UserPublic = Depends(get_current_user)):
     if not 1 <= limit <= 100 or not 0 <= offset <= 100000:
         raise HTTPException(422, "Invalid stock history page")
-    lot = await db.godown_stock.find_one(floor_query(user, {"id": stock_id}), {"_id": 0, "allocations": 1})
+    lot = await db.godown_stock.find_one(floor_query(user, {"id": stock_id}), {"_id": 0, "allocations": 1, "stock_movements": 1})
     if not lot:
         raise HTTPException(404, "Godown stock lot not found on this floor")
     allocations = lot.get("allocations") or []
     transfers = await db.godown_customer_transfers.find(floor_query(user, {"stock_id": stock_id}), {"_id": 0}).sort([("created_at", -1), ("id", 1)]).skip(offset).to_list(limit + 1)
-    more = offset + limit < len(allocations) or len(transfers) > limit
-    return {"allocations": allocations[offset:offset + limit], "customer_transfers": [_transfer_view(row) for row in transfers[:limit]], "next_offset": offset + limit if more else None}
+    movements = _stock_view(lot).get("stock_movements", [])
+    more = offset + limit < max(len(allocations), len(movements)) or len(transfers) > limit
+    return {"stock_movements": movements[offset:offset + limit], "allocations": allocations[offset:offset + limit], "customer_transfers": [_transfer_view(row) for row in transfers[:limit]], "next_offset": offset + limit if more else None}
 
 
 @router.get("/sku-suggestions")
@@ -975,6 +1012,8 @@ async def return_customer_transfer(transfer_id: str, body: ReturnTransfer, user:
     return {**_transfer_view(transfer), "status": "returned", "returned_at": at, "returned_by": user.id, "return_note": body.note, "return_due": False}
 
 
+
+
 @router.get("/{stock_id}")
 async def get_stock(stock_id: str, user: UserPublic = Depends(get_current_user)):
     return await _stock_response(await get_floor_scoped_or_404(db.godown_stock, stock_id, user, not_found="Godown stock lot not found", projection={"_id": 0}))
@@ -1035,6 +1074,59 @@ async def record_missing_quantity(stock_id: str, body: MissingQuantityCount, use
     return await _stock_response(updated)
 
 
+@router.post("/{stock_id}/movements")
+async def record_stock_movement(stock_id: str, body: StockMovement, user: UserPublic = Depends(require_min_role("warehouse"))):
+    lot = await get_floor_scoped_or_404(db.godown_stock, stock_id, user, not_found="Godown stock lot not found", projection={"_id": 0})
+    fingerprint = hashlib.sha256(json.dumps([user.id, body.model_dump(mode="json", exclude={"idempotency_key"})], sort_keys=True).encode()).hexdigest()
+    def replay(row):
+        for movement in row.get("stock_movements", []):
+            if movement.get("command_key") == body.idempotency_key and movement.get("actor_id") == user.id:
+                if movement.get("payload_sha256") != fingerprint:
+                    raise HTTPException(409, "This movement was recorded with different details. Review current stock.")
+                return {**_stock_view(row), "idempotent": True}
+        return None
+    previous = replay(lot)
+    if previous:
+        return await _stock_response(previous)
+    if lot.get("archived") or lot.get("quantity_missing"):
+        raise HTTPException(409, "Record a confirmed opening quantity before moving this stock.")
+    if len(lot.get("stock_movements", [])) >= 1000:
+        raise HTTPException(409, "This lot has reached its movement limit. Add a new intake lot.")
+    if lot.get("updated_at") != body.expected_updated_at:
+        raise HTTPException(409, "Stock changed. Refresh this lot and review the movement.")
+    if body.kind == "adjustment_out" and body.qty > float(lot.get("available_qty") or 0) - float(lot.get("loaned_out_qty") or 0):
+        raise HTTPException(409, "The movement exceeds stock available after reserved transfers.")
+    changes = {"updated_at": now_iso()}
+    if body.kind == "receipt" and not lot.get("catalog_product_id") and (not lot.get("product_id") or str(lot["product_id"]).startswith("godown:")):
+        # Preserve legacy lot identity used by saved quotations while making its SKU reusable.
+        product = await _intake_catalog_product(DirectIntake(
+            qty=body.qty, sku=lot.get("sku"), name=lot.get("name"), brand=lot.get("brand_name"),
+            category=lot.get("category"), unit_price=lot.get("unit_price"),
+        ), lot["floor_id"])
+        changes["catalog_product_id"] = product["id"]
+        catalog_service.schedule_catalog_refresh()
+    at = changes["updated_at"]
+    movement = {"id": str(uuid4()), "kind": body.kind, "qty": body.qty, "occurred_on": body.occurred_on.isoformat(),
+                "reason": body.reason, "actor_id": user.id, "actor_name": user.full_name, "recorded_at": at,
+                "command_key": body.idempotency_key, "payload_sha256": fingerprint}
+    increments = {"available_qty": body.qty if body.kind == "receipt" else -body.qty}
+    if body.kind == "receipt":
+        increments["qty_received"] = body.qty
+    guard = {"id": stock_id, "archived": {"$ne": True}, "quantity_missing": {"$ne": True},
+             "updated_at": body.expected_updated_at, "stock_movements": lot.get("stock_movements"),
+             "available_qty": lot.get("available_qty"), "loaned_out_qty": lot.get("loaned_out_qty")}
+    updated = await db.godown_stock.find_one_and_update({**guard, "floor_id": lot["floor_id"]}, {
+        "$inc": increments, "$set": changes, "$push": {"stock_movements": movement},
+    }, return_document=ReturnDocument.AFTER)
+    if not updated:
+        current = await get_floor_scoped_or_404(db.godown_stock, stock_id, user, not_found="Godown stock lot not found", projection={"_id": 0})
+        previous = replay(current)
+        if previous:
+            return await _stock_response(previous)
+        raise HTTPException(409, "Stock changed while saving. Refresh and review current stock.")
+    return await _stock_response(updated)
+
+
 @router.patch("/{stock_id}/details")
 async def update_stock_details(stock_id: str, body: StockDetailsUpdate, user: UserPublic = Depends(require_min_role("warehouse"))):
     changes = body.model_dump(mode="json", exclude_unset=True)
@@ -1085,6 +1177,41 @@ async def upload_stock_image(stock_id: str, file: UploadFile = File(...), user: 
     return _stock_view(updated)
 
 
+async def _intake_catalog_product(body: DirectIntake, floor_id: str) -> dict:
+    """Persist reusable catalog identity before inventory; retries reuse its SKU."""
+    if not body.sku or not body.sku.strip() or not body.name or not body.name.strip():
+        raise HTTPException(422, "SKU and product name are required to register reusable stock. Add a labelled intake for unlabelled material.")
+    async def relation(collection, name, kind):
+        existing = await collection.find_one({"floor_id": floor_id, "name": {"$regex": f"^{re.escape(name)}$", "$options": "i"}}, {"_id": 0})
+        if existing:
+            return existing
+        identity = str(uuid5(NAMESPACE_URL, f"godown:{kind}:{floor_id}:{name.casefold()}"))
+        row = {"id": identity, "floor_id": floor_id, "name": name, "slug": f"godown-{identity}", "created_at": now_iso(), "updated_at": now_iso()}
+        await collection.update_one({"_id": f"godown-{kind}:{identity}"}, {"$setOnInsert": row}, upsert=True)
+        return row
+    brand = await relation(db.brands, (body.brand or "").strip() or "Unbranded", "brand")
+    category = await relation(db.categories, (body.category or "").strip() or "Godown stock", "category")
+    lookup = {"floor_id": floor_id, "brand_id": brand["id"], "sku": body.sku.strip()}
+    product = await db.products.find_one(lookup, {"_id": 0})
+    if product:
+        if not product.get("active", True):
+            raise HTTPException(409, "This SKU is inactive in the catalog. Restore it before adding stock.")
+        return product
+    identity = str(uuid5(NAMESPACE_URL, f"godown-product:{floor_id}:{brand['id']}:{body.sku.strip()}"))
+    product = Product(id=identity, floor_id=floor_id, sku=body.sku.strip(), name=body.name.strip(),
+                      brand_id=brand["id"], category_id=category["id"], mrp=body.unit_price or 0, price=body.unit_price or 0,
+                      price_status="known" if body.unit_price is not None else "unspecified",
+                      size=body.size, description=body.feature, images=[str(body.image)] if body.image else [],
+                      is_custom=True, catalog_source="godown_intake").model_dump()
+    try:
+        await db.products.insert_one({**product, "_id": f"godown-product:{identity}"})
+    except DuplicateKeyError:
+        product = await db.products.find_one(lookup, {"_id": 0})
+        if not product or not product.get("active", True):
+            raise HTTPException(409, "Catalog changed while adding stock. Review the SKU and retry.") from None
+    return {**product, "brand_name": brand["name"]}
+
+
 @router.post("/direct-intakes")
 async def direct_intake(body: DirectIntake, user: UserPublic = Depends(require_min_role("warehouse"))):
     """Add catalog or independently described material without a customer source."""
@@ -1099,7 +1226,7 @@ async def direct_intake(body: DirectIntake, user: UserPublic = Depends(require_m
             [user.id, floor_id, body.idempotency_key], separators=(",", ":"),
         ).encode()).hexdigest()
         command_hash = hashlib.sha256(json.dumps(
-            body.model_dump(exclude={"idempotency_key"}), sort_keys=True,
+            body.model_dump(mode="json", exclude={"idempotency_key"}), sort_keys=True,
             separators=(",", ":"), allow_nan=False,
         ).encode()).hexdigest()
 
@@ -1123,6 +1250,10 @@ async def direct_intake(body: DirectIntake, user: UserPublic = Depends(require_m
         raise HTTPException(status_code=422, detail="SKU and product name are required")
     if not product and body.unit_price is None:
         raise HTTPException(status_code=422, detail="Unit price is required for a product outside the catalog")
+    manual = product is None
+    if manual:
+        product = await _intake_catalog_product(body, floor_id)
+        catalog_service.schedule_catalog_refresh()
     at = now_iso()
     lot_id = str(uuid4())
     catalog_price = product.get("mrp") if product and (product.get("price_status") or (product.get("specs") or {}).get("price_status")) != "unspecified" else None
@@ -1132,10 +1263,7 @@ async def direct_intake(body: DirectIntake, user: UserPublic = Depends(require_m
     stock_mrp = catalog_price if catalog_price is not None else body.unit_price
     lot = {
         "id": lot_id, "floor_id": floor_id,
-        # Stock-only lines use an opaque id tied to this lot. It is never
-        # inserted into catalog/products, so manual entries stay private to
-        # the godown while quotations can still identify their source.
-        "product_id": (product or {}).get("id") or f"godown:{lot_id}",
+        "product_id": product["id"],
         "sku": (product or {}).get("sku") or (body.sku or "").strip(),
         "name": (product or {}).get("name") or (body.name or "").strip(),
         "image": (await _catalog_images([product])).get(product["id"]) if product else body.image,
@@ -1150,7 +1278,7 @@ async def direct_intake(body: DirectIntake, user: UserPublic = Depends(require_m
         "discount_pct": 0,
         "price_variants": [variant.model_dump() for variant in body.price_variants],
         "qty_received": body.qty, "available_qty": body.qty,
-        "reason": body.reason.strip(), "source_type": "catalog" if product else "manual",
+        "reason": body.reason.strip(), "source_type": "manual" if manual else "catalog",
         "transferred_at": at, "transferred_by": user.id, "transferred_by_name": user.full_name,
         "allocations": [], "created_at": at, "updated_at": at,
     }

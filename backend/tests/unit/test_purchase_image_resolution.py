@@ -12,13 +12,13 @@ def test_purchase_images_refresh_exact_floor_sku_and_reuse_preview(monkeypatch):
         {"id": "p2", "floor_id": "ground-floor", "images": ["https://cdn/tile.jpg"]},
     ]
     snapshot = _build_snapshot(products, [], [], [], [])
-    async def catalog():
+    async def catalog(product_ids, floor_ids):
         return snapshot
     calls = []
     def preview(product, current):
         calls.append(product["id"])
         return product_hero_image(product, current)
-    monkeypatch.setattr(purchase_images, "get_catalog_snapshot", catalog)
+    monkeypatch.setattr(purchase_images, "snapshot_for_product_ids", catalog)
     monkeypatch.setattr(purchase_images, "product_hero_image", preview)
     rows = [
         {"product_id": "p1", "floor_id": "first-floor", "image": "expired"},
@@ -47,9 +47,9 @@ def test_purchase_images_keep_selected_snapshot_when_catalog_sku_changes(monkeyp
     snapshot = _build_snapshot([
         {"id": "p1", "floor_id": "first-floor", "sku": "NEW-SKU", "images": ["https://cdn/new.jpg"]},
     ], [], [], [], [])
-    async def catalog():
+    async def catalog(product_ids, floor_ids):
         return snapshot
-    monkeypatch.setattr(purchase_images, "get_catalog_snapshot", catalog)
+    monkeypatch.setattr(purchase_images, "snapshot_for_product_ids", catalog)
     rows = [
         {"product_id": "p1", "floor_id": "first-floor", "sku": "OLD-SKU", "image": "historic"},
         {"product_id": "p1", "floor_id": "first-floor", "sku": " NEW-SKU ", "image": "expired"},
@@ -74,3 +74,43 @@ def test_workspace_search_treats_parentheses_as_literal_and_retains_floor(monkey
     asyncio.run(tracker._iter_items("stock", None, None, None, " Tap (Chrome) ", 7, floor_ids=["first-floor"]))
     assert captured[0]["$match"]["$or"][0]["number"]["$regex"] == r"Tap\ \(Chrome\)"
     assert next(part["$project"] for part in captured if "$project" in part)["floor_id"] == 1
+
+
+def test_purchase_images_keep_snapshots_when_preview_read_fails(monkeypatch, caplog):
+    async def unavailable(*args):
+        raise RuntimeError("catalog unavailable")
+    monkeypatch.setattr(purchase_images, "snapshot_for_product_ids", unavailable)
+    rows = [{"product_id": "p1", "floor_id": "first-floor", "image": "recorded"}]
+    asyncio.run(purchase_images.hydrate_purchase_images(rows))
+    assert rows == [{"product_id": "p1", "floor_id": "first-floor", "image": "recorded"}]
+    assert "purchase_image_refresh_failed" in caplog.text
+
+
+def test_purchase_images_cancel_slow_optional_read_and_keep_items(monkeypatch, caplog):
+    cancelled = []
+    async def slow(*args):
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cancelled.append(True)
+    monkeypatch.setattr(purchase_images, "snapshot_for_product_ids", slow)
+    monkeypatch.setattr(purchase_images, "IMAGE_REFRESH_TIMEOUT_SECONDS", .01)
+    rows = [{"product_id": "p1", "floor_id": "first-floor", "image": "recorded"}]
+    asyncio.run(purchase_images.hydrate_purchase_images(rows))
+    assert rows[0]["image"] == "recorded" and cancelled == [True]
+    assert "TimeoutError" in caplog.text
+
+
+def test_exact_product_snapshot_does_not_start_cold_catalog_warmup(monkeypatch):
+    from services import catalog_service as catalog, catalog_database
+    calls = []
+    async def forbidden():
+        raise AssertionError("full catalog warmup blocks purchases")
+    async def context(products, *, product_ids, floor_ids):
+        calls.append((products, product_ids, floor_ids))
+        return "exact snapshot"
+    monkeypatch.setattr(catalog, "_snapshot", None)
+    monkeypatch.setattr(catalog, "get_catalog_snapshot", forbidden)
+    monkeypatch.setattr(catalog_database, "context", context)
+    assert asyncio.run(catalog.snapshot_for_product_ids(["p1"], ["first-floor"])) == "exact snapshot"
+    assert calls == [([], ["p1"], ["first-floor"])]

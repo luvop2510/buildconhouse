@@ -47,6 +47,14 @@ class _Collection:
         return _Cursor(docs)
 
 
+@pytest.fixture(autouse=True)
+def acquired_people(monkeypatch):
+    # These legacy sales shaping tests isolate their separate acquisition read.
+    async def empty(*args, **kwargs):
+        return {"total": 0, "people": []}
+    monkeypatch.setattr(sd, "gather_acquired_people", empty)
+
+
 class _FakeDb:
     def __init__(self, docs):
         self.quotations = _Collection(docs)
@@ -408,7 +416,7 @@ def test_report_drilldown_actual_route_role_dependency(monkeypatch, path, role, 
 
     user = UserPublic(id="route-user", email="route@example.test", full_name="Route User", role=role)
     async def identity(): return user
-    async def confirmed(*args): return []
+    async def confirmed(*args, **kwargs): return []
     async def kitchen(*args): return []
     async def furniture(*args): return [], 0.0, 0
     async def products(*args): return {}
@@ -437,7 +445,7 @@ def test_report_drilldown_combined_admin_keeps_source_and_directory_scope(monkey
 
     calls = []
     async def identity(): return _admin_ground_only()
-    async def confirmed(floors, *_args):
+    async def confirmed(floors, *_args, **_kwargs):
         calls.append("orders")
         assert floors == ["ground-floor"]
         return []
@@ -491,3 +499,32 @@ def test_report_drilldown_rejects_explicit_forbidden_floor_before_reads(monkeypa
     with TestClient(app) as client:
         response = client.get(path, params={"floor_id": "first-floor"})
     assert response.status_code == 403 and "access" in response.json()["detail"]
+
+
+def test_reference_drilldown_includes_unconverted_people_and_passes_exact_date_and_floor_scope(monkeypatch):
+    from types import SimpleNamespace
+    seen = []
+    async def people(_db, filters, floors, window, **options):
+        seen.append((filters.referrer_id, floors, window, options))
+        return {"total": 1, "people": [{"customer_name": "Walk-in A", "confirmed": 0, "sources": ["walkins"]}]}
+    async def no_orders(*args, **kwargs): return []
+    async def no_kitchen(*args): return []
+    async def reference(*args): return {"id": "reference", "name": "Architect"}
+    monkeypatch.setattr(sd, "gather_acquired_people", people)
+    monkeypatch.setattr(sd, "_confirmed_quotations", no_orders)
+    monkeypatch.setattr(sd, "kitchen_referral_records", no_kitchen)
+    monkeypatch.setattr(sd, "db", SimpleNamespace(referrers=SimpleNamespace(find_one=reference)))
+    result = asyncio.run(sd.referrer_detail("reference", floor_id="ground-floor", date_from="2026-10-01T00:00:00Z", date_to="2026-11-01T00:00:00Z", preset="custom", people_offset=0, user=_admin_ground_only()))
+    assert result["total_revenue"] == 0 and result["customers_acquired"] == 1
+    assert result["referred_people"][0]["customer_name"] == "Walk-in A"
+    assert seen == [("reference", ["ground-floor"], ("2026-10-01T00:00:00+00:00", "2026-11-01T00:00:00+00:00"), {"offset": 0})]
+
+
+@pytest.mark.parametrize("start,end", [("nonsense", "2026-11-01"), ("2026-11-01", "2026-10-01"), (None, "2026-11-01"), ("2026-11-01", "2026-11-01")])
+def test_referrer_custom_range_rejects_invalid_dates_before_reads(monkeypatch, start, end):
+    from fastapi import HTTPException
+    async def forbidden(*args, **kwargs): raise AssertionError("invalid range reached database")
+    monkeypatch.setattr(sd, "gather_acquired_people", forbidden)
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(sd.referrer_detail("reference", floor_id="ground-floor", date_from=start, date_to=end, preset="custom", user=_admin_ground_only()))
+    assert error.value.status_code == 422

@@ -35,7 +35,7 @@ export const requiredStabilityScenarios: Record<string, string[]> = {
     'critical tile order timeline scrolls through its final event and closes without moving the order page',
     'critical tile order phone metrics and product quantities stay grouped and the last product scrolls into view',
   ],
-  'redesign-kitchen-visit-recovery.spec.ts': ['autosave', 'manual'].map(mode => `critical Kitchen Visit ${mode} confirms a lost saved response before Next CAD`),
+  'redesign-kitchen-visit-recovery.spec.ts': ['autosave', 'manual', 'next'].map(mode => `critical Kitchen Visit ${mode} confirms a lost saved response before Next CAD`),
   'redesign-followup-menu-overflow.spec.ts': [
     ...['ground-floor', 'first-floor', 'third-floor'].map(floor => `critical ${floor} selected follow-up actions fit the viewport and menus stay separate from customer details`),
     ...['owner', 'sales'].map(role => `critical ${role} follow-up salesperson filter offers Mine only to staff`),
@@ -61,7 +61,8 @@ export const requiredStabilityScenarios: Record<string, string[]> = {
     'critical late previous-floor reads cannot relabel the selected floor',
     'critical project departments keep financial reporting when product attribution is unavailable',
     'critical all four departments preserve separate INR and RNB totals and customer identities',
-    ...['Sanitary', 'Tiles', 'Kitchen', 'Furniture'].map(label => `critical ${label} reporting opens its own follow-ups and account workspace`),
+    ...['Sanitary', 'Tiles', 'Furniture'].map(label => `critical ${label} reporting opens its own follow-ups and account workspace`),
+    'critical Kitchen reporting omits follow-ups and opens its account workspace',
     'critical all-department accounts asks for a business unit before opening its own ledger',
     'critical reference search keeps pre-order clients and the chosen reporting period in its detail link',
     'critical export sends the exact displayed brand data and reporting scope',
@@ -70,8 +71,12 @@ export const requiredStabilityScenarios: Record<string, string[]> = {
   'redesign-sales-reference-directory.spec.ts': [
     'critical sales reference directory creates, edits and reuses one identity across floors',
   ],
+  'redesign-godown-stock-editor.spec.ts': [
+    'critical restock an empty product and retry the same stock movement after a lost response',
+  ],
   'redesign-interior-acquisition.spec.ts': [
     'critical Interior section displays acquired customers before an order is placed',
+    'critical reference drilldown lists non-converted walk-ins and confirmed customers across a custom date range',
   ],
   'redesign-input-focus-shape.spec.ts': [
     ...['text', 'textarea', 'search', 'kitchen', 'purchases', 'catalog'].map(kind => `focused ${kind} indicator follows its outer field shape`),

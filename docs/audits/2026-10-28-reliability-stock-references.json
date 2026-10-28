@@ -1,0 +1,182 @@
+{
+  "anonymous_health": {
+    "sampled_at": "2026-10-28T00:09:36.977586+00:00",
+    "note": "Read-only anonymous health samples, not authenticated purchase or Kitchen command acceptance.",
+    "samples": [
+      {
+        "source": "public",
+        "status": 200,
+        "elapsed_ms": 1612.76,
+        "server_timing": "app;dur=119.9, upstream;dur=401.6"
+      },
+      {
+        "source": "public",
+        "status": 200,
+        "elapsed_ms": 1414.05,
+        "server_timing": "app;dur=59.6, upstream;dur=130.6"
+      },
+      {
+        "source": "public",
+        "status": 200,
+        "elapsed_ms": 688.92,
+        "server_timing": "app;dur=59.4, upstream;dur=127.0"
+      },
+      {
+        "source": "public",
+        "status": 200,
+        "elapsed_ms": 1471.41,
+        "server_timing": "app;dur=59.4, upstream;dur=128.0"
+      },
+      {
+        "source": "public",
+        "status": 200,
+        "elapsed_ms": 373.06,
+        "server_timing": "app;dur=59.4, upstream;dur=126.2"
+      },
+      {
+        "source": "direct",
+        "status": 200,
+        "elapsed_ms": 424.94,
+        "server_timing": "app;dur=60.7"
+      },
+      {
+        "source": "direct",
+        "status": 200,
+        "elapsed_ms": 326.55,
+        "server_timing": "app;dur=59.5"
+      },
+      {
+        "source": "direct",
+        "status": 200,
+        "elapsed_ms": 334.36,
+        "server_timing": "app;dur=60.5"
+      },
+      {
+        "source": "direct",
+        "status": 200,
+        "elapsed_ms": 324.5,
+        "server_timing": "app;dur=60.5"
+      },
+      {
+        "source": "direct",
+        "status": 200,
+        "elapsed_ms": 322.87,
+        "server_timing": "app;dur=61.6"
+      }
+    ]
+  },
+  "authenticated_reads": {
+    "sampled_at": "2026-10-28T00:13:53.858500+00:00",
+    "scope": "Read-only production API samples; temporary synthetic QA principal removed and its own session revoked. No business records written.",
+    "cleanup_verified": true,
+    "samples": [
+      {
+        "endpoint": "identity",
+        "status": 200,
+        "elapsed_ms": 480.76,
+        "server_timing": "app;dur=2.0, upstream;dur=312.6",
+        "attempt": 1
+      },
+      {
+        "endpoint": "purchase_items",
+        "status": 200,
+        "elapsed_ms": 528.96,
+        "server_timing": "app;dur=197.6, upstream;dur=267.6",
+        "attempt": 1
+      },
+      {
+        "endpoint": "purchase_stages",
+        "status": 200,
+        "elapsed_ms": 253.51,
+        "server_timing": "app;dur=66.9, upstream;dur=133.9",
+        "attempt": 1
+      },
+      {
+        "endpoint": "purchase_brands",
+        "status": 200,
+        "elapsed_ms": 244.77,
+        "server_timing": "app;dur=63.6, upstream;dur=129.8",
+        "attempt": 1
+      },
+      {
+        "endpoint": "kitchen_projects",
+        "status": 200,
+        "elapsed_ms": 439.55,
+        "server_timing": "app;dur=259.4, upstream;dur=326.1",
+        "attempt": 1
+      },
+      {
+        "endpoint": "kitchen_dashboard",
+        "status": 200,
+        "elapsed_ms": 361.76,
+        "server_timing": "app;dur=124.9, upstream;dur=213.6",
+        "attempt": 1
+      },
+      {
+        "endpoint": "identity",
+        "status": 200,
+        "elapsed_ms": 180.69,
+        "server_timing": "app;dur=1.5, upstream;dur=67.2",
+        "attempt": 2
+      },
+      {
+        "endpoint": "purchase_items",
+        "status": 200,
+        "elapsed_ms": 383.88,
+        "server_timing": "app;dur=130.7, upstream;dur=209.9",
+        "attempt": 2
+      },
+      {
+        "endpoint": "purchase_stages",
+        "status": 200,
+        "elapsed_ms": 255.39,
+        "server_timing": "app;dur=64.9, upstream;dur=130.2",
+        "attempt": 2
+      },
+      {
+        "endpoint": "purchase_brands",
+        "status": 200,
+        "elapsed_ms": 247.87,
+        "server_timing": "app;dur=65.1, upstream;dur=131.0",
+        "attempt": 2
+      },
+      {
+        "endpoint": "kitchen_projects",
+        "status": 200,
+        "elapsed_ms": 662.22,
+        "server_timing": "app;dur=189.6, upstream;dur=255.9",
+        "attempt": 2
+      },
+      {
+        "endpoint": "kitchen_dashboard",
+        "status": 200,
+        "elapsed_ms": 325.93,
+        "server_timing": "app;dur=138.1, upstream;dur=204.5",
+        "attempt": 2
+      }
+    ]
+  },
+  "migration": {
+    "applied_at": "2026-10-28T00:16:38.665561+00:00",
+    "target_database": "buildcon_house",
+    "applied": [
+      "0040_reference_acquisition_reads"
+    ],
+    "remaining": [],
+    "index_verification": {
+      "customers": true,
+      "walkins": true,
+      "followups": true,
+      "quotations": true,
+      "furniture_quotations": true,
+      "kitchen_projects": true
+    },
+    "business_records_modified": false
+  },
+  "baseline": {
+    "frontend_source": "923578e17ceb878bc5acb06b2b33200f2f749538",
+    "vercel_deployment": "dpl_CzsqTw4Tn16gVAMWdPgPiYHLWTV9",
+    "railway_deployment": "899c6bfb-4e8f-4b87-804d-9c503230996b",
+    "backend_source_check": "SHA-256 of server.py, auth.py, services/kitchen_projects.py, services/purchase_images.py and routes/purchases_tracker.py matches origin/main."
+  }
+}

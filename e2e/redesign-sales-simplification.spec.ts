@@ -213,7 +213,7 @@ for (const [floor, label, amount, customer, path] of [
   ['second-floor', 'Kitchen', '₹1,00,000.25', 'Kavya Kitchen Client', '/kitchen'],
   ['third-floor', 'Furniture', 'RNB 12,500.5', 'Falguni Furniture Client', '/notebook/furniture-quotations'],
 ]) {
-  test(`critical ${label} reporting opens its own follow-ups and account workspace`, async ({ page }) => {
+  test(label === "Kitchen" ? "critical Kitchen reporting omits follow-ups and opens its account workspace" : `critical ${label} reporting opens its own follow-ups and account workspace`, async ({ page }) => {
     const requests: string[] = [];
     const followupFloors: string[] = [];
     page.on('request', request => {
@@ -230,12 +230,17 @@ for (const [floor, label, amount, customer, path] of [
     await expect(page.getByTestId('sales-kpi-outstanding')).toContainText(amount);
     await expect(page.getByTestId('sales-customers-list')).toContainText(customer);
     await assertWithinViewport(page);
-    await page.getByTestId('sales-kpi-followups').click();
-    await expect(page).toHaveURL(/\/followups(?:\?|$)/);
-    await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('forge.active-floor') || 'null'))).toBe(floor);
-    await expect.poll(() => followupFloors.at(-1)).toBe(floor);
-    await page.goto('/sales-data/customers');
-    await expect(page.getByTestId('sales-customers-list')).toContainText(customer);
+    if (floor === 'second-floor') {
+      await expect(page.getByTestId('sales-kpi-followups')).toHaveCount(0);
+      expect(followupFloors).toEqual([]);
+    } else {
+      await page.getByTestId('sales-kpi-followups').click();
+      await expect(page).toHaveURL(/\/followups(?:\?|$)/);
+      await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('forge.active-floor') || 'null'))).toBe(floor);
+      await expect.poll(() => followupFloors.at(-1)).toBe(floor);
+      await page.goto('/sales-data/customers');
+      await expect(page.getByTestId('sales-customers-list')).toContainText(customer);
+    }
     await page.getByTestId('sales-kpi-outstanding').click();
     await expect(page).toHaveURL(new RegExp(`${path}(?:\\?|$)`));
     await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('forge.active-floor') || 'null'))).toBe(floor);

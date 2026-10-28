@@ -251,3 +251,18 @@ def test_page_api_never_returns_private_workbook_cells_or_local_paths(monkeypatc
         assert not any(field in row for field in ("source_provenance", "catalog_provenance", "image_local"))
         assert row["quantity_notes"] == ["Reviewed recorded OUT"]
     assert "source_provenance" in original  # Stored receipt/provenance is immutable.
+
+
+def test_stock_movement_export_refuses_oversized_embedded_history(monkeypatch):
+    stock = Collection([{"id": "lot", "floor_id": "first-floor", "image": "recorded", "stock_movements": [{}] * 2001}])
+    monkeypatch.setattr(routes, "db", SimpleNamespace(godown_stock=stock))
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(routes.list_stock(include_history=True, with_movements=True, user=user()))
+    assert error.value.status_code == 409
+
+
+def test_inventory_export_omits_embedded_movement_payloads(monkeypatch):
+    stock = Collection([])
+    monkeypatch.setattr(routes, "db", SimpleNamespace(godown_stock=stock))
+    assert asyncio.run(routes.list_stock(include_history=True, with_movements=False, user=user()))["lots"] == []
+    assert stock.projection["stock_movements"] == stock.projection["allocations"] == 0
