@@ -101,7 +101,21 @@ are not part of browser emulation evidence.
 
 ## Publication
 
-The release is prepared for final validation and direct main push. Its
-pre-push audit and provider verification produce the publication evidence. No separate branch is created and
-no GitHub protection is changed. Backend publication must use the same main source;
-frontend and backend readiness must be checked separately after rollout.
+Main b8434d57 passed the mandatory full local gate: 1,036 stability cases on four
+devices, all 91 discovered routes, and 60 timing cases, with no failures, retries,
+skips or flakes. It is live on Vercel dpl_4zZhA6Bfg8zoCeFCJkkijxRVJNjb and Railway
+a1e71ee9-2031-4262-aae5-4584b024cb7f. All 324 packaged backend runtime files match
+main; database/private-storage bindings remain unchanged and no migrations are
+pending. Live verification passes 18 public route/asset/security/cache checks,
+20 signed-in browser checks across four profiles and 14 changed-page checks on
+desktop/iPhone Safari. Fourteen authenticated GETs returned 200 in 181–856 ms;
+QA cleanup was verified, with no business-record writes. Independent static review
+returned No findings. The deployed PyMongo version is verified as 4.18.3.
+
+GitHub's first independent Performance run hit its 20-minute outer job cap after
+830 passing stability cases, with no scenario failure. The expanded CI stability
+matrix now uses three workers; the local push gate stays at two. The 20-minute job
+cap, 30-second scenario deadlines, request/page budgets, all four profiles and
+zero-retry policy remain unchanged. The isolated timing phase stays at one worker.
+Final follow-up source identity and CI outcome remain pending in the release record.
+No separate branch is created and no GitHub protection is changed.
