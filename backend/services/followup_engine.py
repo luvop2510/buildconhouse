@@ -18,6 +18,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+from pymongo import UpdateOne
 from pymongo.errors import DuplicateKeyError
 
 from auth import floor_inherit
@@ -42,6 +43,7 @@ CUSTOMER_INACTIVE_DAYS = 21
 # used elsewhere for floor_id (`backend/auth.py`'s "first-floor" default).
 FLOOR_FOLLOWUP_DAYS = {"ground-floor": 4, "first-floor": 7}
 FOLLOWUP_DEFAULT_DAYS = 7
+_FOLLOWUP_UPDATE_BATCH_SIZE = 500
 
 
 def quotation_followup_delay_days(floor_id: str) -> int:
@@ -473,19 +475,32 @@ async def _persist_desired_followups(
     }
 
     created = updated = resolved = 0
+    refreshes: list[UpdateOne] = []
+
+    async def flush_refreshes() -> None:
+        nonlocal updated
+        if refreshes:
+            result = await db.followups.bulk_write(refreshes, ordered=True)
+            updated += result.matched_count
+            refreshes.clear()
+
     for key, fields in desired.items():
         ex = existing_by_key.pop(key, None)
         if ex:
             if ex.get("status") == "open":
                 patch = {k: v for k, v in fields.items() if k != "due_at"}
                 patch["updated_at"] = now_iso()
-                await db.followups.update_one({"id": ex["id"]}, {"$set": patch})
-                updated += 1
+                # Human completion or snooze after the snapshot takes precedence.
+                refreshes.append(UpdateOne({"id": ex["id"], "status": "open"}, {"$set": patch}))
+                if len(refreshes) == _FOLLOWUP_UPDATE_BATCH_SIZE:
+                    await flush_refreshes()
             # snoozed rows are left completely untouched — respect the snooze.
         elif key in closed_keys:
             # Already handled by a human — do not recreate it.
             continue
         else:
+            # Preserve refresh-before-insert ordering and each insert's effects.
+            await flush_refreshes()
             f = Followup(source_key=key, is_automated=True, **fields)
             try:
                 await db.followups.insert_one(f.model_dump())
@@ -521,6 +536,8 @@ async def _persist_desired_followups(
                     link=f"/customers/{fields.get('customer_id')}",
                     floor_id=fields.get("floor_id"),
                 )
+
+    await flush_refreshes()
 
     for _key, ex in existing_by_key.items():
         await db.followups.update_one({"id": ex["id"]}, {"$set": {
