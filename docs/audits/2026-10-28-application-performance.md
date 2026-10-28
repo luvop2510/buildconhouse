@@ -1,7 +1,45 @@
 # Application performance work — 28 October 2026
 
-Status: in progress. The full user objective is not achieved. No production
-deployment or database migration has been performed for this work.
+Status: application source `179e56b402005b6d6ef1f3c7b9d4ac3ac2a0d675` is pushed
+to GitHub main and live on Vercel and Railway. The full performance objective
+remains incomplete: initial JavaScript exceeds 200 KB, and Cloudflare rejected
+the media Worker deployment because the available token lacks Worker access.
+Original image delivery remains intact; derivative rollout/backfill is pending.
+
+## Final publication evidence
+
+The unchanged full local audit passed 1,060 stability cases across four devices
+and all 60 timing cases, with no failures, retries, skips or flakes. Backend:
+3,569 passes. All 187 exported pages pass the existing regression ceiling;
+largest static initial JavaScript in the final audit is 457 KiB gzip, still
+above the requested target. Repaired supplemental frontend fixtures pass 92
+cases with two existing intentional profile skips, separate from the strict gate.
+
+Vercel's GitHub production integration published
+`dpl_HybEGMoVkqGcKy2xJpErTssVc1cj` to `buildconhouse.in`. Railway deployment
+`e3e69093-d3b0-4f18-af30-3d06274ccd2c` reports SUCCESS with one always-running
+Singapore replica. Read-only SSH verified all 314 packaged runtime files against
+the released source, unchanged Mongo/private-R2 bindings and no pending migrations.
+Migration 0041 applied through the controlled runner without business-data rewrites.
+
+Live public verification and all 20 authenticated browser checks pass. Changed
+referrer/Kitchen/stock reads returned 200 with no-store; the denied Kitchen
+principal returned 403. Two public login reads returned CDN HIT while browser
+cache-control remained no-store. Fresh private recovery verified 50 collections,
+36,814 records, 228 indexes and both current private files through cloud readback,
+full download and isolated restore, followed by independent evidence review.
+Temporary QA authentication principals/sessions are cleaned by exact run identity;
+no business-record probe writes were performed.
+
+GitHub backend/security checks passed when recorded; independent frontend,
+Kitchen persistence and Performance jobs were still running. This is not a
+claim of overall green CI. No protections or promotion verifier were weakened;
+Vercel publication occurred through its existing GitHub main integration.
+The documentation-only publication ledger follows the tested application commit.
+Detailed local release evidence: `output/performance-2026-10-28/final-publish/`.
+
+The implementation chronology below retains earlier pending statuses as the
+historical observations they describe; this publication record supersedes them.
 
 Source baseline: `f1fccccf`, checked out on local `main` in
 `outputs/app-performance-2026-10-28`. This isolated clone avoids modifying the
