@@ -29,7 +29,8 @@ test('critical stock paging bounds transport, retains drafts and finds products 
   const { requests } = await stockFixture(page);
   await page.goto('/godown-stock');
   await expect(page.getByTestId('godown-lot-page-stock-0')).toBeVisible();
-  await expect(page.getByTestId('godown-lot-page-stock-60')).toHaveCount(0);
+  await expect(page.getByTestId('godown-lot-page-stock-49')).toBeVisible();
+  await expect(page.getByTestId('godown-lot-page-stock-50')).toHaveCount(0);
   expect(requests).toHaveLength(1);
   expect(requests[0].searchParams.get('limit')).toBe('50');
   expect(requests[0].searchParams.get('with_movements')).toBe('false');

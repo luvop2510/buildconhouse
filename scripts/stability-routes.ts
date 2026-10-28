@@ -71,6 +71,7 @@ export const requiredStabilityScenarios: Record<string, string[]> = {
   ],
   'redesign-sales-reference-directory.spec.ts': [
     'critical sales reference directory creates, edits and reuses one identity across floors',
+    'critical reference directory pages and searches the server while preserving historical reports and shared unions',
   ],
   'redesign-godown-stock-editor.spec.ts': [
     'critical restock an empty product and retry the same stock movement after a lost response',
@@ -156,6 +157,8 @@ export const requiredStabilityScenarios: Record<string, string[]> = {
     'critical page render failure preserves the shell and signed-in navigate recovery',
     'critical a failed quotation module offers reload and retains the signed-in destination',
     'critical opening home after a failed module clears the rejected import before returning',
+    'critical a failed Kitchen projects module reloads into the same signed-in queue',
+    'critical a failed Kitchen stage queue module reloads into the same signed-in queue',
   ],
   'redesign-godown-transfer-retry.spec.ts': [
     'critical uncertain stock transfer retains its original command through close and reopen',

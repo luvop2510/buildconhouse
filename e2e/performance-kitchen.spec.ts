@@ -1,10 +1,52 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
+import { resolve, sep } from 'node:path';
 import { performance } from 'node:perf_hooks';
+import { gzipSync } from 'node:zlib';
 import { mockSession } from './audit-fixtures';
 import { captureRuntimeHealth } from './runtime-health';
 
+function primaryContentJavascript(page: Page, baseURL: string) {
+  const origin = new URL(baseURL).origin;
+  const requested = new Set<string>();
+  const captures: { route: string; urls: string[] }[] = [];
+  page.on('request', request => {
+    const url = new URL(request.url());
+    if (url.origin === origin && url.pathname.endsWith('.js')) requested.add(url.href);
+  });
+  return {
+    begin() { requested.clear(); },
+    ready(route: string) { captures.push({ route, urls: [...requested].sort() }); },
+    async report() {
+      // Read only the immutable export served by this run, after the timing assertions.
+      const root = resolve('output/performance-export');
+      const sizes = new Map<string, { rawBytes: number; gzipBytes: number }>();
+      const routes = [];
+      for (const capture of captures) {
+        const assets = [];
+        for (const url of capture.urls) {
+          const pathname = decodeURIComponent(new URL(url).pathname);
+          const file = resolve(root, `.${pathname}`);
+          expect(file.startsWith(root + sep), 'Observed JavaScript belongs to the frozen export').toBe(true);
+          if (!sizes.has(pathname)) {
+            const source = await readFile(file);
+            sizes.set(pathname, { rawBytes: source.length, gzipBytes: gzipSync(source, { level: 9 }).length });
+          }
+          assets.push({ url, ...sizes.get(pathname)! });
+        }
+        expect(assets.length, 'Primary content must include its actual startup JavaScript').toBeGreaterThan(0);
+        routes.push({ route: capture.route, rawBytes: assets.reduce((total, asset) => total + asset.rawBytes, 0),
+          gzipBytes: assets.reduce((total, asset) => total + asset.gzipBytes, 0), assets });
+      }
+      return { requestScope: 'All same-origin JavaScript requested from navigation through primary-content readiness, including lazy chunks; URLs deduplicated per route.',
+        sizeScope: 'Gzip level 9 of frozen export bytes, calculated after readiness timing; not wire transfer or browser cache measurements.', routes };
+    },
+  };
+}
+
 test('Kitchen bounded project page loads and searches within existing budgets', async ({ page, baseURL, browserName }, info) => {
   const runtime = captureRuntimeHealth(page);
+  const javascript = primaryContentJavascript(page, baseURL!);
   const reads: { path: string; limit: string | null; floor?: string }[] = [];
   const unexpected: string[] = [];
   const rows = Array.from({ length: 50 }, (_, index) => ({
@@ -47,10 +89,12 @@ test('Kitchen bounded project page loads and searches within existing budgets', 
     unexpected.push(url.pathname);
     return route.fulfill({ status: 500, json: { detail: 'Unexpected kitchen fixture request' } });
   });
+  javascript.begin();
   const start = performance.now();
   await page.goto('/kitchen/stages/lead', { waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('kitchen-project-kitchen-performance-0')).toBeVisible();
   const readyMs = performance.now() - start;
+  javascript.ready('/kitchen/stages/lead');
   expect(readyMs).toBeLessThan(2500);
   const query = reads.filter(read => read.path === '/api/kitchen-projects');
   expect(query).toHaveLength(1);
@@ -70,11 +114,22 @@ test('Kitchen bounded project page loads and searches within existing budgets', 
   await expect(page.getByTestId('kitchen-view-menu')).toHaveCount(0);
   await expect(page.getByTestId('kitchen-project-kitchen-performance-49')).toBeVisible();
   if (browserName === 'chromium') await (await page.context().newCDPSession(page)).send('Emulation.setCPUThrottlingRate', { rate: 1 });
+  javascript.begin();
+  const projectsStart = performance.now();
+  await page.goto('/kitchen/projects', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('kitchen-project-kitchen-performance-0')).toBeVisible();
+  const projectsReadyMs = performance.now() - projectsStart;
+  javascript.ready('/kitchen/projects');
+  expect(projectsReadyMs, 'All-project queue primary content').toBeLessThan(2500);
+  expect(reads.filter(read => read.path === '/api/kitchen-projects').at(-1)?.floor).toBe('second-floor');
+  expect(reads.filter(read => read.path === '/api/kitchen-projects').at(-1)?.limit).toBe('25');
+  javascript.begin();
   const dashboardStart = performance.now();
   await page.goto('/kitchen', { waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('kitchen-dashboard-count-lead')).toHaveText('25');
   await expect(page.getByTestId('kitchen-dashboard-stages').getByRole('link')).toHaveCount(9);
   const dashboardReadyMs = performance.now() - dashboardStart;
+  javascript.ready('/kitchen');
   expect(dashboardReadyMs, 'Dashboard primary content').toBeLessThan(2500);
   if (browserName === 'chromium') await (await page.context().newCDPSession(page)).send('Emulation.setCPUThrottlingRate', { rate: 4 });
   const globalSearchStart = performance.now();
@@ -87,12 +142,18 @@ test('Kitchen bounded project page loads and searches within existing budgets', 
   expect(globalReads.at(-1)?.floor).toBe('second-floor');
   expect(unexpected).toEqual([]);
   await runtime.assertHealthy();
+  const javascriptEvidence = await javascript.report();
+  for (const route of javascriptEvidence.routes.filter(route => route.route !== '/kitchen')) {
+    expect(route.assets.some(asset => /\/KitchenWorkspace-[^/]+\.js$/.test(new URL(asset.url).pathname)),
+      `${route.route} accounting includes its required lazy queue module`).toBe(true);
+  }
   await info.attach('Kitchen performance evidence', { contentType: 'application/json', body: JSON.stringify({ device: info.project.name,
-    fixtureLatencyMs: 200, totalProjects: 105, pageProjects: 25, readyMs, searchMs, dashboardReadyMs, globalSearchMs, reads }) });
+    fixtureLatencyMs: 200, totalProjects: 105, pageProjects: 25, readyMs, searchMs, projectsReadyMs, dashboardReadyMs, globalSearchMs, reads, javascriptEvidence }) });
 });
 
 test('Kitchen stage, long history and private document lists meet existing primary-content budgets', async ({ page, baseURL, browserName }, info) => {
   const runtime = captureRuntimeHealth(page);
+  const javascript = primaryContentJavascript(page, baseURL!);
   const unexpected: string[] = [];
   await page.addInitScript(() => {
     const observed = window as unknown as { kitchenHistoryFormats: number };
@@ -135,10 +196,12 @@ test('Kitchen stage, long history and private document lists meet existing prima
   });
   const timings: Record<string, number> = {};
   for (const [label, suffix, marker] of [['stage', '/stages/design', 'kitchen-current-task-region'], ['history', '/history', 'kitchen-history-category'], ['documents', '/documents', 'kitchen-documents-page']]) {
+    javascript.begin();
     const start = performance.now();
     await page.goto(`/kitchen/kitchen-heavy${suffix}`, { waitUntil: 'domcontentloaded' });
     await expect(page.getByTestId(marker)).toBeVisible();
     timings[label] = performance.now() - start;
+    javascript.ready(`/kitchen/kitchen-heavy${suffix}`);
     expect(timings[label], `${label} primary content`).toBeLessThan(2500);
     if (label === 'history') {
       await expect(page.getByText('500 records', { exact: true })).toBeVisible();
@@ -157,7 +220,12 @@ test('Kitchen stage, long history and private document lists meet existing prima
     await runtime.assertHealthy();
   }
   expect(unexpected).toEqual([]);
+  const javascriptEvidence = await javascript.report();
+  for (const route of javascriptEvidence.routes) {
+    expect(route.assets.some(asset => /\/KitchenProjectDetail-[^/]+\.js$/.test(new URL(asset.url).pathname)),
+      `${route.route} accounting includes its required lazy project module`).toBe(true);
+  }
   await info.attach('Kitchen heavy-page fixture timing', { contentType: 'application/json', body: JSON.stringify({ device: info.project.name,
-    fixtureLatencyMs: 200, activityRecords: 500, designVersions: 120, privateFiles: 120, timings,
+    fixtureLatencyMs: 200, activityRecords: 500, designVersions: 120, privateFiles: 120, timings, javascriptEvidence,
     scope: 'Local fixture rendering only; no hosted storage/auth/network performance claim' }) });
 });
