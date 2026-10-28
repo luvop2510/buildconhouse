@@ -1,11 +1,46 @@
+import asyncio
+import re
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from auth import accessible_floor_ids, floor_for_write, floor_query, get_floor_scoped_or_404, require_min_role
 from db import db
 from models import Referrer, ReferrerCreate, ReferrerUpdate, ReferrerType, UserPublic, now_iso
 from services.referrer_identity import referrer_query
+from services.analytics.filters import AnalyticsFilter, FloorAccessError, build_match
 
 router = APIRouter(tags=["referrers"])
+
+
+@router.get("/referrers/page")
+async def referrers_page(
+    floor_id: str | None = None,
+    type: ReferrerType | None = None,
+    search: str = Query("", max_length=200),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(25, ge=1, le=50),
+    user: UserPublic = Depends(require_min_role("sales")),
+):
+    floor_for_write(user)
+    try:
+        scope = (build_match(AnalyticsFilter(floor_id=floor_id, status="any"), accessible_floor_ids(user), (None, None))
+                 if floor_id else floor_query(user))
+    except FloorAccessError as exc:
+        raise HTTPException(403, "You do not have access to this floor") from exc
+    query = referrer_query(scope, {"active": {"$ne": False}, **({"type": type} if type else {})})
+    if search.strip():
+        term = re.escape(search.strip())
+        query = {"$and": [query, {"$or": [
+            *[{field: {"$regex": term, "$options": "i"}} for field in ("name", "company", "phone")],
+            {"$expr": {"$regexMatch": {"input": {"$concat": [
+                {"$cond": [{"$eq": ["$type", "architect"]}, "ARC-", "INT-"]}, {"$toUpper": "$id"},
+            ]}, "regex": term, "options": "i"}}},
+        ]}]}
+    docs, total = await asyncio.gather(
+        db.referrers.find(query, {"_id": 0}).sort([("name", 1), ("id", 1)]).skip(offset).limit(limit).to_list(limit),
+        db.referrers.count_documents(query),
+    )
+    return {"rows": [Referrer(**doc) for doc in docs], "total": total, "offset": offset, "limit": limit}
 
 
 @router.get("/referrers", response_model=list[Referrer])

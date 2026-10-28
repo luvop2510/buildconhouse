@@ -24,52 +24,78 @@ export function ReferrerDirectory({ kind, floorId: reportFloor, period, performa
   const { isPhone, isTabletPortrait } = useBp();
   const compact = isPhone || isTabletPortrait;
   const floorId = reportFloor || selectedFloorId;
-  // Directory reads require a concrete floor. Union authorized directories,
-  // deduplicating shared IDs without exposing another floor's private contacts.
   const floorKey = floorId === "all" ? floors.map(floor => floor.id).sort().join(",") : floorId;
-  const [directory, setDirectory] = useState<{ scope: string; contacts: ReferenceContact[] }>({ scope: "", contacts: [] });
+  const scopeKey = JSON.stringify([staff?.id, floorKey]);
+  const scopeRef = useRef(scopeKey); scopeRef.current = scopeKey;
+  const onSavedRef = useRef(onSaved); onSavedRef.current = onSaved;
+  const mounted = useRef(true);
+  const [directory, setDirectory] = useState<{ scope: string; contacts: ReferenceContact[]; total: number; nextOffset: number }>({ scope: "", contacts: [], total: 0, nextOffset: 0 });
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ scope: string; detail: string; offset: number } | null>(null);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<ReferenceKind | "all">(kind || "all");
-  const [visibleCount, setVisibleCount] = useState(25);
+  const [historicalCount, setHistoricalCount] = useState(25);
+  const [revision, setRevision] = useState(0);
   const [editing, setEditing] = useState<ReferenceContact | null | undefined>(undefined);
   const [editorScope, setEditorScope] = useState("");
   const generation = useRef(0);
   const controller = useRef<AbortController | null>(null);
-  const load = useCallback(() => {
-    if (!floorKey) return;
+  const pending = useRef<{ key: string; offset: number; version: number } | null>(null);
+  const needle = search.trim().toLocaleLowerCase();
+  const queryKey = JSON.stringify([scopeKey, filter, needle]);
+  const queryRef = useRef(queryKey); queryRef.current = queryKey;
+  const load = useCallback((offset = 0) => {
+    if (!floorKey || !mounted.current || queryRef.current !== queryKey
+      || (pending.current?.key === queryKey && pending.current.offset === offset)) return;
     const version = ++generation.current;
+    pending.current = { key: queryKey, offset, version };
     controller.current?.abort();
     const nextController = new AbortController(); controller.current = nextController;
     setLoading(true); setError(null);
-    void Promise.all(floorKey.split(",").map(id => api.get<ReferenceContact[]>("/referrers", { floorId: id, signal: nextController.signal }))).then(results => {
-      if (version === generation.current) setDirectory({ scope: floorKey, contacts: [...new Map(results.flat().map(row => [row.id, row])).values()] });
+    const query = new URLSearchParams({ floor_id: floorKey, offset: String(offset), limit: "25", search: needle });
+    if (filter !== "all") query.set("type", filter);
+    void api.get<{ rows: ReferenceContact[]; total: number; offset: number; limit: number }>(`/referrers/page?${query}`, {
+      floorId: floorId === "all" ? selectedFloorId || floorKey.split(",")[0] : floorId,
+      signal: nextController.signal,
+    }).then(result => {
+      if (!mounted.current || version !== generation.current || queryRef.current !== queryKey) return;
+      setDirectory(current => ({ scope: queryKey, total: result.total, nextOffset: result.offset + result.rows.length,
+        contacts: [...new Map([...(offset && current.scope === queryKey ? current.contacts : []), ...result.rows].map(row => [row.id, row])).values()],
+      }));
     }).catch((cause: unknown) => {
-      if (version !== generation.current || nextController.signal.aborted) return;
+      if (!mounted.current || version !== generation.current || queryRef.current !== queryKey || nextController.signal.aborted) return;
       const detail = (cause as { detail?: unknown })?.detail;
-      setError(typeof detail === "string" ? detail : "Could not load references. Retry to load the directory.");
-    }).finally(() => { if (version === generation.current) setLoading(false); });
-  }, [floorKey]);
+      setError({ scope: queryKey, detail: typeof detail === "string" ? detail : "Could not load references. Retry to load the directory.", offset });
+    }).finally(() => {
+      if (pending.current?.version === version) pending.current = null;
+      if (mounted.current && version === generation.current && queryRef.current === queryKey) setLoading(false);
+    });
+  }, [floorKey, floorId, selectedFloorId, filter, needle, queryKey]);
   useEffect(() => {
-    setEditing(undefined); load();
-    return () => { generation.current += 1; controller.current?.abort(); };
-  }, [load]);
+    mounted.current = true;
+    return () => { mounted.current = false; generation.current += 1; controller.current?.abort(); pending.current = null; };
+  }, []);
+  useEffect(() => {
+    const timer = setTimeout(() => load(), needle ? 200 : 0);
+    return () => { clearTimeout(timer); generation.current += 1; controller.current?.abort(); pending.current = null; };
+  }, [load, needle, revision]);
+  useEffect(() => { setEditing(undefined); }, [scopeKey]);
   useEffect(() => { setFilter(kind || "all"); }, [kind]);
-  useEffect(() => { setVisibleCount(25); }, [filter, search, floorKey]);
+  useEffect(() => { setHistoricalCount(25); }, [filter, search, scopeKey]);
 
-  const rows = useMemo(() => mergeReferences(directory.scope === floorKey ? directory.contacts : [], performance || []), [directory, floorKey, performance]);
-  const needle = search.trim().toLocaleLowerCase();
-  const visible = rows.filter(({ contact }) => (filter === "all" || contact.type === filter) && [contact.name, contact.company, contact.phone, referrerCode(contact.id, contact.type)].some(value => value?.toLocaleLowerCase().includes(needle)));
-  const startEditing = (contact: ReferenceContact | null) => { setEditorScope(floorKey); setEditing(contact); };
+  const current = directory.scope === queryKey;
+  const currentError = error?.scope === queryKey ? error : null;
+  const rows = useMemo(() => mergeReferences(current ? directory.contacts : [], performance || []), [directory, current, performance]);
+  const active = rows.filter(row => !row.historical);
+  const historical = rows.filter(({ contact, historical }) => historical && (filter === "all" || contact.type === filter)
+    && [contact.name, contact.company, contact.phone, referrerCode(contact.id, contact.type)].some(value => value?.toLocaleLowerCase().includes(needle)));
+  const startEditing = (contact: ReferenceContact | null) => { setEditorScope(scopeKey); setEditing(contact); };
   const editorFloor = floorId !== "all" ? floorId : selectedFloorId || floorKey.split(",")[0];
-  const saved = (contact: ReferenceContact) => {
-    if (editorScope !== floorKey) return;
-    setDirectory(current => ({ scope: floorKey, contacts: [...(current.scope === floorKey ? current.contacts.filter(row => row.id !== contact.id) : []), contact] }));
-    // Creation can resolve an existing private identity; its sharing change
-    // still needs an explicit owner save with that record's current version.
+  const saved = () => {
+    if (!mounted.current || editorScope !== scopeRef.current) return;
     setEditing(undefined);
-    onSaved?.();
+    setRevision(value => value + 1);
+    onSavedRef.current?.();
   };
   return <Card variant="flat" padding={spacing.s16}><View style={{ gap: spacing.s16 }} testID="sales-reference-directory">
     <View style={{ flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: spacing.s8 }}>
@@ -79,21 +105,27 @@ export function ReferrerDirectory({ kind, floorId: reportFloor, period, performa
     <PillTabs value={filter} onChange={setFilter} testID="references-type" options={[
       { value: "all", label: "All" }, { value: "interior_designer", label: "Interior designers" }, { value: "architect", label: "Architects" },
     ]} />
-    <TextField placeholderTextColor={colors.onSurfaceMuted} label="Search references" placeholder="Name, studio, phone or reference code" value={search} onChangeText={setSearch} testID="references-search" />
-    {loading || directory.scope !== floorKey ? error ? <ErrorState subtitle={error} onRetry={load} /> : <LoadingState label="Loading references…" /> : <>
-      {error ? <ErrorState subtitle={error} onRetry={load} /> : null}
-      <Text style={[type.bodySm, { color: colors.onSurfaceMuted }]}>{visible.length.toLocaleString("en-IN")} {visible.length === 1 ? "reference" : "references"}{search || filter !== "all" ? " matching your filters" : ""}</Text>
-      {!visible.length ? <Text style={type.body}>{search ? "No matching references. Try a name, studio or reference code." : "No references yet. Add an architect or interior designer to start tracking referrals."}</Text> : null}
-      {!compact && visible.length ? <View style={{ flexDirection: "row", gap: spacing.s16, alignItems: "center" }}>
+    <TextField placeholderTextColor={colors.onSurfaceMuted} label="Search references" placeholder="Name, studio, phone or reference code" maxLength={200} value={search} onChangeText={setSearch} testID="references-search" />
+    {!current ? currentError ? <ErrorState subtitle={currentError.detail} onRetry={() => load(currentError.offset)} /> : <LoadingState label="Loading references…" /> : <>
+      {currentError ? <ErrorState subtitle={currentError.detail} onRetry={() => load(currentError.offset)} /> : null}
+      <Text style={[type.bodySm, { color: colors.onSurfaceMuted }]}>{directory.total.toLocaleString("en-IN")} active {directory.total === 1 ? "reference" : "references"}{search || filter !== "all" ? " matching your filters" : ""}</Text>
+      {!active.length && !historical.length ? <Text style={type.body}>{search ? "No matching references. Try a name, studio or reference code." : "No references yet. Add an architect or interior designer to start tracking referrals."}</Text> : null}
+      {!compact && active.length ? <View style={{ flexDirection: "row", gap: spacing.s16, alignItems: "center" }}>
         <Text style={[type.bodySm, { flex: 3, minWidth: 0, color: colors.onSurfaceMuted }]}>Reference</Text>
         {performance ? <><Text style={[type.bodySm, { flex: 1, textAlign: "right", color: colors.onSurfaceMuted }]}>Clients brought</Text><Text style={[type.bodySm, { flex: 1, textAlign: "right", color: colors.onSurfaceMuted }]}>Sales</Text></> : null}
         {staff?.role === "owner" ? <View style={{ width: 44 }} /> : null}
       </View> : null}
-      <View>{visible.slice(0, visibleCount).map(row => <DirectoryRow key={row.contact.id} row={row} compact={compact} showPerformance={performance !== undefined} canEdit={staff?.role === "owner" && !row.historical} floorId={floorId} period={period} onEdit={() => startEditing(row.contact)} />)}</View>
-      {visible.length > visibleCount ? <Button label={`Show more (${visibleCount} of ${visible.length})`} variant="secondary" onPress={() => setVisibleCount(count => count + 25)} /> : null}
-      {performance ? <Text style={[type.bodySm, { color: colors.onSurfaceMuted }]}>Clients brought includes people referred before an order. Figures cover {period?.label || "the selected period"}. Furniture sales stay in RNB; — means a figure is unavailable.</Text> : null}
+      <View>{active.map(row => <DirectoryRow key={row.contact.id} row={row} compact={compact} showPerformance={performance !== undefined} canEdit={staff?.role === "owner"} floorId={floorId} period={period} onEdit={() => startEditing(row.contact)} />)}</View>
+      {directory.nextOffset < directory.total ? <Button label={loading ? "Loading references…" : `Show more (${directory.nextOffset} of ${directory.total})`} disabled={loading} variant="secondary" onPress={() => load(directory.nextOffset)} /> : null}
     </>}
-    {editing !== undefined && editorScope === floorKey && editorFloor ? <ReferencesEditor key={`${floorKey}:${editing?.id || "new"}`} item={editing} initialKind={filter === "all" ? "interior_designer" : filter} floorId={editorFloor} onSaved={saved} onClose={() => setEditing(undefined)} /> : null}
+    {historical.length ? <View testID="sales-historical-references" style={{ gap: spacing.s8 }}>
+      <Text accessibilityRole="header" aria-level={3} style={type.titleSm}>Historical references</Text>
+      <Text style={[type.bodySm, { color: colors.onSurfaceMuted }]}>{historical.length.toLocaleString("en-IN")} {historical.length === 1 ? "historical reference" : "historical references"}{search || filter !== "all" ? " matching your filters" : ""} in {period?.label || "the selected period"}</Text>
+      {historical.slice(0, historicalCount).map(row => <DirectoryRow key={row.contact.id} row={row} compact={compact} showPerformance canEdit={false} floorId={floorId} period={period} onEdit={() => {}} />)}
+      {historical.length > historicalCount ? <Button label={`Show more historical references (${historicalCount} of ${historical.length})`} variant="secondary" onPress={() => setHistoricalCount(count => count + 25)} /> : null}
+    </View> : null}
+    {performance ? <Text style={[type.bodySm, { color: colors.onSurfaceMuted }]}>Clients brought includes people referred before an order. Figures cover {period?.label || "the selected period"}. Furniture sales stay in RNB; — means a figure is unavailable.</Text> : null}
+    {editing !== undefined && editorScope === scopeKey && editorFloor ? <ReferencesEditor key={`${floorKey}:${editing?.id || "new"}`} item={editing} initialKind={filter === "all" ? "interior_designer" : filter} floorId={editorFloor} onSaved={saved} onClose={() => setEditing(undefined)} /> : null}
   </View></Card>;
 }
 
