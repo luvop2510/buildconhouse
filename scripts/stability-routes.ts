@@ -26,6 +26,7 @@ export function stabilityRouteTitle(path: string): string {
 export const stabilityProjects = ['android-chrome', 'iphone-safari', 'ipad-safari', 'desktop-chrome'];
 
 export const requiredStabilityScenarios: Record<string, string[]> = {
+  'redesign-dashboard-optimistic.spec.ts': ['success', 'failure'].map(outcome => `critical dashboard completion is immediate and handles ${outcome}`),
   'redesign-tile-mobile-orders.spec.ts': [
     'critical Tile Orders phone views form a readable grid and records retain identity with paired quantities',
     'critical switching Tile Orders views cancels the abandoned request and keeps the selected view usable',

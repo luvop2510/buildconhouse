@@ -128,7 +128,7 @@ test('critical sanitary family pagination preserves reused supplier keys across 
   await page.route('**/api/products/families?**', route => {
     const skip = Number(new URL(route.request().url()).searchParams.get('skip') || 0);
     pages.push(skip);
-    return route.fulfill({ json: { total: catalog.length, items: catalog.slice(skip, skip + 60) } });
+    return route.fulfill({ json: { total: catalog.length, items: catalog.slice(skip, skip + Number(new URL(route.request().url()).searchParams.get('limit') || 50)) } });
   });
   await page.goto('/catalog');
   await expect(page.getByRole('button', { name: 'View Brand A Alpha Basin', exact: true })).toBeVisible();

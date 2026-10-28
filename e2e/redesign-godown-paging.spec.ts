@@ -31,7 +31,7 @@ test('critical stock paging bounds transport, retains drafts and finds products 
   await expect(page.getByTestId('godown-lot-page-stock-0')).toBeVisible();
   await expect(page.getByTestId('godown-lot-page-stock-60')).toHaveCount(0);
   expect(requests).toHaveLength(1);
-  expect(requests[0].searchParams.get('limit')).toBe('60');
+  expect(requests[0].searchParams.get('limit')).toBe('50');
   expect(requests[0].searchParams.get('with_movements')).toBe('false');
   await page.getByTestId('godown-edit-page-stock-1').click();
   const draft = page.getByTestId('godown-price-page-stock-1');
@@ -41,7 +41,7 @@ test('critical stock paging bounds transport, retains drafts and finds products 
   await expect(draft).toHaveValue('333');
   await page.getByTestId('godown-load-more').click();
   await expect(page.getByTestId('godown-lot-page-stock-149')).toBeAttached();
-  expect(requests.map(url => url.searchParams.get('offset'))).toEqual(['0', '60', '120']);
+  expect(requests.map(url => url.searchParams.get('offset'))).toEqual(['0', '50', '100']);
   await page.getByRole('textbox', { name: 'Search godown stock', exact: true }).fill('PAGED-149');
   await expect(page.getByTestId('godown-results')).toContainText('showing 1 of 1');
   await expect(page.getByTestId('godown-lot-page-stock-149')).toBeVisible();
