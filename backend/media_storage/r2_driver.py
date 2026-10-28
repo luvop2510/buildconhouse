@@ -17,7 +17,7 @@ from botocore.exceptions import ClientError
 
 from settings import settings
 from .base import MediaStorage, StoredObject, StorageError
-from services.product_image_variants import MIN_BYTES, PREFIX, create_image_variants, variant_key
+from services.product_image_variants import MIN_BYTES, PREFIX, WIDTHS, create_image_variants, variant_key
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +27,7 @@ class R2StorageDriver(MediaStorage):
         self.cfg = cfg or settings
         self._variant_slot = asyncio.Semaphore(1)
         self._variant_jobs: set[asyncio.Task] = set()
+        self._variant_sources: dict[asyncio.Task, tuple[str, str]] = {}
         self._client = client or boto3.client(
             "s3", endpoint_url=f"https://{self.cfg.r2_account_id}.r2.cloudflarestorage.com",
             aws_access_key_id=self.cfg.r2_access_key_id,
@@ -110,7 +111,9 @@ class R2StorageDriver(MediaStorage):
         # while a blocking Pillow/SDK thread is still running.
         job = asyncio.create_task(publish())
         self._variant_jobs.add(job)
+        self._variant_sources[job] = (bucket, key)
         job.add_done_callback(self._variant_jobs.discard)
+        job.add_done_callback(lambda task: self._variant_sources.pop(task, None))
         return await asyncio.shield(job) if wait else 0
 
     async def replace(self, *, bucket, key, data, content_type):
@@ -118,7 +121,22 @@ class R2StorageDriver(MediaStorage):
 
     async def delete(self, *, bucket, key):
         self._scope(bucket, key)
-        await self._call("delete_object", Bucket=bucket, Key=key)
+        async def remove():
+            await self._call("delete_object", Bucket=bucket, Key=key)
+            if bucket == self.cfg.supabase_public_bucket and not key.startswith(PREFIX):
+                # Failed metadata registration may delete during encoding.
+                pending = [job for job, source in self._variant_sources.items() if source == (bucket, key)]
+                if pending:
+                    await asyncio.gather(*pending, return_exceptions=True)
+                result = await self._call("delete_objects", Bucket=bucket,
+                    Delete={"Objects": [{"Key": variant_key(key, width)} for width in WIDTHS], "Quiet": True})
+                if result.get("Errors"):
+                    raise StorageError("R2 image derivative cleanup failed")
+        # Cancellation cannot abandon cleanup after the original is removed.
+        job = asyncio.create_task(remove())
+        self._variant_jobs.add(job)
+        job.add_done_callback(self._variant_jobs.discard)
+        await asyncio.shield(job)
 
     async def download(self, *, bucket, key):
         self._scope(bucket, key)

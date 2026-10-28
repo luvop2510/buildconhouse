@@ -157,3 +157,54 @@ async def test_acknowledged_upload_does_not_wait_for_image_encoder(monkeypatch):
         assert len(storage._variant_jobs) == 1
     finally:
         release.set(); await asyncio.gather(*storage._variant_jobs)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('cancel_delete', [False, True])
+async def test_delete_finishes_pending_variants_before_cleanup_even_if_caller_cancels(monkeypatch, cancel_delete):
+    import threading
+    import media_storage.r2_driver as module
+    started, release = threading.Event(), threading.Event()
+    def encode(*_args):
+        started.set(); release.wait(3); return {320: b'webp'}
+    monkeypatch.setattr(module, 'create_image_variants', encode)
+    storage = driver(); calls = []; objects = {'photo.png': b'original'}
+    async def call(operation, **kwargs):
+        calls.append((operation, kwargs))
+        if operation == 'put_object': objects[kwargs['Key']] = kwargs['Body']
+        if operation == 'delete_object': objects.pop(kwargs['Key'], None)
+        if operation == 'delete_objects':
+            for item in kwargs['Delete']['Objects']: objects.pop(item['Key'], None)
+        return {}
+    storage._call = call
+    await storage.publish_image_variants(bucket='public', key='photo.png', data=b'x' * 20000, content_type='image/png', wait=False)
+    deleting = None
+    try:
+        for _ in range(100):
+            if started.is_set(): break
+            await asyncio.sleep(.001)
+        assert started.is_set()
+        deleting = asyncio.create_task(storage.delete(bucket='public', key='photo.png'))
+        for _ in range(100):
+            if 'photo.png' not in objects: break
+            await asyncio.sleep(.001)
+        assert 'photo.png' not in objects and not deleting.done()
+        if cancel_delete:
+            deleting.cancel()
+            with pytest.raises(asyncio.CancelledError): await deleting
+    finally:
+        release.set()
+        if deleting and not cancel_delete: await deleting
+        await asyncio.gather(*storage._variant_jobs)
+    assert objects == {}
+    assert [operation for operation, _ in calls] == ['delete_object', 'put_object', 'delete_objects']
+    assert len(calls[-1][1]['Delete']['Objects']) == len(WIDTHS)
+
+
+@pytest.mark.asyncio
+async def test_derivative_cleanup_errors_are_not_reported_as_success():
+    from media_storage.base import StorageError
+    storage = driver()
+    storage._call = AsyncMock(side_effect=[{}, {'Errors': [{'Code': 'AccessDenied'}]}])
+    with pytest.raises(StorageError, match='derivative cleanup failed'):
+        await storage.delete(bucket='public', key='photo.png')

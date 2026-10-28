@@ -10,7 +10,7 @@ export default {
     const url = new URL(request.url);
     try { key = decodeURIComponent(url.pathname.slice(1)); }
     catch { return new Response(null, { status: 400, headers }); }
-    if (!key || key.split('/').some(part => ['', '.', '..'].includes(part)) || /[\0\r\n]/.test(key)) {
+    if (!key || key.startsWith('_image_variants/') || key.split('/').some(part => ['', '.', '..'].includes(part)) || /[\0\r\n]/.test(key)) {
       return new Response(null, { status: 404, headers });
     }
     if (!env.PUBLIC_MEDIA) return new Response(null, { status: 503, headers });
@@ -25,8 +25,9 @@ export default {
       // Derivatives are generated at ingestion/backfill, never on a read.
       // The URL contains the size, so separate representations have distinct
       // browser/CDN keys. Missing derivatives safely serve the exact original.
-      let object = width && !key.startsWith('_image_variants/')
-        ? await read(`_image_variants/v1/w${width}/${key}.webp`) : null;
+      // A leftover copy cannot keep a deleted source publicly available.
+      if (width && !await env.PUBLIC_MEDIA.head(key)) return new Response(null, { status: 404, headers });
+      let object = width ? await read(`_image_variants/v1/w${width}/${key}.webp`) : null;
       if (!object) object = await read(key);
       if (!object) return new Response(null, { status: 404, headers });
       object.writeHttpMetadata(headers);
