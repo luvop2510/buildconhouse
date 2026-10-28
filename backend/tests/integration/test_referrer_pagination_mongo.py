@@ -31,13 +31,15 @@ def test_pages_search_history_and_payload_against_real_mongo(mongo_url, monkeypa
         db = client[f"referrer_paging_{uuid4().hex}"]
         counted = CountedCollection(db.referrers)
         monkeypatch.setattr(directory, "db", SimpleNamespace(referrers=counted))
-        monkeypatch.setattr(reporting, "db", SimpleNamespace(referrers=counted))
+        monkeypatch.setattr(reporting, "db", SimpleNamespace(referrers=counted, floors=db.floors))
         user = UserPublic(id="fixture", email="fixture@example.test", full_name="Fixture", role="sales",
                           floor_ids=["first-floor", "ground-floor"], active_floor_id="first-floor")
         base = {"name": "Studio", "normalized_name": "studio", "type": "architect", "created_by": "fixture"}
         async def page(offset=0, search="", floor="first-floor,ground-floor", kind=None):
             return await directory.referrers_page(floor_id=floor, type=kind, search=search, offset=offset, limit=25, user=user)
         try:
+            await db.floors.insert_many([{"id": floor, "active": True, "created_at": "2026-01-01"}
+                                         for floor in ("first-floor", "ground-floor")])
             docs = [{**base, "id": f"{prefix}-{index:04}", "floor_id": floor}
                     for prefix, floor in (("a", "first-floor"), ("b", "ground-floor")) for index in range(2003)]
             docs += [{**base, "id": f"archived-{index:03}", "name": "A archived", "floor_id": "first-floor", "active": False} for index in range(100)]
@@ -80,6 +82,42 @@ def test_pages_search_history_and_payload_against_real_mongo(mongo_url, monkeypa
             print(json.dumps(evidence))
             target = os.environ.get("REFERRER_PAGING_EVIDENCE")
             if target: Path(target).write_text(json.dumps(evidence, indent=2) + "\n")
+        finally:
+            await client.drop_database(db.name)
+            client.close()
+    asyncio.run(run())
+
+
+def test_owner_all_units_retains_inactive_and_missing_floor_reference_history(mongo_url, monkeypatch):
+    async def run():
+        client = AsyncIOMotorClient(mongo_url)
+        db = client[f"referrer_old_floors_{uuid4().hex}"]
+        monkeypatch.setattr(directory, "db", db)
+        monkeypatch.setattr(reporting, "db", db)
+        base = {"name": "Studio", "normalized_name": "studio", "type": "architect", "created_by": "fixture"}
+        owner = UserPublic(id="owner", email="owner@example.test", full_name="Owner", role="owner", active_floor_id="first-floor")
+        try:
+            await db.floors.insert_many([
+                {"id": "first-floor", "active": True, "created_at": "2026-01-01"},
+                {"id": "ground-floor", "active": True, "created_at": "2026-01-02"},
+                {"id": "inactive-floor", "active": False, "created_at": "2026-01-03"},
+            ])
+            await db.referrers.insert_many([
+                *[{**base, "id": f"active-{index:03}", "floor_id": "first-floor"} for index in range(30)],
+                {**base, "id": "inactive-private", "floor_id": "inactive-floor"},
+                {**base, "id": "missing-private", "floor_id": "missing-floor"},
+                {**base, "id": "inactive-shared", "floor_id": "inactive-floor", "shared_across_floors": True},
+            ])
+            selected = await directory.referrers_page(floor_id="first-floor,ground-floor", type=None, search="", offset=0, limit=25, user=owner)
+            assert selected["total"] == 31 and len(selected["rows"]) == 25
+            assert not {"active-029", "inactive-private", "missing-private"} & {row.id for row in selected["rows"]}
+            performance = [{"id": id} for id in ("active-029", "inactive-private", "missing-private", "inactive-shared")]
+            result = await reporting._mark_historical_references(performance, "all", None)
+            assert {row["id"] for row in result if row["historical"]} == {"inactive-private", "missing-private"}
+            shared = await directory.referrers_page(floor_id="first-floor,ground-floor", type=None, search="ARC-INACTIVE-SHARED", offset=0, limit=25, user=owner)
+            assert [row.id for row in shared["rows"]] == ["inactive-shared"]
+            concrete = await reporting._mark_historical_references(performance, "inactive-floor", None)
+            assert next(row for row in concrete if row["id"] == "inactive-private")["historical"] is False
         finally:
             await client.drop_database(db.name)
             client.close()

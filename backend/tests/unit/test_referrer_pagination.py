@@ -42,7 +42,8 @@ def matches(doc, query):
 
 class Cursor:
     def __init__(self, docs): self.docs = list(docs)
-    def sort(self, fields):
+    def sort(self, fields, direction=None):
+        if isinstance(fields, str): fields = [(fields, direction)]
         for key, direction in reversed(fields):
             self.docs.sort(key=lambda doc: doc.get(key) or "", reverse=direction < 0)
         return self
@@ -128,7 +129,8 @@ def test_history_resolves_only_report_ids_in_bounded_queries_and_scope(monkeypat
         contact("shared", floor_id="second-floor", shared_across_floors=True),
         contact("private", floor_id="second-floor"), contact("archived", active=False),
     ])
-    monkeypatch.setattr(workspaces, "db", SimpleNamespace(referrers=collection))
+    floor_collection = Collection([{"id": floor, "active": True} for floor in ("first-floor", "ground-floor")])
+    monkeypatch.setattr(workspaces, "db", SimpleNamespace(referrers=collection, floors=floor_collection))
     reporting = [{"id": f"r-{i}"} for i in range(1001)] + [{"id": id} for id in ("shared", "private", "archived", "deleted")]
     result = asyncio.run(workspaces._mark_historical_references(reporting, "all", ["first-floor", "ground-floor"]))
     assert {row["id"] for row in result if row["historical"]} == {"private", "archived", "deleted"}
@@ -139,3 +141,28 @@ def test_history_resolves_only_report_ids_in_bounded_queries_and_scope(monkeypat
     collection.reads.clear()
     assert asyncio.run(workspaces._mark_historical_references([], "all", [])) == []
     assert not collection.reads
+    assert len(floor_collection.reads) == 1
+
+
+def test_all_units_preserves_private_old_floor_history_without_misclassifying_active_or_shared_contacts(monkeypatch):
+    collection = Collection([
+        contact("off-page"), contact("inactive-private", floor_id="inactive-floor"),
+        contact("missing-private", floor_id="missing-floor"),
+        contact("inactive-shared", floor_id="inactive-floor", shared_across_floors=True),
+        contact("other-active", floor_id="ground-floor"),
+    ])
+    floor_collection = Collection([
+        {"id": "first-floor", "active": True}, {"id": "ground-floor", "active": True},
+        {"id": "inactive-floor", "active": False},
+    ])
+    monkeypatch.setattr(workspaces, "db", SimpleNamespace(referrers=collection, floors=floor_collection))
+    performance = [{"id": row["id"]} for row in collection.docs]
+    owner_result = asyncio.run(workspaces._mark_historical_references(performance, "all", None))
+    assert {row["id"] for row in owner_result if row["historical"]} == {"inactive-private", "missing-private"}
+    query, projection = floor_collection.reads[0]
+    assert query == {"active": True} and projection == {"_id": 0, "id": 1}
+    restricted_result = asyncio.run(workspaces._mark_historical_references(performance, "all", ["first-floor"]))
+    assert {row["id"] for row in restricted_result if row["historical"]} == {"inactive-private", "missing-private", "other-active"}
+    concrete = asyncio.run(workspaces._mark_historical_references(performance, "inactive-floor", None))
+    assert next(row for row in concrete if row["id"] == "inactive-private")["historical"] is False
+    assert len(floor_collection.reads) == 2

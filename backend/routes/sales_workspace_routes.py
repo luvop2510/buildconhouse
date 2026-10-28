@@ -47,6 +47,13 @@ def _money(value: float | int | None) -> float:
 async def _mark_historical_references(relationships: list[dict], floor_id: str | None, floors) -> list[dict]:
     # Off-page contacts are not historical. Read only report identity IDs.
     scope = build_match(AnalyticsFilter(floor_id=floor_id, status="any"), floors, (None, None))
+    if not relationships:
+        return []
+    if not floor_id or floor_id == "all":
+        # Match the directory's active-floor union, retaining old-floor sales
+        # as historical rows instead of classifying unreachable contacts active.
+        visible = await db.floors.find({"active": True}, {"_id": 0, "id": 1}).sort("created_at", 1).to_list(50)
+        scope = {"floor_id": {"$in": [row["id"] for row in visible if floors is None or row["id"] in floors]}}
     ids = [row["id"] for row in relationships]
     batches = await asyncio.gather(*[
         db.referrers.find(referrer_query(scope, {
