@@ -1673,11 +1673,12 @@ if __name__ == "__main__":
     uvicorn.run(FastAPI(lifespan=lifespan), host="127.0.0.1", port=options.port, access_log=False, log_level="warning")
 
 
-def test_25mb_private_transfer_boundary_retry_integrity_and_bounded_download(monkeypatch):
+def test_10mb_pdf_transfer_boundary_retry_integrity_and_bounded_download(monkeypatch):
     import base64
     import hashlib
     from media_storage import factory
-    from services.kitchen_file_transfers import CHUNK_BYTES, MAX_TRANSFER_BYTES
+    from services.kitchen_file_transfers import CHUNK_BYTES
+    from services.kitchen_attachments import MAX_PDF_UPLOAD_BYTES
 
     class PrivateBytes:
         def __init__(self):
@@ -1702,14 +1703,14 @@ def test_25mb_private_transfer_boundary_retry_integrity_and_bounded_download(mon
             await configure(env)
             project, _ = await create_project(env)
             path = f"/api/kitchen-projects/{project['id']}"
-            content = b'%PDF-1' + b'Synthetic private PDF bytes ' * ((MAX_TRANSFER_BYTES // 28) + 10)
-            content = (content + b'x' * MAX_TRANSFER_BYTES)[:MAX_TRANSFER_BYTES]
+            content = b'%PDF-1' + b'Synthetic private PDF bytes ' * ((MAX_PDF_UPLOAD_BYTES // 28) + 10)
+            content = (content + b'x' * MAX_PDF_UPLOAD_BYTES)[:MAX_PDF_UPLOAD_BYTES]
             checksum = hashlib.sha256(content).hexdigest()
             key = str(uuid4())
-            body = {'expected_version': project['version'], 'idempotency_key': key, 'filename': 'synthetic-25mb.pdf',
+            body = {'expected_version': project['version'], 'idempotency_key': key, 'filename': 'synthetic-10mb.pdf',
                     'content_type': 'application/pdf', 'size_bytes': len(content), 'sha256': checksum}
-            oversize = await env['api'].post(path + '/file-transfers', headers=headers(env), json={**body, 'size_bytes': MAX_TRANSFER_BYTES + 1})
-            assert oversize.status_code == 422
+            oversize = await env['api'].post(path + '/file-transfers', headers=headers(env), json={**body, 'size_bytes': MAX_PDF_UPLOAD_BYTES + 1})
+            assert oversize.status_code == 413
             denied = await env['api'].post(path + '/file-transfers', headers=headers(env, 'denied'), json=body)
             assert denied.status_code == 403
             ordinary = await env['api'].post(path + '/attachments', headers=headers(env), data={'expected_version': str(project['version']), 'idempotency_key': str(uuid4())},
@@ -1742,7 +1743,7 @@ def test_25mb_private_transfer_boundary_retry_integrity_and_bounded_download(mon
             final = saved.json()
             assert final['version'] == project['version'] + 1 and len(final['attachments']) == 1
             attachment = final['attachments'][0]
-            assert attachment['size_bytes'] == MAX_TRANSFER_BYTES and attachment['sha256'] == checksum
+            assert attachment['size_bytes'] == MAX_PDF_UPLOAD_BYTES and attachment['sha256'] == checksum
             assert storage.uploads == 1
             replay = await env['api'].post(root + '/finish', headers=headers(env), json={'expected_version': project['version']})
             assert replay.status_code == 200 and replay.json()['version'] == final['version']
@@ -1760,7 +1761,7 @@ def test_25mb_private_transfer_boundary_retry_integrity_and_bounded_download(mon
                 assert hashlib.sha256(part).hexdigest() == value['sha256']
                 downloaded.extend(part)
             assert hashlib.sha256(downloaded).hexdigest() == checksum
-            assert storage.reads == 1  # bounded immutable cache avoids 48 full provider reads
+            assert storage.reads == 1  # bounded immutable cache avoids repeated full provider reads
             forbidden = await env['api'].get(path + f"/attachments/{attachment['id']}/parts/0", headers=headers(env, 'denied'))
             assert forbidden.status_code == 403
             other_floor = await env['api'].get(path + f"/attachments/{attachment['id']}/parts/0", headers={**headers(env), 'X-Floor-Id': 'first-floor'})
