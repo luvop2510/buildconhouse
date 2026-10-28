@@ -188,7 +188,17 @@ all backend tests use hermetic CI settings, with dotenv disabled.
     up to 474,397 (about 463 KiB). These are gzip calculations from frozen source
     assets, not wire/cache measurements. They explicitly remain above 200 KB.
 
-Latest complete hermetic backend suite: 3,565 passed in 38.45 seconds, with one
+Release review corrections: All-units historical classification now uses the
+same active authorized floor union as directory paging; private contacts from
+inactive/missing floors remain visible as historical report rows. Public R2
+delivery verifies original existence before returning derivatives, and reserved
+derivative paths are not direct public URLs. Deletion waits for in-flight copies
+and removes all five sizes, including after caller cancellation. Sixty-one
+focused storage/reference tests pass, including actual disposable Mongo history.
+The other checkout's completed CI concurrency fix was integrated as its own
+commit; local workers, job deadlines, scenario deadlines and retries are unchanged.
+
+Latest complete hermetic backend suite: 3,569 passed in 35.19 seconds, with one
 existing Starlette test-client deprecation warning. TypeScript, zero-warning Expo
 lint, page-loading/optimistic/referrer/lazy-entry contracts, release registry,
 module-graph and sales-period checks pass. Current npm audit reports eight low
