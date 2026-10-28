@@ -60,6 +60,8 @@ def test_cold_direct_image_loads_also_share_the_global_fetch_budget(monkeypatch)
     active = peak = 0
     lock = threading.Lock()
     monkeypatch.setattr(loader, "_fetch_slots", threading.BoundedSemaphore(2))
+    monkeypatch.setattr(loader, "_allowed_hosts", lambda: {"cdn.example.test"})
+    monkeypatch.setattr(loader, "_host_circuits", {})
     loader._cache.clear()
     loader._cache_bytes = 0
 
