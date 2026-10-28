@@ -218,15 +218,21 @@ async def _resolve_dispatch_lines(po: dict, body: DispatchBody, session=None) ->
     warnings: list[str] = []
     claimed_pending: dict[str, float] = {}
     claimed_batch: dict[str, float] = {}
+    batch_ids = list(dict.fromkeys(entry.ready_batch_id for entry in body.items if entry.ready_batch_id))
+    batches_by_id = {}
+    for start in range(0, len(batch_ids), 500):
+        ids = batch_ids[start:start + 500]
+        batches = await db.ready_batches.find(
+            {"id": {"$in": ids}, "is_deleted": False, "floor_id": TILES_FLOOR_ID},
+            {"_id": 0}, session=session,
+        ).to_list(len(ids))
+        batches_by_id.update((batch["id"], batch) for batch in batches)
     for entry in body.items:
         item = items_by_id.get(entry.po_item_id)
         if not item:
             raise HTTPException(status_code=400, detail=f"Unknown item {entry.po_item_id}")
         if entry.ready_batch_id:
-            batch = await db.ready_batches.find_one(
-                {"id": entry.ready_batch_id, "is_deleted": False, "floor_id": TILES_FLOOR_ID},
-                {"_id": 0}, session=session,
-            )
+            batch = batches_by_id.get(entry.ready_batch_id)
             if not batch or batch.get("po_item_id") != entry.po_item_id:
                 raise HTTPException(status_code=400, detail=f"Ready batch {entry.ready_batch_id} not found for this item")
             already_claimed = claimed_batch.get(entry.ready_batch_id, 0.0)
