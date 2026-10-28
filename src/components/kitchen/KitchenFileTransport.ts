@@ -5,6 +5,7 @@ import { createPreparedNativeFile, savePreparedFile, sharePreparedNativeFile } f
 import type { File as NativeFile, FileHandle } from "expo-file-system";
 
 export const KITCHEN_MAX_FILE_BYTES = 25_000_000;
+export const KITCHEN_MAX_PDF_BYTES = 10_000_000;
 const PART_BYTES = 512 * 1024;
 function encoded(bytes: Uint8Array) {
   let binary = "";
@@ -29,7 +30,8 @@ async function digest(bytes: Uint8Array) {
 
 export async function uploadKitchenFile(project: KitchenProject, file: DocumentPickerAsset, key: string,
   progress: (percent: number) => void, transferStarted: (id: string) => void) {
-  if (!file.size || file.size > KITCHEN_MAX_FILE_BYTES) throw new Error("Choose a nonempty file up to 25 MB (25,000,000 bytes).");
+  const maximum = /\.pdf$/i.test(file.name) || file.mimeType === "application/pdf" ? KITCHEN_MAX_PDF_BYTES : KITCHEN_MAX_FILE_BYTES;
+  if (!file.size || file.size > maximum) throw new Error(`Choose a nonempty file up to ${maximum === KITCHEN_MAX_PDF_BYTES ? "10 MB (10,000,000 bytes) for PDFs" : "25 MB (25,000,000 bytes)"}.`);
   if (Platform.OS === "web" && !file.file) throw new Error("The original selected file is unavailable. Choose it again.");
   const nativeFile = Platform.OS === "web" ? null : new (await import("expo-file-system")).File(file.uri);
   let native: FileHandle | undefined;
@@ -58,7 +60,7 @@ export async function uploadKitchenFile(project: KitchenProject, file: DocumentP
   } finally { native?.close(); }
 }
 
-export async function downloadKitchenFile(projectId: string, attachment: KitchenAttachment, progress: (percent: number) => void) {
+export async function downloadKitchenFile(projectId: string, attachment: KitchenAttachment, progress: (percent: number) => void, preview?: Window) {
   if (!attachment.size_bytes || attachment.size_bytes > KITCHEN_MAX_FILE_BYTES) throw new Error("This file exceeds the supported download size.");
   const parts: Uint8Array<ArrayBuffer>[] = [];
   let nativeFile: NativeFile | undefined;
@@ -91,6 +93,13 @@ export async function downloadKitchenFile(projectId: string, attachment: Kitchen
     const blob = new Blob(parts, { type: attachment.content_type });
     const resultDigest = await digest(new Uint8Array(await blob.arrayBuffer()));
     if (resultDigest !== fullDigest) throw new Error("Downloaded file failed integrity verification.");
+    if (preview) {
+      if (preview.closed) throw new Error("The PDF preview was closed. Open it again.");
+      const url = URL.createObjectURL(blob);
+      preview.location.href = url;
+      setTimeout(() => URL.revokeObjectURL(url), 120_000);
+      return true;
+    }
     return await savePreparedFile(blob, attachment.filename, "project document");
   } finally {
     handle?.close();

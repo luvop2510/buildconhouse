@@ -1,3 +1,4 @@
+import { prepareKitchenFixtureCommand, kitchenIndiaToday } from './kitchen-pdf-fixtures';
 import { openProjectTool } from './kitchen-controls';
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
@@ -5,6 +6,7 @@ import { captureRuntimeHealth } from './runtime-health';
 
 const headers = { 'X-Floor-Id': 'second-floor' };
 async function command(api: APIRequestContext, project: any, name: string, payload: object) {
+  ({ project, payload } = await prepareKitchenFixtureCommand(api, project, name, payload as Record<string, unknown>));
   const response = await api.post(`/api/kitchen-projects/${project.id}/commands`, { headers, data: {
     expected_version: project.version, idempotency_key: randomUUID(), command: name, payload,
   } });
@@ -19,18 +21,18 @@ async function confirmedOrder(api: APIRequestContext) {
   expect(response.ok(), await response.text()).toBe(true);
   let project = await response.json();
   for (const target_stage of ['visit', 'cad', 'design']) project = await command(api, project, 'move_stage', { target_stage });
-  project = await command(api, project, 'design_present', { presentation_date: '2026-10-26' });
+  project = await command(api, project, 'design_present', { presentation_date: kitchenIndiaToday() });
   const designId = project.design_versions.at(-1).id;
-  project = await command(api, project, 'design_share', { version_id: designId, date: '2026-10-26' });
-  project = await command(api, project, 'design_response', { version_id: designId, response: 'Approved', approval_date: '2026-10-26' });
-  project = await command(api, project, 'design_handoff', { version_id: designId, date: '2026-10-26' });
+  project = await command(api, project, 'design_share', { version_id: designId, date: kitchenIndiaToday() });
+  project = await command(api, project, 'design_response', { version_id: designId, response: 'Approved', approval_date: kitchenIndiaToday() });
+  project = await command(api, project, 'design_handoff', { version_id: designId, date: kitchenIndiaToday() });
   project = await command(api, project, 'move_stage', { target_stage: 'quotation' });
-  project = await command(api, project, 'quotation_receive', { design_version_id: designId, amount: '1000', received_date: '2026-10-26' });
+  project = await command(api, project, 'quotation_receive', { design_version_id: designId, amount: '1000', received_date: kitchenIndiaToday() });
   const quotationId = project.quotation_versions.at(-1).id;
-  project = await command(api, project, 'quotation_share', { version_id: quotationId, date: '2026-10-26' });
+  project = await command(api, project, 'quotation_share', { version_id: quotationId, date: kitchenIndiaToday() });
   project = await command(api, project, 'quotation_response', { version_id: quotationId, response: 'Approved' });
   project = await command(api, project, 'move_stage', { target_stage: 'order' });
-  return command(api, project, 'order_confirm', { quotation_version_id: quotationId, order_date: '2026-10-26', final_amount: '1000', notes: 'Initial internal note' });
+  return command(api, project, 'order_confirm', { quotation_version_id: quotationId, order_date: kitchenIndiaToday(), final_amount: '1000', notes: 'Initial internal note' });
 }
 async function open(page: Page, project: any) {
   await page.addInitScript(() => {
@@ -57,7 +59,7 @@ test('Confirmed order, advance and amendment calendars default blank dates witho
   // Opening a saved date preserves history; clearing and reopening explicitly chooses today.
   const date = page.getByTestId('kitchen-order-edit-date');
   await date.focus();
-  await expect(date).toHaveValue('2026-10-26');
+  await expect(date).toHaveValue(kitchenIndiaToday());
   for (const [disclosure, id] of [['advance', 'kitchen-advance-date'], ['amendment', 'kitchen-amend-date']]) {
     await openProjectTool(page, disclosure as 'advance' | 'amendment');
     const field = page.getByTestId(id);
@@ -166,8 +168,8 @@ test('Invalid order chronology stays unsaved and a corrected draft can save', as
   await field.fill('2026-10-20');
   await expect(page.getByTestId('kitchen-order-autosave-retry')).toBeVisible();
   await expect(field).toHaveValue('2026-10-20');
-  expect((await savedOrder(context.request, project.id)).order_date).toBe('2026-10-26');
-  await field.fill('2026-10-26');
+  expect((await savedOrder(context.request, project.id)).order_date).toBe(kitchenIndiaToday());
+  await field.fill(kitchenIndiaToday());
   await page.getByTestId('kitchen-order-edit-notes').fill('Corrected date with retained internal details');
   await expect(page.getByTestId('kitchen-order-autosave')).toHaveText('Order details saved');
   expect((await savedOrder(context.request, project.id)).notes).toBe('Corrected date with retained internal details');

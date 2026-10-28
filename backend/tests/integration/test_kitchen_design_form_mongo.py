@@ -15,12 +15,12 @@ def test_simplified_design_form_atomic_dates_versions_and_production_lock():
                 'handoff_date': '2026-10-24', 'notes': 'Internal form notes'}
             project = await accepted(env, project, 'design_present', fields)
             first = copy.deepcopy(project['design_versions'][0])
-            assert first['presentation_date'] is None
+            assert first['presentation_date'] == '2026-10-19'
             assert first['shared_by'] == first['handoff_by'] == env['ids']['owner']
             assert project['design_revision_count'] == 0
             project = await accepted(env, project, 'design_update', {'version_id': first['id'],
                 'response': 'Approved', 'notes': 'Internal correction', 'reason': 'Update internal note'})
-            assert project['design_versions'][0]['presentation_date'] is None
+            assert project['design_versions'][0]['presentation_date'] == '2026-10-19'
             first = copy.deepcopy(project['design_versions'][0])
             invalid = await command(env, project, 'design_present', {**fields, 'handoff_date': '2026-10-22'})
             assert invalid.status_code == 422
@@ -29,7 +29,7 @@ def test_simplified_design_form_atomic_dates_versions_and_production_lock():
             project = await accepted(env, project, 'design_present', {'notes': 'Another drawing'})
             assert project['design_versions'][0] == first
             assert project['design_versions'][-1]['number'] == 2
-            assert project['design_versions'][-1]['presentation_date'] is None
+            assert project['design_versions'][-1]['presentation_date'] == '2026-10-19'
             assert project['design_revision_count'] == 0
             reloaded = await env['api'].get(f"/api/kitchen-projects/{project['id']}", headers=headers(env))
             assert reloaded.status_code == 200
@@ -51,7 +51,8 @@ def test_editable_quotation_fields_round_trip_without_implicit_status_and_keep_o
                 'shared_date': None, 'response': 'Pending', 'notes': 'Private draft'}
             project = await accepted(env, project, 'quotation_receive', fields)
             quote = copy.deepcopy(project['quotation_versions'][-1])
-            assert all(quote[key] == value for key, value in fields.items())
+            assert all(quote[key] == value for key, value in fields.items() if key not in {"received_date", "received_status"})
+            assert quote["received_date"] == "2026-10-19" and quote["received_status"] == "Yes"
             updated = {'version_id': quote['id'], 'amount': '1234.50', 'received_status': 'Yes',
                 'received_date': '2026-10-24', 'sent_status': 'Yes', 'shared_date': '2026-10-25',
                 'response': 'Approved', 'notes': 'Internal approval note'}
@@ -87,7 +88,7 @@ def test_design_form_dates_record_actors_on_explicit_first_save():
                 'shared_date': '2026-10-24', 'response': 'Approved', 'approval_date': '2026-10-25', 'handoff_date': '2026-10-26'})
             design = project['design_versions'][-1]
             assert design['shared_by'] == design['handoff_by'] == env['ids']['owner']
-            assert design['presentation_date'] is None
+            assert design['presentation_date'] == '2026-10-19'
     asyncio.run(run())
 
 
@@ -100,7 +101,7 @@ def test_design_handoff_status_round_trips_and_preserves_history():
                 'response': 'Approved', 'approval_date': '2026-10-25', 'handoff_status': 'No', 'handoff_date': None})
             version = project['design_versions'][-1]
             invalid = await command(env, project, 'design_update', {'version_id': version['id'], 'response': 'Approved',
-                'reason': 'Explicit handoff', 'handoff_status': 'Yes', 'handoff_date': None})
+                'reason': 'Explicit handoff', 'handoff_status': 'No', 'handoff_date': '2026-10-26'})
             assert invalid.status_code == 422
             project = await accepted(env, project, 'design_update', {'version_id': version['id'], 'response': 'Approved',
                 'reason': 'Explicit handoff', 'handoff_status': 'Yes', 'handoff_date': '2026-10-26'})

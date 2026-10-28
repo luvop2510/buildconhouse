@@ -182,10 +182,11 @@ def current_status(project):
     if stage in {"design", "quotation"}:
         designs = project.get("design_versions", [])
         rows = project["design_versions" if stage == "design" else "quotation_versions"]
-        design = next((row for row in designs if rows and row["id"] == rows[-1].get("design_version_id")), None) if stage == "quotation" else designs[-1] if designs else None
+        design = (next((row for row in designs if rows and row["id"] == rows[-1].get("design_version_id")), None)
+            if stage == "quotation" else next((row for row in designs if row["id"] == project.get("final_design_version_id")), designs[-1] if designs else None))
         if project.get("design_revision_pending") or not design or design.get("workflow_cycle", 1) != project.get("workflow_cycle", 1):
             return "Pending"
-        return rows[-1]["response"] if rows else "Pending"
+        return design["response"] if stage == "design" else rows[-1]["response"] if rows else "Pending"
     return project.get(stage, {}).get("status", "Pending")
 
 
@@ -193,12 +194,14 @@ def required_fields_error(project, stage, policy):
     """Configured fields apply to creation and leaving a stage, allowing drafts."""
     fields = (policy.get("required_fields") or {}).get(stage, [])
     # Retired visit/design controls must not keep legacy policies blocking progress.
-    retired = {"visit": {"requirements", "budget_discussion", "interested"}, "design": {"attachment_id", "url"}}
+    retired = {"lead": {"lead_source", "budget"}, "visit": {"requirements", "budget_discussion", "interested"}, "design": {"requirements", "budget_discussion"}, "quotation": {"amount", "received_date"}}
     fields = [name for name in fields if name not in retired.get(stage, set())]
     source = project.get(stage, {})
     key = {"design": "design_versions", "quotation": "quotation_versions", "order": "orders"}.get(stage)
     if key:
         source = project.get(key, [])[-1] if project.get(key) else {}
+    if stage == "design" and project.get("final_design_version_id"):
+        source = next((row for row in project.get("design_versions", []) if row["id"] == project["final_design_version_id"]), {})
     missing = []
     for name in fields:
         value = source.get(name)
@@ -348,7 +351,7 @@ class KitchenProjectService:
             result["customer"] = customers.get(project["customer_id"], result["customer"])
         if summary:
             version_fields = {"id", "number", "response", "approval_date", "shared_date", "handoff_date", "handoff_status", "presentation_date", "received_date",
-                              "received_status", "sent_status", "amount", "design_version_id", "workflow_cycle", "attachment_id", "url", "requirements", "budget_discussion"}
+                              "received_status", "sent_status", "amount", "design_version_id", "workflow_cycle", "attachment_id", "url", "requirements", "budget_discussion", "attachment_ids", "final_attachment_id", "pdf_options", "kitchen_type", "upload_date"}
             order_fields = {"id", "confirmed", "status", "order_date", "final_amount", "original_amount", "quotation_version_id",
                             "confirmation_document_id", "authorization_invalidated", "advance"}
             order = project.get("orders", [])[-1] if project.get("orders") else None
@@ -357,12 +360,12 @@ class KitchenProjectService:
             if not bound_order and project.get("quotation_versions"):
                 quote = project["quotation_versions"][-1]
             quotation_context = bool(quote and (bound_order or project["stage"] in {"quotation", "order"}))
-            design = next((row for row in project.get("design_versions", []) if quote and row["id"] == quote["design_version_id"]), None)
+            design = next((row for row in project.get("design_versions", []) if row["id"] == (quote["design_version_id"] if quotation_context else project.get("final_design_version_id"))), None)
             for source, target, fields in (("design_versions", "current_design", version_fields),
                                            ("quotation_versions", "current_quotation", version_fields),
                                            ("orders", "current_order", order_fields)):
                 rows = project.get(source, [])
-                selected = (design if source == "design_versions" else quote if source == "quotation_versions" else order) if bound_order or quotation_context and source == "design_versions" else rows[-1] if rows else None
+                selected = design if source == "design_versions" else (quote if source == "quotation_versions" else order) if bound_order else rows[-1] if rows else None
                 result[target] = {key: copy.deepcopy(value) for key, value in selected.items() if key in fields} if selected else None
             for key in HISTORY_FIELDS:
                 result.pop(key, None)
@@ -735,6 +738,13 @@ class KitchenProjectService:
                 raise HTTPException(422, "Choose the previous or next Kitchen stage")
             # Navigation records the user's position without inventing business
             # evidence or changing saved approvals, work, or held status.
+            if target == "quotation" and STAGES.index(project["stage"]) < STAGES.index(target):
+                workflow.finalized_design(project)
+            if target == "order" and project["stage"] == "quotation":
+                quote = workflow.finalized_quotation(project, workflow.current(project, "quotation_versions"))
+                workflow.finalized_design(project, quote.get("design_version_id"))
+                if quote.get("response") != "Approved" or not quote.get("shared_date"):
+                    raise HTTPException(422, "Confirm the selected quotation with customer approval first")
             updated["stage"] = target
             updated["manual_stage_navigation"] = True
             updated["closure_pending_reason"] = None
@@ -811,7 +821,7 @@ class KitchenProjectService:
         updated["assigned_to"] = updated["assignments"].get(updated["stage"])
         updated["assigned_to_name"] = updated["assignment_names"].get(updated["stage"])
         record = {"fields": sorted(payload), "from_stage": project["stage"], "to_stage": updated["stage"], "changes": {}}
-        for field in ("lead", "visit", "cad", "production", "installation", "assignments", "next_action", "deadline", "target_completion_date", "duplicate_review", "lifecycle_status", "workflow_cycle", "commercial_basis_invalidated", "manual_stage_navigation", "completion_date", "closure_pending_reason", "customer_order_confirmation"):
+        for field in ("lead", "visit", "cad", "production", "installation", "assignments", "next_action", "deadline", "target_completion_date", "duplicate_review", "lifecycle_status", "workflow_cycle", "commercial_basis_invalidated", "manual_stage_navigation", "completion_date", "closure_pending_reason", "customer_order_confirmation", "final_design_version_id"):
             if project.get(field) != updated.get(field):
                 record["changes"][field] = {"before": project.get(field), "after": updated.get(field)}
         if command in workflow.COMMANDS:

@@ -213,6 +213,7 @@ export function KitchenProjectProvider({ id, returnTo, children }: { id: string;
               : order;
             const source = name === "order_update" && order
               ? JSON.stringify([order.order_date, order.notes, order.quotation_version_id])
+              : name === "design_update" ? JSON.stringify([record || null, value.final_design_version_id ?? null])
               : JSON.stringify(record || null);
             // Our own write changes the source identity; rebase only that identity, retaining newer fields.
             if (record && edited?.source === submitted.source) {

@@ -23,7 +23,7 @@ from pymongo.errors import DuplicateKeyError
 
 from models_kitchen import CommandKey, StrictModel
 from services import kitchen_access as access
-from services.kitchen_attachments import validate_file_metadata
+from services.kitchen_attachments import validate_file_metadata, validate_upload_size
 from services.kitchen_projects import KitchenProjectService, fingerprint
 
 MAX_TRANSFER_BYTES = 25_000_000
@@ -102,6 +102,7 @@ class KitchenFileTransfers:
     async def begin(self, user, project_id, body):
         project, policy = await self.authorized(user, project_id)
         kind = validate_file_metadata(body.content_type, body.filename, policy)
+        validate_upload_size(body.size_bytes, kind, policy)
         signature = fingerprint({"project_id": project_id, "filename": body.filename, "content_type": kind,
                                  "size_bytes": body.size_bytes, "sha256": body.sha256})
         row = {"_id": user.id, "project_id": project_id, "transfer_id": str(uuid4()), "key": body.idempotency_key,
@@ -135,7 +136,8 @@ class KitchenFileTransfers:
     async def put_part(self, user, project_id, transfer_id, index, body):
         _, policy = await self.authorized(user, project_id)
         row = await self.session(user, project_id, transfer_id)
-        validate_file_metadata(row["content_type"], row["filename"], policy)
+        kind = validate_file_metadata(row["content_type"], row["filename"], policy)
+        validate_upload_size(row["size_bytes"], kind, policy)
         if row["state"] != "open":
             raise HTTPException(409, "This transfer has already finished")
         count = math.ceil(row["size_bytes"] / CHUNK_BYTES)
@@ -185,6 +187,7 @@ class KitchenFileTransfers:
                     "state": "finishing", "finish_token": row.get("finish_token")}, {"$set": {"state": "completed"}})
                 await self.db.kitchen_file_parts.delete_many({"transfer_id": transfer_id})
                 return await self.projects.get(user, project_id)
+        validate_upload_size(row["size_bytes"], row["content_type"], policy)
         token = str(uuid4())
         selector = {"_id": user.id, "transfer_id": transfer_id, "state": "open"}
         if row["state"] == "finishing":

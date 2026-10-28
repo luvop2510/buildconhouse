@@ -8,7 +8,7 @@ const calls = [];
 let stateValues = [], cursor = 0, effects = [], params = {}, editable = true;
 const project = { id: 'project', customer_id: 'customer', reference: 'K-101', stage: 'cad', updated_at: '2026-10-27T01:00:00Z', customer: { name: 'Customer QA', phone: '9001112223', alternate_phone: 'removed-alt', email: 'removed-email', company: 'removed-company', property_name: 'removed-property', address: 'removed-address', city: 'removed-city', state: 'removed-state', pincode: 'removed-pin', gstin: 'removed-gst', notes: 'removed-notes', referrer_name: 'removed-reference' }, permissions: { can_update: true }, lead: {}, visit: {}, cad: {} };
 const element = (type, props) => ({ type, props: props || {} });
-const kitchenState = () => ({ id: project.id, project: { ...project, permissions: { can_update: editable } }, policy: {}, returnTo: '/kitchen', submission: { busy: false }, command: (...args) => calls.push(args) });
+const kitchenState = () => ({ id: project.id, project: { ...project, permissions: { can_update: editable } }, policy: {}, returnTo: '/kitchen', submission: { busy: false }, documentSubmission: { busy: false }, command: (...args) => calls.push(args) });
 const router = { setParams: patch => calls.push(['params', patch]), push: href => calls.push(['navigate', href]), canGoBack: () => false };
 const modules = {
   react: { createContext: () => ({}), useState: initial => { const index = cursor++; if (!(index in stateValues)) stateValues[index] = typeof initial === 'function' ? initial() : initial; return [stateValues[index], value => { stateValues[index] = typeof value === 'function' ? value(stateValues[index]) : value; }]; }, useRef: initial => ({ current: initial }), useEffect: effect => effects.push(effect), useCallback: fn => fn },
@@ -28,6 +28,9 @@ const modules = {
   './KitchenProjectState': { useKitchenProject: kitchenState, kitchenStage: stage => stages.includes(stage) ? stage : null, kitchenProjectPath: (id, suffix) => `/kitchen/${id}${suffix}` },
   './KitchenCustomerSearch': { KitchenCustomerSearch: 'customer-search' },
 };
+const versionModule = {};
+new Function('exports', ts.transpileModule(readFileSync(new URL('../src/components/kitchen/KitchenVersions.ts', import.meta.url),'utf8'), {compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText)(versionModule);
+modules['./KitchenVersions'] = versionModule;
 function load(file, internals = '') {
   const output = {};
   const source = readFileSync(new URL(`../src/components/kitchen/${file}.tsx`, import.meta.url), 'utf8') + internals;
@@ -81,3 +84,21 @@ for (const stage of stages) assert.ok(find(dashboardTree, `kitchen-dashboard-sta
 assert.ok(nodes(dashboardTree).some(node => node.type === 'customer-search'));
 assert.doesNotMatch(text(dashboardTree), /Needs attention|Pending manager approvals|Completion overdue|On hold/);
 console.log('Kitchen simplified UI: nine stage links, explicit adjacent commands/permissions, compact customer identity, removed filter bookmark effects and dashboard attention passed.');
+
+const finalDesign={id:'d1',response:'Approved',handoff_status:'Yes',handoff_date:'2026-10-28',attachment_ids:['design-pdf'],final_attachment_id:'design-pdf'};
+for (const design of [undefined,{...finalDesign,final_attachment_id:null},{...finalDesign,handoff_status:'No'},finalDesign]) {
+  const tree=render(detail.StageNavigation,{project:{...project,stage:'design',final_design_version_id:design?.id,design_versions:design?[design]:[]},disabled:false});
+  assert.equal(find(tree,'kitchen-advance-quotation').props.disabled,design!==finalDesign,'Design movement requires final PDF, approval and Yes for company handoff');
+}
+const finalQuote={id:'q1',design_version_id:'d1',response:'Approved',shared_date:'2026-10-28',pdf_options:[{attachment_id:'quote-pdf',kitchen_type:'GI'}],final_attachment_id:'quote-pdf'};
+for (const quote of [undefined,{...finalQuote,final_attachment_id:null},{...finalQuote,response:'Pending'},finalQuote]) {
+  const tree=render(detail.StageNavigation,{project:{...project,stage:'quotation',final_design_version_id:'d1',design_versions:[finalDesign],quotation_versions:quote?[quote]:[]},disabled:false});
+  assert.equal(find(tree,'kitchen-advance-order').props.disabled,quote!==finalQuote,'Quotation movement requires one final kitchen PDF and customer approval');
+}
+console.log('Kitchen PDF stage movement: missing file, No handoff and pending customer approval stay blocked.');
+
+const notSelected=render(detail.StageNavigation,{project:{...project,stage:'design',design_versions:[finalDesign]},disabled:false});
+assert.equal(find(notSelected,'kitchen-advance-quotation').props.disabled,true,'An uploaded and approved design must also be explicitly finalized');
+const newerPending={id:'d2',number:2,response:'Pending',handoff_status:'No',attachment_ids:['new-pdf'],final_attachment_id:'new-pdf'};
+const chosenEarlier=render(detail.StageNavigation,{project:{...project,stage:'design',final_design_version_id:'d1',design_versions:[finalDesign,newerPending]},disabled:false});
+assert.equal(find(chosenEarlier,'kitchen-advance-quotation').props.disabled,false,'A newer PDF does not replace the finalized earlier design');

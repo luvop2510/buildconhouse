@@ -10,7 +10,15 @@ export function kitchenOrderContext(project: KitchenProject) {
 }
 
 export function kitchenOrderQuotations(project: KitchenProject) {
-  return project.quotation_versions?.filter(quote => !project.design_revision_pending && quote.shared_date && quote.response === "Approved" && project.design_versions?.some(design => design.id === quote.design_version_id && design.response === "Approved" && design.handoff_date && (design.workflow_cycle ?? 1) === (project.workflow_cycle ?? 1))) || [];
+  return project.quotation_versions?.filter(quote => !project.design_revision_pending && kitchenHasFinalQuotation(quote) && quote.shared_date && quote.response === "Approved" && project.design_versions?.some(design => design.id === quote.design_version_id && kitchenHasFinalDesign(design) && (design.workflow_cycle ?? 1) === (project.workflow_cycle ?? 1))) || [];
+}
+
+export function kitchenHasFinalDesign(design?: KitchenVersion) {
+  return Boolean(design?.final_attachment_id && design.attachment_ids?.includes(design.final_attachment_id) && design.response === "Approved" && design.handoff_status === "Yes" && design.handoff_date);
+}
+
+export function kitchenHasFinalQuotation(quote?: KitchenVersion) {
+  return Boolean(quote?.final_attachment_id && quote.pdf_options?.some(row => row.attachment_id === quote.final_attachment_id && ["GI", "SS", "Mix"].includes(row.kitchen_type)));
 }
 
 export function kitchenDesignApproval(project: KitchenProject, design?: KitchenVersion) {

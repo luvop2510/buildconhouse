@@ -3,7 +3,7 @@ import asyncio
 from uuid import uuid4
 
 from tests.integration.test_kitchen_projects_mongo import (
-    accepted, command, create_project, environment, headers,
+    accepted, command, create_project, environment, headers, prepare_manual_pdf_gate,
 )
 
 
@@ -12,6 +12,7 @@ def test_manual_work_save_retry_and_next_stage_preserve_first_save():
         async with environment() as env:
             project, _ = await create_project(env)
             for stage in ("visit", "cad", "design", "quotation", "order", "production"):
+                project = await prepare_manual_pdf_gate(env, project, stage)
                 project = await accepted(env, project, "move_stage", {"target_stage": stage})
             original = project
             key = str(uuid4())
@@ -35,6 +36,7 @@ def test_manual_installation_visit_retry_and_invalid_work_leave_saved_values_int
         async with environment() as env:
             project, _ = await create_project(env)
             for stage in ("visit", "cad", "design", "quotation", "order", "production", "installation"):
+                project = await prepare_manual_pdf_gate(env, project, stage)
                 project = await accepted(env, project, "move_stage", {"target_stage": stage})
             visit_key = str(uuid4())
             visit = {"actual": True, "date": "2026-10-26", "notes": "Measured site"}

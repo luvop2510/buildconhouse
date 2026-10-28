@@ -110,13 +110,13 @@ test('critical keyboard scroll: nested staff sheet keeps lower input mounted thr
 
 test('critical keyboard scroll: oversized Kitchen notes scroll internally while the form stays anchored', async ({ page }, info) => {
   await keyboard(page);
-  await mockSession(page, '/kitchen/keyboard-project/stages/design', false, { floorId: 'second-floor' });
+  await mockSession(page, '/kitchen/keyboard-project/stages/visit', false, { floorId: 'second-floor' });
   const design = { id: 'design-keyboard', number: 1, workflow_cycle: 1, response: 'Pending', shared_date: '2026-10-27', handoff_status: 'Not recorded', notes: 'Initial note' };
   let project = {
     id: 'keyboard-project', reference: 'KIT-KEYBOARD', project_reference: 'KIT-KEYBOARD', customer_id: 'keyboard-customer',
     customer: { id: 'keyboard-customer', name: 'Synthetic Kitchen keyboard customer', phone: '9900000001' },
-    version: 1, workflow_cycle: 1, stage: 'design', status: 'Pending', lifecycle_status: 'Active',
-    lead: { status: 'Qualified', site_location: 'Synthetic site' }, visit: { status: 'Visited' },
+    version: 1, workflow_cycle: 1, stage: 'visit', status: 'Pending', lifecycle_status: 'Active',
+    lead: { status: 'Qualified', site_location: 'Synthetic site' }, visit: { status: 'Visited', notes: 'Initial note' },
     cad: { received: true, progress: 100, ready: true, status: 'Completed' }, assignments: {},
     design_revision_count: 0, site_visit_count: 0, permissions: { can_update: true, can_assign: true, can_approve_exceptions: true },
     design_versions: [design], quotation_versions: [], orders: [], approvals: [], blocked_transitions: [], activity: [], attachments: [],
@@ -127,15 +127,15 @@ test('critical keyboard scroll: oversized Kitchen notes scroll internally while 
     if (request.method() !== 'GET') {
       const body = request.postDataJSON(); writes.push(body);
       expect(path).toBe('/api/kitchen-projects/keyboard-project/commands');
-      expect(body.command).toBe('design_update');
-      project = { ...project, version: project.version + 1, design_versions: [{ ...design, ...body.payload, id: design.id }] };
+      expect(body.command).toBe('save_visit');
+      project = { ...project, version: project.version + 1, visit: { ...project.visit, ...body.payload } };
       return route.fulfill({ json: project });
     }
     if (path.endsWith('/configuration')) return route.fulfill({ json: { version: 1, decision_contract: '2026-10-20', department_manager_user_ids: [], files: { max_bytes: 786432, allowed_types: ['application/pdf'] } } });
     return route.fulfill({ json: project });
   });
-  await page.goto('/kitchen/keyboard-project/stages/design');
-  const notes = page.getByTestId('kitchen-design-edit-notes');
+  await page.goto('/kitchen/keyboard-project/stages/visit');
+  const notes = page.getByTestId('kitchen-visit-notes');
   await notes.click();
   const original = await notes.elementHandle();
   await resize(page, 360, 40);
@@ -157,7 +157,6 @@ test('critical keyboard scroll: oversized Kitchen notes scroll internally while 
   await resize(page, 844);
   await notes.blur();
   await expect(page.getByRole('navigation', { name: 'Primary', exact: true })).toBeVisible();
-  await page.getByTestId('kitchen-design-edit-save').click();
-  await expect.poll(() => writes.length).toBe(1);
-  expect(writes[0]).toMatchObject({ command: 'design_update', payload: { version_id: design.id, notes: expected + ' tail' } });
+  await expect(page.getByTestId('kitchen-visit-autosave')).toHaveText('Details saved');
+  expect(writes.at(-1)).toMatchObject({ command: 'save_visit', payload: { notes: expected + ' tail' } });
 });

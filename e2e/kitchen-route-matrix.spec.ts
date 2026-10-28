@@ -1,3 +1,4 @@
+import { prepareKitchenFixtureCommand, kitchenIndiaToday } from './kitchen-pdf-fixtures';
 import { expect, test, type BrowserContext, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { captureRuntimeHealth } from './runtime-health';
@@ -20,6 +21,7 @@ async function created(context: BrowserContext) {
   return response.json();
 }
 async function command(context: BrowserContext, project: any, name: string, payload: Record<string, unknown> = {}) {
+  ({ project, payload } = await prepareKitchenFixtureCommand(context.request, project, name, payload));
   const response = await context.request.post(`/api/kitchen-projects/${project.id}/commands`, { headers, data: {
     expected_version: project.version, idempotency_key: randomUUID(), command: name, payload,
   } });
@@ -79,32 +81,32 @@ test('30 meaningful URLs: every current stage, persisted pages and scoped queues
         project = await command(context, project, 'advance_stage', { target_stage: 'design' });
       }
       if (stage === 'design') {
-        project = await command(context, project, 'design_present', { presentation_date: '2026-10-19', url: 'https://example.test/synthetic-design.pdf' });
+        project = await command(context, project, 'design_present', { presentation_date: kitchenIndiaToday(), url: 'https://example.test/synthetic-design.pdf' });
         const version_id = project.design_versions.at(-1).id;
-        project = await command(context, project, 'design_share', { version_id, date: '2026-10-19' });
-        project = await command(context, project, 'design_response', { version_id, response: 'Approved', approval_date: '2026-10-19' });
-        project = await command(context, project, 'design_handoff', { version_id, date: '2026-10-19' });
+        project = await command(context, project, 'design_share', { version_id, date: kitchenIndiaToday() });
+        project = await command(context, project, 'design_response', { version_id, response: 'Approved', approval_date: kitchenIndiaToday() });
+        project = await command(context, project, 'design_handoff', { version_id, date: kitchenIndiaToday() });
         project = await command(context, project, 'advance_stage', { target_stage: 'quotation' });
       }
       if (stage === 'quotation') {
-        project = await command(context, project, 'quotation_receive', { design_version_id: project.design_versions.at(-1).id, received_date: '2026-10-19', amount: '1000.01', url: 'https://example.test/synthetic-quotation.pdf' });
+        project = await command(context, project, 'quotation_receive', { design_version_id: project.design_versions.at(-1).id, received_date: kitchenIndiaToday(), amount: '1000.01', url: 'https://example.test/synthetic-quotation.pdf' });
         const version_id = project.quotation_versions.at(-1).id;
-        project = await command(context, project, 'quotation_share', { version_id, date: '2026-10-19' });
+        project = await command(context, project, 'quotation_share', { version_id, date: kitchenIndiaToday() });
         project = await command(context, project, 'quotation_response', { version_id, response: 'Approved' });
         project = await command(context, project, 'advance_stage', { target_stage: 'order' });
       }
       if (stage === 'order') {
-        project = await command(context, project, 'order_confirm', { quotation_version_id: project.quotation_versions.at(-1).id, order_date: '2026-10-19' });
-        project = await command(context, project, 'order_advance', { received: true, amount: '0.01', date: '2026-10-19' });
+        project = await command(context, project, 'order_confirm', { quotation_version_id: project.quotation_versions.at(-1).id, order_date: kitchenIndiaToday() });
+        project = await command(context, project, 'order_advance', { received: true, amount: '0.01', date: kitchenIndiaToday() });
         project = await command(manager, project, 'approval', { scope: 'production', decision: 'Approved' });
         project = await command(context, project, 'advance_stage', { target_stage: 'production' });
       }
       if (stage === 'production') {
-        project = await command(context, project, 'production_update', { status: 'Completed', start_date: '2026-10-19', completion_date: '2026-10-20' });
+        project = await command(context, project, 'production_update', { status: 'Completed', start_date: kitchenIndiaToday(), completion_date: kitchenIndiaToday() });
         project = await command(context, project, 'advance_stage', { target_stage: 'installation' });
       }
       if (stage === 'installation') {
-        project = await command(context, project, 'installation_update', { status: 'Completed', start_date: '2026-10-20', completion_date: '2026-10-21' });
+        project = await command(context, project, 'installation_update', { status: 'Completed', start_date: kitchenIndiaToday(), completion_date: kitchenIndiaToday() });
         project = await command(manager, project, 'approval', { scope: 'closure', decision: 'Approved' });
       }
     }

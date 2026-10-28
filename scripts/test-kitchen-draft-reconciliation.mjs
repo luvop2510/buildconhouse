@@ -96,7 +96,7 @@ await assert.rejects(checkOrdinary(source.replace('if (unchanged(key)) updated[k
 for (const [name, family, recordKey] of [['order_update', 'order', 'orders'], ['quotation_update', 'quotation', 'quotation_versions'], ['design_update', 'design', 'design_versions']]) {
   const saved = { id: 'selected', notes: 'Original', order_date: '2026-10-20', quotation_version_id: 'q1' };
   const original = { ...initial, stage: family, [recordKey]: [saved] };
-  const sourceOf = row => name === 'order_update' ? JSON.stringify([row.order_date, row.notes, row.quotation_version_id]) : JSON.stringify(row);
+  const sourceOf = row => name === 'order_update' ? JSON.stringify([row.order_date, row.notes, row.quotation_version_id]) : name === 'design_update' ? JSON.stringify([row, null]) : JSON.stringify(row);
   const baseline = { source: sourceOf(saved), notes: 'Original', order_date: saved.order_date, ...(name === 'order_update' ? { quotation_version_id: 'q1', amount_customer_approved: 'Not recorded' } : {}) };
   const first = { ...baseline, notes: 'Sent' }, newer = { ...first, notes: 'Typed later', ...(name === 'order_update' ? { quotation_version_id: 'q2', amount_customer_approved: 'Yes' } : {}) };
   const key = `commercial.cycle.1.${family}.selected.edit`;
@@ -307,3 +307,23 @@ assert.deepEqual(failedFlush.writes.map(write => write.command), ['save_visit'])
 assert.equal(failedFlush.render().project.stage, 'visit');
 assert.equal(failedFlush.state.dirty, true);
 console.log('Kitchen immediate Next saves routine drafts before movement, rebases versions, retains explicit decisions, and stops safely on failed autosave.');
+
+{
+  const design = { id: 'chosen-design', response: 'Approved', handoff_status: 'Yes' };
+  const original = { ...initial, stage: 'design', final_design_version_id: 'previous-design', design_versions: [design] };
+  const key = 'commercial.cycle.1.design.chosen-design.edit';
+  const baseline = { source: JSON.stringify([design, 'previous-design']), finalize: false, shared_date: '2026-10-26' };
+  const submitted = { ...baseline, finalize: true };
+  const newer = { ...submitted, shared_date: '2026-10-27' };
+  const view = await harness(source, original);
+  view.state.setDraftValue(key, baseline, submitted);
+  view.render();
+  const pending = view.state.command('design_update', { version_id: design.id, finalize: true });
+  view.state.setDraftValue(key, baseline, newer);
+  view.settle({ ...original, version: 8, final_design_version_id: design.id });
+  assert.equal(await pending, true);
+  view.render();
+  assert.deepEqual(view.state.drafts[key], { ...newer, source: JSON.stringify([design, design.id]) }, 'Own final-selection acknowledgement rebases the selected project design while retaining later typing');
+  assert.equal(view.state.dirty, true);
+}
+console.log('Kitchen final-design reconciliation: selected-design identity rebases without overwriting pending edits.');

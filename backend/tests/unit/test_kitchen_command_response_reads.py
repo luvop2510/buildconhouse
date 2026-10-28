@@ -9,6 +9,7 @@ from auth import get_current_user
 from routes import kitchen_routes
 from services import kitchen_projects
 from tests.unit.test_kitchen_projects import create_request, setup
+from tests.unit.test_kitchen_version_relationships import aggregate
 
 
 @pytest.mark.asyncio
@@ -20,6 +21,8 @@ async def test_next_response_hydration_times_out_before_commit_and_releases_admi
     project = await service.create(owner, create_request(customer_id="customer-a", idempotency_key="next-read-create"))
     saved = database.kitchen_projects.rows[0]
     saved["stage"] = stage
+    evidence = aggregate()
+    saved.update({key: evidence[key] for key in ("design_versions", "quotation_versions", "attachments", "final_design_version_id")})
     receipts = list(saved["command_receipts"])
     original_customers = kitchen_projects.KitchenProjectService._current_customers
 

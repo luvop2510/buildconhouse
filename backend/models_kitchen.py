@@ -265,6 +265,8 @@ class DocumentPayload(StrictModel):
 
 
 class DesignPresentation(DocumentPayload):
+    attachment_ids: list[Identifier] = Field(default_factory=list, max_length=100)
+    final_attachment_id: Identifier | None = None
     requirements: Text | None = None
     budget_discussion: Text | None = None
     presentation_date: str | None = None
@@ -278,6 +280,9 @@ class DesignPresentation(DocumentPayload):
 
 
 class DesignUpdate(StrictModel):
+    finalize: StrictBool = False
+    attachment_ids: list[Identifier] | None = Field(default=None, max_length=100)
+    final_attachment_id: Identifier | None = None
     version_id: Identifier
     presentation_date: str | None = None
     shared_date: str | None = None
@@ -313,7 +318,14 @@ class DesignRevision(StrictModel):
     reason: Annotated[str, Field(min_length=1, max_length=4000)]
 
 
+class QuotationPdf(StrictModel):
+    attachment_id: Identifier
+    kitchen_type: Literal["GI", "SS", "Mix"]
+
+
 class QuotationReceived(DocumentPayload):
+    pdf_options: list[QuotationPdf] = Field(default_factory=list, max_length=100)
+    final_attachment_id: Identifier | None = None
     design_version_id: Identifier
     amount: str | None = None
     received_date: str | None = None
@@ -326,6 +338,8 @@ class QuotationReceived(DocumentPayload):
 
 
 class QuotationUpdate(StrictModel):
+    pdf_options: list[QuotationPdf] | None = Field(default=None, max_length=100)
+    final_attachment_id: Identifier | None = None
     version_id: Identifier
     design_version_id: Identifier | None = None
     amount: str | None = None

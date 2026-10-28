@@ -1,3 +1,4 @@
+import { prepareKitchenFixtureTransition, uploadKitchenPdfInForm, kitchenIndiaToday } from './kitchen-pdf-fixtures';
 import { projectControl, openProjectTool } from './kitchen-controls';
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
@@ -26,6 +27,7 @@ async function projectAt(context: APIRequestContext, stage: string) {
   let project = await created.json();
   if (stage === 'lead') return project;
   for (const target of ['visit', 'cad', 'design', 'quotation', 'order', 'production', 'installation']) {
+    project = await prepareKitchenFixtureTransition(context, project, target);
     const moved = await context.post(`/api/kitchen-projects/${project.id}/commands`, { headers, data: {
       expected_version: project.version, idempotency_key: randomUUID(), command: 'move_stage', payload: { target_stage: target },
     } });
@@ -50,6 +52,7 @@ test('All nine stages open with a compact header and the task visible before exp
   if (page.viewportSize()!.width < 768) await page.setViewportSize({ width: 320, height: 720 });
   for (const stage of ['lead', 'visit', 'cad', 'design', 'quotation', 'order', 'production', 'installation', 'completed']) {
     if (stage !== 'lead') {
+      project = await prepareKitchenFixtureTransition(context.request, project, stage);
       const moved = await context.request.post(`/api/kitchen-projects/${project.id}/commands`, { headers, data: {
         expected_version: project.version, idempotency_key: randomUUID(), command: 'move_stage', payload: { target_stage: stage },
       } });
@@ -114,9 +117,13 @@ test('Kitchen stages use one editable or saved source without repeated summary b
       await expect(page.getByTestId('kitchen-lead-site_location')).toBeVisible();
       await expect(page.getByTestId('kitchen-lead-details')).toHaveCount(0);
     } else if (stage === 'design' || stage === 'quotation') {
-      const id = stage === 'design' ? 'kitchen-design-edit-requirements' : 'kitchen-quotation-amount';
-      await expect(page.getByTestId(id)).toBeVisible();
-      await expect(page.getByTestId(id)).toHaveJSProperty('readOnly', true);
+      if (stage === 'design') {
+        await expect(page.getByTestId('kitchen-design-edit-shared')).toHaveCount(0);
+        await expect(page.getByTestId('kitchen-design-pdf-pick')).toHaveCount(0);
+      } else {
+        await expect(page.getByTestId('kitchen-quotation-shared-date')).toBeVisible();
+        await expect(page.getByTestId('kitchen-quotation-shared-date')).toBeDisabled();
+      }
       await expect(page.getByTestId(`kitchen-${stage}-details`)).toHaveCount(0);
       if (stage === 'quotation') await expect(page.getByTestId('kitchen-quotation-design-version')).toHaveCount(0);
     } else if (stage === 'order') {
@@ -160,24 +167,29 @@ test('Kitchen missing quotation and order prerequisites offer working return act
   await seed(page);
   await page.goto(`/kitchen/${project.id}/stages/quotation`);
   await expect(page.getByTestId('kitchen-quotation-receive')).toBeDisabled();
-  await expect(page.getByText('Save a design in Design first.', { exact: true })).toBeVisible();
-  await page.getByTestId('kitchen-quotation-amount').fill('1250.50');
-  await page.getByTestId('kitchen-quotation-receive').scrollIntoViewIfNeeded();
-  await page.screenshot({ path: info.outputPath('quotation-prerequisites.png') });
-  const design = await clickCommand(page, 'kitchen-complete-design', 'move_stage');
-  expect(design.stage).toBe('design');
-  await expect(page).toHaveURL(new RegExp(`/stages/design(?:\\?.*)?$`));
+  const date = page.getByTestId('kitchen-quotation-shared-date');
+  await date.fill(kitchenIndiaToday());
+  await page.getByTestId('kitchen-quotation-design-version').click();
+  await page.getByRole('menuitem', { name: 'Choose a design version', exact: true }).click();
+  await expect(page.getByTestId('kitchen-complete-design')).toBeVisible();
+  const returned = await clickCommand(page, 'kitchen-complete-design', 'move_stage');
+  expect(returned.stage).toBe('design');
   await clickCommand(page, 'kitchen-advance-quotation', 'move_stage');
-  await expect(page.getByTestId('kitchen-quotation-amount')).toHaveValue('1250.50');
+  await expect(date).toHaveValue(kitchenIndiaToday());
+  await page.getByTestId('kitchen-quotation-design-version').click();
+  await page.getByRole('menuitem', { name: 'Design 1 · Approved', exact: true }).click();
+  const file = await uploadKitchenPdfInForm(page, 'kitchen-quotation-GI-pdf', 'recovery-quotation.pdf');
+  await page.getByTestId(`kitchen-quotation-GI-pdf-${file.attachment.id}-final`).click();
+  await page.getByTestId('kitchen-quotation-sent-yes').click();
+  await page.getByTestId('kitchen-version-response-approved').click();
+  await clickCommand(page, 'kitchen-quotation-receive', 'quotation_receive');
   await clickCommand(page, 'kitchen-advance-order', 'move_stage');
   await expect(page.getByTestId('kitchen-order-confirm')).toBeDisabled();
   await expect(page.getByTestId('kitchen-order-pending')).toHaveText('Status: Pending confirmation');
-  await page.getByTestId('kitchen-order-confirm').scrollIntoViewIfNeeded();
   await page.screenshot({ path: info.outputPath('order-pending-confirmation.png') });
-  const quotation = await clickCommand(page, 'kitchen-complete-quotation', 'move_stage');
-  expect(quotation.stage).toBe('quotation');
-  await expect(page.getByTestId('kitchen-quotation-amount')).toHaveValue('1250.50');
-  await expect(page.getByTestId('kitchen-quotation-upload')).toHaveCount(0);
+  await clickCommand(page, 'kitchen-previous-stage', 'move_stage');
+  await expect(page.getByTestId('kitchen-quotation-final-selection')).toContainText('GI');
+  await expect(date).toHaveValue(kitchenIndiaToday());
   await (await projectControl(page, 'kitchen-project-actions')).click();
   await page.getByRole('menuitem', { name: 'Documents', exact: true }).click();
   await expect(page.getByTestId('kitchen-document-pick')).toBeEnabled();

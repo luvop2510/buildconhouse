@@ -179,10 +179,42 @@ async def command(env, project, name, payload=None, *, key=None, expected=None, 
               "idempotency_key": key or str(uuid4()), "command": name, "payload": payload or {}})
 
 
+async def fixture_pdf_payload(env, project, name, payload):
+    """Positive historical domain fixtures use dated owned PDFs; upload paths have separate HTTP coverage."""
+    payload = dict(payload or {})
+    if name in {"design_present", "quotation_receive"} and "final_attachment_id" not in payload:
+        identity = str(uuid4())
+        day = payload.get("presentation_date" if name == "design_present" else "received_date") or "2026-10-19"
+        attachment = {"id": identity, "filename": f"{name}-{identity}.pdf", "content_type": "application/pdf",
+                      "uploaded_at": day + "T06:00:00+00:00", "size_bytes": 100, "sha256": identity,
+                      "bucket": "private-fixture", "storage_key": identity}
+        await env["db"].kitchen_projects.update_one({"id": project["id"]}, {"$push": {"attachments": attachment}})
+        payload.update(final_attachment_id=identity)
+        if name == "design_present":
+            payload["attachment_ids"] = [identity]
+        else:
+            payload["pdf_options"] = [{"attachment_id": identity, "kitchen_type": "GI"}]
+    return payload
+
+
 async def accepted(env, project, name, payload=None, **options):
+    payload = await fixture_pdf_payload(env, project, name, payload)
     response = await command(env, project, name, payload, **options)
     assert response.status_code == 200, (name, response.text)
     return response.json()
+
+
+async def prepare_manual_pdf_gate(env, project, target):
+    """Supply explicit commercial evidence for positive manual-work fixtures."""
+    if project["stage"] == "design" and target == "quotation" and not project.get("final_design_version_id"):
+        project = await accepted(env, project, "design_present", {
+            "response": "Approved", "shared_date": "2026-10-19", "approval_date": "2026-10-19",
+            "handoff_status": "Yes", "handoff_date": "2026-10-19"})
+    if project["stage"] == "quotation" and target == "order" and not project.get("quotation_versions"):
+        project = await accepted(env, project, "quotation_receive", {
+            "design_version_id": project["final_design_version_id"], "response": "Approved",
+            "sent_status": "Yes", "shared_date": "2026-10-19"})
+    return project
 
 
 async def configure(env, **policy):
@@ -454,9 +486,7 @@ def test_q04_to_q09_versions_revisions_production_visits_and_late_closure(tmp_pa
             project, _ = await create_project(env)
             async def ok(name, payload=None, key=None):
                 nonlocal project
-                response = await command(env, project, name, payload, key=key, actor="manager" if name == "approval" else "owner")
-                assert response.status_code == 200, (name, response.text)
-                project = response.json()
+                project = await accepted(env, project, name, payload, key=key, actor="manager" if name == "approval" else "owner")
                 return project
             async def blocked(name, payload=None):
                 before = await env["db"].kitchen_projects.find_one({"id": project["id"]})
@@ -567,8 +597,9 @@ def test_independent_q11_q14_current_approvals_and_concurrent_revision_and_visit
             project = await accepted(env, project, "design_present", {"presentation_date": "2026-10-19", "url": "https://example.test/design-v1.pdf"})
             version_id = project["design_versions"][-1]["id"]
             project = await accepted(env, project, "design_share", {"version_id": version_id, "date": "2026-10-19"})
+            replacement = await fixture_pdf_payload(env, project, "design_present", {"presentation_date": "2026-10-19", "notes": "Concurrent replacement"})
             requests = [command(env, project, "design_response", {"version_id": version_id, "response": "Approved"}),
-                        command(env, project, "design_present", {"url": "https://example.test/synthetic-design.pdf", "presentation_date": "2026-10-19", "notes": "Concurrent replacement"})]
+                        command(env, project, "design_present", replacement)]
             results = await asyncio.gather(*requests)
             assert sorted(response.status_code for response in results) == [200, 409]
             project = next(response.json() for response in results if response.status_code == 200)
@@ -748,8 +779,8 @@ def test_independent_q13_all_eight_transition_prerequisites_and_skips():
             policy = await configure(env)
             project, _ = await create_project(env)
             base = await env["db"].kitchen_projects.find_one({"id": project["id"]})
-            design = {"id": "design-current", "response": "Approved", "handoff_date": "2026-10-19"}
-            quote = {"id": "quote-current", "response": "Approved", "shared_date": "2026-10-19", "design_version_id": design["id"]}
+            design = {"id": "design-current", "response": "Approved", "handoff_status": "Yes", "handoff_date": "2026-10-19", "attachment_ids": ["design-pdf"], "final_attachment_id": "design-pdf"}
+            quote = {"id": "quote-current", "response": "Approved", "shared_date": "2026-10-19", "design_version_id": design["id"], "pdf_options": [{"attachment_id": "quote-pdf", "kitchen_type": "GI"}], "final_attachment_id": "quote-pdf"}
             order = {"id": "order-current", "status": "Confirmed", "confirmed": True, "quotation_version_id": quote["id"],
                      "final_amount": "1000.00", "advance": {"received": True, "amount": "0.01", "date": "2026-10-19"}, "confirmation_document_id": "file-current"}
             production_approval = {"id": "production-approval", "scope": "production", "subject_id": order["id"], "policy_version": policy["version"], "decision": "Approved", "actor_id": env["ids"]["manager"]}
@@ -773,7 +804,7 @@ def test_independent_q13_all_eight_transition_prerequisites_and_skips():
             ]
             for stage, target, missing in cases:
                 valid = copy.deepcopy(base)
-                valid.update(stage=stage, design_revision_pending=False, design_versions=[copy.deepcopy(design)],
+                valid.update(stage=stage, design_revision_pending=False, final_design_version_id=design["id"], attachments=[{"id": identity, "content_type": "application/pdf", "uploaded_at": "2026-10-19T06:00:00+00:00"} for identity in ("design-pdf", "quote-pdf")], design_versions=[copy.deepcopy(design)],
                     quotation_versions=[copy.deepcopy(quote)], orders=[copy.deepcopy(order)],
                     approvals=[copy.deepcopy(production_approval), copy.deepcopy(closure_approval)],
                     production={"status": "Completed", "start_date": "2026-10-19", "completion_date": "2026-10-20"},
@@ -1496,26 +1527,22 @@ def test_delegated_stage_updates_and_upload_cas_survive_assignment_retirement(mo
     asyncio.run(run())
 
 
-def test_design_and_quotation_documents_and_quotation_amount_are_optional():
+def test_design_and_quotation_require_pdf_and_final_selection_but_not_amount():
     async def run():
         async with environment() as env:
-            for stage, name, payload in (("design", "design_present", {"presentation_date": "2026-10-21"}),
-                    ("quotation", "quotation_receive", {"received_date": "2026-10-21"})):
+            for stage, name in (("design", "design_present"), ("quotation", "quotation_receive")):
                 project = await reach_stage(env, stage)
+                payload = {} if stage == "design" else {"design_version_id": project["final_design_version_id"]}
+                before = await env["db"].kitchen_projects.find_one({"id": project["id"]})
+                rejected = await command(env, project, name, payload)
+                assert rejected.status_code == 422
+                assert await env["db"].kitchen_projects.find_one({"id": project["id"]}) == before
+                project = await accepted(env, project, name, payload)
+                row = project["design_versions" if stage == "design" else "quotation_versions"][-1]
+                assert row["final_attachment_id"] == row["attachment_id"]
+                assert row["upload_date"] == "2026-10-19"
                 if stage == "quotation":
-                    payload["design_version_id"] = project["design_versions"][-1]["id"]
-                saved = await command(env, project, name, payload)
-                assert saved.status_code == 200, saved.text
-                project = saved.json()
-                field = "design_versions" if stage == "design" else "quotation_versions"
-                assert project[field][-1]["url"] is None and project[field][-1]["attachment_id"] is None
-                if stage == "quotation":
-                    assert project[field][-1]["amount"] is None
-                accepted_project = await accepted(env, project, name, {**payload, "url": "https://example.test/synthetic.pdf"})
-                assert accepted_project["version"] == project["version"] + 1
-                # Existing links remain supported without fabricating references.
-                await env["db"].kitchen_projects.update_one({"id": project["id"]}, {"$set": {f"{field}.0.url": None}})
-                assert (await env["api"].get(f"/api/kitchen-projects/{project['id']}", headers=headers(env))).status_code == 200
+                    assert row["amount"] is None
     asyncio.run(run())
 
 
@@ -2179,6 +2206,9 @@ def test_manual_stage_navigation_http_preserves_incomplete_project_and_history()
             stages = ['lead','visit','cad','design','quotation','order','production','installation','completed']
             for target in [*stages[1:], *reversed(stages[:-1])]:
                 before = project['stage']
+                if before == 'design' and target == 'quotation' or before == 'quotation' and target == 'order':
+                    project = await prepare_manual_pdf_gate(env, project, target)
+                    original = {key: project.get(key) for key in original}
                 project = await accepted(env, project, 'move_stage', {'target_stage': target})
                 assert project['stage'] == target
                 assert project['activity'][-1]['payload']['from_stage'] == before
@@ -2201,7 +2231,7 @@ def test_returning_to_quotation_keeps_confirmed_order_terms_and_navigation_avail
             original = project['orders']
             project = await accepted(env, project, 'move_stage', {'target_stage':'order'})
             project = await accepted(env, project, 'move_stage', {'target_stage':'quotation'})
-            project = await accepted(env, project, 'quotation_receive', {'design_version_id':project['design_versions'][-1]['id'], 'received_date':'2026-10-26', 'amount':'1200.00', 'url':'https://example.com/revised.pdf'})
+            project = await accepted(env, project, 'quotation_receive', {'design_version_id':project['design_versions'][-1]['id'], 'received_date':'2026-10-26', 'amount':'1200.00', 'sent_status':'Yes', 'shared_date':'2026-10-26', 'response':'Approved'})
             assert project['quotation_versions'][-1]['amount'] == '1200.00'
             assert project['orders'] == original
             assert project['orders'][-1]['quotation_version_id'] != project['quotation_versions'][-1]['id']

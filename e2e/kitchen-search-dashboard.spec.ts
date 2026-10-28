@@ -1,3 +1,4 @@
+import { prepareKitchenFixtureCommand } from './kitchen-pdf-fixtures';
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { captureRuntimeHealth } from './runtime-health';
@@ -5,6 +6,7 @@ import { captureRuntimeHealth } from './runtime-health';
 const stages = ['lead', 'visit', 'cad', 'design', 'quotation', 'order', 'production', 'installation', 'completed'] as const;
 const headers = { 'X-Floor-Id': 'second-floor' };
 async function command(api: APIRequestContext, project: any, name: string, payload: object) {
+  ({ project, payload } = await prepareKitchenFixtureCommand(api, project, name, payload as Record<string, unknown>));
   const response = await api.post(`/api/kitchen-projects/${project.id}/commands`, { headers, data: {
     expected_version: project.version, idempotency_key: randomUUID(), command: name, payload,
   } });

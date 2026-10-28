@@ -1,3 +1,4 @@
+import { prepareKitchenFixtureTransition, uploadKitchenFixturePdf, kitchenFixtureCommand } from './kitchen-pdf-fixtures';
 import { expect, test, type Locator } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { captureRuntimeHealth } from './runtime-health';
@@ -79,10 +80,8 @@ for (const width of [360, 390, 768, 1024, 1440]) {
 
     // Keyboard traversal is a real user input, with no helper scroll after focus or resizing.
     await notes.press('Shift+Tab');
-    const budget = page.getByTestId('kitchen-lead-budget');
-    await expect(budget).toBeFocused();
-    await insideScrollViewport(budget);
-    await budget.press('Tab');
+    expect(await notes.evaluate(element => document.activeElement !== element)).toBe(true);
+    await page.keyboard.press('Tab');
     await expect(notes).toBeFocused();
     await insideScrollViewport(notes);
     await page.setViewportSize({ width: 844, height: 450 });
@@ -107,12 +106,17 @@ for (const stage of stages.slice(1)) {
     expect(created.ok(), await created.text()).toBe(true);
     let project = await created.json();
     for (const target of stages.slice(1)) {
+      project = await prepareKitchenFixtureTransition(context.request, project, target);
       const moved = await context.request.post(`/api/kitchen-projects/${project.id}/commands`, { headers, data: {
         expected_version: project.version, idempotency_key: randomUUID(), command: 'move_stage', payload: { target_stage: target },
       } });
       expect(moved.ok(), await moved.text()).toBe(true);
       project = await moved.json();
       if (target === stage) break;
+    }
+    if (stage === 'design') {
+      const uploaded = await uploadKitchenFixturePdf(context.request, project, 'keyboard-design.pdf');
+      project = await kitchenFixtureCommand(context.request, uploaded.project, 'design_present', { attachment_ids: [uploaded.attachment.id], final_attachment_id: uploaded.attachment.id });
     }
     const health = captureRuntimeHealth(page);
     await page.setViewportSize({ width: 390, height: 844 });
@@ -122,8 +126,21 @@ for (const stage of stages.slice(1)) {
     });
     await page.goto(`/kitchen/${project.id}/stages/${stage}`);
     await expect(page.getByTestId('kitchen-project-ready')).toHaveCount(1);
-    if (stage === 'quotation') await page.getByTestId('kitchen-quotation-amount').fill('-1');
-    const notes = page.getByTestId(`kitchen-${stage === 'design' ? 'design-edit' : stage}-notes`);
+    if (stage === 'design' || stage === 'quotation') {
+      const field = page.getByTestId(stage === 'design' ? 'kitchen-design-edit-shared' : 'kitchen-quotation-shared-date');
+      await field.fill('2026-10-28');
+      await field.focus();
+      const original = await field.elementHandle();
+      await page.setViewportSize({ width: 390, height: 450 });
+      await insideScrollViewport(field);
+      await expect(field).toBeFocused();
+      await page.setViewportSize({ width: 844, height: 390 });
+      await expect(field).toHaveValue('2026-10-28');
+      expect(await original!.evaluate(element => element === document.activeElement)).toBe(true);
+      await health.assertHealthy();
+      return;
+    }
+    const notes = page.getByTestId(`kitchen-${stage}-notes`);
     await notes.click();
     const original = await notes.elementHandle();
     await page.setViewportSize({ width: 390, height: 450 });
@@ -132,18 +149,6 @@ for (const stage of stages.slice(1)) {
     await expect(notes).toBeFocused();
     await insideScrollViewport(notes);
     expect(await original!.evaluate(element => element === document.activeElement)).toBe(true);
-    if (stage === 'quotation') {
-      // Mobile WebKit has no wheel API. Move the actual scroll container by the
-      // same bounded distance; do not reveal the validation node with a locator helper.
-      if (info.project.use.browserName === 'webkit' && info.project.use.isMobile) {
-        await page.getByTestId('kitchen-page-scroll').evaluate(element => { element.scrollTop += 100; });
-      } else {
-        await page.mouse.move(10, 200);
-        await page.mouse.wheel(0, 100);
-      }
-      await expect(page.getByText('Enter a valid amount, or leave it blank.', { exact: true })).toBeInViewport();
-      await expect(notes).toBeFocused();
-    }
     await notes.press('Shift+Tab');
     expect(await notes.evaluate(element => document.activeElement !== element)).toBe(true);
     await page.setViewportSize({ width: 844, height: 390 });

@@ -38,6 +38,45 @@ def document(project, body):
     return {"attachment_id": body.attachment_id, "url": body.url}
 
 
+def pdf_selection(project, fields, *, quotation=False):
+    """Resolve one final private PDF using only persisted upload metadata."""
+    options = fields.get("pdf_options") if quotation else fields.get("attachment_ids")
+    ids = [row["attachment_id"] for row in options or []] if quotation else options or []
+    final = fields.get("final_attachment_id")
+    if not ids or len(ids) != len(set(ids)) or not final or final not in ids:
+        reject("Upload PDFs and select exactly one finalized PDF" + (" with a kitchen type" if quotation else ""))
+    attachments = {row["id"]: row for row in project.get("attachments", [])}
+    for identity in ids:
+        row = attachments.get(identity)
+        if not row or row.get("content_type") != "application/pdf" or not recorded_day(row.get("uploaded_at")):
+            reject("Select uploaded PDF files belonging to this project with a recorded upload date")
+    day = recorded_day(attachments[final]["uploaded_at"])
+    result = {"final_attachment_id": final, "attachment_id": final, "url": None, "upload_date": day}
+    if quotation:
+        result.update(pdf_options=options, kitchen_type=next(row["kitchen_type"] for row in options if row["attachment_id"] == final),
+                      received_date=day, received_status="Yes")
+    else:
+        result.update(attachment_ids=ids, presentation_date=day)
+    return result
+
+
+def finalized_design(project, version_id=False):
+    if version_id is False:
+        version_id = project.get("final_design_version_id")
+        if not version_id:
+            reject("Select the finalized design version first")
+    row = approved_design(project, version_id)
+    pdf_selection(project, row)
+    if row.get("handoff_status") != "Yes" or not row.get("handoff_date"):
+        reject("Select the finalized design and record Sent to company Yes first")
+    return row
+
+
+def finalized_quotation(project, row):
+    pdf_selection(project, row, quotation=True)
+    return row
+
+
 def selected(project, key, version_id):
     row = next((row for row in project.get(key, []) if row["id"] == version_id), None)
     if row is None:
@@ -138,14 +177,14 @@ def transition(project, target, policy):
     try:
         stage = project["stage"]
         if stage == "design":
-            design = approved_design(project)
+            design = finalized_design(project)
             if not design.get("handoff_date"):
                 reject("Record the approved design sent to company and its date first")
         elif stage == "quotation":
-            quote = current(project, "quotation_versions")
+            quote = finalized_quotation(project, current(project, "quotation_versions"))
             if quote["response"] != "Approved" or not quote.get("shared_date"):
                 reject("The current quotation must be shared and approved by the customer")
-            approved_design(project, quote["design_version_id"])
+            finalized_design(project, quote["design_version_id"])
         elif stage == "order":
             rules = policy.get("production")
             if rules is None:
@@ -201,21 +240,27 @@ def apply(project, command, payload, policy, user, now, validate):
         body = validate(DesignPresentation, payload)
         if production_has_started(project):
             reject("Production has started; use the owner-authorized Return to Design workflow")
-        latest = project.get("design_versions", [])[-1] if project.get("design_versions") else None
-        if latest and latest.get("response") == "Approved" and latest.get("workflow_cycle", 1) == project.get("workflow_cycle", 1) and user.role != "owner":
-            reject("Only the owner can create a new version after customer approval")
         version = record({**body.model_dump(exclude={"reason"}),
-            **(document(project, body) if body.attachment_id or body.url else {}),
             "workflow_cycle": project.get("workflow_cycle", 1), "number": max((row.get("number") or 0 for row in project["design_versions"]), default=0) + 1})
-        version["handoff_status"] = validate_handoff_status(body.handoff_status, body.handoff_date)
-        validate_design_dates(project, version, presentation_date=body.presentation_date, shared_date=body.shared_date,
-            response=body.response, approval_date=body.approval_date, handoff_date=body.handoff_date,
+        version.update(pdf_selection(project, version))
+        if len(version["attachment_ids"]) != 1:
+            reject("Each uploaded PDF creates one design version; upload designs separately")
+        if any(row.get("workflow_cycle", 1) == project.get("workflow_cycle", 1) and (row.get("final_attachment_id") or row.get("attachment_id")) == version["final_attachment_id"] for row in project.get("design_versions", [])):
+            reject("This PDF already has a design version; choose that version")
+        if body.handoff_status == "Not recorded":
+            reject("Choose Yes or No for Sent to company")
+        version["handoff_date"] = body.handoff_date or (recorded_day(now) if body.handoff_status == "Yes" else None)
+        version["handoff_status"] = validate_handoff_status(body.handoff_status or ("Yes" if version["handoff_date"] else "No"), version["handoff_date"])
+        validate_design_dates(project, version, presentation_date=version["presentation_date"], shared_date=body.shared_date,
+            response=body.response, approval_date=body.approval_date, handoff_date=version["handoff_date"],
             approving=body.response == "Approved", now=now)
         if body.shared_date:
             version["shared_by"] = user.id
-        if body.handoff_date:
+        if version["handoff_date"]:
             version["handoff_by"] = user.id
         project["design_versions"].append(version)
+        if version["response"] == "Approved" and version["handoff_status"] == "Yes":
+            project["final_design_version_id"] = version["id"]
         if body.response != "Pending":
             project["approvals"].append(record({"scope": "customer_design", "subject_id": version["id"],
                 "decision": body.response, "approval_date": body.approval_date, "notes": body.notes,
@@ -225,6 +270,8 @@ def apply(project, command, payload, policy, user, now, validate):
         require_stage("design")
         body = validate(DesignUpdate, payload)
         row = selected(project, "design_versions", body.version_id)
+        if body.finalize and production_has_started(project):
+            reject("Production has started; use the owner-authorized Return to Design workflow")
         if production_has_started(project) and any(q.get("design_version_id") == row["id"] and any(o.get("quotation_version_id") == q["id"] and not o.get("authorization_invalidated") for o in project.get("orders", [])) for q in project.get("quotation_versions", [])):
             reject("Production has started; use the owner-authorized Return to Design workflow")
         if project.get("design_revision_pending") or row.get("workflow_cycle", 1) != project.get("workflow_cycle", 1):
@@ -233,8 +280,24 @@ def apply(project, command, payload, policy, user, now, validate):
         shared_date = body.shared_date if "shared_date" in body.model_fields_set else row.get("shared_date")
         handoff_date = body.handoff_date if "handoff_date" in body.model_fields_set else row.get("handoff_date")
         handoff_status = body.handoff_status if "handoff_status" in body.model_fields_set else (None if "handoff_date" in body.model_fields_set and body.handoff_date != row.get("handoff_date") else row.get("handoff_status"))
+        pdf_fields = {}
+        if row.get("final_attachment_id") or {"attachment_ids", "final_attachment_id"}.intersection(body.model_fields_set):
+            proposed = {**row, **body.model_dump(exclude_unset=True)}
+            pdf_fields = pdf_selection(project, proposed)
+            if len(pdf_fields["attachment_ids"]) != 1:
+                reject("Each uploaded PDF creates one design version; upload designs separately")
+            prior_file = row.get("final_attachment_id") or row.get("attachment_id")
+            if prior_file and prior_file != pdf_fields["final_attachment_id"]:
+                reject("Each PDF has its own design version; upload a new design to change its PDF")
+            if not prior_file and any(q.get("design_version_id") == row["id"] for q in project.get("quotation_versions", [])):
+                reject("This design is linked to quotations; create a new design version to attach its PDF")
+            if handoff_status == "Not recorded":
+                reject("Choose Yes or No for Sent to company")
+            if handoff_status == "Yes" and (not handoff_date or "handoff_date" not in body.model_fields_set and row.get("final_attachment_id") != pdf_fields["final_attachment_id"]):
+                handoff_date = recorded_day(now)
+            handoff_status = handoff_status or ("Yes" if handoff_date else "No")
         handoff_status = validate_handoff_status(handoff_status, handoff_date)
-        presentation_date = body.presentation_date if "presentation_date" in body.model_fields_set else row.get("presentation_date")
+        presentation_date = pdf_fields.get("presentation_date", body.presentation_date if "presentation_date" in body.model_fields_set else row.get("presentation_date"))
         validate_design_dates(project, row, presentation_date=presentation_date, shared_date=shared_date,
             response=body.response, approval_date=approval_date, handoff_date=handoff_date,
             approving=body.response == "Approved" and row.get("response") != "Approved", now=now)
@@ -242,18 +305,31 @@ def apply(project, command, payload, policy, user, now, validate):
             reject("Company handoff cannot follow a related quotation receipt")
         if body.revision_count is not None and body.revision_count != project.get("design_revision_count"):
             reject("Design revisions are counted from customer revision requests; record a revision request instead")
+        if body.finalize:
+            proposed_selection = {**row, **pdf_fields, "response": body.response, "shared_date": shared_date,
+                "handoff_status": handoff_status, "handoff_date": handoff_date}
+            pdf_selection(project, proposed_selection)
+            if body.response != "Approved" or handoff_status != "Yes" or not handoff_date:
+                reject("Finalize an approved design and choose Sent to company Yes")
         if shared_date and not row.get("shared_date"):
             row["shared_by"] = user.id
         if handoff_date and not row.get("handoff_date"):
             row["handoff_by"] = user.id
-        row.update(body.model_dump(exclude_unset=True, exclude={"version_id", "reason", "revision_count", "approval_date", "response_notes"}))
-        if "handoff_status" in body.model_fields_set or "handoff_date" in body.model_fields_set:
+        row.update(body.model_dump(exclude_unset=True, exclude={"version_id", "reason", "revision_count", "approval_date", "response_notes", "finalize"}))
+        row.update(pdf_fields)
+        if pdf_fields:
+            row["handoff_date"] = handoff_date
+        if pdf_fields or "handoff_status" in body.model_fields_set or "handoff_date" in body.model_fields_set:
             row["handoff_status"] = handoff_status
         if "approval_date" in body.model_fields_set:
             row["approval_date"] = body.approval_date
         if "response_notes" in body.model_fields_set:
             row["response_notes"] = body.response_notes
         row["corrected_by"], row["corrected_at"] = user.id, now
+        if body.finalize:
+            project["final_design_version_id"] = row["id"]
+        elif "finalize" in body.model_fields_set and project.get("final_design_version_id") == row["id"]:
+            project["final_design_version_id"] = None
         project["approvals"].append(record({"scope": "customer_design", "subject_id": row["id"],
             "decision": body.response, "notes": body.response_notes, "reason": body.reason}))
     elif command in {"design_share", "design_handoff", "quotation_share"}:
@@ -270,6 +346,7 @@ def apply(project, command, payload, policy, user, now, validate):
             reject("Sharing/handoff date cannot precede presentation/receipt")
         if command == "design_handoff":
             approved_design(project, row["id"])
+            pdf_selection(project, row)
             validate_design_dates(project, row, presentation_date=row.get("presentation_date"), shared_date=row.get("shared_date"),
                 response=row["response"], approval_date=row.get("approval_date"), handoff_date=body.date)
             if row.get("handoff_date"):
@@ -277,6 +354,7 @@ def apply(project, command, payload, policy, user, now, validate):
             row["handoff_date"] = body.date
             row["handoff_status"] = "Yes"
             row["handoff_by"] = user.id
+            project["final_design_version_id"] = row["id"]
         else:
             if row.get("shared_date"):
                 reject("Sharing is already recorded for this version")
@@ -293,6 +371,9 @@ def apply(project, command, payload, policy, user, now, validate):
         row = selected(project, "design_versions" if is_design else "quotation_versions", body.version_id)
         if not is_design:
             approved_design(project, row.get("design_version_id"))
+            if body.response == "Approved":
+                finalized_quotation(project, row)
+                finalized_design(project, row.get("design_version_id"))
         if not row.get("shared_date"):
             reject("Record sharing this version with the customer first")
         if is_design:
@@ -332,10 +413,21 @@ def apply(project, command, payload, policy, user, now, validate):
             reject("Only the owner can correct an approved quotation")
         fields = body.model_dump(exclude_unset=True, exclude={"version_id"}) if editing else body.model_dump()
         proposed = {**row, **fields}
-        design = approved_design(project, proposed.get("design_version_id"))
+        pdf_workflow = (not editing or bool(row.get("final_attachment_id"))
+            or bool({"pdf_options", "final_attachment_id"}.intersection(body.model_fields_set))
+            or proposed.get("response") == "Approved" and row.get("response") != "Approved")
+        design = (finalized_design if pdf_workflow else approved_design)(project, proposed.get("design_version_id"))
         if not design.get("handoff_date"):
             reject("Quotation must reference the current approved design sent to the company")
+        if (not editing or proposed.get("design_version_id") != row.get("design_version_id")) and design["id"] != project.get("final_design_version_id"):
+            reject("Choose the finalized design version for this quotation")
         bound_orders = [o for o in project.get("orders", []) if o.get("quotation_version_id") == row.get("id") and not o.get("authorization_invalidated")]
+        if pdf_workflow:
+            proposed.update(pdf_selection(project, proposed, quotation=True))
+        if editing and bound_orders and pdf_workflow:
+            previous_pdf = pdf_selection(project, row, quotation=True)
+            if proposed["final_attachment_id"] != previous_pdf["final_attachment_id"] or proposed["kitchen_type"] != previous_pdf["kitchen_type"]:
+                reject("This quotation is linked to an order; create a new quotation to change its finalized PDF or kitchen type")
         if editing and bound_orders and proposed.get("design_version_id") != row.get("design_version_id"):
             reject("This quotation is linked to an order; choose another quotation explicitly in Order to change its design")
         for status, date in (("received_status", "received_date"), ("sent_status", "shared_date")):
@@ -361,7 +453,7 @@ def apply(project, command, payload, policy, user, now, validate):
                 for order in bound_orders:
                     order["approval_identity"] = str(uuid4())
         else:
-            row = record({**proposed, **(document(project, body) if body.attachment_id or body.url else {}),
+            row = record({**proposed,
                 "number": max((row.get("number") or 0 for row in project["quotation_versions"]), default=0) + 1, "workflow_cycle": project.get("workflow_cycle", 1)})
             project["quotation_versions"].append(row)
         if row.get("shared_date") and (not editing or before.get("shared_date") != row.get("shared_date")):
@@ -375,6 +467,8 @@ def apply(project, command, payload, policy, user, now, validate):
         if production_has_started(project):
             reject("Production has started; use the owner-authorized Return to Design workflow")
         quote = selected(project, "quotation_versions", body.quotation_version_id)
+        finalized_quotation(project, quote)
+        finalized_design(project, quote.get("design_version_id"))
         if project["orders"] and not project.get("commercial_basis_invalidated"):
             reject("Order is already confirmed; changed terms require an owner amendment")
         design = approved_design(project, quote.get("design_version_id"))
@@ -444,7 +538,8 @@ def apply(project, command, payload, policy, user, now, validate):
         if changed_quote:
             if production_has_started(project):
                 reject("Production has started; use the owner-authorized Return to Design workflow")
-            design = approved_design(project, quote.get("design_version_id"))
+            finalized_quotation(project, quote)
+            design = finalized_design(project, quote.get("design_version_id"))
             if not design.get("handoff_date") or quote.get("response") != "Approved" or not quote.get("shared_date"):
                 reject("Select a shared, approved quotation for an approved design sent to company")
             if quote.get("amount") is not None and Decimal(quote["amount"]) != Decimal(row["final_amount"]) and not body.amount_customer_approved:
@@ -516,6 +611,7 @@ def apply(project, command, payload, policy, user, now, validate):
                 "from_stage": stage, "reason": body.reason, "production": copy.deepcopy(project.get("production")),
                 "installation": copy.deepcopy(project.get("installation")), "completion_date": project.get("completion_date")}))
             project["workflow_cycle"] = project.get("workflow_cycle", 1) + 1
+            project["final_design_version_id"] = None
             project["stage"] = "design"
             project["design_revision_pending"] = True
             project["commercial_basis_invalidated"] = True

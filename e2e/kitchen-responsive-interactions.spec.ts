@@ -123,7 +123,9 @@ test('retired view bookmarks use the compact list through width changes', async 
   const list = page.getByTestId('kitchen-compact-list');
   await expect(list).toBeVisible();
   await expect(page.getByTestId('kitchen-table')).toHaveCount(0);
-  for (const label of ['Phone', 'Site location', 'Budget']) await expect(list).toContainText(label);
+  for (const label of ['Phone', 'Site location', 'Architect / Interior']) await expect(list).toContainText(label);
+  await expect(list).not.toContainText('Budget');
+  await expect(list).not.toContainText('Lead source');
   await health.assertHealthy();
 });
 

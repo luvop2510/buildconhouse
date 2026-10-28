@@ -1,9 +1,11 @@
+import { prepareKitchenFixtureCommand, uploadKitchenPdfInForm } from './kitchen-pdf-fixtures';
 import { projectControl, openProjectTool } from './kitchen-controls';
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 
 const headers = { 'X-Floor-Id': 'second-floor' };
 async function command(api: APIRequestContext, project: any, name: string, payload: object) {
+  ({ project, payload } = await prepareKitchenFixtureCommand(api, project, name, payload as Record<string, unknown>));
   const response = await api.post(`/api/kitchen-projects/${project.id}/commands`, { headers, data: {
     expected_version: project.version, idempotency_key: randomUUID(), command: name, payload,
   } });
@@ -66,13 +68,15 @@ test('Every Kitchen date entry point chooses India today when blank and preserve
       await todayDefault(page, 'kitchen-visit-date');
       await expect(page.getByTestId('kitchen-visit-autosave')).toHaveText('Details saved');
     } else if (target_stage === 'design') {
+      await uploadKitchenPdfInForm(page, 'kitchen-design-pdf', 'date-default-design.pdf');
       await todayDefault(page, 'kitchen-design-edit-shared');
       await page.getByTestId('kitchen-design-edit-response-approved').click();
       await todayDefault(page, 'kitchen-design-edit-approval-date');
       await page.getByTestId('kitchen-design-sent-yes').click();
-      await todayDefault(page, 'kitchen-design-edit-handoff');
+      await expect(page.getByTestId('kitchen-design-edit-handoff')).toHaveCount(0);
     } else if (target_stage === 'quotation') {
-      await todayDefault(page, 'kitchen-quotation-date');
+      await expect(page.getByTestId('kitchen-quotation-date')).toHaveCount(0);
+      await expect(page.getByTestId('kitchen-quotation-final-design')).toContainText('Finalize PDF');
       await todayDefault(page, 'kitchen-quotation-shared-date');
     } else if (target_stage === 'order') {
       await todayDefault(page, 'kitchen-order-date');
@@ -90,7 +94,8 @@ test('Every Kitchen date entry point chooses India today when blank and preserve
   }
   // No date focus may create financial orders, approvals, site visits or completed work.
   expect(project.orders).toHaveLength(0);
-  expect(project.design_versions).toHaveLength(0);
+  expect(project.design_versions).toHaveLength(1); // Explicit API fixture setup supplies the finalized design prerequisite.
+  expect(project.quotation_versions).toHaveLength(1); // Explicit setup supplies the finalized quotation prerequisite.
   expect(project.site_visit_count).toBe(0);
   expect(project.production).toBeUndefined();
   expect(project.installation).toBeUndefined();

@@ -13,7 +13,8 @@ from fastapi import HTTPException
 from services import kitchen_access as access
 
 MAX_FILE_BYTES = 768 * 1024  # ordinary single request stays bounded
-MAX_TRANSFER_BYTES = 25_000_000  # approved 21 October; chunked transport only
+MAX_TRANSFER_BYTES = 25_000_000  # chunked transport and historical downloads
+MAX_PDF_UPLOAD_BYTES = 10_000_000
 MAGIC = {"application/pdf": (b"%PDF-",), "image/jpeg": (b"\xff\xd8\xff",),
          "image/png": (b"\x89PNG\r\n\x1a\n",)}
 
@@ -135,11 +136,15 @@ def validate_file_metadata(content_type, filename, policy):
     return kind
 
 
+def validate_upload_size(size, kind, policy, max_file_bytes=MAX_TRANSFER_BYTES):
+    maximum = min(policy["files"]["max_bytes"], max_file_bytes, MAX_PDF_UPLOAD_BYTES if kind == "application/pdf" else MAX_TRANSFER_BYTES)
+    if not size or size > maximum:
+        raise HTTPException(413, f"Attachment is empty or exceeds the configured upload limit ({maximum} bytes)")
+
+
 def validate_file(data, content_type, filename, policy, max_file_bytes=MAX_FILE_BYTES):
     kind = validate_file_metadata(content_type, filename, policy)
-    maximum = min(policy["files"]["max_bytes"], max_file_bytes)
-    if not data or len(data) > maximum:
-        raise HTTPException(413, f"Attachment is empty or exceeds the configured upload limit ({maximum} bytes)")
+    validate_upload_size(len(data), kind, policy, max_file_bytes)
     extension = PurePath(filename).suffix.lower()
     if kind in MAGIC:
         valid = any(data.startswith(prefix) for prefix in MAGIC[kind])

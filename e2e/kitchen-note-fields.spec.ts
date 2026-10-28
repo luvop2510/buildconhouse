@@ -1,3 +1,4 @@
+import { prepareKitchenFixtureTransition } from './kitchen-pdf-fixtures';
 import { expect, test, type APIRequestContext, type Locator, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { captureRuntimeHealth } from './runtime-health';
@@ -11,6 +12,7 @@ async function projectAt(context: APIRequestContext, stage: 'production' | 'inst
   expect(created.ok(), await created.text()).toBe(true);
   let project = await created.json();
   for (const target of ['visit', 'cad', 'design', 'quotation', 'order', 'production', 'installation']) {
+    project = await prepareKitchenFixtureTransition(context, project, target);
     const response = await context.post(`/api/kitchen-projects/${project.id}/commands`, { headers, data: {
       expected_version: project.version, idempotency_key: randomUUID(), command: 'move_stage', payload: { target_stage: target },
     } });

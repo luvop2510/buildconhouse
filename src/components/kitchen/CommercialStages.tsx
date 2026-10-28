@@ -6,7 +6,7 @@ import { KITCHEN_STAGES, STAGE_LABELS, type KitchenCommand, type KitchenProject,
 import { Choice, displayDate, KitchenPanel, KitchenDetails, historicalCount, rupees } from "./shared";
 import { KitchenSelect, KitchenDateField } from "./KitchenFilters";
 import { kitchenToday } from "./KitchenDates";
-import { kitchenOrderContext, kitchenProductionStarted, kitchenOrderQuotations } from "./KitchenVersions";
+import { kitchenOrderContext, kitchenProductionStarted, kitchenOrderQuotations, kitchenHasFinalDesign, kitchenHasFinalQuotation } from "./KitchenVersions";
 import { DesignStage } from "./DesignStage";
 import { QuotationStage } from "./QuotationStage";
 import { useKitchenDraft, useKitchenProject } from "./KitchenProjectState";
@@ -24,7 +24,7 @@ function StageForms({ project, stage, disabled, command }: CommercialProps) {
   const savingWorkAndStage = useRef(false);
   const [quoteView, setQuoteView] = useState<string>();
   const savedContext = kitchenOrderContext(project);
-  const latestDesign = project.design_versions?.at(-1);
+  const latestDesign = project.design_versions?.find(row => row.id === project.final_design_version_id);
   const currentDesign = (latestDesign?.workflow_cycle ?? 1) === (project.workflow_cycle ?? 1) ? latestDesign : undefined;
   const order = savedContext.order;
   const productionStarted = kitchenProductionStarted(project);
@@ -60,7 +60,7 @@ function StageForms({ project, stage, disabled, command }: CommercialProps) {
   const target = next[stage];
   const reason = project.blocked_transitions?.find(row => row.target_stage === target)?.reason;
   const validAmount = (value: string, positive = false) => /^\d+(?:\.\d{1,2})?$/.test(value.trim()) && value.trim().length <= 32 && Number(value) <= 1_000_000_000_000 && (positive ? Number(value) > 0 : Number(value) >= 0);
-  const orderRequirement = !quote ? "Record the received company quotation in Quotation first." : !quoteDesign || quoteDesign.response !== "Approved" || !quoteDesign.handoff_date || project.design_revision_pending || (quoteDesign.workflow_cycle ?? 1) !== (project.workflow_cycle ?? 1) ? "The selected design needs approval and company handoff before confirming an order. Go to Quotation, then return to Design to complete that record." : !quote.shared_date ? "Record the quotation as shared with the customer in Quotation first." : quote.response !== "Approved" ? "Record the customer’s quotation approval in Quotation first." : null;
+  const orderRequirement = !quote ? "Record the received company quotation in Quotation first." : !kitchenHasFinalQuotation(quote) || !quoteDesign || !kitchenHasFinalDesign(quoteDesign) || project.design_revision_pending || (quoteDesign.workflow_cycle ?? 1) !== (project.workflow_cycle ?? 1) ? "Select final design and quotation PDFs with a kitchen type, customer approval and company handoff before confirming an order. Go to Quotation, then return to Design to complete that record." : !quote.shared_date ? "Record the quotation as shared with the customer in Quotation first." : quote.response !== "Approved" ? "Record the customer’s quotation approval in Quotation first." : null;
   const stageHelp = (description: string, destination: KitchenStage) => <Alert tone="info" title="Complete the earlier record" description={description} action={active ? <Button label={`Go to ${STAGE_LABELS[destination]}`} variant="secondary" disabled={disabled} onPress={() => command("move_stage", { target_stage: destination })} testID={`kitchen-complete-${destination}`} /> : undefined} />;
   const saveWork = async (move = false) => {
     if (savingWorkAndStage.current || stage !== "production" && stage !== "installation") return false;

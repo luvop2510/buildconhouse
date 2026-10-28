@@ -58,7 +58,7 @@ async def test_pdf_can_be_appended_at_every_stage_without_changing_workflow(setu
 
 
 @pytest.mark.asyncio
-async def test_design_without_document_and_editable_details_have_audited_progression(setup):
+async def test_design_with_final_document_and_editable_details_have_audited_progression(setup):
     database, service, owner = setup
     project = await service.create(owner, create_request(customer_id='customer-a', idempotency_key='design-edit-test'))
     project = await service.command(owner, project['id'], cmd(project['version'], 'convert'))
@@ -66,12 +66,13 @@ async def test_design_without_document_and_editable_details_have_audited_progres
     project = await service.command(owner, project['id'], cmd(project['version'], 'advance_stage', {'target_stage': 'cad'}))
     project = await service.command(owner, project['id'], cmd(project['version'], 'save_cad', {'received': True, 'progress': 100, 'status': 'Completed'}))
     project = await service.command(owner, project['id'], cmd(project['version'], 'advance_stage', {'target_stage': 'design'}))
-    project = await service.command(owner, project['id'], cmd(project['version'], 'design_present', {'presentation_date': '2026-10-25', 'requirements': 'Tall cabinets', 'budget_discussion': 'Discuss options'}))
+    database.kitchen_projects.rows[0]['attachments'] = [{'id': 'design-pdf', 'content_type': 'application/pdf', 'uploaded_at': '2026-10-24T00:00:00+00:00'}]
+    project = await service.command(owner, project['id'], cmd(project['version'], 'design_present', {'attachment_ids': ['design-pdf'], 'final_attachment_id': 'design-pdf', 'presentation_date': '2026-10-25', 'requirements': 'Tall cabinets', 'budget_discussion': 'Discuss options'}))
     version = project['design_versions'][-1]
-    assert version['attachment_id'] is None and version['url'] is None
+    assert version['attachment_id'] == 'design-pdf' and version['url'] is None
     payload = {'version_id': version['id'], 'presentation_date': '2026-10-24', 'shared_date': '2026-10-25',
                'handoff_date': '2026-10-25', 'approval_date': '2026-10-25', 'response': 'Approved',
-               'requirements': 'Tall cabinets and drawers', 'budget_discussion': 'Within agreed budget', 'reason': 'Correct showroom record'}
+               'requirements': 'Tall cabinets and drawers', 'budget_discussion': 'Within agreed budget', 'reason': 'Correct showroom record', 'finalize': True}
     project = await service.command(owner, project['id'], cmd(project['version'], 'design_update', payload))
     assert project['design_revision_count'] == 0
     assert project['design_versions'][-1]['requirements'] == payload['requirements']
@@ -146,6 +147,9 @@ def test_changed_initial_order_amount_keeps_quotation_and_requires_customer_appr
     _, _, owner = setup
     project = {'stage': 'order', 'orders': [], 'attachments': [], 'design_versions': [{'id': 'design', 'response': 'Approved', 'handoff_date': '2026-10-20'}],
                'quotation_versions': [{'id': 'quote', 'design_version_id': 'design', 'amount': '125.10', 'response': 'Approved', 'shared_date': '2026-10-21'}]}
+    project['attachments'] = [{'id': 'file', 'content_type': 'application/pdf', 'uploaded_at': '2026-10-20T00:00:00+00:00'}]
+    project['design_versions'][0].update(attachment_ids=['file'], final_attachment_id='file', handoff_status='Yes')
+    project['quotation_versions'][0].update(pdf_options=[{'attachment_id': 'file', 'kitchen_type': 'GI'}], final_attachment_id='file')
     fields = {'quotation_version_id': 'quote', 'order_date': '2026-10-22', 'final_amount': '120.00', 'amount_customer_approved': approved}
     if not approved:
         with pytest.raises(HTTPException):

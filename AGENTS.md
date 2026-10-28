@@ -1,5 +1,29 @@
 # AGENTS.md — BuildCon House ERP (forge2.0)
 
+## Kitchen PDF designs and final quotation — 2026-10-28
+
+Each newly uploaded Design PDF creates one numbered design version; four was
+only an example, never a cap. Keep each version's PDF immutable. Viewing a design
+is separate from explicitly saving `final_design_version_id`, which may select an
+older current-cycle design. Require approved design + final PDF + Sent to company
+Yes before Quotation. New quotations bind the chosen design; old orders retain
+their exact quotation/design chain. Preserve the owner-only approved-record
+correction rule, production locks, current-cycle checks and actor-bound CAS/replay.
+
+Quotation PDFs belong to GI, SS or Mix; any subset may be uploaded, with exactly
+one final PDF and type required for confirmation. Server upload timestamps supply
+India upload/receipt dates. Do not extract or invent quotation amounts; final
+order amounts remain explicit. Every PDF supports authenticated browser open and
+download. New Kitchen PDFs are capped at 10,000,000 bytes in both client and server;
+historical larger attachments remain downloadable under the existing 25 MB limit.
+
+Lead controls/queues omit source and budget and label references Architect /
+Interior. Design omits requirements, budget discussion and company notes; handoff
+offers only Yes / No. Retired required-field policy settings cannot block these
+removed inputs. Preserve stored historical data. Additive embedded fields reuse
+private attachments and uploaded_at; no new migration or backfill is required.
+See docs/superpowers/specs/2026-10-28-kitchen-final-pdfs.md.
+
 ## Reliability, stock movements and reference clients — 2026-10-28
 
 The latest user instruction keeps implementation on `main` with no separate

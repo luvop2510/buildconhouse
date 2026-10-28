@@ -8,7 +8,7 @@ import { downloadApiFile } from "@/src/utils/downloadFile";
 import { KITCHEN_FLOOR_ID } from "@/src/constants/floors";
 import { ErrorNotice, KitchenPanel } from "./shared";
 import { useKitchenDraft, useKitchenProject } from "./KitchenProjectState";
-import { uploadKitchenFile, downloadKitchenFile, KITCHEN_MAX_FILE_BYTES } from "./KitchenFileTransport";
+import { uploadKitchenFile, downloadKitchenFile, KITCHEN_MAX_FILE_BYTES, KITCHEN_MAX_PDF_BYTES } from "./KitchenFileTransport";
 import { spacing, type } from "@/src/theme/tokens";
 
 export function DocumentChoice({ project, value, onChange, disabled, label = "Project document" }: { project: KitchenProject; value: string; onChange: (value: string) => void; disabled?: boolean; label?: string }) {
@@ -38,8 +38,9 @@ export function KitchenDocuments({ project, policy, disabled, onUpdated, onReloa
   const upload = () => {
     if (!picked || !files) return;
     if (!/\.(pdf|jpe?g|png|docx|xlsx)$/i.test(picked.name)) { submission.setError("Choose a PDF, JPG/JPEG, PNG, DOCX or XLSX file. The server also validates its content."); return; }
-    const maximum = Math.min(files.max_bytes, KITCHEN_MAX_FILE_BYTES);
-    if (!picked.size || picked.size > maximum) { submission.setError(`Choose a nonempty file up to 25 MB (${maximum.toLocaleString()} bytes).`); return; }
+    const pdf = /\.pdf$/i.test(picked.name) || picked.mimeType === "application/pdf";
+    const maximum = Math.min(files.max_bytes, pdf ? KITCHEN_MAX_PDF_BYTES : KITCHEN_MAX_FILE_BYTES);
+    if (!picked.size || picked.size > maximum) { submission.setError(`Choose a nonempty ${pdf ? "PDF up to 10 MB" : "file up to 25 MB"} (${maximum.toLocaleString()} bytes).`); return; }
     void submission.submit({ id: project.id, uri: picked.uri, name: picked.name, size: picked.size }, async key => {
       if (picked.size! > (files.single_request_max_bytes || 768 * 1024)) return uploadKitchenFile(project, picked, key, setProgress, transfer_id => setUnfinished({ transfer_id, project_id: project.id }));
       const form = new FormData(); form.append("expected_version", String(project.version)); form.append("idempotency_key", key);
@@ -55,7 +56,7 @@ export function KitchenDocuments({ project, policy, disabled, onUpdated, onReloa
     {!project.attachments?.length ? <Text style={type.bodyMuted}>No documents uploaded.</Text> : null}
   </KitchenPanel><KitchenPanel title="Add a document">
     <Text style={type.bodyMuted}>Files remain private. Sharing with the customer is recorded in the relevant stage.</Text>
-    {!files ? <Alert tone="info" title="Upload settings unavailable" description="Ask the owner to complete Kitchen setup." /> : <Text style={type.caption}>PDF, JPG/JPEG, PNG, DOCX or XLSX · Up to 25 MB (25,000,000 bytes). Larger files transfer in private, verified parts.</Text>}
+    {!files ? <Alert tone="info" title="Upload settings unavailable" description="Ask the owner to complete Kitchen setup." /> : <Text style={type.caption}>PDF up to 10 MB (10,000,000 bytes); JPG/JPEG, PNG, DOCX or XLSX up to 25 MB (25,000,000 bytes). Larger files transfer in private, verified parts.</Text>}
     {canUpload && files ? <><Button label="Choose document" variant="secondary" disabled={submission.busy} onPress={() => void pick()} testID="kitchen-document-pick" />{picked ? <><Text style={type.body}>{picked.name}</Text><Button label="Upload selected document" loading={submission.busy} onPress={upload} testID="kitchen-document-upload" /></> : null}</> : null}
     {unfinished && !submission.busy ? <Alert tone="info" title="Unfinished file transfer" description="Choose the same file and retry to resume safely, or discard its temporary parts. No file is attached until verification finishes." action={<Button label="Discard unfinished upload" variant="secondary" onPress={() => { void kitchenProjectsApi.cancelTransfer(unfinished.project_id, unfinished.transfer_id).then(() => { setUnfinished(null); submission.clearFeedback(); }).catch(error => submission.setError(String(error?.message || "Could not discard temporary parts."))); }} testID="kitchen-file-discard" />} /> : null}
   </KitchenPanel>

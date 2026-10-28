@@ -149,3 +149,24 @@ console.log("PDF/PPT downloads: floor binding, mobile fresh-gesture save, and re
   assert.deepEqual(previews, ['blob:pdf']);
 }
 console.log('PDF download/preview: selected-floor fallback, explicit floor, delayed token race and cookie credentials passed');
+
+// Desktop Kitchen Download uses the same prepared-file helper after chunk verification.
+{
+  const downloadModule = { exports: {} };
+  const anchors = [];
+  let clicked = 0;
+  vm.runInNewContext(compile('../src/utils/downloadFile.ts'), {
+    module: downloadModule, exports: downloadModule.exports, Blob,
+    navigator: { userAgent: 'Chrome Desktop', platform: 'MacIntel', maxTouchPoints: 0 },
+    document: { body: { appendChild: anchor => anchors.push(anchor) }, createElement: tag => ({ tag, click: () => clicked++, remove() {} }) },
+    URL: { createObjectURL: blob => { assert.equal(blob.type, 'application/pdf'); return 'blob:verified-kitchen-pdf'; }, revokeObjectURL() {} },
+    setTimeout() {},
+    require: name => name === 'react-native' ? { Platform: { OS: 'web' } } : name.includes('Toast') ? { toast: { show() {} } } : {},
+  });
+  assert.equal(await downloadModule.exports.savePreparedFile(new Blob(['%PDF-verified'], { type: 'application/pdf' }), 'Final GI kitchen.pdf', 'project document'), true);
+  assert.equal(clicked, 1);
+  assert.equal(anchors[0].href, 'blob:verified-kitchen-pdf');
+  assert.equal(anchors[0].download, 'Final GI kitchen.pdf');
+  assert.equal(anchors[0].target, undefined);
+  console.log('Desktop Kitchen PDF Download: original named PDF saves through a browser download anchor.');
+}

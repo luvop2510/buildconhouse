@@ -19,6 +19,7 @@ import { CommercialStages } from "./CommercialStages";
 import { KitchenDocuments } from "./KitchenDocuments";
 import { kitchenProjectPath, kitchenStage, useKitchenDraft, useKitchenProject } from "./KitchenProjectState";
 import { useKitchenAutosave } from "./KitchenAutosave";
+import { kitchenHasFinalDesign, kitchenHasFinalQuotation } from "./KitchenVersions";
 
 type ProjectPage = "overview" | "stage" | "documents" | "history" | "assignments" | "exceptions";
 
@@ -40,7 +41,7 @@ export function KitchenProjectDetail({ page = "stage" }: { page?: ProjectPage })
   const held = project?.lifecycle_status === "On Hold" || project?.lifecycle_status === "Cancelled";
   const back = () => { if (router.canGoBack()) router.back(); else router.replace(returnTo as any); };
   const actionLabel = project ? currentTaskLabel(project) : "Open current task";
-  const disabled = !canUpdate || submission.busy && !state.backgroundSaving || loading || Boolean(failure);
+  const disabled = !canUpdate || submission.busy && !state.backgroundSaving || state.documentSubmission.busy || loading || Boolean(failure);
   const savedAt = project?.updated_at ? new Date(project.updated_at) : null;
   const savedLabel = savedAt && Number.isFinite(savedAt.getTime())
     ? `Saved · ${savedAt.toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })} IST`
@@ -111,11 +112,19 @@ function StageNavigation({ project, disabled }: { project: KitchenProject; disab
   const index = KITCHEN_STAGES.indexOf(project.stage);
   const previous = KITCHEN_STAGES[index - 1];
   const next = KITCHEN_STAGES[index + 1];
+  const design = project.design_versions?.find(row => row.id === project.final_design_version_id);
+  const quote = project.quotation_versions?.at(-1);
+  const prerequisite = next === "quotation" && (!kitchenHasFinalDesign(design) || project.design_revision_pending)
+    ? "Select a finalized design PDF, record customer approval and choose Yes for Sent to company before continuing."
+    : next === "order" && (!kitchenHasFinalQuotation(quote) || quote?.response !== "Approved" || !quote.shared_date || !kitchenHasFinalDesign(project.design_versions?.find(row => row.id === quote?.design_version_id)) || project.design_revision_pending)
+      ? "Select the final quotation PDF and kitchen type, then record customer approval before continuing."
+      : null;
   return <View testID="kitchen-stage-navigation">
     <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.md }}>
       {previous ? <Button label="Previous" icon="arrow-left" variant="secondary" disabled={disabled} onPress={() => command("move_stage", { target_stage: previous })} testID="kitchen-previous-stage" /> : null}
-      {next ? <Button label={`Next: ${STAGE_LABELS[next]}`} iconRight="arrow-right" disabled={disabled} onPress={() => command("move_stage", { target_stage: next })} testID={project.stage === "lead" ? "kitchen-convert" : `kitchen-advance-${next}`} /> : null}
+      {next ? <Button label={`Next: ${STAGE_LABELS[next]}`} iconRight="arrow-right" disabled={disabled || Boolean(prerequisite)} onPress={() => command("move_stage", { target_stage: next })} testID={project.stage === "lead" ? "kitchen-convert" : `kitchen-advance-${next}`} /> : null}
     </View>
+    {prerequisite ? <Text style={type.caption}>{prerequisite}</Text> : null}
   </View>;
 }
 

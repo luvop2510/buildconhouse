@@ -12,6 +12,8 @@ const files = new Map([['file:///selected.pdf', Buffer.from(source)]]);
 const shares = [];
 const errors = [];
 let sharingAvailable = true;
+const preparedBlobs = [];
+const blobTimers = [];
 class NativeFile {
   constructor(...paths) { this.uri = paths.join('/'); }
   get exists() { return files.has(this.uri); }
@@ -43,7 +45,8 @@ function load(path) {
   vm.runInNewContext(code, {
     module, exports: module.exports, Uint8Array, ArrayBuffer, Date, Math,
     // RN Blob cannot construct from byte arrays and has no arrayBuffer method.
-    Blob: class { constructor() { throw new Error('Unsupported native Blob byte construction'); } },
+    Blob: modules['react-native'].Platform.OS === 'web' ? Blob : class { constructor() { throw new Error('Unsupported native Blob byte construction'); } },
+    crypto: webcrypto, URL: { createObjectURL: blob => { preparedBlobs.push(blob); return 'blob:verified'; }, revokeObjectURL: () => {} }, setTimeout: (callback, delay) => blobTimers.push([callback, delay]),
     FileReader: class { readAsDataURL(blob) { this.result = `data:${blob.type};base64,${blob.bytes.toString('base64')}`; this.onload(); } },
     btoa: value => Buffer.from(value, 'binary').toString('base64'), atob: value => Buffer.from(value, 'base64').toString('binary'),
     require: name => { assert(name in modules, `Unexpected dependency: ${name}`); return modules[name]; },
@@ -101,3 +104,26 @@ await transport.uploadKitchenFile({ id: 'project', version: 2 }, asset, 'new-rev
 assert.notEqual(uploads.at(-1).sha256, uploads[0].sha256, 'same filename and size preserve distinct native content identity');
 assert.deepEqual(errors, ['Sharing is unavailable on this device', 'Sharing is unavailable on this device']);
 console.log('Native Kitchen files: iOS/Android contract, SHA-256 upload identity, bounded file writes, full/part corruption rejection, share and cleanup passed (no physical-device claim).');
+
+modules['react-native'].Platform.OS = 'web';
+const webTransport = load('../src/components/kitchen/KitchenFileTransport.ts');
+const webAttachment = {id:'attachment',filename:'Drawing.pdf',content_type:'application/pdf',size_bytes:source.length,sha256:sha(source)};
+const preview = {closed:false,location:{href:'about:blank'}};
+assert.equal(await webTransport.downloadKitchenFile('project',webAttachment,()=>{},preview),true);
+assert.equal(preview.location.href,'blob:verified');
+assert.equal(sha(new Uint8Array(await preparedBlobs.at(-1).arrayBuffer())),sha(source),'The preview receives only fully verified original PDF bytes');
+assert.equal(blobTimers.at(-1)[1],120_000,'The browser can finish loading before the blob URL is revoked');
+corruptPart=true;
+preview.location.href='about:blank';
+await assert.rejects(webTransport.downloadKitchenFile('project',webAttachment,()=>{},preview),/part failed integrity/);
+assert.equal(preview.location.href,'about:blank','Corrupt PDF bytes never navigate the preview');
+corruptPart=false;
+preview.closed=true;
+await assert.rejects(webTransport.downloadKitchenFile('project',webAttachment,()=>{},preview),/preview was closed/);
+console.log('Web Kitchen PDF preview: full-byte SHA-256 verification, private chunk transport, corrupt-byte refusal and closed-window recovery passed.');
+
+assert.equal(transport.KITCHEN_MAX_PDF_BYTES,10_000_000);
+await assert.rejects(transport.uploadKitchenFile({id:'project',version:1},{...asset,size:10_000_001},'too-big',()=>{},()=>{}),/10 MB/);
+await assert.rejects(transport.uploadKitchenFile({id:'project',version:1},{...asset,name:'renamed.bin',mimeType:'application/pdf',size:10_000_001},'renamed-big',()=>{},()=>{}),/10 MB/);
+assert.equal(transport.KITCHEN_MAX_FILE_BYTES,25_000_000,'Historical file downloads retain the original 25 MB support');
+console.log('Kitchen PDF upload cap: 10 MB by PDF filename or MIME; existing historical download limit retained.');
