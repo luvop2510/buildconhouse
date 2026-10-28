@@ -13,7 +13,7 @@
     "lint": "expo lint",
     "test:supplier-catalog": "node --experimental-strip-types --no-warnings scripts/test-catalog-source.mjs",
     "test:catalog-pagination": "node scripts/test-catalog-pagination.mjs",
-    "test:quotation-media": "node --experimental-strip-types --no-warnings scripts/test-quotation-media.mjs",
+    "test:quotation-media": "node --experimental-strip-types --no-warnings scripts/test-quotation-media.mjs && node scripts/test-r2-media-worker.mjs && node scripts/test-r2-image-urls.mjs",
     "test:downloads": "node scripts/test-download-file.mjs && node scripts/test-kitchen-native-files.mjs",
     "test:quotation-contract": "node --experimental-strip-types --no-warnings scripts/test-quotation-contract.mjs",
     "test:quotation-reorder": "node --experimental-strip-types --no-warnings scripts/test-quotation-reorder.mjs",
