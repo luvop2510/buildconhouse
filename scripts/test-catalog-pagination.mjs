@@ -8,6 +8,7 @@ const exports = {};
 vm.runInNewContext(ts.transpileModule(source, {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
 }).outputText, { exports, require: () => ({}), URLSearchParams });
+assert.equal(exports.CATALOG_PAGE_SIZE, 50, "Catalog and quotation picker request at most 50 rows by default");
 const { mergeCatalogPage, catalogItemKey, catalogGridRows, catalogPageProgress } = exports;
 const family = { family_key: 'supplier-family', sample_product_id: 'a', floor_id: 'first-floor', brand_id: 'brand-a', category_id: 'basins' };
 const siblings = [
@@ -78,7 +79,7 @@ const context = {
   productMounted: { current: true }, productQueryScope: 'current', currentProductScope: { current: 'current' },
   nextProductOffset: offset, productRequestGeneration: { current: 1 },
   loadMoreController: { current: null }, loadingMoreRef: loading,
-  productLoading: false, productHasMore: true, q: '', selectedBrandIds: [], selectedCategoryIds: [], selectedSizes: [], sortKey: 'popular', activeFloorId: 'first-floor', CATALOG_PAGE_SIZE: 60,
+  productLoading: false, productHasMore: true, q: '', selectedBrandIds: [], selectedCategoryIds: [], selectedSizes: [], sortKey: 'popular', activeFloorId: 'first-floor', CATALOG_PAGE_SIZE: exports.CATALOG_PAGE_SIZE,
   fetchCatalogPage: (_query, skip) => new Promise(resolve => reads.push({ skip, resolve })),
   setProducts: update => { shown = update(shown); },
   setProductTotal: () => {}, setProductLoadingMore: () => {}, setProductHasMore: value => { more = value; },

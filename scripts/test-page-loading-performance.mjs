@@ -96,6 +96,7 @@ function screen(kind, width = 'desktop') {
     '@/src/hooks/use-breakpoint': { useBreakpoint: () => bp },
     '@/src/theme/tokens': { colors: {}, spacing: {}, radius: {}, icon: {}, type: new Proxy({}, { get: () => ({}) }) },
     '@/src/services/catalogService': {
+      CATALOG_PAGE_SIZE: catalogExports.CATALOG_PAGE_SIZE,
       catalogReferences: { facets: async () => ({}), brands: async () => [], categories: async () => [], hierarchy: async () => ({ tree: [] }) },
       fetchCatalogPage: (query, skip, limit, options) => get('catalog-page', { ...options, query, skip, limit }),
       mergeCatalogPage: catalogExports.mergeCatalogPage,
@@ -155,7 +156,7 @@ for (const width of ['phone', 'tablet', 'desktop']) {
   test(`catalog starts without running a debounce timer on ${width}`, async () => {
     const fixture = screen('catalog', width); fixture.render(); await fixture.settle();
     assert.ok(fixture.requests.some(request => request.path === 'catalog-page'));
-    assert.equal(fixture.requests.find(request => request.path === 'catalog-page').options.limit, 60);
+    assert.equal(fixture.requests.find(request => request.path === 'catalog-page').options.limit, 50);
   });
 }
 

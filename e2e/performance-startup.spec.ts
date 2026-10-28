@@ -152,7 +152,7 @@ test('cold catalog loads one bounded page promptly on each device', async ({ pag
   // Search debounce belongs to typed searches, never to opening the page.
   expect(requestAfterReferencesMs).toBeLessThan(180);
   expect(familyReads).toHaveLength(1);
-  expect(new URLSearchParams(familyReads[0].query).get('limit')).toBe('60');
+  expect(new URLSearchParams(familyReads[0].query).get('limit')).toBe('50');
   expect(familyReads[0].floor).toBe('first-floor');
   for (const path of ['/api/auth/me', '/api/settings/floor-access', '/api/brands', '/api/categories', '/api/catalog/hierarchy', '/api/catalog/facets']) {
     expect(data.reads.filter(read => read.path === path), path).toHaveLength(1);
@@ -356,7 +356,7 @@ test('repeated catalog visits retain one signed-in session and reuse reference d
 
 // A one-card fixture cannot detect expensive grid/variant rendering. Return a
 // full bounded page at the actual catalog scale, with ten finishes per family.
-const realisticFamilies = Array.from({ length: 60 }, (_, index) => ({
+const realisticFamilies = Array.from({ length: 50 }, (_, index) => ({
   ...family, family_key: `scale-${index}`, family_name: `Scale basin ${index}`,
   sample_product_id: `scale-${index}-0`, product_count: 10,
   variants: Array.from({ length: 10 }, (_, finish) => ({
@@ -405,7 +405,7 @@ test('full catalog page stays bounded and search responds under CPU pressure', a
   expect(readyMs).toBeLessThan(2500);
   const initial = data.reads.filter(read => read.path === '/api/products/families');
   expect(initial).toHaveLength(1);
-  expect(new URLSearchParams(initial[0].query).get('limit')).toBe('60');
+  expect(new URLSearchParams(initial[0].query).get('limit')).toBe('50');
   expect(new URLSearchParams(initial[0].query).get('skip')).toBe('0');
   const cdp = browserName === 'chromium' ? await page.context().newCDPSession(page) : null;
   if (cdp) await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 });
@@ -420,7 +420,7 @@ test('full catalog page stays bounded and search responds under CPU pressure', a
     expect(Math.max(...searchTimings)).toBeLessThan(1500);
     expect(data.reads.filter(read => read.path === '/api/products/families')).toHaveLength(4);
     const tasks = await assertHealthyInteraction(page, data);
-    await info.attach('realistic-catalog-performance', { body: JSON.stringify({ readyMs, searchTimings, cpuThrottle: cdp ? 4 : null, fixtureLatencyMs: LATENCY_MS, familyTotal: 6500, pageSize: 60, variantsPerFamily: 10, tasks, reads: data.reads }, null, 2), contentType: 'application/json' });
+    await info.attach('realistic-catalog-performance', { body: JSON.stringify({ readyMs, searchTimings, cpuThrottle: cdp ? 4 : null, fixtureLatencyMs: LATENCY_MS, familyTotal: 6500, pageSize: 50, variantsPerFamily: 10, tasks, reads: data.reads }, null, 2), contentType: 'application/json' });
   } finally {
     if (cdp) { await cdp.send('Emulation.setCPUThrottlingRate', { rate: 1 }); await cdp.detach(); }
   }
@@ -440,7 +440,7 @@ test('quotation builder renders a full variant page and adds a line promptly', a
   expect(readyMs).toBeLessThan(2500);
   const initial = data.reads.filter(read => read.path === '/api/products/families');
   expect(initial).toHaveLength(1);
-  expect(new URLSearchParams(initial[0].query).get('limit')).toBe('60');
+  expect(new URLSearchParams(initial[0].query).get('limit')).toBe('50');
   const addStarted = performance.now();
   await controls.getByTestId('add-SCALE-0-0').click();
   // Quantity badge proves the real line state has changed, without saving any
@@ -511,14 +511,14 @@ test('godown replacement inventory renders a bounded batch and searches distant 
   await page.route('**/api/godown-stock?**', async route => {
     await new Promise(resolve => setTimeout(resolve, LATENCY_MS));
     const query = new URL(route.request().url()).searchParams;
-    expect(query.get('limit')).toBe('60');
+    expect(query.get('limit')).toBe('50');
     expect(query.get('with_movements')).toBe('false');
     const matching = lots.filter(lot => `${lot.sku} ${lot.name}`.toLowerCase().includes((query.get('q') || '').toLowerCase()));
     const offset = Number(query.get('offset') || 0);
-    return route.fulfill({ json: { lots: matching.slice(offset, offset + 60).map(lot => ({ ...lot, history_loaded: false })), brands: [],
+    return route.fulfill({ json: { lots: matching.slice(offset, offset + 50).map(lot => ({ ...lot, history_loaded: false })), brands: [],
       total_available_qty: 2200, total_stock_value: 1100000, unpriced_lot_count: 550,
       total_lots: matching.length, available_lot_count: matching.length, unknown_quantity_count: 0, zero_lot_count: 0,
-      next_offset: offset + 60 < matching.length ? offset + 60 : null } });
+      next_offset: offset + 50 < matching.length ? offset + 50 : null } });
   });
   const started = performance.now();
   await page.goto('/godown-stock', { waitUntil: 'domcontentloaded' });
@@ -535,5 +535,5 @@ test('godown replacement inventory renders a bounded batch and searches distant 
   expect(data.reads.filter(read => read.path.endsWith('/history'))).toHaveLength(0);
   const tasks = await assertHealthyInteraction(page, data);
   await info.attach('godown-inventory-performance', { body: JSON.stringify({ readyMs, searchMs,
-    stockRows: lots.length, initialResponseRows: 60, initialRenderLimit: 60, fixtureLatencyMs: LATENCY_MS, tasks }), contentType: 'application/json' });
+    stockRows: lots.length, initialResponseRows: 50, initialRenderLimit: 50, fixtureLatencyMs: LATENCY_MS, tasks }), contentType: 'application/json' });
 });

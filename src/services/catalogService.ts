@@ -6,7 +6,7 @@
 // identity so repeated onEndReached events cannot introduce duplicates.
 import { api, clearApiResponseCache } from "@/src/api/client";
 
-export const CATALOG_PAGE_SIZE = 60;
+export const CATALOG_PAGE_SIZE = 50;
 export type CatalogSort = "source" | "popular" | "recent" | "price_asc" | "price_desc" | "name";
 export type CatalogEntry = {
   entry_id: string; source_catalog: string; sheet_name: string;

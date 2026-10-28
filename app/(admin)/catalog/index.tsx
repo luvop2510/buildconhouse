@@ -20,7 +20,7 @@ import { ProductImage } from "@/src/components/ProductImage";
 import { productImageList } from "@/src/components/quotation/helpers/media";
 import { BottomSheet } from "@/src/components/BottomSheet";
 import { Alert, Chip, EmptyState, IconButton, PriceTag, ScreenTitle, SegmentedControl, Skeleton, Button } from "@/src/components/ui";
-import { catalogGridRows, catalogPageProgress, catalogItemKey, catalogReferences, fetchCatalogPage, mergeCatalogPage, type CatalogEntry } from "@/src/services/catalogService";
+import { CATALOG_PAGE_SIZE as PAGE_SIZE, catalogGridRows, catalogPageProgress, catalogItemKey, catalogReferences, fetchCatalogPage, mergeCatalogPage, type CatalogEntry } from "@/src/services/catalogService";
 import { useBreakpoint } from "@/src/hooks/use-breakpoint";
 import { useFloorAccess } from "@/src/hooks/use-floor-access";
 import { colors, money, PRODUCT_IMAGE_ASPECT_RATIO, radius, spacing, type } from "@/src/theme/tokens";
@@ -245,7 +245,6 @@ export default function Catalog() {
     setSeriesList(Array.from(ser).sort());
   }, [hierarchyTree, cat, brandId, subcat]);
 
-  const PAGE_SIZE = 60;
   const requestIdRef = useRef(0);
   const nextPageOffset = useRef(0);
   const queryScope = JSON.stringify([selectedFloorId, mode, q, searchQuery, cat, brandId, subcat, series, finishes, colours, sizes]);
