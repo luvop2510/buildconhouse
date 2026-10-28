@@ -62,7 +62,12 @@ for (const width of [360, 390, 768, 1024, 1440]) {
     await notes.press('ArrowLeft');
     await notes.pressSequentially('Start ');
     await expect.poll(() => notes.evaluate(element => (element as HTMLTextAreaElement).selectionStart)).toBe(6);
-    await expect.poll(() => notes.evaluate(element => element.scrollTop)).toBeLessThanOrEqual(2);
+    // Browsers may scroll away top padding and half-leading while keeping the first line visible.
+    await expect.poll(() => notes.evaluate(element => {
+      const style = getComputedStyle(element);
+      const spaceAboveText = parseFloat(style.paddingTop) + (parseFloat(style.lineHeight) - parseFloat(style.fontSize)) / 2;
+      return element.scrollTop - spaceAboveText;
+    })).toBeLessThanOrEqual(1);
     for (let line = 0; line < 15; line++) await notes.press('ArrowDown');
     await notes.pressSequentially('Middle ');
     const middle = await notes.evaluate(element => ({ scroll: element.scrollTop, height: element.clientHeight,
