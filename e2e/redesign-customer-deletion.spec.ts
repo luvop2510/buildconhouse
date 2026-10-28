@@ -103,7 +103,7 @@ test('critical new Furniture ledger carries the selected canonical customer thro
     }
     return route.fulfill({json:{rows:saved?[saved]:[],next_cursor:null}});
   });
-  await page.route('**/api/furniture-quotations/saved-linked',route=>route.fulfill({json:saved}));
+  await page.route(/\/api\/furniture-quotations\/saved-linked(?:\?.*)?$/,route=>route.fulfill({json:saved}));
   await page.route('**/api/whatsapp/configuration',route=>route.fulfill({json:{configured:false}}));
   await page.goto('/notebook/furniture-quotations');
   await page.getByRole('button',{name:'New RNB quotation',exact:true}).click();
@@ -118,4 +118,6 @@ test('critical new Furniture ledger carries the selected canonical customer thro
   await page.getByRole('button',{name:'Quotation list',exact:true}).click();
   await page.getByRole('button',{name:'Open Linked showroom customer',exact:true}).click();
   await expect(page.getByRole('button',{name:'Change linked customer',exact:true})).toBeVisible();
+  await expect(page.getByRole('textbox',{name:'Customer name / quotation heading (RDCL)',exact:true})).toHaveValue('Linked showroom customer');
+  await expect(page.getByRole('textbox',{name:'Customer WhatsApp mobile',exact:true})).toHaveValue('9876543210');
 });

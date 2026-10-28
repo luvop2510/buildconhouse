@@ -74,8 +74,16 @@ test('tile orders reflow with usable pane width and retain tablet brands and wai
   await expect(record.getByText('Customer with a long project and company name', { exact: true })).toBeVisible();
   if (width < 1280) {
     await expect(table).not.toHaveAttribute('role', 'table');
-    await expect(record.getByText('ORDER NO.', { exact: true })).toBeVisible();
+    await expect(record.getByText('TCO-RESPONSIVE', { exact: true })).toBeVisible();
+    await expect(record.getByText('Example Tile Brand', { exact: true })).toBeVisible();
+    await expect(record.getByText('PRODUCTS', { exact: true })).toBeVisible();
+    await expect(record.getByText('3', { exact: true })).toBeVisible();
+    await expect(record.getByText('QTY', { exact: true })).toBeVisible();
+    await expect(record.getByText('24', { exact: true })).toBeVisible();
+    await expect(record.getByText('STATUS', { exact: true })).toBeVisible();
+    await expect(record.getByText('Partially Dispatched', { exact: true })).toBeVisible();
     if (width >= 768) {
+      await expect(record.getByText('ORDER NO.', { exact: true })).toBeVisible();
       await expect(record.getByText('BRANDS', { exact: true })).toBeVisible();
       await expect(record.getByText('WAITING', { exact: true })).toBeVisible();
     }

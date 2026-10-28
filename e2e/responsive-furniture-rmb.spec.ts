@@ -17,7 +17,11 @@ async function fixture(page: Page, configured = true) {
     expect(route.request().headers()['x-floor-id']).toBe('third-floor');
     return route.fulfill({ json: { rows: [saved], next_cursor: null } });
   });
-  await page.route('**/api/furniture-quotations/rmb-one', route => route.fulfill({ json: saved }));
+  await page.route(/\/api\/furniture-quotations\/rmb-one(?:\?.*)?$/, route => {
+    expect(route.request().method()).toBe('GET');
+    expect(new URL(route.request().url()).searchParams.get('include_acquisition')).toBe('false');
+    return route.fulfill({ json: saved });
+  });
   await page.route('**/api/whatsapp/configuration', route => route.fulfill({ json: { configured, template_configured: false } }));
   await page.goto('/notebook/furniture-quotations');
   await page.getByRole('button', { name: 'Open RDCL', exact: true }).click();
@@ -58,7 +62,7 @@ test('furniture RNB ledger converts INR and USD, saves exact rates, and locks fi
 test('saved RMB deposits display RNB throughout and retain the existing currency on save', async ({ page }) => {
   await fixture(page);
   const legacy = { ...saved, deposits: [{ ...saved.deposits[0], currency: 'RMB', amount: '100', rate: '1', amount_rmb: '100.00' }], total_received_rmb: '100.00', balance_rmb: '232438.00' };
-  await page.route('**/api/furniture-quotations/rmb-one', route => route.fulfill({ json: legacy }));
+  await page.route(/\/api\/furniture-quotations\/rmb-one(?:\?.*)?$/, route => route.fulfill({ json: legacy }));
   await page.getByRole('button', { name: 'Reload saved quotation', exact: true }).click();
   await expect(page.getByLabel('Deposit 1 amount (RNB)', { exact: true })).toHaveValue('100');
   await expect(page.getByLabel('RNB rate', { exact: true })).not.toBeEditable();

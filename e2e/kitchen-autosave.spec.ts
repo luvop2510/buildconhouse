@@ -82,9 +82,10 @@ test('Slow order autosave keeps focus and newer typing, then reloads the newest 
   const project = await confirmedOrder(context.request);
   const health = captureRuntimeHealth(page);
   await open(page, project);
-  for (const name of ['order-confirmation', 'order-status', 'order-details']) {
+  for (const name of ['order-confirmation', 'order-status']) {
     await expect(page.getByTestId(`kitchen-disclose-${name}`)).toHaveAttribute('aria-expanded', 'false');
   }
+  await expect(page.getByTestId('kitchen-disclose-order-details')).toHaveCount(0);
   await expect(page.getByTestId('kitchen-order-details')).toHaveCount(0);
   await expect(page.getByText('Approved final amount:', { exact: false })).toHaveCount(1);
   await expect(page.getByTestId('kitchen-amend-save')).toHaveCount(0);

@@ -109,7 +109,7 @@ test('Furniture seven-column ledger contains long descriptions and scrolls insid
     deposits: [{ id: 'two', description: longName, currency: 'INR', amount: '2200000', rate: '15.12', amount_rmb: '145502.65', created_at: timestamp, updated_at: timestamp }],
     total_payable_rmb: '172250.00', total_received_rmb: '145502.65', balance_rmb: '26747.35' };
   await page.route('**/api/furniture-quotations', route => route.fulfill({ json: { rows: [saved], next_cursor: null } }));
-  await page.route('**/api/furniture-quotations/layout-ledger', route => route.fulfill({ json: saved }));
+  await page.route(/\/api\/furniture-quotations\/layout-ledger(?:\?.*)?$/, route => route.fulfill({ json: saved }));
   await page.route('**/api/whatsapp/configuration', route => route.fulfill({ json: { configured: false, template_configured: false } }));
   await page.goto('/notebook/furniture-quotations'); await page.getByRole('button', { name: `Open ${longName}`, exact: true }).click();
   const ledger = page.getByTestId('furniture-ledger-preview'); await expect(ledger).toContainText(longToken);

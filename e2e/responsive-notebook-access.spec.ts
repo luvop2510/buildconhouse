@@ -48,7 +48,7 @@ for (const [slug, floorId] of [['kitchen', 'second-floor'], ['furniture', 'third
 test('furniture view-only grant keeps the RNB ledger readable without edit or export controls', async ({ page }) => {
   await viewOnly(page, '/notebook/furniture-quotations', 'third-floor', 'furniture_quotations');
   await page.route('**/api/furniture-quotations', route => route.fulfill({ json: { rows: [saved], next_cursor: null } }));
-  await page.route('**/api/furniture-quotations/rmb-one', route => route.fulfill({ json: saved }));
+  await page.route(/\/api\/furniture-quotations\/rmb-one(?:\?.*)?$/, route => route.fulfill({ json: saved }));
   await page.goto('/notebook/furniture-quotations');
   await expect(page.getByRole('button', { name: 'New RNB quotation', exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Open RDCL', exact: true }).click();
@@ -72,7 +72,7 @@ test('furniture list and ledger load while the independent WhatsApp configuratio
       : route.fulfill({ status: 503, json: { detail: 'Provider unavailable' } });
   });
   await page.route('**/api/furniture-quotations', route => route.fulfill({ json: { rows: [saved], next_cursor: null } }));
-  await page.route('**/api/furniture-quotations/rmb-one', route => route.fulfill({ json: saved }));
+  await page.route(/\/api\/furniture-quotations\/rmb-one(?:\?.*)?$/, route => route.fulfill({ json: saved }));
   try {
     await page.goto('/notebook/furniture-quotations');
     await page.getByRole('button', { name: 'Open RDCL', exact: true }).click();
@@ -125,7 +125,7 @@ test('furniture export-only grant allows PDF delivery and receipt refresh while 
     floorAccess: { all_floors: false, floors: floors.filter(floor => floor.id === 'third-floor'), floor_ids: ['third-floor'] },
   });
   await page.route('**/api/furniture-quotations', route => route.fulfill({ json: { rows: [saved], next_cursor: null } }));
-  await page.route('**/api/furniture-quotations/rmb-one', route => route.fulfill({ json: saved }));
+  await page.route(/\/api\/furniture-quotations\/rmb-one(?:\?.*)?$/, route => route.fulfill({ json: saved }));
   await page.route('**/api/whatsapp/configuration', route => {
     expect(route.request().headers()['x-floor-id']).toBe('third-floor');
     return route.fulfill({ json: { configured: true, template_configured: false } });
