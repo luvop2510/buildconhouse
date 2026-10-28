@@ -35,3 +35,42 @@ for (const path of ['', 'a//b', '%00', '%ZZ', '%2E%2E%2Fbackup']) {
 assert.equal(requests.length, before);
 assert.equal((await worker.fetch(new Request('https://media.test/a'), {})).status, 503);
 console.log('R2 media Worker: read-only delivery, ETag, HEAD, missing files and unsafe paths pass.');
+
+const variantReads = [];
+const files = new Map([
+  ['brand/original.png', ['original-png-data', 'image/png', '"original"']],
+  ['_image_variants/v1/w320/brand/original.png.webp', ['webp', 'image/webp', '"thumbnail"']],
+]);
+const variants = {
+  async get(key) {
+    variantReads.push(key);
+    const file = files.get(key); if (!file) return null;
+    return { body: new Blob([file[0]]).stream(), size: file[0].length, httpEtag: file[2],
+      writeHttpMetadata(headers) { headers.set('Content-Type', file[1]); } };
+  },
+  async head(key) { const object = await this.get(key); if (!object) return null; await object.body.cancel(); return object; },
+};
+const sized = (query, options) => worker.fetch(new Request(`https://media.test/brand/original.png${query}`, options), { PUBLIC_MEDIA: variants });
+const thumb = await sized('?width=320');
+assert.equal(thumb.headers.get('Content-Type'), 'image/webp');
+assert.equal(thumb.headers.get('Content-Length'), '4');
+assert.equal(await thumb.text(), 'webp');
+assert.equal(variantReads.length, 2, 'Derivative delivery verifies its source still exists');
+const fallback = await sized('?width=640');
+assert.equal(fallback.headers.get('Content-Type'), 'image/png');
+assert.equal(await fallback.text(), 'original-png-data');
+assert.deepEqual(variantReads.slice(-2), ['_image_variants/v1/w640/brand/original.png.webp', 'brand/original.png']);
+const variantHead = await sized('?width=320', { method: 'HEAD' });
+assert.equal(variantHead.headers.get('Content-Length'), '4');
+assert.equal(await variantHead.text(), '');
+assert.equal((await sized('?width=320', { headers: { 'If-None-Match': '"thumbnail"' } })).status, 304);
+assert.equal((await sized('?width=320', { headers: { 'If-None-Match': '"original"' } })).status, 200, 'Original ETag is not a derivative match');
+const beforeInvalid = variantReads.length;
+for (const width of ['0', '-1', '500000', '640/../a', 'unknown']) assert.equal((await sized(`?width=${encodeURIComponent(width)}`)).status, 400);
+assert.equal(variantReads.length, beforeInvalid);
+assert.equal(await (await sized('')).text(), 'original-png-data', 'Zoom/export URL remains original');
+files.delete('brand/original.png');
+assert.equal((await sized('?width=320')).status, 404, 'Orphaned derivatives cannot serve deleted images');
+assert.equal((await sized('?width=320', { method: 'HEAD' })).status, 404);
+assert.equal((await worker.fetch(new Request('https://media.test/_image_variants/v1/w320/brand/original.png.webp'), { PUBLIC_MEDIA: variants })).status, 404, 'Reserved derivative keys are not direct public URLs');
+console.log('R2 WebP sizes, original fallback, ETag/HEAD and bounded size inputs pass.');

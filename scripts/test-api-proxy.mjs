@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { Buffer } from 'node:buffer';
 import { EventEmitter } from 'node:events';
+import { createServer } from 'node:http';
+import { gzipSync } from 'node:zlib';
 import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import vm from 'node:vm';
@@ -33,6 +35,38 @@ function response() {
     json(value) { this.payload = value; return this; },
     send(value) { this.payload = value; return this; },
   };
+}
+
+// Real fetch transparently decodes gzip. The proxy must forward negotiation
+// upstream but must not label those decoded bytes as still compressed.
+{
+  const payload = { items: Array.from({ length: 100 }, (_, id) => ({ id, name: 'Synthetic product' })) };
+  const plain = Buffer.from(JSON.stringify(payload));
+  const compressed = gzipSync(plain);
+  let acceptedEncoding;
+  const upstream = createServer((req, res) => {
+    acceptedEncoding = req.headers['accept-encoding'];
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Content-Encoding': 'gzip', 'Content-Length': compressed.length });
+    res.end(compressed);
+  });
+  await new Promise(resolve => upstream.listen(0, '127.0.0.1', resolve));
+  try {
+    const localUrl = `http://127.0.0.1:${upstream.address().port}`;
+    const res = response();
+    await createHandler({ backendUrl: 'https://api.example.test', fetchImpl: (_url, options) => fetch(localUrl, options) })(
+      request({ path: ['catalog'], headers: { 'accept-encoding': 'gzip', 'x-floor-id': 'first-floor' } }), res,
+    );
+    assert.equal(acceptedEncoding, 'gzip');
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(JSON.parse(res.payload.toString()), payload);
+    assert.equal(res.payload.length, plain.length);
+    assert.ok(!Object.keys(res.headers).some(name => ['content-encoding', 'content-length'].includes(name.toLowerCase())));
+    assert.ok(compressed.length < plain.length * 0.2);
+    console.log(`Proxy gzip transport: ${plain.length} → ${compressed.length} upstream bytes, client JSON parses once.`);
+  } finally {
+    upstream.closeAllConnections();
+    await new Promise(resolve => upstream.close(resolve));
+  }
 }
 
 assert.equal(validateBackendUrl('https://api.example.test/'), 'https://api.example.test');

@@ -26,6 +26,7 @@ export function stabilityRouteTitle(path: string): string {
 export const stabilityProjects = ['android-chrome', 'iphone-safari', 'ipad-safari', 'desktop-chrome'];
 
 export const requiredStabilityScenarios: Record<string, string[]> = {
+  'redesign-dashboard-optimistic.spec.ts': ['success', 'failure'].map(outcome => `critical dashboard completion is immediate and handles ${outcome}`),
   'redesign-tile-mobile-orders.spec.ts': [
     'critical Tile Orders phone views form a readable grid and records retain identity with paired quantities',
     'critical switching Tile Orders views cancels the abandoned request and keeps the selected view usable',
@@ -70,6 +71,7 @@ export const requiredStabilityScenarios: Record<string, string[]> = {
   ],
   'redesign-sales-reference-directory.spec.ts': [
     'critical sales reference directory creates, edits and reuses one identity across floors',
+    'critical reference directory pages and searches the server while preserving historical reports and shared unions',
   ],
   'redesign-godown-stock-editor.spec.ts': [
     'critical restock an empty product and retry the same stock movement after a lost response',
@@ -113,7 +115,7 @@ export const requiredStabilityScenarios: Record<string, string[]> = {
   'redesign-mobile-summary.spec.ts': [
     'critical Walk-in summary opens every matching metric and hidden filters retain selections',
     'critical Walk-in register renders without waiting for the optional summary',
-    'critical Furniture Follow-up expiring summary clears unrelated filters and opens its exact records',
+    'critical Furniture follow-ups keep search and salesperson filters without summary controls',
   ],
 
   'responsive-customer-quotation.spec.ts': [
@@ -155,6 +157,8 @@ export const requiredStabilityScenarios: Record<string, string[]> = {
     'critical page render failure preserves the shell and signed-in navigate recovery',
     'critical a failed quotation module offers reload and retains the signed-in destination',
     'critical opening home after a failed module clears the rejected import before returning',
+    'critical a failed Kitchen projects module reloads into the same signed-in queue',
+    'critical a failed Kitchen stage queue module reloads into the same signed-in queue',
   ],
   'redesign-godown-transfer-retry.spec.ts': [
     'critical uncertain stock transfer retains its original command through close and reopen',

@@ -26,7 +26,8 @@ import { downloadSectionExcel } from "@/src/utils/sectionExcel";
 const fmt = (value?: string | null) => value ? new Date(value).toLocaleString("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" }) : "Not recorded";
 const money = (value: number) => `₹${value.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 const stockPhotoMessages = { missing: "Photo needed", loading: "Loading photo", failed: "Photo unavailable" };
-const stockQuery = (q: string, brand: string | null, offset = 0) => `?include_history=true&with_movements=false&limit=60&offset=${offset}&q=${encodeURIComponent(q.trim())}&brands=${encodeURIComponent(brand || "")}`;
+const STOCK_PAGE_SIZE = 50;
+const stockQuery = (q: string, brand: string | null, offset = 0) => `?include_history=true&with_movements=false&limit=${STOCK_PAGE_SIZE}&offset=${offset}&q=${encodeURIComponent(q.trim())}&brands=${encodeURIComponent(brand || "")}`;
 const queryIdentity = (floor: string | null, q: string, brand: string | null) => JSON.stringify([floor, q.trim(), brand || ""]);
 function mergeStockUpdate(current: GodownStockResponse | null, update: GodownLot) {
   if (!current) return current;
@@ -68,8 +69,8 @@ export default function GodownStockScreen() {
   const [newLot, setNewLot] = useState<GodownLot | null>(null);
   const [poFinalMatches, setPoFinalMatches] = useState<PoFinalMatch[]>([]);
   const [transferLot, setTransferLot] = useState<GodownLot | null>(null);
-  const [visibleCount, setVisibleCount] = useState(60);
-  useEffect(() => { setVisibleCount(60); }, [q, brand, selectedFloorId]);
+  const [visibleCount, setVisibleCount] = useState(STOCK_PAGE_SIZE);
+  useEffect(() => { setVisibleCount(STOCK_PAGE_SIZE); }, [q, brand, selectedFloorId]);
   const [transferMatch, setTransferMatch] = useState<PoFinalMatch | null>(null);
   const stockRequest = useRef(0);
   const dataFloor = useRef<string | null>(null);
@@ -90,7 +91,7 @@ export default function GodownStockScreen() {
     if (!selectedFloorId || !isCurrentFloor()) return;
     const request = ++stockRequest.current;
     const identity = queryIdentity(selectedFloorId, criteria.q, criteria.brand);
-    const pages = requestedQuery.current === identity && dataRef.current?.total_lots !== undefined ? Math.max(1, Math.ceil(dataRef.current.lots.length / 60)) : 1;
+    const pages = requestedQuery.current === identity && dataRef.current?.total_lots !== undefined ? Math.max(1, Math.ceil(dataRef.current.lots.length / STOCK_PAGE_SIZE)) : 1;
     requestedQuery.current = identity;
     pageRequest.current = null; setLoadingMore(false); setPageError("");
     const isCurrentRequest = () => isCurrentFloor() && request === stockRequest.current;
@@ -100,9 +101,9 @@ export default function GodownStockScreen() {
       const rows = [...result.lots];
       // Refresh the already-open window without unmounting its lot editors.
       // Limit concurrent page reads rather than starting one request per card.
-      if (result.total_lots !== undefined) for (let page = 1; page < pages && page * 60 < result.total_lots; page += 3) {
+      if (result.total_lots !== undefined) for (let page = 1; page < pages && page * STOCK_PAGE_SIZE < result.total_lots; page += 3) {
         if (!isCurrentRequest()) return;
-        const next = await Promise.all(Array.from({ length: Math.min(3, pages - page, Math.ceil(result.total_lots / 60) - page) }, (_, i) => getGodownStock(stockQuery(criteria.q, criteria.brand, (page + i) * 60), selectedFloorId)));
+        const next = await Promise.all(Array.from({ length: Math.min(3, pages - page, Math.ceil(result.total_lots / STOCK_PAGE_SIZE) - page) }, (_, i) => getGodownStock(stockQuery(criteria.q, criteria.brand, (page + i) * STOCK_PAGE_SIZE), selectedFloorId)));
         next.forEach(value => rows.push(...value.lots));
         result.next_offset = next[next.length - 1].next_offset;
       }
@@ -129,7 +130,7 @@ export default function GodownStockScreen() {
   const loadMore = async () => {
     if (!selectedFloorId || !isCurrentFloor()) return;
     const current = dataRef.current;
-    if (current?.total_lots === undefined) { setVisibleCount(count => count + 60); return; }
+    if (current?.total_lots === undefined) { setVisibleCount(count => count + STOCK_PAGE_SIZE); return; }
     const identity = queryIdentity(selectedFloorId, filters.current.q, filters.current.brand);
     if (!isCurrentFloor() || pageRequest.current || loading || current.next_offset == null || dataQuery.current !== identity) return;
     const token = {}; pageRequest.current = token; setLoadingMore(true); setPageError("");
@@ -138,7 +139,7 @@ export default function GodownStockScreen() {
       const next = await getGodownStock(stockQuery(filters.current.q, filters.current.brand, current.next_offset), selectedFloorId || undefined);
       if (!isCurrentFloor() || generation !== stockRequest.current || identity !== queryIdentity(currentFloor.current, filters.current.q, filters.current.brand)) return;
       setData(value => value ? { ...next, lots: [...value.lots, ...next.lots.filter(row => !value.lots.some(old => old.id === row.id))] } : value);
-      setVisibleCount(count => count + 60);
+      setVisibleCount(count => count + STOCK_PAGE_SIZE);
     } catch (e: any) { if (isCurrentFloor() && generation === stockRequest.current) setPageError(e?.detail || "Could not load more stock. Try again."); }
     finally { if (pageRequest.current === token) { pageRequest.current = null; setLoadingMore(false); } }
   };

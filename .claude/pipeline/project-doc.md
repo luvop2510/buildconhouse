@@ -99,3 +99,25 @@ including non-converted walk-ins with custom UTC date windows. Migration 0040 ad
 only read indexes for these exact-reference queries. The new real-Mongo stock and
 reference workflows run in CI against its isolated service. Verification and
 publication evidence: docs/audits/2026-10-28-reliability-stock-references.md.
+
+## Application performance continuation — 28 October 2026
+
+Targeted native fallback delta scan in the isolated performance checkout. The
+Expo/FastAPI/Motor architecture and authentication boundaries remain unchanged;
+no framework or dependency is added. Kitchen detail and queue components use
+the existing lazy/Suspense pattern. Quotation validation, usage counters and
+transactional dispatch stock operations use bounded batches of 500. Existing
+open follow-up refreshes also batch in order, retaining per-insert notification
+and per-resolution audit ownership. Referrer directory bodies use server paging
+and literal search over authorized floor unions/shared contacts; report rows
+explicitly identify historical references independently of the loaded page.
+
+Cloudflare R2 is the active image store. Public display derivatives preserve
+originals and private file policies. A resumable backfill defaults to measurement;
+Worker/backend/frontend publication and production backfill require the release
+gate. Migration 0041 is additive, locally verified and pending production
+application through the controlled job. Public entry HTML has a 60-second edge
+policy; mutable authenticated reads retain no-store. Detailed measurements,
+current acceptance and remaining limits belong in
+docs/audits/2026-10-28-application-performance.md. No AGENTS.md architecture
+change is required.

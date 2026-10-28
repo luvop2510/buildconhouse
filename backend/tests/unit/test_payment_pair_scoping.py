@@ -118,3 +118,35 @@ def test_coexisting_floors_keep_separate_balances_and_only_settled_history(datab
         assert history["total"] == 1
         assert [row["id"] for row in history["items"]] == ["other-receipt"]
     asyncio.run(run())
+
+
+def test_furniture_collections_and_history_exclude_other_floors(database, monkeypatch):
+    from fastapi import HTTPException
+
+    furniture = UserPublic(email="owner@example.com", full_name="Owner", role="owner",
+                           active_floor_id="third-floor")
+    database.quotations.rows.append({"id": "furniture-order", "floor_id": "third-floor",
+        "customer_id": "customer", "status": "ordered", "grand_total": 100,
+        "created_at": "2026-10-27T00:00:00Z"})
+    database.payments.rows.append({"id": "furniture-receipt", "floor_id": "third-floor",
+        "quotation_id": "furniture-order", "amount": 100, "status": "completed",
+        "created_at": "2026-10-27T00:00:00Z"})
+    async def enrich(rows): return rows
+    monkeypatch.setattr(routes, "_enrich_history_rows", enrich)
+
+    async def run():
+        queue = await routes.list_orders(q=None, status_filter="all", overdue_period=None,
+            custom_min_days=None, custom_max_days=None, limit=200, user=furniture)
+        assert [row["id"] for row in queue] == ["furniture-order"]
+        stats = await routes.payment_stats(user=furniture)
+        assert stats["fully_paid"] == 1 and stats["total_outstanding"] == 0
+        history = await routes.payment_history(Response(), q=None, date_from=None, date_to=None,
+            customer_id=None, business_unit=None, mode=None, status=None, sort="date_desc",
+            skip=0, limit=50, user=furniture)
+        assert [row["id"] for row in history["items"]] == ["furniture-receipt"]
+        paid = await routes.fully_paid_orders(q=None, business_unit=None, sort="date_desc",
+            skip=0, limit=50, user=furniture)
+        assert [row["id"] for row in paid["items"]] == ["furniture-order"]
+        with pytest.raises(HTTPException):
+            routes._resolve_history_floor_ids(furniture, "ground-floor")
+    asyncio.run(run())

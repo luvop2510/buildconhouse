@@ -127,7 +127,17 @@ export default function Today() {
   const canPurchases = selectedFloorId === "first-floor" && hasPurchasesAccess;
 
   const [mission, setMission] = useState<Mission | null>(null);
-  const [queue, setQueue] = useState<Fu[] | null>(null);
+  const [queueRows, setQueue] = useState<Fu[] | null>(null);
+  const completionScope = useMemo(() => ({
+    floorId: selectedFloorId, staffId: staff?.id, pending: new Set<string>(), revision: 0, missionRead: 0,
+  }), [selectedFloorId, staff?.id]);
+  const currentCompletionScope = useRef(completionScope);
+  currentCompletionScope.current = completionScope;
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  const [pendingCompletions, setPendingCompletions] = useState({ scope: completionScope, ids: [] as string[] });
+  const pendingIds = pendingCompletions.scope === completionScope ? pendingCompletions.ids : [];
+  const queue = queueRows === null ? null : queueRows.filter(row => !pendingIds.includes(row.id));
   const [stats, setStats] = useState<DashStats | null>(null);
   const [pay, setPay] = useState<PayStats | null>(null);
   const [recent, setRecent] = useState<RecentQ[] | null>(null);
@@ -140,6 +150,8 @@ export default function Today() {
   const load = useCallback(async (isRefresh = false) => {
     if (!selectedFloorId) return;
     const version = ++requestVersion.current;
+    const queueRevision = completionScope.revision;
+    const missionRead = ++completionScope.missionRead;
     setLoadError(false);
     setSectionErrors({ queue: false, recent: false });
     if (!isRefresh) {
@@ -158,8 +170,8 @@ export default function Today() {
       }
     };
     await Promise.all([
-      canFollowups && section<Mission>("/followups/mission", setMission),
-      canFollowups && section<Fu[]>("/followups?limit=12", value => setQueue((Array.isArray(value) ? value : []).filter(f => f.status === "open").slice(0, 6)), () => {
+      canFollowups && section<Mission>("/followups/mission", value => { if (missionRead === completionScope.missionRead) setMission(value); }),
+      canFollowups && section<Fu[]>("/followups?limit=12", value => { if (queueRevision === completionScope.revision) setQueue((Array.isArray(value) ? value : []).filter(f => f.status === "open").slice(0, 6)); }, () => {
         setSectionErrors(errors => ({ ...errors, queue: true }));
         if (!isRefresh) setQueue([]);
       }),
@@ -172,7 +184,7 @@ export default function Today() {
       canPurchases && section<{ items: Shortage[] }>("/purchases/shortages?status=awaiting_reorder", value => setShortages(value.items || [])),
     ]);
     if (current()) setRefreshing(false);
-  }, [selectedFloorId, canFollowups, canQuotations, canPayments, canPurchases]);
+  }, [selectedFloorId, canFollowups, canQuotations, canPayments, canPurchases, completionScope]);
 
   useEffect(() => { void load(); return () => { requestVersion.current += 1; }; }, [load]);
 
@@ -191,12 +203,33 @@ export default function Today() {
   }, [mission, due]);
 
   // ── Queue actions ──────────────────────────────────────────────────────────
-  const complete = (fu: Fu) => { void (async () => {
-    await api.post(`/followups/${fu.id}/complete`, {});
-    setQueue((q) => q ? q.filter((x) => x.id !== fu.id) : q);
-    toast.success(`${fu.customer_name} — marked done`);
-    void api.get<Mission>("/followups/mission").then(setMission).catch(() => {});
-  })().catch((error: any) => toast.error(error?.detail || "Could not update follow-up")); };
+  const complete = (fu: Fu) => {
+    const scope = completionScope;
+    const current = () => mounted.current && currentCompletionScope.current === scope;
+    if (!current() || !scope.floorId || !canUpdateFollowups || scope.pending.has(fu.id)) return;
+    scope.pending.add(fu.id);
+    setPendingCompletions({ scope, ids: [...scope.pending] });
+    void (async () => {
+      try {
+        await api.post(`/followups/${fu.id}/complete`, {}, { floorId: scope.floorId });
+        if (!current()) return;
+        // A refresh started before this confirmation cannot resurrect the row.
+        scope.revision += 1;
+        setQueue(rows => rows ? rows.filter(row => row.id !== fu.id) : rows);
+        toast.success(`${fu.customer_name} — marked done`);
+        const missionRead = ++scope.missionRead;
+        const version = requestVersion.current;
+        void api.get<Mission>("/followups/mission", { floorId: scope.floorId, cacheMs: 0 }).then(value => {
+          if (current() && version === requestVersion.current && missionRead === scope.missionRead) setMission(value);
+        }).catch(() => {});
+      } catch {
+        if (current()) toast.error("Could not confirm completion. Follow-up restored; refresh to check or try again.");
+      } finally {
+        scope.pending.delete(fu.id);
+        if (current()) setPendingCompletions({ scope, ids: [...scope.pending] });
+      }
+    })();
+  };
   const call = (fu: Fu) => { void (async () => {
     const r = await api.post<{ phone?: string | null }>(`/followups/${fu.id}/contact`, { channel: "call" });
     const phone = r?.phone || fu.customer_phone;
@@ -344,6 +377,7 @@ export default function Today() {
           </NavigationLink>
         ) : undefined}
       />
+      {pendingIds.length > 0 ? <View accessibilityLiveRegion="polite"><Txt v="sub" tone="soft">Saving {pendingIds.length} follow-up{pendingIds.length === 1 ? "" : "s"}…</Txt></View> : null}
       {loading ? (
         <View style={{ gap: 18, paddingTop: 12 }}>
           {[0, 1, 2, 3].map((i) => (
@@ -356,7 +390,7 @@ export default function Today() {
         </View>
       ) : sectionErrors.queue && queue.length === 0 ? (
         <ErrorState title="Follow-ups unavailable" subtitle="Reconnect or retry to see your queue." onRetry={() => void load(true)} />
-      ) : queue.length === 0 ? (
+      ) : queue.length === 0 && pendingIds.length === 0 ? (
         <View style={{ paddingVertical: space.x8, alignItems: "center", gap: 8 }}>
           <Feather name="coffee" size={20} color={color.inkFaint} />
           <Txt v="bodyMid">All clear. No follow-ups waiting.</Txt>

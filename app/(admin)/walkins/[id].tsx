@@ -172,7 +172,7 @@ export default function WalkInDetail() {
           subtitle="Salesperson"
           leading={<Avatar name={w.salesperson_name || "?"} size={36} />}
           right={<Text style={[type.captionStrong, { color: colors.brandHover }]}>{canUpdate ? "Reassign" : "Assigned"}</Text>}
-          onPress={canUpdate ? () => w.floor_id === "first-floor" || w.floor_id === "ground-floor" ? setScopeOpen(true) : setReassignOpen(true) : undefined}
+          onPress={canUpdate ? () => ["first-floor", "ground-floor", "third-floor"].includes(w.floor_id) ? setScopeOpen(true) : setReassignOpen(true) : undefined}
           isFirst
           testID="walkin-reassign-row"
         />

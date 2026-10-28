@@ -43,15 +43,14 @@ def test_tile_draft_create_and_update_accept_missing_address_and_retain_photo(mo
     async def run():
         quotes = Quotes()
         called = set()
-        both_started = asyncio.Event()
-        async def product(query, *args, **kwargs):
-            called.add(query["id"])
-            if len(called) == 2:
-                both_started.set()
-            # The original serial loop deadlocks here until wait_for fails.
-            await both_started.wait()
-            return {"id": query["id"], "category_id": "tile", "floor_id": "ground-floor"}
-        database = SimpleNamespace(quotations=quotes, customers=object(), products=SimpleNamespace(find_one=product))
+        def products(query, *args, **kwargs):
+            ids = query["id"]["$in"]
+            called.update(ids)
+            async def to_list(limit):
+                return [{"id": product_id, "category_id": "tile", "floor_id": "ground-floor"}
+                        for product_id in ids][:limit]
+            return SimpleNamespace(to_list=to_list)
+        database = SimpleNamespace(quotations=quotes, customers=object(), products=SimpleNamespace(find=products))
         monkeypatch.setattr(routes, "db", database)
         async def scoped(collection, record_id, *args, **kwargs):
             if collection is database.customers:
@@ -79,6 +78,7 @@ def test_tile_draft_create_and_update_accept_missing_address_and_retain_photo(mo
         assert len(edited.items) == len(items)
         assert all(line.image == "https://cdn.example.test/saved-photo.png" for line in edited.items)
         assert len(quotes.documents) == 1
+        assert called == {line["product_id"] for line in items}
     asyncio.run(run())
 
 
@@ -220,22 +220,22 @@ def test_keyed_customer_creation_cannot_switch_sanitary_contact_to_ground(keyed_
     assert exc.value.status_code == 422
 
 
-def test_large_quotation_product_reads_are_concurrent_but_bounded(monkeypatch):
+def test_large_quotation_product_reads_use_one_bounded_batch(monkeypatch):
     from models import QuotationLineItem
     async def run():
-        active = maximum = 0
-        async def product(query, *args):
-            nonlocal active, maximum
-            active += 1
-            maximum = max(maximum, active)
-            await asyncio.sleep(0)
-            active -= 1
-            return {"id": query["id"]}
-        monkeypatch.setattr(routes, "db", SimpleNamespace(products=SimpleNamespace(find_one=product)))
+        queries = []
+        def products(query, *args):
+            queries.append(query)
+            async def to_list(limit):
+                assert limit == 100
+                return [{"id": product_id} for product_id in query["id"]["$in"]]
+            return SimpleNamespace(to_list=to_list)
+        monkeypatch.setattr(routes, "db", SimpleNamespace(products=SimpleNamespace(find=products)))
         lines = [QuotationLineItem(product_id=f"p{i}", sku=str(i), name="Tile", qty=1, unit_price=100) for i in range(100)]
         rows = await routes._quotation_catalog_products(lines, user(), floor_id="ground-floor")
         assert [row["id"] for row in rows] == [line.product_id for line in lines]
-        assert 1 < maximum <= 12
+        assert len(queries) == 1
+        assert queries[0]["floor_id"] == "ground-floor"
     asyncio.run(run())
 
 

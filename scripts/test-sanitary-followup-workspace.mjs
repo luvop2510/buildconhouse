@@ -81,3 +81,9 @@ test('saved salesperson views cannot restore a hidden owner selection', () => {
   assert.equal(context.exports.apply(owner, false, 'mine'), 'mine');
   assert.equal(context.exports.apply({ id: 'worker-1', role: 'sales' }, true, 'mine'), 'mine');
 });
+
+test('Furniture uses the compact workspace and strips saved owner filters', () => {
+  assert.match(source, /const isSanitary = \["first-floor", "ground-floor", "third-floor"\]\.includes\(selectedFloorId/);
+  assert.match(source, /const isSanitary = \["first-floor", "ground-floor", "third-floor"\]\.includes\(f\.floor_id/);
+  assert.match(source, /const simpleInbox = \["first-floor", "ground-floor", "third-floor"\]\.includes\(selectedFloorId/);
+});

@@ -155,8 +155,14 @@ test('critical Tile Orders uses a compact mobile record instead of a desktop col
   const record = page.getByTestId('tile-orders-customer-mobile-order');
   await expect(record).toBeVisible();
   await expect(record.getByText('Mobile Customer', { exact: true })).toBeVisible();
-  await expect(record.getByText('ORDER NO.', { exact: true })).toBeVisible();
+  await expect(record.getByText('TCO-MOBILE', { exact: true })).toBeVisible();
+  await expect(record.getByText('Example Tile Brand', { exact: true })).toBeVisible();
   await expect(record.getByText('STATUS', { exact: true })).toBeVisible();
+  await expect(record.getByText('Partially Dispatched', { exact: true })).toBeVisible();
+  await expect(record.getByText('PRODUCTS', { exact: true })).toBeVisible();
+  await expect(record.getByText('3', { exact: true })).toBeVisible();
+  await expect(record.getByText('QTY', { exact: true })).toBeVisible();
+  await expect(record.getByText('24', { exact: true })).toBeVisible();
   await expect(record.getByText('BRANDS', { exact: true })).toHaveCount(0);
   await expect(record.getByText('WAITING', { exact: true })).toHaveCount(0);
   await expect(page.getByTestId('tile-orders-tab-customer')).toHaveAttribute('aria-selected', 'true');

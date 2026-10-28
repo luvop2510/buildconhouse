@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import logging
 from urllib.parse import quote
 
 import boto3
@@ -16,11 +17,17 @@ from botocore.exceptions import ClientError
 
 from settings import settings
 from .base import MediaStorage, StoredObject, StorageError
+from services.product_image_variants import MIN_BYTES, PREFIX, WIDTHS, create_image_variants, variant_key
+
+logger = logging.getLogger(__name__)
 
 
 class R2StorageDriver(MediaStorage):
     def __init__(self, *, cfg=None, client=None):
         self.cfg = cfg or settings
+        self._variant_slot = asyncio.Semaphore(1)
+        self._variant_jobs: set[asyncio.Task] = set()
+        self._variant_sources: dict[asyncio.Task, tuple[str, str]] = {}
         self._client = client or boto3.client(
             "s3", endpoint_url=f"https://{self.cfg.r2_account_id}.r2.cloudflarestorage.com",
             aws_access_key_id=self.cfg.r2_access_key_id,
@@ -46,6 +53,8 @@ class R2StorageDriver(MediaStorage):
             raise StorageError(f"R2 {operation} failed ({type(exc).__name__})") from exc
 
     async def close(self):
+        if self._variant_jobs:
+            await asyncio.gather(*self._variant_jobs, return_exceptions=True)
         await asyncio.to_thread(self._client.close)
 
     async def upload(self, *, bucket, key, data, content_type, upsert=True,
@@ -58,17 +67,76 @@ class R2StorageDriver(MediaStorage):
         if not upsert:
             args["IfNoneMatch"] = "*"
         await self._call("put_object", **args)
+        if public and not key.startswith(PREFIX):
+            await self.publish_image_variants(bucket=bucket, key=key, data=data, content_type=content_type, wait=False)
         return StoredObject(bucket=bucket, key=key,
                             public_url=self.get_public_url(bucket=bucket, key=key) if public else None,
                             size_bytes=len(data), content_type=content_type,
                             sha1=hashlib.sha1(data).hexdigest())
+
+    async def publish_image_variants(self, *, bucket, key, data, content_type, wait=True):
+        """Optional display work cannot fail an acknowledged original upload.
+
+        One encoder per driver bounds raster memory. Busy uploads retain the
+        original fallback; the resumable backfill can fill missing derivatives.
+        """
+        self._scope(bucket, key)
+        if (bucket != self.cfg.supabase_public_bucket or key.startswith(PREFIX)
+                or len(data) < MIN_BYTES or content_type not in {"image/png", "image/jpeg", "image/webp"}):
+            return 0
+        try:
+            await asyncio.wait_for(self._variant_slot.acquire(), timeout=0.05)
+        except TimeoutError:
+            return 0
+        async def publish():
+            try:
+                variants = await asyncio.to_thread(create_image_variants, data, content_type)
+                # At most two writes in flight; these have independent immutable keys.
+                entries = list(variants.items())
+                for start in range(0, len(entries), 2):
+                    results = await asyncio.gather(*(self._call("put_object", Bucket=bucket,
+                        Key=variant_key(key, width), Body=encoded, ContentType="image/webp",
+                        CacheControl="public, max-age=31536000, immutable", StorageClass="STANDARD")
+                        for width, encoded in entries[start:start + 2]), return_exceptions=True)
+                    for result in results:
+                        if isinstance(result, Exception):
+                            raise result
+                return len(entries)
+            except Exception as error:
+                logger.warning("Optional R2 image variants unavailable (%s)", type(error).__name__)
+                return 0
+            finally:
+                self._variant_slot.release()
+        # Cancellation of an HTTP request must not release encoder capacity
+        # while a blocking Pillow/SDK thread is still running.
+        job = asyncio.create_task(publish())
+        self._variant_jobs.add(job)
+        self._variant_sources[job] = (bucket, key)
+        job.add_done_callback(self._variant_jobs.discard)
+        job.add_done_callback(lambda task: self._variant_sources.pop(task, None))
+        return await asyncio.shield(job) if wait else 0
 
     async def replace(self, *, bucket, key, data, content_type):
         return await self.upload(bucket=bucket, key=key, data=data, content_type=content_type)
 
     async def delete(self, *, bucket, key):
         self._scope(bucket, key)
-        await self._call("delete_object", Bucket=bucket, Key=key)
+        async def remove():
+            await self._call("delete_object", Bucket=bucket, Key=key)
+            if bucket == self.cfg.supabase_public_bucket and not key.startswith(PREFIX):
+                # Failed metadata registration may delete during encoding.
+                pending = [job for job, source in self._variant_sources.items() if source == (bucket, key)]
+                if pending:
+                    await asyncio.gather(*pending, return_exceptions=True)
+                result = await self._call("delete_objects", Bucket=bucket,
+                    Delete={"Objects": [{"Key": variant_key(key, width)} for width in WIDTHS], "Quiet": True})
+                if result.get("Errors"):
+                    raise StorageError("R2 image derivative cleanup failed")
+        # Cancellation cannot abandon cleanup after the original is removed.
+        job = asyncio.create_task(remove())
+        self._variant_jobs.add(job)
+        job.add_done_callback(self._variant_jobs.discard)
+        await asyncio.shield(job)
 
     async def download(self, *, bucket, key):
         self._scope(bucket, key)

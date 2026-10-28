@@ -125,10 +125,11 @@ def account_pipeline(scope: dict, window, *, f=None, floors=None) -> list[dict]:
     pipeline = _catalog_accounts(scope, window)
     if f is not None:
         all_scope = build_match(AnalyticsFilter(floor_id=f.floor_id, status="any"), floors, (None, None))
-        pipeline.extend([
-            {"$unionWith": {"coll": "kitchen_projects", "pipeline": _kitchen_accounts(all_scope, window)}},
-            {"$unionWith": {"coll": "furniture_quotations", "pipeline": _furniture_accounts(f, floors, window)}},
-        ])
+        requested = filter_values(f.floor_id) if f.floor_id and f.floor_id != "all" else floors
+        if requested is None or "second-floor" in requested:
+            pipeline.append({"$unionWith": {"coll": "kitchen_projects", "pipeline": _kitchen_accounts(all_scope, window)}})
+        if requested is None or "third-floor" in requested:
+            pipeline.append({"$unionWith": {"coll": "furniture_quotations", "pipeline": _furniture_accounts(f, floors, window)}})
     customer_group = {"$group": {
         "_id": {"customer": "$_customer_identity", "currency": "$_currency"},
         "customer_id": {"$last": {"$ifNull": ["$customer_id", None]}}, "name": {"$last": "$customer_name"},
@@ -253,9 +254,16 @@ async def gather_financial_summary(db, f: AnalyticsFilter, floors, period) -> di
     scope = financial_scope(f, floors)
     window = (period.start, period.end)
     match = {**build_match(AnalyticsFilter(floor_id=f.floor_id), floors, window), **scope}
+    async def catalog_lines():
+        # Kitchen and Furniture have no catalog-line reporting. Avoid sending
+        # an additional aggregation to Mongo for a provably empty scope.
+        if not scope["floor_id"]["$in"]:
+            return []
+        return await db.quotations.aggregate(line_pipeline(match)).to_list(MAX_PRODUCT_UNIT_ROWS + 1)
+
     accounts, lines = await asyncio.gather(
         db.quotations.aggregate(account_pipeline(scope, window, f=f, floors=floors)).to_list(1),
-        db.quotations.aggregate(line_pipeline(match)).to_list(MAX_PRODUCT_UNIT_ROWS + 1),
+        catalog_lines(),
     )
     if len(lines) > MAX_PRODUCT_UNIT_ROWS:
         raise HTTPException(422, "Choose a narrower date range to report at most 10,000 product and unit combinations")

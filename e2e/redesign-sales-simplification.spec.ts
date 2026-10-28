@@ -262,7 +262,12 @@ test('critical all-department accounts asks for a business unit before opening i
 
 test('critical reference search keeps pre-order clients and the chosen reporting period in its detail link', async ({ page }) => {
   await mockSalesSummary(page);
-  await page.route('**/api/referrers**', route => route.fulfill({ json: [{ id: 'real-reference', name: 'Nisha Shah', type: 'architect', company: 'Studio Line', shared_across_floors: true, updated_at: 'v1' }] }));
+  await page.route('**/api/referrers/page?**', route => {
+    const search = new URL(route.request().url()).searchParams.get('search')?.toLowerCase() || '';
+    const rows = [{ id: 'real-reference', name: 'Nisha Shah', type: 'architect', company: 'Studio Line', shared_across_floors: true, updated_at: 'v1' }]
+      .filter(row => [row.name, row.company, `ARC-${row.id}`].some(value => value.toLowerCase().includes(search)));
+    return route.fulfill({ json: { rows, total: rows.length, offset: 0, limit: 25 } });
+  });
   await page.route('**/api/analytics/workspaces/relationships?**', route => route.fulfill({ json: {
     workspace: 'relationships', period: 'This month', kpis: { revenue: 0, orders: 0, outstanding: 0 }, brands: [], products: [], customers: [], floors: [],
     relationships: [{ id: 'real-reference', name: 'Nisha Shah', company: 'Studio Line', type: 'architect', customers: 0, customers_acquired: 7, revenue: 0, orders: 0, last_order_at: null }],

@@ -8,7 +8,7 @@ test('critical page headings remain readable inside clipping ancestors', async (
     await page.goto(path);
     const heading = page.getByRole('heading', { level: 1 }).first();
     await expect(heading).toBeVisible();
-    const defects = await heading.evaluate(element => {
+    await expect.poll(() => heading.evaluate(element => {
       const failures: string[] = [];
       const box = element.getBoundingClientRect();
       if (box.width <= 0 || box.height <= 0) failures.push('Title has no visible area');
@@ -21,8 +21,7 @@ test('critical page headings remain readable inside clipping ancestors', async (
         if (box.left < parentBox.left - 2 || box.right > parentBox.right + 2) failures.push('Title is clipped by an ancestor');
       }
       return failures;
-    });
-    expect(defects, path).toEqual([]);
+    }), { message: path }).toEqual([]);
   }
 });
 

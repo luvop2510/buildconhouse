@@ -15,7 +15,8 @@ from fastapi import APIRouter, Depends, Query
 from auth import UserPublic, accessible_floor_ids, require_roles
 from db import db
 from routes.executive_overview_routes import _floor_error_to_http
-from services.analytics.filters import AnalyticsFilter, FloorAccessError
+from services.analytics.filters import AnalyticsFilter, FloorAccessError, build_match
+from services.referrer_identity import referrer_query
 from services.analytics.gather_breakdowns import gather_order_collections, gather_product_brands, gather_product_line_revenue
 from services.analytics.breakdowns import brand_rows, order_rows, product_rows
 from services.analytics.gather_breakdowns import _ordered_match
@@ -41,6 +42,27 @@ def _filter(
 
 def _money(value: float | int | None) -> float:
     return round(float(value or 0), 2)
+
+
+async def _mark_historical_references(relationships: list[dict], floor_id: str | None, floors) -> list[dict]:
+    # Off-page contacts are not historical. Read only report identity IDs.
+    scope = build_match(AnalyticsFilter(floor_id=floor_id, status="any"), floors, (None, None))
+    if not relationships:
+        return []
+    if not floor_id or floor_id == "all":
+        # Match the directory's active-floor union, retaining old-floor sales
+        # as historical rows instead of classifying unreachable contacts active.
+        visible = await db.floors.find({"active": True}, {"_id": 0, "id": 1}).sort("created_at", 1).to_list(50)
+        scope = {"floor_id": {"$in": [row["id"] for row in visible if floors is None or row["id"] in floors]}}
+    ids = [row["id"] for row in relationships]
+    batches = await asyncio.gather(*[
+        db.referrers.find(referrer_query(scope, {
+            "id": {"$in": ids[start:start + 500]}, "active": {"$ne": False},
+        }), {"_id": 0, "id": 1}).to_list(500)
+        for start in range(0, len(ids), 500)
+    ])
+    active_ids = {doc["id"] for batch in batches for doc in batch}
+    return [{**row, "historical": row["id"] not in active_ids} for row in relationships]
 
 
 async def _forecast(f: AnalyticsFilter, floors, now: datetime | None = None) -> dict:
@@ -146,7 +168,7 @@ async def workspace(
     }
     if references:
         relationships = merge_reference_currencies(summary["relationships"], results[2], results[3])
-        payload["relationships"] = relationships[:reference_limit]
+        payload["relationships"] = await _mark_historical_references(relationships[:reference_limit], f.floor_id, floors)
         payload["relationships_truncated"] = len(relationships) > reference_limit
     if workspace == "forecasting":
         payload["forecast"] = await _forecast(f, floors)

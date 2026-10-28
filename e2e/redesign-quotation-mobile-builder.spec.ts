@@ -45,7 +45,9 @@ test('critical mobile quotation product focus preserves filtering and exposes co
   test.skip(!(await focus.isVisible()), 'Two-pane tablet already has inline product browsing');
   const before = await page.getByTestId('product-card-B-0').boundingBox();
   await focus.click();
-  await expect(page.getByTestId('builder-back')).toHaveCount(0);
+  const back = page.getByTestId('builder-back');
+  await expect(back).toBeAttached();
+  await expect(back).toBeHidden();
   await expect(page.getByTestId('quotation-details-toggle')).toHaveCount(0);
   const focused = await page.getByTestId('product-card-B-0').boundingBox();
   expect(focused!.y).toBeLessThan(before!.y);
@@ -65,6 +67,7 @@ test('critical mobile quotation product focus preserves filtering and exposes co
   await page.getByTestId('add-B-0').click();
   await expect(page.getByText('1 in this room', { exact: true })).toBeVisible();
   await page.getByTestId('expand-quotation-workspace').click();
+  await expect(back).toBeVisible();
   await page.getByTestId('explorer-filter-toggle').click();
   await expect(filters.getByTestId('mobile-brand-Vitra')).toHaveAttribute('aria-pressed', 'true');
   await expect(filters.getByTestId('sort-price_asc')).toHaveAttribute('aria-pressed', 'true');

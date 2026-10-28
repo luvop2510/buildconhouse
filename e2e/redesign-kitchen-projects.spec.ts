@@ -721,9 +721,9 @@ test('Q18 v4: project pages separate work from files and history while preservin
   await expect(page.getByTestId('kitchen-document-pick')).toHaveCount(0);
   await openProjectPage(page, 'stage');
   await expect(notes).toHaveValue('Unsaved enquiry retained across project tools');
-  const savedLead = page.waitForResponse(response => response.url().endsWith(`/api/kitchen-projects/${project.id}/commands`) && response.request().postDataJSON()?.command === 'edit_lead');
-  await page.getByTestId('kitchen-lead-save').click();
-  const saved = await savedLead;
+  // Finish the browser's routine autosave before the API setup advances its version.
+  await expect(page.getByTestId('kitchen-lead-autosave')).toHaveText('Details saved');
+  const saved = await context.request.get(`${baseURL}/api/kitchen-projects/${project.id}`, { headers });
   expect(saved.ok(), await saved.text()).toBeTruthy();
   project = await saved.json();
   expect(project.lead.notes).toBe('Unsaved enquiry retained across project tools');
@@ -1159,7 +1159,7 @@ for (const referenceType of ['architect', 'interior_designer'] as const) {
   });
 }
 
-test('Kitchen moves forward and backward through all nine stages without task prerequisites', async ({ page, context }) => {
+test('Kitchen moves through all nine stages after acknowledging routine drafts without task prerequisites', async ({ page, context }) => {
   await seedBrowser(page);
   const headers = { 'X-Floor-Id': 'second-floor' };
   const response = await context.request.post('/api/kitchen-projects', { headers, data: { customer_id: process.env.KITCHEN_E2E_CUSTOMER_ID, idempotency_key: `manual-navigation-${Date.now()}-${Math.random()}`, lead: { site_location: 'Manual movement synthetic site' } } });
@@ -1167,6 +1167,13 @@ test('Kitchen moves forward and backward through all nine stages without task pr
   const project = await response.json();
   await page.goto(`/kitchen/${project.id}/stages/lead`);
   await projectReady(page);
+  const writes: string[] = [];
+  page.on('request', request => {
+    if (request.url().endsWith(`/api/kitchen-projects/${project.id}/commands`)) writes.push(`request:${request.postDataJSON()?.command}`);
+  });
+  page.on('response', response => {
+    if (response.url().endsWith(`/api/kitchen-projects/${project.id}/commands`)) writes.push(`response:${response.request().postDataJSON()?.command}`);
+  });
   await page.getByTestId('kitchen-lead-site_location').fill('Unsaved draft remains available');
   const stages = ['lead', 'visit', 'cad', 'design', 'quotation', 'order', 'production', 'installation', 'completed'];
   const health = captureRuntimeHealth(page);
@@ -1180,6 +1187,12 @@ test('Kitchen moves forward and backward through all nine stages without task pr
     expect(moved.ok(), await moved.text()).toBeTruthy();
     const body = await moved.json();
     expect(body.stage).toBe(target);
+    if (index === 1) {
+      expect(body.lead.site_location).toBe('Unsaved draft remains available');
+      const leadAcknowledgement = writes.indexOf('response:edit_lead');
+      expect(leadAcknowledgement).toBeGreaterThanOrEqual(0);
+      expect(leadAcknowledgement).toBeLessThan(writes.indexOf('request:move_stage'));
+    }
     expect(body.orders).toEqual([]);
     expect(body.approvals).toEqual([]);
     await expect(page).toHaveURL(new RegExp(`/stages/${target}(?:\\?.*)?$`));
@@ -1198,7 +1211,8 @@ test('Kitchen moves forward and backward through all nine stages without task pr
   await expect(page.getByTestId('kitchen-lead-site_location')).toHaveValue('Unsaved draft remains available');
   await expect((await projectControl(page, 'kitchen-previous-stage'))).toHaveCount(0);
   const final = await (await context.request.get(`/api/kitchen-projects/${project.id}`, { headers })).json();
-  expect(final.lead.site_location).toBe('Manual movement synthetic site');
+  expect(final.lead.site_location).toBe('Unsaved draft remains available');
+  expect(final.lead.status).toBe(project.lead.status);
   expect(final.installation?.completion_date ?? null).toBeNull();
   expect(final.activity.filter((event: any) => event.type === 'move_stage')).toHaveLength(16);
   await health.assertHealthy();
@@ -1249,11 +1263,24 @@ test('Kitchen owner selects PDF assignments without adding the excluded Visit fi
 });
 
 
-test('Completed export retains the selected PDF employee filter', async ({ page }) => {
+test('Completed CSV export retains search and ignores the retired employee filter bookmark', async ({ page, context }) => {
   await seedBrowser(page);
-  await page.goto('/kitchen/stages/completed?assignee=unassigned');
+  await page.goto('/kitchen/stages/completed?assignee=unassigned&search=Kitchen%20acceptance');
+  await expect(page.getByTestId('kitchen-search')).toHaveValue('Kitchen acceptance');
   await expect(page.getByTestId('kitchen-completed-export')).toBeVisible();
   const exported = page.waitForRequest(request => new URL(request.url()).pathname === '/api/kitchen-projects/export');
+  const downloaded = page.waitForResponse(response => new URL(response.url()).pathname === '/api/kitchen-projects/export');
   await page.getByTestId('kitchen-completed-export').click();
-  expect(new URL((await exported).url()).searchParams.get('assignee')).toBe('unassigned');
+  const query = new URL((await exported).url()).searchParams;
+  expect(query.get('search')).toBe('Kitchen acceptance');
+  expect(query.get('assignee')).toBeNull();
+  const response = await downloaded;
+  expect(response.ok(), await response.text()).toBe(true);
+  expect(response.headers()['content-type']).toContain('text/csv');
+  expect(response.headers()['content-disposition']).toContain('kitchen-completed.csv');
+  // Chromium hands attachment bodies to its download manager; verify the
+  // same authenticated URL directly without changing the browser request.
+  const bytes = await context.request.get(response.url(), { headers: { 'X-Floor-Id': 'second-floor' } });
+  expect(bytes.ok()).toBe(true);
+  expect((await bytes.text()).replace(/^\uFEFF/, '').split(/\r?\n/)[0]).toBe('Project ID,Customer,Order amount INR,Completion date,Design revisions,Actual site visits');
 });

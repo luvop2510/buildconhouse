@@ -18,6 +18,7 @@ follow-ups holding source keys at the time.
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
 
 from pymongo.errors import DuplicateKeyError
 
@@ -48,6 +49,14 @@ class _FakeFollowups:
 
     async def update_many(self, query, update, session=None):
         return None
+
+    async def bulk_write(self, operations, ordered=True):
+        assert ordered is True
+        matched = 0
+        for operation in operations:
+            matched += sum(_matches(row, operation._filter) for row in self.rows)
+            await self.update_one(operation._filter, operation._doc)
+        return SimpleNamespace(matched_count=matched)
 
 
 def _matches(row: dict, query: dict) -> bool:

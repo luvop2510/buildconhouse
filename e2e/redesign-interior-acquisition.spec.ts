@@ -3,13 +3,13 @@ import { mockSession } from './audit-fixtures';
 
 test('critical Interior section displays acquired customers before an order is placed', async ({ page }) => {
   await mockSession(page, '/sales-data/referrals/interior-designers', false);
-  await page.route('**/api/referrers**', route => route.fulfill({json:[]}));
+  await page.route('**/api/referrers/page?**', route => route.fulfill({json:{rows:[],total:0,offset:0,limit:25}}));
   await page.route('**/api/analytics/workspaces/relationships?**', route => route.fulfill({ json: {
     workspace: 'interior-designers', period: 'This month',
     kpis: { revenue: 0, orders: 0, outstanding: 0, hansgrohe_revenue: 0 },
     brands: [], products: [], customers: [], floors: [],
     relationships: [{ id: 'interior-acquisition', name: 'Sample Interior', company: 'Sample Studio', type: 'interior_designer',
-      revenue: 0, orders: 0, customers: 0, customers_acquired: 7, last_order_at: null }],
+      revenue: 0, orders: 0, customers: 0, customers_acquired: 7, last_order_at: null, historical: true }],
   } }));
   await page.goto('/sales-data/referrals/interior-designers');
   await expect(page.getByTestId('reference-row-interior-acquisition')).toContainText('7');

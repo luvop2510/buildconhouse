@@ -163,13 +163,18 @@ test('critical quotation drag handles support keyboard ordering and a release di
   await page.getByTestId('receipt-list').evaluate(element => {
     const previous = element.querySelector<HTMLElement>('[data-quotation-row="line-a"]');
     if (previous) element.scrollTop = previous.offsetTop + previous.offsetHeight / 4;
+    const next = element.querySelector<HTMLElement>('[data-testid="line-drag-line-b"]');
+    if (next) element.scrollTop += Math.max(0, next.getBoundingClientRect().top - (element.getBoundingClientRect().bottom - 24));
   });
   const source = await handle.boundingBox();
   const target = await page.locator('[data-quotation-row="line-a"]').boundingBox();
   const canvas = await page.getByTestId('receipt-list').boundingBox();
   if (!source || !target || !canvas) throw new Error('Missing release geometry');
   const x = source.x + source.width / 2;
-  await page.mouse.move(x, (Math.max(source.y, canvas.y) + Math.min(source.y + source.height, canvas.y + canvas.height)) / 2);
+  const startY = (Math.max(source.y, canvas.y) + Math.min(source.y + source.height, canvas.y + canvas.height)) / 2;
+  expect(Math.min(source.y + source.height, canvas.y + canvas.height) - Math.max(source.y, canvas.y)).toBeGreaterThan(0);
+  expect(await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.closest('[data-testid]')?.getAttribute('data-testid'), { x, y: startY })).toBe('line-drag-line-b');
+  await page.mouse.move(x, startY);
   await page.mouse.down();
   // No preview wait before releasing: the final pointer location must commit.
   await page.mouse.move(x, Math.max(target.y + 8, canvas.y + 12));

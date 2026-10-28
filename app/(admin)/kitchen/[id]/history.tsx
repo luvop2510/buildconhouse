@@ -1,2 +1,2 @@
-import { KitchenProjectDetail } from "@/src/components/kitchen/KitchenProjectDetail";
-export default function ProjectPage() { return <KitchenProjectDetail page="history" />; }
+import { LazyKitchenProjectDetail } from "@/src/components/kitchen/LazyKitchenProjectDetail";
+export default function ProjectPage() { return <LazyKitchenProjectDetail page="history" />; }

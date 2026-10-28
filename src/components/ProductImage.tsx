@@ -80,6 +80,15 @@ export function supabaseSizedImageUrl(uri: string, requestedWidth: number): stri
   return `${rendered}${separator}width=${width}&resize=contain&quality=${quality}`;
 }
 
+export function r2SizedImageUrl(uri: string, requestedWidth: number): string | null {
+  try {
+    const url = new URL(uri);
+    if (url.origin !== "https://forge-media.yashvardhansinh2510.workers.dev" || url.search || url.hash || url.pathname.startsWith("/_image_variants/")) return null;
+    url.searchParams.set("width", String(transformWidth(requestedWidth)));
+    return url.toString();
+  } catch { return null; }
+}
+
 export function ProductImage({
   source,
   style,
@@ -119,7 +128,7 @@ export function ProductImage({
     const seen = new Set<string>();
     const requestedWidth = Math.max(1, frameWidth || 160) * PixelRatio.get();
     const expanded = candidates.flatMap((uri) => {
-      const sized = supabaseSizedImageUrl(uri, requestedWidth);
+      const sized = r2SizedImageUrl(uri, requestedWidth) || supabaseSizedImageUrl(uri, requestedWidth);
       if (!sized) return [uri];
       return preferOriginal ? [uri, sized] : [sized, uri];
     });

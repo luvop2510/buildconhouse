@@ -237,6 +237,7 @@ export default function PaymentsScreen() {
   const compactCostForm = isPhone || isTabletLandscape;
   const { selectedFloorId, selectFloor } = useFloorAccess();
   const router = useRouter();
+  const [displayedFloor, setDisplayedFloor] = useState(selectedFloorId);
   const activeFloorRef = useRef(selectedFloorId);
   activeFloorRef.current = selectedFloorId;
 
@@ -325,8 +326,8 @@ export default function PaymentsScreen() {
     if (!selectedFloorId || activeFloorRef.current !== selectedFloorId) return;
     const request = ++statsRequest.current;
     setStatsError(false);
-    try { const result = await api.get<Stats>("/payments/stats"); if (request === statsRequest.current) setStats(result); }
-    catch { if (request === statsRequest.current) setStatsError(true); }
+    try { const result = await api.get<Stats>("/payments/stats", { floorId: selectedFloorId }); if (request === statsRequest.current && activeFloorRef.current === selectedFloorId) setStats(result); }
+    catch { if (request === statsRequest.current && activeFloorRef.current === selectedFloorId) setStatsError(true); }
   }, [selectedFloorId]);
 
   const loadOrders = useCallback(async (query: string = q) => {
@@ -346,19 +347,19 @@ export default function PaymentsScreen() {
         if (customMaxDays) params.set("custom_max_days", customMaxDays);
       }
       const url = `/payments/orders${params.toString() ? `?${params.toString()}` : ""}`;
-      const response = await api.get<OrderRow[]>(url);
+      const response = await api.get<OrderRow[]>(url, { floorId: selectedFloorId });
       const list = response.filter(order => collectionScope === "refund" ? (order.refund_due || 0) > 0
         : collectionScope === "earned" ? Math.min(order.cash_received ?? order.paid, order.effective_order_total ?? order.grand_total) > 0
         : collectionScope === "received" ? (order.cash_received ?? order.paid) > 0
         : true);
-      if (request !== orderRequest.current) return;
+      if (request !== orderRequest.current || activeFloorRef.current !== selectedFloorId) return;
       setOrders(list);
       setSelectedId((current) => list.some((order) => order.id === current) ? current : (list.length ? list[0].id : null));
       return list;
     } catch (e: any) {
-      if (request === orderRequest.current) setListError(e?.detail || "Check your connection and try again.");
+      if (request === orderRequest.current && activeFloorRef.current === selectedFloorId) setListError(e?.detail || "Check your connection and try again.");
     } finally {
-      if (request === orderRequest.current) setLoadingList(false);
+      if (request === orderRequest.current && activeFloorRef.current === selectedFloorId) setLoadingList(false);
     }
   }, [q, agingPeriod, customMinDays, customMaxDays, selectedFloorId, collectionScope]);
 
@@ -369,16 +370,16 @@ export default function PaymentsScreen() {
     setDetail(null);
     setDetailError(null);
     try {
-      const d = await api.get<OrderDetail>(`/payments/orders/${id}`);
-      if (request !== detailRequest.current) return;
+      const d = await api.get<OrderDetail>(`/payments/orders/${id}`, { floorId: selectedFloorId });
+      if (request !== detailRequest.current || activeFloorRef.current !== selectedFloorId) return;
       setDetail(d);
       setAmount(d.outstanding > 0 ? d.outstanding.toFixed(2) : "");
       setManualExtra("");
       setManualExtraName("");
     } catch (e: any) {
-      if (request === detailRequest.current) setDetailError(e?.detail || "Check your connection and try again.");
+      if (request === detailRequest.current && activeFloorRef.current === selectedFloorId) setDetailError(e?.detail || "Check your connection and try again.");
     } finally {
-      if (request === detailRequest.current) setLoadingDetail(false);
+      if (request === detailRequest.current && activeFloorRef.current === selectedFloorId) setLoadingDetail(false);
     }
   }, [selectedFloorId]);
 
@@ -387,6 +388,7 @@ export default function PaymentsScreen() {
     setShowRecord(false); setPaymentError(null); paymentAttemptRef.current = null;
     setListError(null); setDetailError(null);
     setStats(null); setOrders([]); setSelectedId(null); setDetail(null); setHistoryRows([]); setHistoryTotal(0);
+    setDisplayedFloor(selectedFloorId);
     loadStats();
   }, [selectedFloorId, loadStats]);
   useEffect(() => {
@@ -574,13 +576,13 @@ export default function PaymentsScreen() {
   const historyParams = useCallback(() => {
     const qs = new URLSearchParams();
     if (historyQ.trim()) qs.set("q", historyQ.trim());
-    if (historyUnit !== "all") qs.set("business_unit", historyUnit);
+    if (selectedFloorId !== "third-floor" && historyUnit !== "all") qs.set("business_unit", historyUnit);
     if (historyMode !== "all") qs.set("mode", historyMode);
     if (historyDateFrom) qs.set("date_from", historyDateFrom);
     if (historyDateTo) qs.set("date_to", historyDateTo);
     qs.set("sort", historySort);
     return qs;
-  }, [historyQ, historyUnit, historyMode, historyDateFrom, historyDateTo, historySort]);
+  }, [historyQ, historyUnit, historyMode, historyDateFrom, historyDateTo, historySort, selectedFloorId]);
 
   const loadHistory = useCallback(async (page: number) => {
     if (!selectedFloorId || activeFloorRef.current !== selectedFloorId) return;
@@ -591,21 +593,21 @@ export default function PaymentsScreen() {
       const qs = historyParams();
       qs.set("skip", String(page * HISTORY_PAGE_SIZE));
       qs.set("limit", String(HISTORY_PAGE_SIZE));
-      const res = await api.get<{ total: number; items: HistoryRow[] }>(`/payments/history?${qs.toString()}`);
-      if (request !== historyRequest.current) return;
+      const res = await api.get<{ total: number; items: HistoryRow[] }>(`/payments/history?${qs.toString()}`, { floorId: selectedFloorId });
+      if (request !== historyRequest.current || activeFloorRef.current !== selectedFloorId) return;
       // A partial or legacy response must still leave the operator with a
       // clear, recoverable state instead of a blank ledger surface.
       setHistoryRows(Array.isArray(res?.items) ? res.items : []);
       setHistoryTotal(Number.isFinite(res?.total) ? res.total : 0);
     } catch (e: any) {
-      if (request !== historyRequest.current) return;
+      if (request !== historyRequest.current || activeFloorRef.current !== selectedFloorId) return;
       const message = e?.detail || "Could not load payment history";
       setHistoryRows([]);
       setHistoryTotal(0);
       setHistoryError(message);
       toast.error(message);
     } finally {
-      if (request === historyRequest.current) setHistoryLoading(false);
+      if (request === historyRequest.current && activeFloorRef.current === selectedFloorId) setHistoryLoading(false);
     }
   }, [historyParams, selectedFloorId]);
 
@@ -632,6 +634,7 @@ export default function PaymentsScreen() {
         `/payments/history/export?${qs.toString()}`,
         `Payment History ${todayIso()}.${fmt}`,
         "payment history",
+        selectedFloorId,
       );
       if (ok) toast.success("Export ready");
     } catch (e: any) {
@@ -694,6 +697,9 @@ export default function PaymentsScreen() {
       />
     </View>
   );
+
+  // Never paint the previous workspace while its reset effect is pending.
+  if (displayedFloor !== selectedFloorId) return <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }}><Skeleton w="100%" h={80} /></SafeAreaView>;
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }} edges={isPhone ? [] : ["top"]}>
@@ -1028,8 +1034,8 @@ export default function PaymentsScreen() {
           pageSize={HISTORY_PAGE_SIZE}
           onPageChange={setHistoryPage}
           q={historyQ} onQChange={setHistoryQ}
-          unit={historyUnit} onUnitChange={setHistoryUnit}
-          floors={floors}
+          unit={selectedFloorId === "third-floor" ? "all" : historyUnit} onUnitChange={setHistoryUnit}
+          floors={floors} hideUnitFilter={selectedFloorId === "third-floor"}
           mode={historyMode} onModeChange={setHistoryMode}
           dateFrom={historyDateFrom} onDateFromChange={setHistoryDateFrom}
           dateTo={historyDateTo} onDateToChange={setHistoryDateTo}
@@ -1101,7 +1107,7 @@ function PaymentHistoryTab(props: {
   rows: HistoryRow[]; total: number; loading: boolean; error: string | null; onRetry: () => void;
   page: number; pageSize: number; onPageChange: (p: number) => void;
   q: string; onQChange: (v: string) => void;
-  unit: string; onUnitChange: (v: string) => void; floors: FloorOpt[];
+  unit: string; onUnitChange: (v: string) => void; floors: FloorOpt[]; hideUnitFilter: boolean;
   mode: string; onModeChange: (v: string) => void;
   dateFrom: string; onDateFromChange: (v: string) => void;
   dateTo: string; onDateToChange: (v: string) => void;
@@ -1113,7 +1119,7 @@ function PaymentHistoryTab(props: {
   const {
     workspaceHeading,
     rows, total, loading, error, onRetry, page, pageSize, onPageChange,
-    q, onQChange, unit, onUnitChange, floors,
+    q, onQChange, unit, onUnitChange, floors, hideUnitFilter,
     mode, onModeChange, dateFrom, onDateFromChange, dateTo, onDateToChange,
     sort, onSortChange, onOpenCustomer, onOpenOrder,
   } = props;
@@ -1182,7 +1188,7 @@ function PaymentHistoryTab(props: {
           placeholder="Search customer, invoice number, or reference…"
           onClear={() => onQChange("")}
         />
-        <FilterBar multiSelect testID="history-unit-filter" label="BUSINESS UNIT" value={unit} onChange={onUnitChange} options={unitOptions} />
+        {!hideUnitFilter ? <FilterBar multiSelect testID="history-unit-filter" label="BUSINESS UNIT" value={unit} onChange={onUnitChange} options={unitOptions} /> : null}
         <FilterBar multiSelect testID="history-mode-filter" label="PAYMENT METHOD" value={mode} onChange={onModeChange} options={PAY_MODE_FILTERS} />
         <View style={{ gap: spacing.sm }}>
           <Text style={type.overline}>DATE RANGE</Text>

@@ -213,3 +213,22 @@ test('refreshing the same floor cancels the prior match lookup and checks the re
   assert.equal(fixture.state.newLot.name, 'After refresh');
   assert.equal(fixture.state.poFinalMatches[0].purchase_item_id, 'current-item');
 });
+
+
+test('stock opens 50 rows and refreshes only the already loaded two-page window', async () => {
+  const fixture = screen(); fixture.render();
+  const page = offset => ({ lots: Array.from({ length: 50 }, (_, i) => ({ id: `lot-${offset + i}`, name: 'Fixture stock' })), total_lots: 1100, next_offset: offset + 50 });
+  assert.equal(new URLSearchParams(fixture.stocks[0].params).get('limit'), '50');
+  fixture.stocks[0].resolve(page(0)); await fixture.settle();
+  const more = fixture.state.loadMore();
+  assert.equal(new URLSearchParams(fixture.stocks[1].params).get('offset'), '50');
+  fixture.stocks[1].resolve(page(50)); await more; await fixture.settle();
+  assert.equal(fixture.state.data.lots.length, 100);
+  const refresh = fixture.state.load();
+  fixture.stocks[2].resolve(page(0)); await fixture.settle();
+  assert.equal(new URLSearchParams(fixture.stocks[3].params).get('offset'), '50');
+  fixture.stocks[3].resolve(page(50)); await refresh; await fixture.settle();
+  assert.equal(fixture.stocks.length, 4, 'Refresh does not fetch unopened pages');
+  assert.equal(fixture.state.data.lots.length, 100);
+  assert.equal(fixture.state.data.next_offset, 100);
+});

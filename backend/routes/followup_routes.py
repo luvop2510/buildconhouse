@@ -567,8 +567,21 @@ def _paged_followup_query(
     return floor_query(user, base)
 
 
+async def _mask_furniture_owner_salesperson(rows):
+    """Keep order ownership for filtering, without presenting owners as salespeople."""
+    ids = {row.get("assigned_to") for row in rows if row.get("floor_id") == "third-floor" and row.get("assigned_to")}
+    if not ids:
+        return
+    owners = await db.users.find({"id": {"$in": list(ids)}, "role": "owner"}, {"_id": 0, "id": 1}).to_list(len(ids))
+    owner_ids = {owner["id"] for owner in owners}
+    for row in rows:
+        if row.get("floor_id") == "third-floor" and row.get("assigned_to") in owner_ids:
+            row["assigned_to_name"] = None
+
+
 async def _enrich_followup_references(rows, user, customers=None):
     """Hydrate attribution in bounded floor-local batches, never per lead."""
+    await _mask_furniture_owner_salesperson(rows)
     by_floor = {}
     for row in rows:
         if row.get("floor_id"):
@@ -1199,7 +1212,7 @@ async def get_detail(followup_id: str, user: UserPublic = Depends(get_current_us
     )
     await _enrich_followup_references([f], user, [customer])
     creators = Counter(q.get("created_by_name") for q in pending_quotations if q.get("created_by_name"))
-    preferred = creators.most_common(1)[0][0] if creators else None
+    preferred = creators.most_common(1)[0][0] if creators and floor_id != "third-floor" else None
     touches = [parse_iso(q.get("updated_at")) for q in pending_quotations]
     touches = [t for t in touches if t]
     days_silent = age_days(max(touches)) if touches else 0

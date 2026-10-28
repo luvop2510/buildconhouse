@@ -117,7 +117,11 @@ export async function mockSalesSummary(page: Page, options: {
     preset: 'this_month', date_from: null, date_to: null, label: 'This month', fallback_applied: false, latest_order_at: null,
   } }));
   await page.route('**/api/analytics/sales-summary?**', options.onSummary || (route => route.fulfill({ json: options.summary || salesSummaryFixture })));
-  await page.route('**/api/referrers**', route => route.fulfill({ json: [] }));
+  await page.route('**/api/referrers**', route => {
+    const url = new URL(route.request().url());
+    return route.fulfill({ json: url.pathname === '/api/referrers/page'
+      ? { rows: [], total: 0, offset: Number(url.searchParams.get('offset') || 0), limit: 25 } : [] });
+  });
   await page.route('**/api/analytics/workspaces/relationships?**', route => route.fulfill({ json: {
     workspace: 'relationships', period: 'This month',
     kpis: { revenue: 0, revenue_rnb: 0, outstanding_rnb: 0, orders: 0, outstanding: 0, hansgrohe_revenue: 0 },

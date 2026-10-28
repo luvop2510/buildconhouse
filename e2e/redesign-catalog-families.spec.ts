@@ -128,7 +128,7 @@ test('critical sanitary family pagination preserves reused supplier keys across 
   await page.route('**/api/products/families?**', route => {
     const skip = Number(new URL(route.request().url()).searchParams.get('skip') || 0);
     pages.push(skip);
-    return route.fulfill({ json: { total: catalog.length, items: catalog.slice(skip, skip + 60) } });
+    return route.fulfill({ json: { total: catalog.length, items: catalog.slice(skip, skip + Number(new URL(route.request().url()).searchParams.get('limit') || 50)) } });
   });
   await page.goto('/catalog');
   await expect(page.getByRole('button', { name: 'View Brand A Alpha Basin', exact: true })).toBeVisible();
@@ -160,7 +160,7 @@ test('critical sanitary family pagination preserves reused supplier keys across 
   }).toBe(true);
   await expect(last).toBeVisible();
   await expect(page.getByTestId('catalog-end-of-list')).toHaveText('Showing all 62 families');
-  expect(pages).toEqual([0, 60]);
+  expect(pages).toEqual([0, 50]);
   expect(errors).toEqual([]);
   await last.click();
   await expect(page).toHaveURL(/\/catalog\/namespace-product-2$/);

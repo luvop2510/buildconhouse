@@ -18,7 +18,7 @@ export function mergeReferences(contacts: ReferenceContact[], performance: Refer
     if (row.type !== "architect" && row.type !== "interior_designer") continue;
     const existing = byId.get(row.id);
     if (existing) existing.performance = row;
-    else byId.set(row.id, { contact: {
+    else if (row.historical) byId.set(row.id, { contact: {
       id: row.id, name: row.name, type: row.type, company: row.company,
       shared_across_floors: false, updated_at: "",
     }, historical: true, performance: row });

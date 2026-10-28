@@ -52,6 +52,9 @@ def _payment_scope_query(user: UserPublic, base: dict | None = None) -> dict:
     Floor while a manager is reviewing Ground Floor tiles, so payment screens
     must include the fixed tiles floor explicitly.
     """
+    # Furniture is an independent workspace; do not include tile orders there.
+    if user.active_floor_id == "third-floor":
+        return floor_query(user, base)
     queries = [floor_query(user, base)]
     allowed = accessible_floor_ids(user)
     if user.role in ("owner", "manager") or (allowed and TILES_FLOOR_ID in allowed):
@@ -928,6 +931,13 @@ def _resolve_history_floor_ids(user: UserPublic, business_unit: Optional[str]) -
     """None means "no floor restriction" (every floor the caller can see).
     An explicit business_unit narrows to exactly that floor, after checking
     the caller is actually allowed onto it."""
+    if user.active_floor_id == "third-floor":
+        allowed = accessible_floor_ids(user)
+        if allowed is not None and "third-floor" not in allowed:
+            return []
+        if business_unit and business_unit != "all" and any(value != "third-floor" for value in filter_values(business_unit)):
+            raise HTTPException(status_code=403, detail="You do not have access to this business unit in Furniture Floor")
+        return ["third-floor"]
     if business_unit and business_unit != "all":
         allowed = accessible_floor_ids(user)
         if allowed is not None and any(value not in allowed for value in filter_values(business_unit)):

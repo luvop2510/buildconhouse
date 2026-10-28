@@ -2,6 +2,8 @@ import { expect, test, type Page } from '@playwright/test';
 import { mockSession } from './audit-fixtures';
 import { captureRuntimeHealth } from './runtime-health';
 
+const STOCK_PAGE_SIZE = 50;
+
 const stock = (index: number) => ({ id: `stable-stock-${index}`, product_id: `product-${index}`,
   sku: `STABLE-${index}`, name: `Warehouse fitting ${index}`, brand_name: 'Duravit',
   qty_received: index === 0 ? 0 : 2, available_qty: index === 0 ? 0 : 2,
@@ -19,7 +21,8 @@ async function fixtures(page: Page) {
   await page.route('**/api/godown-stock?**', route => {
     const query = new URL(route.request().url()).searchParams;
     const matching = Array.from({ length: 1015 }, (_, index) => stock(index)).filter(lot => `${lot.sku} ${lot.name}`.toLowerCase().includes((query.get('q') || '').toLowerCase()));
-    const offset = Number(query.get('offset') || 0), limit = Number(query.get('limit') || 60);
+    const offset = Number(query.get('offset') || 0), limit = Number(query.get('limit') || STOCK_PAGE_SIZE);
+    expect(limit).toBe(STOCK_PAGE_SIZE);
     return route.fulfill({ json: { lots: matching.slice(offset, offset + limit).map(lot => ({ ...lot, history_loaded: false })), brands: [],
       total_available_qty: 2028, total_stock_value: 2535000, unpriced_lot_count: 508, total_lots: matching.length,
       available_lot_count: matching.filter(lot => !lot.quantity_missing).length, unknown_quantity_count: matching.filter(lot => lot.quantity_missing).length,
@@ -84,8 +87,8 @@ for (const outcome of ['won', 'lost'] as const) {
     await page.goBack();
     await expect(page.getByTestId('edit-quotation')).toBeVisible();
     await navigate(page, 'Godown stock');
-    await expect(page.getByTestId('godown-lot-stable-stock-59')).toBeVisible();
-    await expect(page.getByTestId('godown-lot-stable-stock-60')).toHaveCount(0);
+    await expect(page.getByTestId(`godown-lot-stable-stock-${STOCK_PAGE_SIZE - 1}`)).toBeVisible();
+    await expect(page.getByTestId(`godown-lot-stable-stock-${STOCK_PAGE_SIZE}`)).toHaveCount(0);
     await expect(page.getByTestId('login-submit')).toHaveCount(0);
     await health.assertHealthy();
   });
@@ -103,7 +106,7 @@ test('critical opening new quotation and full warehouse repeatedly keeps navigat
     await expect(page.getByTestId('new-quotation-btn')).toBeVisible();
     await navigate(page, 'Godown stock');
     await expect(page.getByTestId('godown-lot-stable-stock-0')).toContainText('Quantity not recorded');
-    await expect(page.getByTestId('godown-lot-stable-stock-60')).toHaveCount(0);
+    await expect(page.getByTestId(`godown-lot-stable-stock-${STOCK_PAGE_SIZE}`)).toHaveCount(0);
     await page.getByRole('textbox', { name: 'Search godown stock', exact: true }).fill('STABLE-1014');
     await expect(page.getByTestId('godown-lot-stable-stock-1014')).toBeVisible();
     if (page.viewportSize()!.width < 768) await expect(page.getByTestId('bottom-nav-more')).toBeHidden();
@@ -204,3 +207,43 @@ test('critical opening home after a failed module clears the rejected import bef
   expect(documents).toBe(before + 1);
   await health.assertHealthy();
 });
+
+for (const [label, destination] of [['projects', '/kitchen/projects'], ['stage queue', '/kitchen/stages/lead']] as const) {
+  test(`critical a failed Kitchen ${label} module reloads into the same signed-in queue`, async ({ page }) => {
+    const health = captureRuntimeHealth(page, { expectedErrors: [/Loading module .* failed|AsyncRequireError|The above error occurred|An error occurred in the .* component/i, /^Asset request failed: \/_expo\/static\/js\/web\/KitchenWorkspace-.* 404$/] });
+    await mockSession(page, destination, false, { seedStorageOnce: true, floorId: 'second-floor' });
+    const reads: { path: string; stage: string | null; floor?: string }[] = [];
+    await page.route('**/api/kitchen-projects**', route => {
+      const request = route.request();
+      const url = new URL(request.url());
+      reads.push({ path: url.pathname, stage: url.searchParams.get('stage'), floor: request.headers()['x-floor-id'] });
+      if (url.pathname.endsWith('/configuration')) return route.fulfill({ json: { version: 1, decision_contract: '2026-10-20', department_manager_user_ids: [] } });
+      return route.fulfill({ json: { rows: [{ id: 'lazy-recovered', reference: 'KIT-LAZY', project_reference: 'KIT-LAZY', customer_id: 'lazy-customer',
+        customer: { id: 'lazy-customer', name: 'Recovered Kitchen customer', phone: '9900000001' },
+        version: 1, stage: 'lead', status: 'New', lead: { status: 'New' }, assignments: {}, permissions: { can_update: true } }], total: 1, page: 1, limit: 25 } });
+    });
+    let block = true;
+    let failures = 0;
+    await page.route('**/KitchenWorkspace-*.js', route => {
+      if (!block) return route.continue();
+      failures++;
+      return route.fulfill({ status: 404, contentType: 'application/javascript', body: '' });
+    });
+    await page.goto(destination);
+    await expect(page.getByTestId('route-error-boundary')).toContainText('The app files for this page could not be downloaded.');
+    expect(failures).toBeGreaterThan(0);
+    expect(reads).toEqual([]);
+    await expect(page.getByTestId('login-submit')).toHaveCount(0);
+    await expect(page.getByTestId(page.viewportSize()!.width < 768 ? 'bottom-nav-notebook-workspace' : 'nav-kitchen-dashboard')).toBeVisible();
+    block = false;
+    await page.getByRole('button', { name: 'Reload app', exact: true }).click();
+    await expect(page.getByTestId('kitchen-project-lazy-recovered')).toContainText('Recovered Kitchen customer');
+    await expect(page).toHaveURL(new RegExp(`${destination}$`));
+    await expect(page.getByTestId('login-submit')).toHaveCount(0);
+    const listReads = reads.filter(read => read.path === '/api/kitchen-projects');
+    expect(listReads).toHaveLength(1);
+    expect(listReads[0].floor).toBe('second-floor');
+    expect(listReads[0].stage).toBe(label === 'stage queue' ? 'lead' : null);
+    await health.assertHealthy();
+  });
+}
