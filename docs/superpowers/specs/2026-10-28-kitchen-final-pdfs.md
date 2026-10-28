@@ -23,6 +23,13 @@ access, optimistic concurrency, idempotency and production locks.
   Existing larger historical files retain their download support.
   Server attachment upload timestamps determine
   read-only India upload dates and the selected quotation receipt date.
+- Quotation shows the latest quotation without Saved quotation or Related design
+  selectors. New quotation uses the current finalized design automatically;
+  existing quotations retain their recorded link. Returning from Design preserves
+  an unsaved quotation's PDFs and dates while using the current finalized design.
+- Design keeps version selection without repeated Design headings. PDF controls
+  use direct choose/upload only; omit existing-upload selectors and empty
+  “Choose a PDF to add” instructions for Design, GI, SS and Mix.
 - Remove manual quotation amount/received-date inputs. No monetary amount is
   inferred from arbitrary PDF contents; the explicit final order amount remains.
 - Changing viewed versions does not mutate business records. Old already placed

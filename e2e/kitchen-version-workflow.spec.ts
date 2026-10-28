@@ -40,7 +40,7 @@ async function quoteInForm(page: Page, type: string, filename: string) {
   return uploaded;
 }
 
-test('Design and quotation selectors preserve PDF history, blank price and older order basis downstream', async ({ page, context }, info) => {
+test('Simple design and quotation pages preserve PDF history, blank price and older order basis downstream', async ({ page, context }, info) => {
   let project = await seed(context.request);
   const health = captureRuntimeHealth(page);
   await open(page, project, 'design');
@@ -56,7 +56,10 @@ test('Design and quotation selectors preserve PDF history, blank price and older
   await expect(page.getByTestId(`kitchen-design-pdf-${project.design_versions[1].final_attachment_id}`)).toContainText('design-v2.pdf');
   expect(writes).toEqual([]);
   await clickCommand(page, 'kitchen-advance-quotation', 'move_stage');
-  await select(page, 'kitchen-quotation-design-version', 'Design 1 · Approved');
+  await expect(page.getByTestId('kitchen-quotation-revision')).toHaveCount(0);
+  await expect(page.getByTestId('kitchen-quotation-design-version')).toHaveCount(0);
+  await expect(page.getByText('Saved quotation', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('Related design', { exact: true })).toHaveCount(0);
   await expect(page.getByTestId('kitchen-quotation-final-design')).toContainText('design-v1.pdf');
   await expect(page.getByTestId('kitchen-quotation-amount')).toHaveCount(0);
   await quoteInForm(page, 'GI', 'quotation-r1-GI.pdf');
@@ -76,20 +79,21 @@ test('Design and quotation selectors preserve PDF history, blank price and older
   project = await clickCommand(page, 'kitchen-design-edit-save', 'design_update');
   await clickCommand(page, 'kitchen-advance-quotation', 'move_stage');
   await page.getByTestId('kitchen-quotation-new-version').click();
-  await select(page, 'kitchen-quotation-design-version', 'Design 2 · Approved');
+  await expect(page.getByTestId('kitchen-quotation-final-design')).toContainText('design-v2.pdf');
   await quoteInForm(page, 'Mix', 'quotation-r3-Mix.pdf');
   project = await clickCommand(page, 'kitchen-quotation-receive', 'quotation_receive');
   expect(project.quotation_versions.at(-1)).toMatchObject({ number: 3, design_version_id: project.design_versions[1].id, kitchen_type: 'Mix' });
   await page.getByTestId('kitchen-quotation-sent-yes').click();
   await page.getByTestId('kitchen-version-response-approved').click();
   project = await clickCommand(page, 'kitchen-quotation-edit-save', 'quotation_update');
-  await select(page, 'kitchen-quotation-revision', 'Quotation 2 · Pending');
-  await expect(page.getByTestId('kitchen-quotation-final-selection')).toContainText('SS');
+  await expect(page.getByTestId('kitchen-quotation-final-selection')).toContainText('Mix');
+  await expect(page.getByTestId('kitchen-quotation-final-design')).toContainText('design-v2.pdf');
   const beforeHistory = writes.length;
-  await select(page, 'kitchen-quotation-revision', 'Quotation 1 · Approved');
-  await expect(page.getByTestId('kitchen-quotation-final-selection')).toContainText('GI');
-  await expect(page.getByTestId('kitchen-quotation-design-version')).toContainText('Design 1');
+  await expect(page.getByTestId('kitchen-quotation-revision')).toHaveCount(0);
+  await expect(page.getByTestId('kitchen-quotation-design-version')).toHaveCount(0);
   expect(writes).toHaveLength(beforeHistory);
+  expect(project.quotation_versions[0]).toMatchObject({ id: quotation1.id, design_version_id: project.design_versions[0].id, kitchen_type: 'GI', response: 'Approved' });
+  expect(project.quotation_versions[1]).toMatchObject({ number: 2, design_version_id: project.design_versions[0].id, kitchen_type: 'SS', response: 'Pending' });
   await clickCommand(page, 'kitchen-advance-order', 'move_stage');
   await select(page, 'kitchen-order-quotation-revision', 'Quotation 1 · Design v1 · Approved');
   await page.getByTestId('kitchen-order-confirmed-yes').click();
@@ -157,6 +161,8 @@ test('Quotations accept all three kitchen types while exactly one selected PDF b
   await open(page, project, 'quotation');
   const health = captureRuntimeHealth(page);
   await expect(page.getByTestId('kitchen-quotation-receive')).toBeDisabled();
+  for (const type of ['GI', 'SS', 'Mix']) await expect(page.getByTestId(`kitchen-quotation-${type}-pdf-existing`)).toHaveCount(0);
+  await expect(page.getByText('Choose a PDF to add.', { exact: true })).toHaveCount(0);
   const gi = await uploadKitchenPdfInForm(page, 'kitchen-quotation-GI-pdf', 'budget-GI.pdf');
   const ss = await uploadKitchenPdfInForm(page, 'kitchen-quotation-SS-pdf', 'budget-SS.pdf');
   const mix = await uploadKitchenPdfInForm(page, 'kitchen-quotation-Mix-pdf', 'budget-Mix.pdf');
@@ -200,6 +206,9 @@ test('Each uploaded PDF creates one numbered Design without a four-design cap, a
   await open(page, project, 'design');
   const health = captureRuntimeHealth(page);
   await expect(page.getByTestId('kitchen-design-new-version')).toHaveCount(0);
+  await expect(page.getByTestId('kitchen-design-pdf-existing')).toHaveCount(0);
+  await expect(page.getByTestId('kitchen-design-pdf').getByText('Design', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('Choose a PDF to add.', { exact: true })).toHaveCount(0);
   await expect(page.getByTestId('kitchen-design-present')).toHaveCount(0);
   const chooser = page.waitForEvent('filechooser');
   await page.getByTestId('kitchen-design-pdf-pick').click();

@@ -161,7 +161,7 @@ test('Kitchen stages use one editable or saved source without repeated summary b
   }
 });
 
-test('Kitchen missing quotation and order prerequisites offer working return actions and retain entry', async ({ page, context }, info) => {
+test('Kitchen missing quotation PDF and order prerequisites retain entry across stage return actions', async ({ page, context }, info) => {
   const project = await projectAt(context.request, 'quotation');
   const health = captureRuntimeHealth(page);
   await seed(page);
@@ -169,15 +169,13 @@ test('Kitchen missing quotation and order prerequisites offer working return act
   await expect(page.getByTestId('kitchen-quotation-receive')).toBeDisabled();
   const date = page.getByTestId('kitchen-quotation-shared-date');
   await date.fill(kitchenIndiaToday());
-  await page.getByTestId('kitchen-quotation-design-version').click();
-  await page.getByRole('menuitem', { name: 'Choose a design version', exact: true }).click();
-  await expect(page.getByTestId('kitchen-complete-design')).toBeVisible();
-  const returned = await clickCommand(page, 'kitchen-complete-design', 'move_stage');
+  await expect(page.getByTestId('kitchen-quotation-design-version')).toHaveCount(0);
+  await expect(page.getByTestId('kitchen-quotation-final-design')).toBeVisible();
+  const returned = await clickCommand(page, 'kitchen-previous-stage', 'move_stage');
   expect(returned.stage).toBe('design');
   await clickCommand(page, 'kitchen-advance-quotation', 'move_stage');
   await expect(date).toHaveValue(kitchenIndiaToday());
-  await page.getByTestId('kitchen-quotation-design-version').click();
-  await page.getByRole('menuitem', { name: 'Design 1 · Approved', exact: true }).click();
+  await expect(page.getByTestId('kitchen-quotation-design-version')).toHaveCount(0);
   const file = await uploadKitchenPdfInForm(page, 'kitchen-quotation-GI-pdf', 'recovery-quotation.pdf');
   await page.getByTestId(`kitchen-quotation-GI-pdf-${file.attachment.id}-final`).click();
   await page.getByTestId('kitchen-quotation-sent-yes').click();

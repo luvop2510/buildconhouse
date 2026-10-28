@@ -23,7 +23,6 @@ export function DesignStage({ project, disabled, command }: { project: KitchenPr
   const historical = Boolean(design && (design.workflow_cycle ?? 1) !== (project.workflow_cycle ?? 1));
   const started = kitchenProductionStarted(project);
   const locked = disabled || !active || historical || started || Boolean(project.design_revision_pending && design);
-  const usedIds = versions.flatMap(row => row.attachment_ids || (row.attachment_id ? [row.attachment_id] : []));
   const addPdf = async (id: string) => {
     if (adding.current) return;
     adding.current = true; setAddingPdf(true);
@@ -33,8 +32,7 @@ export function DesignStage({ project, disabled, command }: { project: KitchenPr
     } finally { adding.current = false; setAddingPdf(false); }
   };
   return <KitchenPanel>
-    <Text style={type.caption}>Each uploaded PDF creates one numbered design. Choose the customer’s approved design, finalize it and record Yes for Sent to company.</Text>
-    <KitchenPdfFiles project={project} attachmentIds={[]} finalId="" onAdd={addPdf} onSelect={() => {}} excludedIds={usedIds} disabled={disabled || !active || started || addingPdf} label="Design" testID="kitchen-design-pdf" draftKey={`commercial.cycle.${project.workflow_cycle ?? 1}.design.upload`} />
+    <KitchenPdfFiles project={project} attachmentIds={[]} finalId="" onAdd={addPdf} onSelect={() => {}} disabled={disabled || !active || started || addingPdf} testID="kitchen-design-pdf" draftKey={`commercial.cycle.${project.workflow_cycle ?? 1}.design.upload`} />
     {versions.length ? <KitchenSelect label="Design" value={design?.id || ""} options={versions.map(row => ({ value: row.id, label: `Design ${row.number} · ${row.response}${row.id === project.final_design_version_id ? " · Finalize PDF" : ""}` }))} onChange={setSelected} testID="kitchen-design-version" /> : <Text style={type.bodyMuted}>Upload a PDF to add Design 1.</Text>}
     {started ? <Alert tone="info" title="Production has started" description="Use the owner-authorized Return to Design action to change the design for production." /> : null}
     {project.design_revision_pending && design ? <Text style={type.bodyMuted}>Upload the revised design PDF. Earlier designs remain in History.</Text> : null}
@@ -60,7 +58,6 @@ function DesignForm({ project, design, disabled, command }: { project: KitchenPr
   const file = project.attachments?.find(row => row.id === fileId && row.content_type === "application/pdf");
   const problem = !file ? "This historical design has no uploaded PDF. Upload a new design PDF." : draft.response !== "Pending" && !draft.shared_date ? "Enter Date shared with customer before recording the customer’s response." : draft.approval_date && draft.response !== "Approved" ? "Clear the approval date when customer approval is not Approved." : draft.approval_date && draft.shared_date && draft.approval_date < draft.shared_date ? "Customer approval cannot precede sharing." : draft.handoff_status === "Yes" && (draft.response !== "Approved" || !approval) ? "Customer approval is required before sending the finalized design to the company." : draft.finalize && (draft.response !== "Approved" || draft.handoff_status !== "Yes") ? "Approve this design and choose Yes for Sent to company before finalizing it." : null;
   return <View style={{ gap: spacing.md }}>
-    <Text style={type.bodyStrong}>Design {design.number}</Text>
     {stale ? <><Text style={type.bodyMuted}>Saved details changed while you were editing. Your entries are kept.</Text><Button label="Replace draft with latest design details" onPress={() => resetDraftValue(prefix)} variant="secondary" testID="kitchen-design-edit-reload" /></> : null}
     {file ? <KitchenPdfFile project={project} file={file} selected={project.final_design_version_id === design.id} testID={`kitchen-design-pdf-${file.id}`} /> : null}
     <KitchenOption label={draft.finalize ? "Finalize design · Selected" : "Finalize design"} accessibilityLabel={`Finalize Design ${design.number}`} active={draft.finalize} disabled={locked} onPress={() => setDraft(previous => ({ ...previous, finalize: !previous.finalize }))} testID="kitchen-design-finalize" />

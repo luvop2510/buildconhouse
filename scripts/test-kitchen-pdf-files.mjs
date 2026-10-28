@@ -27,7 +27,7 @@ const exports={};
 new Function('require','exports','window',ts.transpileModule(readFileSync(new URL('../src/components/kitchen/KitchenPdfFiles.tsx',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText)(name=>{assert.ok(modules[name],name);return modules[name];},exports,{open:()=>null});
 function flatten(node){if(node==null||typeof node==='boolean')return[];if(Array.isArray(node))return node.flatMap(flatten);if(typeof node!=='object')return[String(node)];if(typeof node.type==='function')return flatten(node.type(node.props));return[node,...flatten(node.props.children)];}
 let props={project:current,attachmentIds:[],finalId:'',onAdd:id=>added.push(id),onSelect:id=>selected.push(id),disabled:false,label:'GI',testID:'pdf',draftKey:'quotation.new.pdf.GI'};
-function render(){cursor=0;const nodes=flatten(exports.KitchenPdfFiles(props));return{control:id=>nodes.find(node=>node.props?.testID===id),text:nodes.filter(node=>typeof node==='string').join(' ').replace(/\s+/g,' ')};}
+function render(){cursor=0;const nodes=flatten(exports.KitchenPdfFiles(props));return{nodes,control:id=>nodes.find(node=>node.props?.testID===id),text:nodes.filter(node=>typeof node==='string').join(' ').replace(/\s+/g,' ')};}
 for(const asset of [{name:'invalid.docx',size:1000},{name:'empty.pdf',size:0},{name:'large.pdf',size:10_000_001}]){
   pickedAsset=asset;let view=render();await view.control('pdf-pick').props.onPress();view=render();await view.control('pdf-upload').props.onPress();assert.match(error,/nonempty PDF up to 10 MB/);assert.equal(uploaded.length,0);
 }
@@ -57,3 +57,17 @@ uploadResult={...uploadResult,version:7,activity:[]};
 view=render();await view.control('pdf-pick').props.onPress();view=render();await view.control('pdf-upload').props.onPress();
 assert.match(error,/saved file could not be identified/,'A malformed upload response produces recovery feedback instead of silent success');
 assert.equal(added.length,2);
+
+props={...props,project:{...current,attachments:[uploadedFile]},attachmentIds:[],finalId:'',label:undefined};
+view=render();
+assert.equal(view.control('pdf-pick').props.label,'Choose PDF','Design upload has a single direct picker without a repeated Design heading');
+assert.equal(view.control('pdf-existing'),undefined,'Previously uploaded PDFs do not add a second picker');
+assert.equal(view.nodes.some(node=>node.type==='select'),false,'No uploaded-PDF selection remains when an unrelated PDF is present');
+assert.doesNotMatch(view.text,/Choose a PDF to add\.|Add uploaded PDF|Choose an uploaded PDF|\bDesign\b/);
+for(const kitchenType of ['GI','SS','Mix']){
+  props={...props,label:kitchenType};view=render();
+  assert.equal(view.control('pdf-pick').props.label,`Choose ${kitchenType} PDF`);
+  assert.equal(view.control('pdf-existing'),undefined);
+  assert.doesNotMatch(view.text,/Choose a PDF to add\.|Add uploaded PDF|Choose an uploaded PDF/);
+}
+console.log('Kitchen PDF simplification: direct Design/GI/SS/Mix uploads remain without duplicate headings, empty hints or uploaded-file selectors.');

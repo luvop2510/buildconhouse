@@ -1,5 +1,16 @@
 # AGENTS.md — BuildCon House ERP (forge2.0)
 
+## Kitchen design/quotation simplification — 2026-10-28
+
+Quotation shows its finalized design PDF once and the latest quotation, with
+New quotation available. Omit the Saved quotation and Related design controls.
+New quotations derive their design from the current finalized selection; saved
+quotations retain their original design link. Keep drafts when returning to
+Design to complete prerequisites. Design retains version selection and approval
+controls, without repeated Design headings. PDF controls use direct choose/upload
+only, with no existing-upload picker or “Choose a PDF to add” empty hint. Preserve
+stored files, historical versions, authenticated downloads and production locks.
+
 ## Kitchen PDF designs and final quotation — 2026-10-28
 
 Each newly uploaded Design PDF creates one numbered design version; four was

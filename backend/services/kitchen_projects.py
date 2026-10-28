@@ -682,11 +682,18 @@ class KitchenProjectService:
         return result
 
     async def command(self, user, project_id, body):
-        async with self.admission(user, "update") as policy:
-            return await self._command(user, project_id, body, policy)
+        # Project lookup is independent of policy admission; overlap its network round trip.
+        project_read = asyncio.ensure_future(self.db.kitchen_projects.find_one(
+            {"id": project_id, "floor_id": access.KITCHEN_FLOOR}))
+        try:
+            async with self.admission(user, "update") as policy:
+                return await self._command(user, project_id, body, policy, await project_read)
+        finally:
+            if not project_read.done():
+                project_read.cancel()
+            await asyncio.gather(project_read, return_exceptions=True)
 
-    async def _command(self, user, project_id, body, policy):
-        project = await self.db.kitchen_projects.find_one({"id": project_id, "floor_id": access.KITCHEN_FLOOR})
+    async def _command(self, user, project_id, body, policy, project):
         await access.require_project(self.db, user, project, policy, "update")
         digest = fingerprint({"command": body.command, "payload": body.payload})
         receipt = next((r for r in project["command_receipts"] if r["actor_id"] == user.id and r["key"] == body.idempotency_key), None)

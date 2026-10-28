@@ -4,7 +4,7 @@ import * as DocumentPicker from "expo-document-picker";
 import { Text } from "@/src/components/AppText";
 import { kitchenProjectsApi, type KitchenAttachment, type KitchenProject } from "@/src/api/kitchenProjects";
 import { ErrorNotice, displayDate } from "./shared";
-import { KitchenOption, KitchenSelect } from "./KitchenFilters";
+import { KitchenOption } from "./KitchenFilters";
 import { useKitchenDraft, useKitchenProject } from "./KitchenProjectState";
 import { downloadKitchenFile, uploadKitchenFile, KITCHEN_MAX_PDF_BYTES } from "./KitchenFileTransport";
 import { KitchenButton as Button, kitchenType as type } from "./KitchenPrimitives";
@@ -44,7 +44,7 @@ export function KitchenPdfFile({ project, file, selected, onSelect, disabled, te
 }
 
 /** Uploads attach private files; the parent explicitly saves its PDF selection. */
-export function KitchenPdfFiles({ project, attachmentIds, finalId, onAdd, onSelect, disabled, selectionDisabled = false, excludedIds = [], label, testID, draftKey }: { project: KitchenProject; attachmentIds: string[]; finalId: string; onAdd: (id: string) => void | Promise<void>; onSelect: (id: string) => void; disabled: boolean; selectionDisabled?: boolean; excludedIds?: string[]; label: string; testID: string; draftKey: string }) {
+export function KitchenPdfFiles({ project, attachmentIds, finalId, onAdd, onSelect, disabled, selectionDisabled = false, label, testID, draftKey }: { project: KitchenProject; attachmentIds: string[]; finalId: string; onAdd: (id: string) => void | Promise<void>; onSelect: (id: string) => void; disabled: boolean; selectionDisabled?: boolean; label?: string; testID: string; draftKey: string }) {
   const { policy, documentSubmission: submission, updateProject, reload } = useKitchenProject();
   const [picked, setPicked] = useKitchenDraft<DocumentPicker.DocumentPickerAsset | null>(`${draftKey}.picked`, null);
   const [progress, setProgress] = useState(0);
@@ -56,7 +56,6 @@ export function KitchenPdfFiles({ project, attachmentIds, finalId, onAdd, onSele
   }, [project.id]);
   const files = (project.attachments || []).filter(file => file.content_type === "application/pdf");
   const included = files.filter(file => attachmentIds.includes(file.id));
-  const available = files.filter(file => !attachmentIds.includes(file.id) && !excludedIds.includes(file.id));
   const pick = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({ type: "application/pdf", copyToCacheDirectory: true, multiple: false });
@@ -74,19 +73,17 @@ export function KitchenPdfFiles({ project, attachmentIds, finalId, onAdd, onSele
         || value.attachments?.filter(row => row.filename === picked.name && row.size_bytes === picked.size).at(-1);
       updateProject(value);
       addedFileId = file?.id;
-      if (!file) { submission.setError("The PDF uploaded, but its saved file could not be identified. Reload and choose the uploaded PDF to continue."); return; }
+      if (!file) { submission.setError("The PDF uploaded, but its saved file could not be identified. Reload Kitchen and choose the PDF again to retry."); return; }
       setPicked(null); setUnfinished(null); setProgress(0);
     });
     if (uploaded && addedFileId) await onAdd(addedFileId);
   };
   return <View style={{ gap: spacing.md }} testID={testID}>
-    <Text style={type.bodyStrong}>{label}</Text>
+    {label ? <Text style={type.bodyStrong}>{label}</Text> : null}
     {!disabled ? <Text style={type.caption}>PDF · Up to 10 MB (10,000,000 bytes) per file.</Text> : null}
     {included.map(file => <KitchenPdfFile key={file.id} project={project} file={file} selected={file.id === finalId} onSelect={() => onSelect(file.id)} disabled={disabled || selectionDisabled || submission.busy} testID={`${testID}-${file.id}`} />)}
-    {!included.length ? <Text style={type.bodyMuted}>Choose a PDF to add.</Text> : null}
     {!disabled ? <>
-      {available.length ? <KitchenSelect label={`Add uploaded PDF to ${label}`} value="" options={[{ value: "", label: "Choose an uploaded PDF" }, ...available.map(file => ({ value: file.id, label: file.filename }))]} onChange={id => { if (id && !submission.busy) void onAdd(id); }} testID={`${testID}-existing`} /> : null}
-      <Button label={`Choose ${label} PDF`} variant="secondary" disabled={submission.busy || !policy?.files} onPress={() => void pick()} testID={`${testID}-pick`} />
+      <Button label={label ? `Choose ${label} PDF` : "Choose PDF"} variant="secondary" disabled={submission.busy || !policy?.files} onPress={() => void pick()} testID={`${testID}-pick`} />
       {picked ? <><Text style={type.body}>{picked.name}</Text><Button label="Upload PDF" disabled={submission.busy || !policy?.files} loading={submission.busy} onPress={upload} testID={`${testID}-upload`} /></> : null}
       {!policy?.files ? <Text style={type.bodyMuted}>PDF upload settings are unavailable. Reload Kitchen setup before uploading.</Text> : null}
       {unfinished && !submission.busy ? <Button label="Discard unfinished PDF upload" variant="secondary" onPress={() => { void kitchenProjectsApi.cancelTransfer(project.id, unfinished).then(() => { setUnfinished(null); submission.clearFeedback(); }).catch(() => submission.setError("Temporary upload could not be discarded. Try again.")); }} testID={`${testID}-discard`} /> : null}
