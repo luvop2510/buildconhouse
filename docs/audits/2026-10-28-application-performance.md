@@ -117,6 +117,18 @@ all backend tests use hermetic CI settings, with dotenv disabled.
     Full backend suite after these changes: 3,533 passed, one existing warning.
     Live image objects and the worker have NOT been modified.
 
+11. Public `/`, `/index.html`, `/login` and its HTML/slash aliases now set
+    `Vercel-CDN-Cache-Control: public, max-age=60`, independently of the unchanged
+    browser `Cache-Control: no-store`. Authenticated API responses, dynamic
+    business pages and recovery scripts do not inherit this edge policy. These
+    entry files are built once with the shared English loading shell and hydrate
+    personalized data only after authentication. There is no per-request server
+    rendering to cache. Public source verification, route exclusion tests, proxy
+    tests and startup recovery checks pass. A pre-change production GET returned
+    CDN MISS, age 0, and gzip HTML; post-deployment HIT/latency evidence is pending.
+    Vercel header precedence is documented at
+    https://vercel.com/docs/caching/cache-control-headers.
+
 ### R2 delivery rollout
 
 Deploy the additive Worker behavior and backend after the release gate. Run
@@ -143,7 +155,7 @@ No migration command or app startup is imported by this backfill.
 | Bulk writes | Usage counters batched. Follow-up reconciliation still has sequential updates/inserts/events; requires a separate transaction/idempotency/notification review and measured fixture before changing. |
 | Circuit breaker | Implemented and locally verified for optional PDF storage. Complete final regression verification and inspect other critical external dependencies for remaining cascade paths. |
 | Optimistic UI | Dashboard completion implemented and verified including visible rollback and account/floor/request-generation guards; release pending. Never optimistically confirm payments or inventory commits. |
-| Rendered caching | Expo pages are statically exported already; verify cache headers for public shell/assets. Mutable authenticated business reads remain no-store; do not cache inventory, balances or permissions. |
+| Rendered caching | Public entry shells now have a bounded edge-cache policy; live cache HIT/latency verification is pending. Expo rendering is already performed at build time. Mutable authenticated business reads remain no-store; do not cache inventory, balances or permissions. |
 | Final acceptance | Full unchanged performance/stability gate, current source integration, production measurements and required release controls remain pending. No “fastest available” comparison is substantiated. |
 
 Local detailed evidence is in `output/performance-2026-10-28/` and
