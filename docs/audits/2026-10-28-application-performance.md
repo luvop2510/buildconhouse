@@ -245,6 +245,19 @@ No migration command or app startup is imported by this backfill.
 
 ## Outstanding requirements and next evidence
 
+Publication was explicitly requested by the user for GitHub, Vercel and Railway.
+Additional CI fixture repairs preserve actual current behavior: Furniture detail
+GET queries, retired Kitchen controls, acknowledged Lead movement, full-screen
+Back mounting and phone order identity. Heading geometry now observes hydration
+within the original assertion deadline. Immediate-release dragging verifies the
+starting point hits the visible handle; its original iPhone starting point was
+outside the clipped canvas. All four immediate-release cases and eight heading
+profiles pass. All 20 original Kitchen keyboard cases pass unchanged locally;
+the earlier Linux CI native caret-scroll observation remains subject to fresh CI.
+The corrected CSV scenario verifies the browser query/headers and the same
+authenticated response bytes, since Chromium's download manager consumes its
+attachment body. All four CSV profiles pass. No deadline or retry was increased.
+
 | Requirement | Current evidence / remaining work |
 | --- | --- |
 | N+1 reads | Quotation validation fixed. Tiles dispatch validation also batched with transactional tests; complete final route audit and production verification. |
