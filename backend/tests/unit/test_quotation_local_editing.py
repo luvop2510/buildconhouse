@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
 
 from models import QuotationUpdate, UserPublic
 from routes import quotation_routes
@@ -18,8 +19,11 @@ class _ProductMedia:
 
 
 class _Products:
-    async def find_one(self, *_args, **_kwargs):
-        return {"id": "p-1", "category_id": "cat-1"}
+    def find(self, query, *_args, **_kwargs):
+        async def to_list(limit):
+            return [{"id": product_id, "category_id": "cat-1"}
+                    for product_id in query["id"]["$in"]][:limit]
+        return SimpleNamespace(to_list=to_list)
 
 
 class _Quotations:

@@ -10,7 +10,7 @@ from uuid import UUID, NAMESPACE_URL, uuid4, uuid5
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
-from pymongo import ReturnDocument
+from pymongo import ReturnDocument, UpdateOne
 from pymongo.errors import DuplicateKeyError
 from starlette.concurrency import run_in_threadpool
 
@@ -301,14 +301,15 @@ def _floor_id_for_new_quotation(user: UserPublic, item_floor_ids: set[str]) -> s
 async def _track_product_usage(user_id: str, product_ids: list[str]):
     """Bump usage counters for the picker's Recent/Frequent tabs."""
     now = datetime.now(timezone.utc).isoformat()
-    await asyncio.gather(*[
-        db.product_usage.update_one(
-            {"user_id": user_id, "product_id": pid},
-            {"$inc": {"count": 1}, "$set": {"last_used_at": now}},
-            upsert=True,
-        )
-        for pid in set(product_ids)
-    ])
+    ids = list(dict.fromkeys(product_ids))
+    # These independent telemetry counters need only per-document atomicity.
+    # Bounded commands avoid one round trip/connection per quotation line.
+    for offset in range(0, len(ids), 500):
+        await db.product_usage.bulk_write([
+            UpdateOne({"user_id": user_id, "product_id": pid},
+                      {"$inc": {"count": 1}, "$set": {"last_used_at": now}}, upsert=True)
+            for pid in ids[offset:offset + 500]
+        ], ordered=True)
     await catalog_service.note_product_usage(user_id, product_ids, now)
 
 
@@ -452,17 +453,19 @@ async def _manual_stock_line(item: QuotationLineItem, user: UserPublic, *, floor
 
 
 async def _quotation_catalog_products(items: list[QuotationLineItem], user: UserPublic, *, floor_id: str | None = None) -> list:
-    # Bound Atlas concurrency for large quotations; never exhaust the shared
-    # pool by launching hundreds of line reads at once.
-    slots = asyncio.Semaphore(12)
-    async def product(item):
-        async with slots:
-            query = {"id": item.product_id}
-            if floor_id:
-                query["floor_id"] = floor_id
-            return await db.products.find_one(floor_query(user, query),
-                {"_id": 0, "category_id": 1, "floor_id": 1, "specs": 1, "price": 1, "mrp": 1, "catalog_version": 1})
-    return await asyncio.gather(*(product(item) for item in items))
+    # Validation needs current prices; batch exact IDs without caching or
+    # launching one remote read per line (including repeated products).
+    product_ids = list(dict.fromkeys(item.product_id for item in items))
+    products_by_id = {}
+    for offset in range(0, len(product_ids), 500):
+        batch = product_ids[offset:offset + 500]
+        query = {"id": {"$in": batch}}
+        if floor_id:
+            query["floor_id"] = floor_id
+        products = await db.products.find(floor_query(user, query),
+            {"_id": 0, "id": 1, "category_id": 1, "floor_id": 1, "specs": 1, "price": 1, "mrp": 1, "catalog_version": 1}).to_list(len(batch))
+        products_by_id.update((product["id"], product) for product in products)
+    return [products_by_id.get(item.product_id) for item in items]
 
 
 async def _replay_tile_draft(receipt_id: str, user: UserPublic) -> Quotation | None:
@@ -559,9 +562,7 @@ async def create_quotation(
     # current canonical media URL so newly-created quotations cannot capture a
     # stale/portrait snapshot.
     item_floor_ids: set[str] = set()
-    # Creation used one serial Atlas round trip per line, so a large first
-    # draft could exceed the API deadline before it was ever inserted. Match
-    # the concurrent resolution used by subsequent autosaves.
+    # Creation and autosaves share bounded reads of current catalog rows.
     products = await _quotation_catalog_products(items, user)
     for it, p in zip(items, products, strict=True):
         if not p:
@@ -921,7 +922,7 @@ async def update_quotation(
         # This endpoint receives the complete builder state on autosave. A
         # sequential product lookup made a moderately sized quotation take
         # longer than the request proxy timeout. Resolve the independent
-        # catalog rows concurrently, while keeping the validation and item
+        # catalog rows in batches, while keeping the validation and item
         # order exactly the same.
         products = await _quotation_catalog_products(items_typed, user, floor_id=doc.get("floor_id"))
         for it, p in zip(items_typed, products, strict=True):
