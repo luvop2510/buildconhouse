@@ -40,8 +40,10 @@ all backend tests use hermetic CI settings, with dotenv disabled.
    The proxy forwards Accept-Encoding but does not copy the compressed length
    or encoding onto fetch-decoded bytes. CommonJS proxy execution still passes.
    Server gzip was already enabled at 500 bytes, level 6; no redundant compressor
-   was added. Public production health responses were only 69 bytes, so they
-   do not prove compression of authenticated large production responses.
+   was added. A later public production OpenAPI comparison transferred 610,437
+   bytes with identity versus 49,798 with gzip (91.84% less); decoded lengths
+   and JSON SHA256 matched. Chromium negotiated gzip and parsed OpenAPI 3.1.0.
+   This proves large public JSON compression, not authenticated endpoint latency.
 4. Quotation Recent/Frequent product usage increments now use bounded bulk
    writes, deduplicating IDs and sending at most 500 updates per command. These
    are independent telemetry counters; per-document atomic increments are the
@@ -143,6 +145,81 @@ all backend tests use hermetic CI settings, with dotenv disabled.
     These are synthetic network conditions, not production timings. Document
     number allocation remains unchanged and still occurs in the transaction.
 
+13. Existing open follow-up refreshes now use ordered batches of at most 500,
+    flushing before each new insert. Inserts, duplicate-key handling,
+    notifications and resolution/event pairs retain their existing ordering.
+    A write-time open-status guard preserves a concurrent human completion or
+    snooze. Thirty-eight focused tests pass, including chunk failures and side
+    effect ownership. With a simulated 5 ms per write, 100 rows used 100 → 1
+    commands and 577–649 → 11–14 ms; 1,001 rows used 1,001 → 3 commands and
+    5,943–6,209 → 251–418 ms (three samples, identical final snapshots/counts).
+    These are synthetic network conditions, not production timings.
+14. Reference directory bodies now load 25 contacts per server page (maximum
+    50), with literal name/company/phone/code search and name/ID ordering.
+    One authorized floor-union query includes shared contacts without duplicating
+    them; inactive contacts are excluded before paging. Legacy pickers retain
+    their compatible endpoint. Reports identify actual archived/missing identities
+    using ID-only lookups in chunks of 500, so off-page active contacts are never
+    labelled historical. Historical report entries retain bounded rendering,
+    search and scoped period drilldowns. Query/floor/account/unmount guards,
+    held-save search changes, duplicate append taps and exact failed-offset
+    retries are covered by nine executable hook/model tests. Twenty-eight focused
+    backend tests include a real disposable Mongo fixture with 4,007 authorized
+    active contacts. Old capped two-floor reads returned 3,900 contact bodies /
+    1,425,501 JSON bytes; the new page returns 25 / 9,170 bytes (99.36% less),
+    with an accurate total and discoverability beyond offset 4,000. The command
+    comparison is two finds versus one find plus one count; no latency claim.
+15. Kitchen projects and stage queues now share a lazy workspace entry, following
+    the existing detail pattern. A production export of the combined continuation
+    measured login 438 → 430 KiB gzip and largest static route 464 → 456 KiB
+    in the final clean export (the first combined export measured 431/457).
+    Entry alone remains approximately 282 KiB; the 200 KB target is not achieved.
+    These are initial HTML script/preload totals; Kitchen's essential lazy chunks
+    are separately included in primary-content browser evidence and timing.
+    New queue module-failure/reload cases retain the original budgets and session
+    checks. The isolated dependency-transformer experiment measured only a small
+    further gain (login 411 KiB, largest route 437 KiB), remains unpromoted and
+    does not establish browser/native reliability or the requested target.
+
+    Eight Kitchen timing cases pass on four devices with unchanged deadlines.
+    Queue primary content measured 951–1,689 ms with the 200 ms API fixture.
+    Complete script requests through primary readiness include the lazy modules:
+    stage queue 462,258 bytes gzip, projects 461,737, and detail/history/documents
+    up to 474,397 (about 463 KiB). These are gzip calculations from frozen source
+    assets, not wire/cache measurements. They explicitly remain above 200 KB.
+
+Latest complete hermetic backend suite: 3,565 passed in 38.45 seconds, with one
+existing Starlette test-client deprecation warning. TypeScript, zero-warning Expo
+lint, page-loading/optimistic/referrer/lazy-entry contracts, release registry,
+module-graph and sales-period checks pass. Current npm audit reports eight low
+findings, zero moderate/high/critical; historical larger counts are not current.
+Production compression evidence is recorded in `live-openapi-compression.json`
+and `browser-live-api-compression.json` under the local evidence directory.
+
+### Continuation gate and source check
+
+The inherited unchanged full audit finished with 1,039 browser passes and nine
+failures after 24.2 minutes. Eight failures expect stock row 59 although the
+verified page size is now 50; update those boundary assertions to row 49 present
+and row 50 absent. The remaining iPad unpriced-quotation case timed out during
+startup and requires an unchanged rerun. The failed report and traces are retained;
+this run is not acceptance and its timing phase did not execute.
+
+After correcting the stock assertions, all 12 focused original-failure cases pass
+on four device profiles, including the unchanged iPad deep-link scenario. The
+updated godown-paging and catalog-families suites outside the stability registry
+also pass all 56 cases across eight profiles. Final combined-source browser and
+full unchanged performance/stability acceptance are still pending. Sixteen final
+referrer/search/acquisition cases and eight new Kitchen module recovery cases
+pass on four devices. The new Kitchen recovery fixture initially expected a
+generic phone More control; its locator now checks Kitchen's actual All stages
+control, with recovery/deadline assertions preserved.
+
+Remote main and the canonical Vercel alias were checked before editing. Live
+deployment `dpl_2bmseYVKZ6WS2zSfXdjFHYnB3nJH` reports Git source
+`f1fccccf79cdf5b94aee3a26ddef90647904dcba` on `main`, which is an ancestor
+of this checkout. The performance commits remain local at this point.
+
 ### R2 delivery rollout
 
 Deploy the additive Worker behavior and backend after the release gate. Run
@@ -162,12 +239,12 @@ No migration command or app startup is imported by this backfill.
 | --- | --- |
 | N+1 reads | Quotation validation fixed. Tiles dispatch validation also batched with transactional tests; complete final route audit and production verification. |
 | Indexes | Existing catalog and recent migrations already provide many indexes. Warehouse explain and local migration verification complete; production application and after-explain remain pending. |
-| 20–50-row pagination | Catalog/stock now page at 50. Referrer directory fetches up to 2,000 per floor and only slices the displayed UI. Add server search/paging with complete caller and floor-race coverage. |
+| 20–50-row pagination | Catalog/stock page at 50; referrer directory server pages at 25 with search, shared authorized unions and explicit historical identities. Backend/Mongo and request-race checks pass; final combined-source browser gate pending. |
 | WebP/AVIF images | R2 derivatives and bounded resumable backfill implemented and measured locally. Worker/backend/frontend deployment, existing-object backfill and live verification remain pending. |
-| Initial JavaScript under 200 KB | Not achieved: largest initial route 464 KiB gzip, entry alone 282 KiB. Kitchen and purchase common dependencies split. Further entry/runtime work is required, with startup and recovery verified. Do not hide essential downloads from measurement or relabel the 576 KiB ceiling as success. |
-| Compression in transit | Hermetic server and actual local proxy transport verified. Still need authenticated production JSON/text transfer-size comparison and browser negotiation evidence. |
-| Bulk writes | Usage counters and transactional dispatch stock writes batched. Follow-up reconciliation still has sequential updates/inserts/events; requires a separate transaction/idempotency/notification review and measured fixture before changing. |
-| Circuit breaker | Implemented and locally verified for optional PDF storage. Complete final regression verification and inspect other critical external dependencies for remaining cascade paths. |
+| Initial JavaScript under 200 KB | Not achieved: largest static initial route 456 KiB gzip, entry alone about 282 KiB; measured Kitchen primary-content scripts including lazy modules reach about 463 KiB. Kitchen editors/queues and purchase common dependencies split. Further entry/runtime work is required; the 576 KiB regression ceiling is not the user target. |
+| Compression in transit | Hermetic server/proxy and large public production JSON verified: 610,437 → 49,798 bytes with identical decoded JSON; Chromium negotiated and parsed gzip. Authenticated endpoint comparison remains separate. |
+| Bulk writes | Usage counters, transactional dispatch stock writes and existing open follow-up refreshes batched. Insert/notification and resolution/event pairs remain sequential to preserve ownership and failure boundaries. Synthetic fixtures and focused checks pass. |
+| Circuit breaker | Implemented and locally verified for optional PDF storage. Reviewed remaining calls: R2 SDK has bounded connect/read/retries but no overall deadline; cancellation cannot stop its blocking thread. WhatsApp keeps ambiguous-send receipts and never automatically replays sends. Manual catalog URL imports retain 180-second socket reads plus size/SSRF bounds. These retain separate limits; no blanket outage-isolation claim. |
 | Optimistic UI | Dashboard completion implemented and verified including visible rollback and account/floor/request-generation guards; release pending. Never optimistically confirm payments or inventory commits. |
 | Rendered caching | Public entry shells now have a bounded edge-cache policy; live cache HIT/latency verification is pending. Expo rendering is already performed at build time. Mutable authenticated business reads remain no-store; do not cache inventory, balances or permissions. |
 | Final acceptance | Full unchanged performance/stability gate, current source integration, production measurements and required release controls remain pending. No “fastest available” comparison is substantiated. |
