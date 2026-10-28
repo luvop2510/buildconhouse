@@ -140,12 +140,12 @@ def workbook(report, sections, metadata):
         sheet = wb.create_sheet(name[:31])
         keys = list(dict.fromkeys(key for row in rows for key in row))
         sheet.append(keys or ["No matching records"])
-        for row in rows:
+        for row_number, row in enumerate(rows, 2):
             sheet.append([spreadsheet_cell(cell(row.get(key))) for key in keys])
             for index, key in enumerate(keys, 1):
                 value = row.get(key)
                 effective_key = row.get("metric", "").replace(" ", "_") if key == "value" else key
-                target = sheet.cell(sheet.max_row, index)
+                target = sheet.cell(row_number, index)
                 if isinstance(value, (int, float)) and not isinstance(value, bool):
                     if effective_key in MONEY_FIELDS:
                         currency = "RNB" if effective_key.endswith("_rnb") or row.get("currency") == "RNB" else "INR"

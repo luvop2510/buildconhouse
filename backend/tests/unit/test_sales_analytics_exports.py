@@ -52,3 +52,28 @@ def test_long_untrusted_values_are_printable_without_markup_or_lost_rows():
     text = "\n".join(page.extract_text() for page in PdfReader(BytesIO(data)).pages)
     assert "Customer <script> & history" in text and "long-text-row" in text
     assert "<b>literal</b>" in text
+
+
+def test_large_workbook_formats_without_scanning_all_existing_cells_per_cell(monkeypatch):
+    """Formatting work must stay linear as the permitted export grows."""
+    from openpyxl.worksheet.worksheet import Worksheet
+    original = Worksheet.max_row.fget
+    calls = 0
+    def counted_max_row(sheet):
+        nonlocal calls
+        calls += 1
+        return original(sheet)
+    monkeypatch.setattr(Worksheet, "max_row", property(counted_max_row))
+    rows = [{"id": f"order-{index}", "name": "Recorded product", "sales": index + 100.25, "currency": "INR", "orders": 1, "customers": 1,
+             "quantity": 1.2345, "unit": "Pieces", "date": "2026-10-28", "company_id": "brand1", "customer_id": "customer1", "discount_pct": 10} for index in range(3000)]
+    blob = export_bytes({"title": "Large profile"}, [("Products", rows)], "xlsx", {"Date basis": "confirmation"})
+    # Serialization may inspect dimensions; formatting may not scan the entire
+    # worksheet for every one of the 36,000 cells.
+    assert calls < 50
+    book = load_workbook(BytesIO(blob))
+    sheet = book["Products"]
+    assert sheet.max_row == 3001 and sheet.max_column == 12
+    assert sheet["A2"].value == "order-0" and sheet["A3001"].value == "order-2999"
+    assert sheet["C3001"].value == 3099.25 and '"INR "' in sheet["C3001"].number_format
+    assert sheet["L3001"].value == 10 and sheet["L3001"].number_format == '0.00"%"'
+    assert sheet.freeze_panes == "A2" and sheet.auto_filter.ref == "A1:L3001"
