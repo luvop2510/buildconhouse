@@ -65,6 +65,7 @@ class _FakeReadyBatches:
         self.docs = {b["id"]: dict(b) for b in batches}
         self.inserted: list[dict] = []
         self.reads = []
+        self.bulk_calls = []
 
     def find(self, query, projection, *, session=None):
         self.reads.append((query, projection, session))
@@ -74,6 +75,23 @@ class _FakeReadyBatches:
         class Cursor:
             async def to_list(self, limit): return rows[:limit]
         return Cursor()
+
+    async def bulk_write(self, operations, *, ordered, session):
+        from pymongo import InsertOne
+        self.bulk_calls.append((operations, ordered, session))
+        matched = 0
+        for operation in operations:
+            if isinstance(operation, InsertOne):
+                await self.insert_one(operation._doc, session=session)
+            else:
+                query = operation._filter
+                doc = self.docs.get(query['id'])
+                if (doc and doc.get('floor_id') == query['floor_id'] and not doc.get('is_deleted')
+                        and doc['remaining_qty'] >= query['remaining_qty']['$gte']):
+                    await self.update_one(query, operation._doc, session=session)
+                    matched += 1
+        from types import SimpleNamespace
+        return SimpleNamespace(matched_count=matched)
 
     async def find_one(self, query, *_a, session=None, **_kw):
         for doc in self.docs.values():
@@ -356,3 +374,32 @@ def test_pending_only_dispatch_makes_no_batch_read(monkeypatch):
     body = router_module.DispatchBody(items=[router_module.DispatchLineInput(po_item_id='item-1', qty=1)], **_DESTINATION)
     asyncio.run(router_module._resolve_dispatch_lines(_po(), body))
     assert fake_db.ready_batches.reads == []
+
+
+@pytest.mark.parametrize('count,expected_chunks', [(0, 0), (100, 1), (501, 2), (1001, 3)])
+def test_dispatch_bulk_writes_are_chunked_and_keep_the_transaction(monkeypatch, count, expected_chunks):
+    from pymongo import UpdateOne
+    fake_db = _FakeDb(_po(), [_ready_batch(id=f'rb-{i}') for i in range(count)], _customer_order())
+    monkeypatch.setattr(router_module, 'db', fake_db)
+    session = object()
+    operations = [UpdateOne({'id': f'rb-{i}', 'floor_id': 'ground-floor', 'is_deleted': False,
+        'remaining_qty': {'$gte': 1}}, {'$inc': {'remaining_qty': -1}}) for i in range(count)]
+    asyncio.run(router_module._write_dispatch_batches(operations, session=session))
+    assert len(fake_db.ready_batches.bulk_calls) == expected_chunks
+    for chunk, ordered, captured in fake_db.ready_batches.bulk_calls:
+        assert ordered and captured is session and len(chunk) <= 500
+    assert all(batch['remaining_qty'] == 11 for batch in fake_db.ready_batches.docs.values())
+
+
+def test_dispatch_bulk_conflict_aborts_before_emitting_dispatch_or_chalan(monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+    fake_db = _FakeDb(_po(), [_ready_batch()], _customer_order())
+    fake_db.ready_batches.bulk_write = AsyncMock(return_value=SimpleNamespace(matched_count=0))
+    monkeypatch.setattr(router_module, 'db', fake_db)
+    monkeypatch.setattr(router_module, 'client', _FakeClient())
+    body = router_module.DispatchBody(items=[router_module.DispatchLineInput(po_item_id='item-1', ready_batch_id='rb-1', qty=1)], **_DESTINATION)
+    with pytest.raises(router_module.HTTPException) as error:
+        asyncio.run(router_module.commit_dispatch('po-1', body, user=_user()))
+    assert error.value.status_code == 409
+    assert fake_db.dispatches.inserted == [] and fake_db.chalans.inserted == []

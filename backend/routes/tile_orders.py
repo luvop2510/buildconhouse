@@ -14,6 +14,7 @@ from typing import Literal, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+from pymongo import InsertOne, UpdateOne
 from starlette.concurrency import run_in_threadpool
 
 from auth import TILES_FLOOR_ID, require_min_role, tiles_floor_query
@@ -268,6 +269,17 @@ async def preview_dispatch(po_id: str, body: DispatchBody, user: UserPublic = De
     }
 
 
+async def _write_dispatch_batches(operations, *, session):
+    # Ordered chunks share the dispatch transaction: no partial stock changes
+    # are committed if a later chunk or chalan write fails.
+    for start in range(0, len(operations), 500):
+        chunk = operations[start:start + 500]
+        result = await db.ready_batches.bulk_write(chunk, ordered=True, session=session)
+        expected_updates = sum(isinstance(operation, UpdateOne) for operation in chunk)
+        if result.matched_count != expected_updates:
+            raise HTTPException(409, "Ready stock changed; refresh the dispatch preview and try again")
+
+
 @router.post("/purchase-orders/{po_id}/dispatch")
 async def commit_dispatch(po_id: str, body: DispatchBody, user: UserPublic = Depends(require_min_role("warehouse"))):
     session = await client.start_session()
@@ -281,6 +293,7 @@ async def commit_dispatch(po_id: str, body: DispatchBody, user: UserPublic = Dep
             year = datetime.now(timezone.utc).year
             consumed: list[TileDispatchLineConsumed] = []
             chalan_items: list[TileChalanItem] = []
+            batch_operations = []
 
             for r in resolved:
                 item = items_by_id[r["po_item_id"]]
@@ -292,7 +305,11 @@ async def commit_dispatch(po_id: str, body: DispatchBody, user: UserPublic = Dep
                     # — or genuinely concurrent dispatches — always decrement
                     # from the batch's true current state rather than each
                     # overwriting the other's decrement.
-                    await db.ready_batches.update_one({"id": batch["id"]}, {"$inc": {"remaining_qty": -qty}}, session=session)
+                    batch_operations.append(UpdateOne(
+                        {"id": batch["id"], "floor_id": TILES_FLOOR_ID, "is_deleted": False,
+                         "remaining_qty": {"$gte": qty - 1e-6}},
+                        {"$inc": {"remaining_qty": -qty}},
+                    ))
                     item["boxes_ready"] = float(item.get("boxes_ready") or 0) - qty
                     ready_batch_id = batch["id"]
                 else:
@@ -306,7 +323,7 @@ async def commit_dispatch(po_id: str, body: DispatchBody, user: UserPublic = Dep
                         series=item.get("series"), finish=item.get("finish"), size=item.get("size"), sku=item.get("sku"),
                         qty=qty, remaining_qty=0, created_by=user.id, created_by_name=user.full_name, auto_created=True,
                     )
-                    await db.ready_batches.insert_one(auto_batch.model_dump(), session=session)
+                    batch_operations.append(InsertOne(auto_batch.model_dump()))
                     ready_batch_id = auto_batch.id
                     item["boxes_pending"] = float(item.get("boxes_pending") or 0) - qty
 
@@ -322,6 +339,8 @@ async def commit_dispatch(po_id: str, body: DispatchBody, user: UserPublic = Dep
                     # cannot be reliably multiplied into a separate numeric piece count.
                     boxes=qty, pieces_per_box=item.get("pieces_per_box"), quantity_unit=item.get("quantity_unit") or "Box", quantity=qty,
                 ))
+
+            await _write_dispatch_batches(batch_operations, session=session)
 
             now = now_iso()
             dispatch_number = await next_number("dispatch", f"DSP-{year}-", collection="dispatches", session=session)

@@ -129,6 +129,20 @@ all backend tests use hermetic CI settings, with dotenv disabled.
     Vercel header precedence is documented at
     https://vercel.com/docs/caching/cache-control-headers.
 
+12. Tiles dispatch validation now batches ready-stock reads in chunks of 500,
+    preserving input order, cumulative duplicate-line consumption checks and
+    the caller's transaction session. Ready-stock updates and auto-created
+    batches use ordered bulk writes of at most 500 operations, in that same
+    transaction. Quantity/floor/deleted guards detect stale stock and abort.
+    Twenty-two focused dispatch/index tests pass. A disposable Mongo replica
+    verified that a duplicate-key error in the second chunk rolls back the
+    first, and a quantity conflict rolls back earlier successful operations.
+    The success case committed 1,001 updates and one insert. A real-Mongo
+    comparison with 10 ms simulated delay per command measured 100 commands /
+    1,218–1,292 ms before versus one command / 24–29 ms after (three each).
+    These are synthetic network conditions, not production timings. Document
+    number allocation remains unchanged and still occurs in the transaction.
+
 ### R2 delivery rollout
 
 Deploy the additive Worker behavior and backend after the release gate. Run
@@ -146,13 +160,13 @@ No migration command or app startup is imported by this backfill.
 
 | Requirement | Current evidence / remaining work |
 | --- | --- |
-| N+1 reads | Quotation validation fixed. Audit remaining paths, especially `tile_orders._resolve_dispatch_lines`, which reads each ready batch individually. |
+| N+1 reads | Quotation validation fixed. Tiles dispatch validation also batched with transactional tests; complete final route audit and production verification. |
 | Indexes | Existing catalog and recent migrations already provide many indexes. Warehouse explain and local migration verification complete; production application and after-explain remain pending. |
 | 20–50-row pagination | Catalog/stock now page at 50. Referrer directory fetches up to 2,000 per floor and only slices the displayed UI. Add server search/paging with complete caller and floor-race coverage. |
 | WebP/AVIF images | R2 derivatives and bounded resumable backfill implemented and measured locally. Worker/backend/frontend deployment, existing-object backfill and live verification remain pending. |
 | Initial JavaScript under 200 KB | Not achieved: largest initial route 464 KiB gzip, entry alone 282 KiB. Kitchen and purchase common dependencies split. Further entry/runtime work is required, with startup and recovery verified. Do not hide essential downloads from measurement or relabel the 576 KiB ceiling as success. |
 | Compression in transit | Hermetic server and actual local proxy transport verified. Still need authenticated production JSON/text transfer-size comparison and browser negotiation evidence. |
-| Bulk writes | Usage counters batched. Follow-up reconciliation still has sequential updates/inserts/events; requires a separate transaction/idempotency/notification review and measured fixture before changing. |
+| Bulk writes | Usage counters and transactional dispatch stock writes batched. Follow-up reconciliation still has sequential updates/inserts/events; requires a separate transaction/idempotency/notification review and measured fixture before changing. |
 | Circuit breaker | Implemented and locally verified for optional PDF storage. Complete final regression verification and inspect other critical external dependencies for remaining cascade paths. |
 | Optimistic UI | Dashboard completion implemented and verified including visible rollback and account/floor/request-generation guards; release pending. Never optimistically confirm payments or inventory commits. |
 | Rendered caching | Public entry shells now have a bounded edge-cache policy; live cache HIT/latency verification is pending. Expo rendering is already performed at build time. Mutable authenticated business reads remain no-store; do not cache inventory, balances or permissions. |
