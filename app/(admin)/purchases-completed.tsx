@@ -11,7 +11,7 @@ import { useBp } from "@/src/design/responsive";
 import { useFloorAccess } from "@/src/hooks/use-floor-access";
 import { colors, spacing } from "@/src/theme/tokens";
 import { downloadSectionExcel } from "@/src/utils/sectionExcel";
-import { CustomerNavigator, CustomerPurchasePanel } from "./purchases";
+import { CustomerNavigator, CustomerPurchasePanel } from "@/src/components/purchases/CustomerPurchaseWorkspace";
 
 type CompletedCustomer = { id: string; name: string; count: number; quantity: number; completed_at?: string | null; fully_completed?: boolean };
 
