@@ -14,6 +14,7 @@ import { useRequireFloorAccess } from "@/src/hooks/use-floor-access";
 import { useActionAccess } from "@/src/hooks/use-permissions";
 import { useAuth } from "@/src/state/auth";
 import { downloadApiFile, shareApiPdf } from "@/src/utils/downloadFile";
+import { mergeFurnitureAcquisition } from "@/src/utils/furnitureEnrichment";
 import { chargeCents, depositCents, furnitureCurrencyLabel, ledgerTotals, rmbText } from "@/src/utils/furnitureRmb";
 import { colors, radius, spacing, type } from "@/src/theme/tokens";
 
@@ -72,8 +73,13 @@ export default function FurnitureQuotations() {
   useEffect(() => { if (authorized) void load(); return () => { requestVersion.current += 1; }; }, [authorized]); // eslint-disable-line react-hooks/exhaustive-deps
   const open = async (id: string) => {
     const version = ++requestVersion.current; setBusy("open"); setError(null);
-    try { const doc = await furnitureQuotationsApi.get(id); if (version !== requestVersion.current) return;
+    try { const doc = await furnitureQuotationsApi.get(id, false); if (version !== requestVersion.current) return;
       setSaved(doc); setDraft(formFrom(doc)); setMessage(defaultMessage(doc)); sendKey.current = ""; setReceipt(null);
+      // Acquisition counts are useful context, but must not block the ledger.
+      if (doc.referrer_id) void furnitureQuotationsApi.get(id).then((enriched) => {
+        if (version !== requestVersion.current) return;
+        setSaved((current) => mergeFurnitureAcquisition(current, enriched, version === requestVersion.current));
+      }).catch(() => {});
     } catch (err: any) { if (version === requestVersion.current) setError(typeof err?.detail === "string" ? err.detail : "Could not open the quotation."); }
     finally { if (version === requestVersion.current) setBusy(null); }
   };

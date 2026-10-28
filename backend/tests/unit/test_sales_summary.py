@@ -90,3 +90,36 @@ def test_selected_basis_and_referrer_requirement_are_explicit():
     assert "$_basis.quote" in str(unreferenced)
     assert "$$order.quotation_version_id" in str(unreferenced)
     assert "$$quote.design_version_id" in str(unreferenced)
+
+
+def test_furniture_scope_skips_unrelated_sources_and_catalog_lines(monkeypatch):
+    from services.analytics import sales_summary as summary
+    from services.analytics.periods import resolve
+    pipelines = []
+    class Cursor:
+        async def to_list(self, length):
+            return []
+    class Collection:
+        def aggregate(self, pipeline):
+            pipelines.append(pipeline)
+            return Cursor()
+    class Database:
+        quotations = Collection()
+    async def no_catalog_lookup(*args):
+        return {}, {}
+    monkeypatch.setattr(summary, "gather_product_brands", no_catalog_lookup)
+    result = asyncio.run(summary.gather_financial_summary(
+        Database(), AnalyticsFilter(floor_id="third-floor"), None, resolve("this_month")
+    ))
+    assert len(pipelines) == 1
+    unions = [stage["$unionWith"]["coll"] for stage in pipelines[0] if "$unionWith" in stage]
+    assert unions == ["furniture_quotations"]
+    assert result["departments"][0]["floor_id"] == "third-floor"
+    assert not result["coverage"]["products_available"]
+
+
+def test_all_floor_account_pipeline_keeps_all_sources():
+    from services.analytics.sales_summary import account_pipeline
+    pipeline = account_pipeline({"floor_id": {"$in": ["ground-floor", "first-floor"]}}, (None, None),
+                                f=AnalyticsFilter(floor_id="all"), floors=None)
+    assert [s["$unionWith"]["coll"] for s in pipeline if "$unionWith" in s] == ["kitchen_projects", "furniture_quotations"]

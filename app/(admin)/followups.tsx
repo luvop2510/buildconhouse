@@ -295,7 +295,7 @@ function FollowupsWorkspace() {
   const { isPhone, isDesktop } = useBp();
   const insets = useSafeAreaInsets();
   const pagePad = isPhone ? spacing.md : spacing.xl;
-  const isSanitary = ["first-floor", "ground-floor"].includes(selectedFloorId || "");
+  const isSanitary = ["first-floor", "ground-floor", "third-floor"].includes(selectedFloorId || "");
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -1564,7 +1564,7 @@ function FollowupCard({
   onAssign: (f: Followup, userId: string) => void; onMarkLost: (f: Followup) => void; onDismiss: (f: Followup) => void; canDelete: boolean; onDelete: (f: Followup) => void; onOpenDoc?: (f: Followup) => void;
 }) {
   const { isPhone } = useBp();
-  const isSanitary = ["first-floor", "ground-floor"].includes(f.floor_id || "");
+  const isSanitary = ["first-floor", "ground-floor", "third-floor"].includes(f.floor_id || "");
   const level = f.manual_priority_override || f.priority_level;
   const tone = PRIORITY_TONE[level];
   const isResolved = f.status === "done" || f.status === "dismissed";
@@ -1987,7 +1987,7 @@ function NewFollowupSheet({ visible, onClose, customers, assignees, defaultAssig
   const [channel, setChannel] = useState<Channel>("call");
   const [reason, setReason] = useState("");
   const { selectedFloorId } = useFloorAccess();
-  const simpleInbox = ["first-floor", "ground-floor"].includes(selectedFloorId || "");
+  const simpleInbox = ["first-floor", "ground-floor", "third-floor"].includes(selectedFloorId || "");
   const [scope, setScope] = useState<LeadScope>({ interested_floor_ids: [], assignments: [] });
   const [partner, setPartner] = useState<LeadPartner>(null);
   const [saving, setSaving] = useState(false);

@@ -97,9 +97,9 @@ async def create_quotation(body: FurnitureQuotationInput, user: UserPublic = Dep
 
 
 @router.get("/{quotation_id}")
-async def get_quotation(quotation_id: str, user: UserPublic = Depends(get_current_user)):
+async def get_quotation(quotation_id: str, include_acquisition: bool = True, user: UserPublic = Depends(get_current_user)):
     doc = await lookup(quotation_id, user)
-    if doc.get("referrer_id"):
+    if include_acquisition and doc.get("referrer_id"):
         from services.referrer_identity import acquired_counts
         counts = await acquired_counts(db, [doc["referrer_id"]], [FURNITURE_FLOOR_ID])
         doc = {**doc, "referrer_customers_acquired": counts.get(doc["referrer_id"], 0)}

@@ -17,7 +17,7 @@ const payload = (body: FurnitureDraft) => ({
 });
 export const furnitureQuotationsApi = {
   list: (cursor?: string) => api.get<{ rows: FurnitureSummary[]; next_cursor: string | null }>(`/furniture-quotations${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`, options),
-  get: (id: string) => api.get<FurnitureQuotation>(`/furniture-quotations/${encodeURIComponent(id)}`, options),
+  get: (id: string, includeAcquisition = true) => api.get<FurnitureQuotation>(`/furniture-quotations/${encodeURIComponent(id)}${includeAcquisition ? "" : "?include_acquisition=false"}`, options),
   create: (body: FurnitureDraft) => api.post<FurnitureQuotation>("/furniture-quotations", payload(body), options),
   save: (id: string, body: FurnitureDraft, updatedAt: string) => api.put<FurnitureQuotation>(`/furniture-quotations/${encodeURIComponent(id)}`, { ...payload(body), expected_updated_at: updatedAt }, options),
   configuration: () => api.get<{ configured: boolean; template_configured: boolean }>("/whatsapp/configuration", options),

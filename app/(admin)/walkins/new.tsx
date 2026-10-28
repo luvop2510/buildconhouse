@@ -61,8 +61,8 @@ export default function NewWalkIn() {
 
   // Catalog floors use the selected floor team as their assignment source.
   const [assignees, setAssignees] = useState<Assignee[]>([]);
-  const [salespersonId, setSalespersonId] = useState<string>(staff?.role !== "owner" || !["first-floor", "ground-floor"].includes(floorId) ? staff?.id || "" : "");
-  const [salespersonName, setSalespersonName] = useState<string>(staff?.role !== "owner" || !["first-floor", "ground-floor"].includes(floorId) ? staff?.full_name || "" : "");
+  const [salespersonId, setSalespersonId] = useState<string>(staff?.role !== "owner" || !["first-floor", "ground-floor", "third-floor"].includes(floorId) ? staff?.id || "" : "");
+  const [salespersonName, setSalespersonName] = useState<string>(staff?.role !== "owner" || !["first-floor", "ground-floor", "third-floor"].includes(floorId) ? staff?.full_name || "" : "");
   const [spSheetOpen, setSpSheetOpen] = useState(false);
   const [spSearch, setSpSearch] = useState("");
 
@@ -92,7 +92,7 @@ export default function NewWalkIn() {
 
   useEffect(() => {
     if (salespersonId) return;
-    if ((staff?.role !== "owner" || !["first-floor", "ground-floor"].includes(floorId)) && staff?.id && assignees.some(row => row.id === staff.id)) { setSalespersonId(staff.id); setSalespersonName(staff.full_name); }
+    if ((staff?.role !== "owner" || !["first-floor", "ground-floor", "third-floor"].includes(floorId)) && staff?.id && assignees.some(row => row.id === staff.id)) { setSalespersonId(staff.id); setSalespersonName(staff.full_name); }
     else setSalespersonName("");
   }, [staff, salespersonId, assignees, floorId]);
 
@@ -158,7 +158,7 @@ export default function NewWalkIn() {
         state: state.trim() || undefined, pincode: pincode.trim() || undefined,
         source, reference_contact: referenceContact.trim() || undefined,
         architect: architect.trim() || undefined, builder: builder.trim() || undefined,
-        salesperson_id: ["first-floor", "ground-floor"].includes(floorId) ? scope.assignments.find(a => a.floor_id === floorId)?.user_id : salespersonId, floor_id: floorId,
+        salesperson_id: ["first-floor", "ground-floor", "third-floor"].includes(floorId) ? scope.assignments.find(a => a.floor_id === floorId)?.user_id : salespersonId, floor_id: floorId,
         ...scope, referrer_id: partner?.id || null,
         interested_products: products.split(",").map((p) => p.trim()).filter(Boolean),
         budget: budget ? Number(budget) : undefined,
@@ -186,7 +186,7 @@ export default function NewWalkIn() {
     if (!phone.trim()) { setError("Phone is required"); toast.error("Enter a phone number"); return; }
     if (!scope.interested_floor_ids.length) { setError("Select at least one interested floor"); return; }
     if (!floorId) { setError("Department is required"); toast.error("Select an interested department"); return; }
-    if (["first-floor", "ground-floor"].includes(floorId) ? !scope.assignments.some(a => a.floor_id === floorId) : !salespersonId) { setError("Salesperson is required"); toast.error("Assign a salesperson for this floor"); return; }
+    if (["first-floor", "ground-floor", "third-floor"].includes(floorId) ? !scope.assignments.some(a => a.floor_id === floorId) : !salespersonId) { setError("Salesperson is required"); toast.error("Assign a salesperson for this floor"); return; }
     setError(null);
     if (matches.medium.length && !resolvedCustomerId && !forceNew) {
       setDupSheetOpen(true);
@@ -237,7 +237,7 @@ export default function NewWalkIn() {
           {optionsError ? <Alert tone="error" title="Some intake options are unavailable" description="Retry to load the configured lead sources and salespeople." action={<Button label="Try again" variant="secondary" onPress={() => setOptionsRetry(value => value + 1)} />} /> : null}
           <Text accessibilityRole="header" style={[type.overline, { marginTop: spacing.sm }]}>Walk-in Details</Text>
 
-          {!["first-floor", "ground-floor"].includes(floorId) ? <><Text style={type.bodyStrong}>Salesperson *</Text>
+          {!["first-floor", "ground-floor", "third-floor"].includes(floorId) ? <><Text style={type.bodyStrong}>Salesperson *</Text>
           <ListRow
             title={salespersonName || "Select salesperson"}
             subtitle={assignees.find((a) => a.id === salespersonId)?.role}
@@ -248,7 +248,7 @@ export default function NewWalkIn() {
             testID="walkin-salesperson-row"
           /></> : null}
 
-          <LeadScopeFields assignmentsRequired={["first-floor", "ground-floor"].includes(floorId)} customerPhone={phone} sourceFloorId={floorId} value={scope} onChange={value => { setScope(value); if (value.interested_floor_ids.length && !value.interested_floor_ids.includes(floorId)) setFloorId(value.interested_floor_ids[0]); }} partner={partner} onPartnerChange={setPartner} reference={false} />
+          <LeadScopeFields assignmentsRequired={["first-floor", "ground-floor", "third-floor"].includes(floorId)} customerPhone={phone} sourceFloorId={floorId} value={scope} onChange={value => { setScope(value); if (value.interested_floor_ids.length && !value.interested_floor_ids.includes(floorId)) setFloorId(value.interested_floor_ids[0]); }} partner={partner} onPartnerChange={setPartner} reference={false} />
 
           <Text style={type.bodyStrong}>Lead Source</Text>
           <View style={{ flexDirection: "row", gap: spacing.xs, flexWrap: "wrap" }}>

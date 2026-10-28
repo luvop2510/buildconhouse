@@ -50,6 +50,9 @@ function dateShort(value?: string | null): string {
 export default function PaymentListScreen() {
   const { isPhone } = useBp();
   const { selectedFloorId } = useFloorAccess();
+  const [displayedFloor, setDisplayedFloor] = useState(selectedFloorId);
+  const activeFloorRef = useRef(selectedFloorId);
+  activeFloorRef.current = selectedFloorId;
   const filterRef = useRef("");
   const [rows, setRows] = useState<PaymentRow[]>([]);
   const [floors, setFloors] = useState<Floor[]>([]);
@@ -70,18 +73,23 @@ export default function PaymentListScreen() {
     try {
       const params = new URLSearchParams({ skip: String(nextPage * PAGE_SIZE), limit: String(PAGE_SIZE), sort });
       if (query.trim()) params.set("q", query.trim());
-      if (floor !== "all") params.set("business_unit", floor);
-      const response = await api.get<PaymentListResponse>(`/payments/fully-paid-orders?${params.toString()}`);
-      if (request !== requestId.current) return;
+      if (selectedFloorId !== "third-floor" && floor !== "all") params.set("business_unit", floor);
+      const response = await api.get<PaymentListResponse>(`/payments/fully-paid-orders?${params.toString()}`, { floorId: selectedFloorId });
+      if (request !== requestId.current || activeFloorRef.current !== selectedFloorId) return;
       setRows(response.items);
       setTotal(response.total);
     } catch (error: any) {
-      if (request !== requestId.current) return;
+      if (request !== requestId.current || activeFloorRef.current !== selectedFloorId) return;
       setLoadError(error?.detail || "Could not load fully paid orders.");
-    } finally { if (request === requestId.current) setLoading(false); }
+    } finally { if (request === requestId.current && activeFloorRef.current === selectedFloorId) setLoading(false); }
   }, [floor, page, query, sort, selectedFloorId]);
 
   useEffect(() => { api.get<Floor[]>("/settings/floors").then(setFloors).catch(() => setFloors([])); }, []);
+  useEffect(() => {
+    requestId.current += 1;
+    setRows([]); setTotal(0); setLoadError(null); setLoading(true);
+    setDisplayedFloor(selectedFloorId);
+  }, [selectedFloorId]);
   useEffect(() => {
     requestId.current += 1;
     const filters = JSON.stringify([floor, query, sort, selectedFloorId]);
@@ -108,6 +116,9 @@ export default function PaymentListScreen() {
     subtitle="One row per order once 100% of its balance has been received."
     embedded={isPhone} />;
 
+  // Mask the previous floor synchronously, before effects or search debounce.
+  if (displayedFloor !== selectedFloorId) return <SafeAreaView style={styles.screen}><Skeleton w="100%" h={80} /></SafeAreaView>;
+
   return (
     <SafeAreaView style={styles.screen} edges={isPhone ? [] : ["top"]}>
       {!isPhone ? pageHeader : null}
@@ -116,7 +127,7 @@ export default function PaymentListScreen() {
         <MobileFilterSection testID="payment-list-filters" style={{ gap: spacing.sm, width: "100%" }}>
           <View style={styles.filters}>
           <View style={[styles.search, isPhone && styles.searchPhone]}><SearchField testID="payment-list-search" value={query} onChangeText={setQuery} onClear={() => setQuery("")} placeholder="Search client, invoice or reference…" /></View>
-          <Dropdown label={floor === "all" ? "All business units" : floors.filter(item => filterValues(floor).includes(item.id)).map(item => item.name).join(", ") || floor} items={[{ label: "All business units", onPress: () => setFloor("all") }, ...floors.map((item) => ({ label: `${filterValues(floor).includes(item.id) ? "✓ " : ""}${item.name}`, onPress: () => setFloor(current => toggleFilterValue(current, item.id)) }))]} />
+          {selectedFloorId !== "third-floor" ? <Dropdown label={floor === "all" ? "All business units" : floors.filter(item => filterValues(floor).includes(item.id)).map(item => item.name).join(", ") || floor} items={[{ label: "All business units", onPress: () => setFloor("all") }, ...floors.map((item) => ({ label: `${filterValues(floor).includes(item.id) ? "✓ " : ""}${item.name}`, onPress: () => setFloor(current => toggleFilterValue(current, item.id)) }))]} /> : null}
           <Dropdown label={SORT_OPTIONS.find((item) => item.value === sort)?.label || "Sort"} items={SORT_OPTIONS.map((item) => ({ label: item.label, onPress: () => setSort(item.value) }))} />
           </View>
         </MobileFilterSection>
@@ -124,7 +135,7 @@ export default function PaymentListScreen() {
         {loadError ? <ErrorState title="Could not load fully paid orders" subtitle={loadError} onRetry={() => void load()} /> : loading ? (
           <View style={{ gap: spacing.sm }}>{Array.from({ length: 6 }).map((_, index) => <Skeleton key={index} w="100%" h={54} />)}</View>
         ) : rows.length === 0 ? (
-          <EmptyState icon="check-circle" title={query || floor !== "all" ? "No matching orders" : "No fully paid orders yet"} subtitle={query || floor !== "all" ? "Try a different search or clear the filters." : "Orders appear here once they are fully collected."} />
+          <EmptyState icon="check-circle" title={query || (selectedFloorId !== "third-floor" && floor !== "all") ? "No matching orders" : "No fully paid orders yet"} subtitle={query || (selectedFloorId !== "third-floor" && floor !== "all") ? "Try a different search or clear the filters." : "Orders appear here once they are fully collected."} />
         ) : (
           <DataTable testID="payment-list-table" columns={columns} data={rows} keyExtractor={(row) => row.id} rowTestID={(row) => `payment-list-row-${row.id}`} emptyMessage="No fully paid payments found." />
         )}

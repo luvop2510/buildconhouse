@@ -23,7 +23,7 @@
     "preview:local": "node scripts/serve-local.mjs",
     "test:quotation-concealed-parts": "node --experimental-strip-types --no-warnings scripts/test-quotation-concealed-parts.mjs",
     "test:purchases-contract": "node scripts/test-purchases-contract.mjs && node scripts/test-purchase-floor-races.mjs",
-    "test:notebook": "node --experimental-strip-types --no-warnings scripts/test-notebook.mjs",
+    "test:notebook": "node --experimental-strip-types --no-warnings scripts/test-notebook.mjs && node --experimental-strip-types --no-warnings scripts/test-furniture-enrichment.mjs",
     "test:mobile-ux": "node scripts/test-mobile-ux-contract.mjs && node scripts/test-keyboard-viewport.mjs && node scripts/test-followup-floor-races.mjs && node scripts/test-input-active.mjs && node scripts/test-lead-assignee-races.mjs",
     "test:frontend-drift": "node scripts/test-frontend-drift.mjs",
     "test:frontend-drift:browser": "playwright test --config playwright.forge-drift.config.ts --project=desktop --project=phone --workers=2",

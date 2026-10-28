@@ -307,3 +307,27 @@ test('critical Ground Floor dispatch labor history identifies the editor', async
   await page.goto('/payments');
   await expect(page.getByTestId('payments-order-detail')).toContainText('Labor cost has been added · ₹500 by Dispatch Worker');
 });
+
+test('critical payment history requests and delayed results follow the selected furniture floor', async ({ page }) => {
+  await mockSession(page, '/payments', true, { seedStorageOnce: true });
+  let releaseOld!: () => void;
+  const oldGate = new Promise<void>(resolve => { releaseOld = resolve; });
+  const floorsSeen: string[] = [];
+  await page.route('**/api/payments/history?**', async route => {
+    const floor = route.request().headers()['x-floor-id'];
+    floorsSeen.push(floor);
+    if (floor === 'first-floor') await oldGate;
+    await route.fulfill({ json: { total: 1, items: [{ id: floor, customer_name: floor === 'third-floor' ? 'Furniture receipt' : 'Old receipt', floor_id: floor, amount: 10, status: 'completed', paid_at: '2026-10-01T12:00:00Z' }] } }).catch(() => {});
+  });
+  await page.goto('/payments');
+  await page.getByTestId('payments-tabs-history').click();
+  await expect.poll(() => floorsSeen.includes('first-floor')).toBe(true);
+  await page.getByTestId('floor-switcher').filter({ visible: true }).first().click();
+  await page.getByRole('menuitem', { name: 'Furniture Floor', exact: true }).click();
+  await expect(page.getByTestId('floor-switcher').filter({ visible: true }).first()).toHaveAccessibleName('Switch workspace. Current workspace: Furniture Floor');
+  await expect(page.getByTestId('payment-history-table')).toContainText('Furniture receipt');
+  expect(floorsSeen).toContain('third-floor');
+  await expect(page.getByTestId('history-unit-filter')).toHaveCount(0);
+  releaseOld();
+  await expect(page.getByTestId('payment-history-table')).not.toContainText('Old receipt');
+});
