@@ -59,7 +59,7 @@ function load(path, { cryptoImpl = webcrypto } = {}) {
     module, exports: module.exports, Uint8Array, ArrayBuffer, Date, Math, AbortController, DOMException,
     // RN Blob cannot construct from byte arrays and has no arrayBuffer method.
     Blob: modules['react-native'].Platform.OS === 'web' ? Blob : class { constructor() { throw new Error('Unsupported native Blob byte construction'); } },
-    crypto: cryptoImpl, URL: { createObjectURL: blob => { preparedBlobs.push(blob); return 'blob:verified'; }, revokeObjectURL: () => {} }, setTimeout: (callback, delay) => blobTimers.push([callback, delay]),
+    crypto: cryptoImpl, URL: { createObjectURL: blob => { preparedBlobs.push(blob); return 'blob:verified'; }, revokeObjectURL: () => {} }, setTimeout: (callback, delay) => blobTimers.push([callback, delay]), clearTimeout() {},
     FileReader: class { readAsDataURL(blob) { const finish = () => { this.result = `data:${blob.type};base64,${blob.bytes.toString('base64')}`; this.onload(); }; if (nativeReadWork) nativeReadWork(finish); else finish(); } },
     btoa: value => Buffer.from(value, 'binary').toString('base64'), atob: value => Buffer.from(value, 'base64').toString('binary'),
     require: name => { assert(name in modules, `Unexpected dependency: ${name}`); return modules[name]; },
@@ -219,3 +219,35 @@ releaseFinalHash(); assert.equal(await waitingDownload, false);
 assert.equal(privatePreview.location.href, 'about:blank');
 assert.equal(preparedBlobs.length, beforePrepared, 'a stale verified PDF never receives a browser blob URL');
 console.log('Kitchen private PDF: identity change during final SHA-256 closes the pending preview and prevents byte publication.');
+
+// Uploads must keep their originating identity throughout byte preparation and
+// each request gap. The API request guard alone cannot cover work between calls.
+for (const phase of ['bytes', 'hash', 'begin', 'part', 'finish']) {
+  await identity.setToken('upload-A', 'staff'); identity.setRequestFloorId('second-floor');
+  let release, reached;
+  const gate = new Promise(resolve => { release = resolve; });
+  const waiting = new Promise(resolve => { reached = resolve; });
+  const calls = [], progress = [], transfers = [];
+  const hold = async stage => { if (stage === phase) { reached(); await gate; } };
+  modules['@/src/api/kitchenProjects'] = { kitchenProjectsApi: {
+    beginTransfer: async () => { calls.push('begin'); await hold('begin'); return { transfer_id: 'identity-transfer', size_bytes: source.length, chunk_bytes: 524288, part_count: 3, state: 'open' }; },
+    uploadPart: async (_id, _transfer, index) => { calls.push(`part-${index}`); if (index === 0) await hold('part'); },
+    finishTransfer: async () => { calls.push('finish'); await hold('finish'); return { id: 'project', version: 2 }; },
+  } };
+  const identityTransport = load('../src/components/kitchen/KitchenFileTransport.ts', { cryptoImpl: { subtle: {
+    digest: async (algorithm, bytes) => { const result = await webcrypto.subtle.digest(algorithm, bytes); await hold('hash'); return result; },
+  } } });
+  const pending = identityTransport.uploadKitchenFile({ id: 'project', version: 1 }, {
+    ...asset, file: { arrayBuffer: async () => { await hold('bytes'); return new Uint8Array(source).buffer; } },
+  }, `identity-${phase}`, value => progress.push(value), value => transfers.push(value)).then(value => ({ value }), error => ({ error }));
+  await waiting;
+  const priorCalls = [...calls], priorProgress = [...progress], priorTransfers = [...transfers];
+  await identity.clearToken(); await identity.setToken('upload-B', 'staff'); await identity.setToken('upload-A-new-session', 'staff');
+  release();
+  const result = await pending;
+  assert.equal(result.error?.name, 'AbortError', `${phase}: an old-session upload cannot report success`);
+  assert.deepEqual(calls, priorCalls, `${phase}: no later upload writes run under the new identity`);
+  assert.deepEqual(progress, priorProgress, `${phase}: old progress cannot publish after identity changes`);
+  assert.deepEqual(transfers, priorTransfers, `${phase}: obsolete transfer state cannot publish`);
+}
+console.log('Kitchen upload identity: byte/hash/begin/part/finish gaps reject A→B→A without later writes or stale success.');

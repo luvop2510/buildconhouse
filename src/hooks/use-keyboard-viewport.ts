@@ -29,22 +29,38 @@ export function useKeyboardViewport() {
       }
       // Scroll the form, never the document: scrollIntoView can pan Safari's
       // entire fixed application. A second pass handles a previously clipped inner panel.
-      for (let pass = 0; pass < 2; pass++) for (const { element: parent, scrollable } of clips) {
+      for (let pass = 0; pass < 2; pass++) for (let index = 0; index < clips.length; index++) {
+        const { element: parent, scrollable } = clips[index];
         if (parent === document.body || parent === document.documentElement || parent.id === 'root'
           || !scrollable
           || parent.scrollHeight <= parent.clientHeight) continue;
         let top = viewport.offsetTop + 8;
         let bottom = viewport.offsetTop + viewport.height - 8;
-        for (const { element: clip } of clips) {
+        // Descendant scrollports move with this parent. Including their
+        // current bounds can make the intersection empty when an inner form
+        // is entirely offscreen, preventing the outer form from revealing it.
+        for (let ancestor = index; ancestor < clips.length; ancestor++) {
+          const clip = clips[ancestor].element;
           const bounds = clip.getBoundingClientRect();
           top = Math.max(top, bounds.top + clip.clientTop + 8);
           bottom = Math.min(bottom, bounds.top + clip.clientTop + clip.clientHeight - 8);
         }
-        if (bottom <= top) continue;
+        const outside = bottom <= top;
+        if (outside) {
+          // First reveal within an offscreen inner scrollport; its outer
+          // scrollport can then bring that field into the visible viewport.
+          const bounds = parent.getBoundingClientRect();
+          top = bounds.top + parent.clientTop + 8;
+          bottom = bounds.top + parent.clientTop + parent.clientHeight - 8;
+          if (bottom <= top) continue;
+        }
         const box = input.getBoundingClientRect();
         const delta = box.height > bottom - top || box.top < top ? box.top - top : Math.max(0, box.bottom - bottom);
         // Most keystrokes need no correction; avoid repeated layout reads and scroll writes.
-        if (delta === 0) return;
+        if (delta === 0) {
+          if (index === 0 && !outside) return;
+          continue;
+        }
         const change = Math.max(-parent.scrollTop, Math.min(delta, parent.scrollHeight - parent.clientHeight - parent.scrollTop));
         if (change !== 0) parent.scrollTop += change;
       }

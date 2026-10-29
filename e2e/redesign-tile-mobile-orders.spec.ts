@@ -67,3 +67,57 @@ for (const [path, testId, destination] of [
   await expect(page).toHaveURL(new RegExp(`${destination.replace('?', '\\?')}$`));
   await expect(page.getByRole('heading', { name: 'Tile Orders', exact: true })).toBeVisible();
 });
+
+test('critical brand release paging stays bounded and retains its acknowledged page through failure and retry', async ({ page }) => {
+  await mockSession(page, '/tiles/orders/brands/paged-brand', false);
+  const { captureRuntimeHealth } = await import('./runtime-health');
+  const health = captureRuntimeHealth(page);
+  let reads = 0;
+  let finishPage!: () => void;
+  const pending = new Promise<void>(resolve => { finishPage = resolve; });
+  await page.route('**/api/tile-orders/brands/paged-brand/orders?**', async route => {
+    const requestedPage = Number(new URL(route.request().url()).searchParams.get('page'));
+    reads += 1;
+    if (requestedPage === 2 && reads === 2) {
+      await pending;
+      await route.fulfill({ status: 503, json: { detail: 'Second brand page unavailable; retry.' } });
+      return;
+    }
+    await route.fulfill({ json: {
+      kpi: { orders: 90, pending: 90, ready: 0, partially_dispatched: 0, completed: 0, boxes_remaining: 900, boxes_released: 0, oldest_pending_days: 4 },
+      orders: Array.from({ length: 30 }, (_, i) => ({ po_id: `paged-${(requestedPage - 1) * 30 + i}`,
+        po_number: `TPO-${(requestedPage - 1) * 30 + i}`, customer_name: `Brand customer ${(requestedPage - 1) * 30 + i}`,
+        total_products: 1, total_boxes: 10, boxes_released: 0, boxes_remaining: 10, waiting_days: 4,
+        ageing_band: 'green', overall_status: 'Pending' })),
+      page: requestedPage, total: 90, has_more: requestedPage < 3,
+    } });
+  });
+  try {
+    await page.goto('/tiles/orders/brands/paged-brand');
+    const rows = page.locator('[data-testid^="tile-brand-order-paged-"]');
+    await expect(rows).toHaveCount(30);
+    await page.getByTestId('tile-brand-queue-next').click();
+    await expect.poll(() => reads).toBe(2);
+    await expect(page.getByTestId('tile-brand-queue-next')).toBeDisabled();
+    await expect(rows).toHaveCount(30);
+    await expect(page.getByTestId('tile-brand-order-paged-0')).toHaveCount(1);
+    finishPage();
+    await expect(page.getByTestId('tile-brand-queue-retry')).toBeVisible();
+    await expect(rows).toHaveCount(30);
+    await expect(page.getByText('Page 1', { exact: true })).toBeVisible();
+    await page.getByTestId('tile-brand-queue-retry').click();
+    await expect(page.getByTestId('tile-brand-order-paged-30')).toHaveCount(1);
+    await expect(page.getByTestId('tile-brand-order-paged-0')).toHaveCount(0);
+    await expect(rows).toHaveCount(30);
+    await expect(page.getByText('Page 2', { exact: true })).toBeVisible();
+    await page.getByTestId('tile-brand-queue-next').click();
+    await expect(page.getByTestId('tile-brand-order-paged-60')).toHaveCount(1);
+    await expect(rows).toHaveCount(30);
+    await expect(page.getByTestId('tile-brand-queue-next')).toBeDisabled();
+    await page.getByTestId('tile-brand-queue-previous').click();
+    await expect(page.getByTestId('tile-brand-order-paged-30')).toHaveCount(1);
+    await expect(rows).toHaveCount(30);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+    await health.assertHealthy();
+  } finally { finishPage(); }
+});

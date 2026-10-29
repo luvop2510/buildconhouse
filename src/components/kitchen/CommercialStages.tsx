@@ -47,11 +47,17 @@ function StageForms({ project, stage, disabled, command }: CommercialProps) {
   const [production, setProduction] = useKitchenDraft<KitchenWork>(`${draftCycle}.production`, project.production || { status: "Not Started" });
   const [installation, setInstallation] = useKitchenDraft<KitchenWork>(`${draftCycle}.installation`, project.installation || { status: "Not Started" });
   const [approvalReason, setApprovalReason] = useKitchenDraft(`${draftCycle}.${stage}.approvalReason`, "");
-  const savedInstallationStatus = useRef(project.installation?.status);
+  const savedInstallation = useRef(project.installation);
   useEffect(() => {
-    // A site visit can reopen completed installation; show its new saved state.
-    if (savedInstallationStatus.current === "Completed" && project.installation?.status === "In Progress") setInstallation(project.installation);
-    savedInstallationStatus.current = project.installation?.status;
+    const previousSaved = savedInstallation.current;
+    const currentSaved = project.installation;
+    // Reloading reopened work must preserve edits already in the work form.
+    if (previousSaved?.status === "Completed" && currentSaved?.status === "In Progress") {
+      setInstallation(previous => ({ ...currentSaved, ...Object.fromEntries(
+        Object.entries(previous).filter(([key, value]) => JSON.stringify(value) !== JSON.stringify(previousSaved[key as keyof KitchenWork])),
+      ) }));
+    }
+    savedInstallation.current = currentSaved;
   }, [project.installation, setInstallation]);
   const active = project.stage === stage;
   const preview = KITCHEN_STAGES.indexOf(stage) > KITCHEN_STAGES.indexOf(project.stage);

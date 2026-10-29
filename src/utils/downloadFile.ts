@@ -84,34 +84,59 @@ function quotationDownloadFilename(path: string, disposition: string | null | un
 }
 
 async function fetchApiBlob(path: string, errorLabel: string, floorId: string | undefined, operation: IdentityOperation, onFilename?: (name: string) => void): Promise<Blob | null> {
-  // Capture the selected workspace before token hydration can yield to a floor switch.
-  const floor = floorId === undefined ? getRequestFloorId() : Promise.resolve(floorId);
-  const [token, requestFloorId] = await Promise.all([getToken(), floor]);
-  if (!operation.isCurrent()) return null;
-  if (!token && Platform.OS !== "web") {
-    toast.show("Please sign in again");
-    return null;
-  }
+  const controller = new AbortController();
+  let timedOut = false;
+  const cancel = () => controller.abort();
+  const deadline = setTimeout(() => { timedOut = true; cancel(); }, 30_000);
+  if (operation.signal.aborted) cancel();
+  else operation.signal.addEventListener("abort", cancel, { once: true });
+  // Some native readers ignore fetch cancellation. Settle the caller as well
+  // as aborting transport, and observe late results without publishing them.
+  const wait = <T,>(work: Promise<T>): Promise<T> => new Promise((resolve, reject) => {
+    const aborted = () => {
+      controller.signal.removeEventListener("abort", aborted);
+      reject(new Error("Download cancelled"));
+    };
+    // Observe work even if already cancelled: credential/body readers can
+    // reject later despite ignoring abort and must not become unhandled errors.
+    work.then(resolve, reject).finally(() => controller.signal.removeEventListener("abort", aborted));
+    if (controller.signal.aborted) { aborted(); return; }
+    controller.signal.addEventListener("abort", aborted, { once: true });
+  });
   try {
-    const res = await fetch(`${api.base}/api${path}`, {
-      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(requestFloorId ? { "X-Floor-Id": requestFloorId } : {}) }, credentials: "same-origin", signal: operation.signal,
-    });
+    // Capture the selected workspace before token hydration can yield to a floor switch.
+    const floor = floorId === undefined ? getRequestFloorId() : Promise.resolve(floorId);
+    const [token, requestFloorId] = await wait(Promise.all([Promise.resolve().then(getToken), floor]));
+    if (!operation.isCurrent()) return null;
+    if (!token && Platform.OS !== "web") {
+      toast.show("Please sign in again");
+      return null;
+    }
+    const res = await wait(fetch(`${api.base}/api${path}`, {
+      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(requestFloorId ? { "X-Floor-Id": requestFloorId } : {}) }, credentials: "same-origin", signal: controller.signal,
+    }));
     if (!operation.isCurrent()) return null;
     if (!res.ok) {
       let detail = "";
-      try { detail = String((await res.json())?.detail || ""); } catch { /* non-JSON gateway response */ }
+      try { detail = String((await wait(res.json()))?.detail || ""); }
+      catch (error) { if (controller.signal.aborted) throw error; /* non-JSON gateway response */ }
       if (!operation.isCurrent()) return null;
       toast.show(detail || (res.status === 404 ? `That ${errorLabel} isn't available` : `Couldn't download the ${errorLabel}`));
       return null;
     }
-    const blob = await res.blob();
+    const blob = await wait(res.blob());
     if (!operation.isCurrent()) return null;
     const filename = quotationDownloadFilename(path, res.headers?.get("Content-Disposition"));
     if (filename) onFilename?.(filename);
     return blob;
   } catch {
-    if (operation.isCurrent()) toast.show(`Couldn't download the ${errorLabel} — check your connection`);
+    if (operation.isCurrent()) toast.show(timedOut
+      ? `Downloading the ${errorLabel} timed out — try again`
+      : `Couldn't download the ${errorLabel} — check your connection`);
     return null;
+  } finally {
+    clearTimeout(deadline);
+    operation.signal.removeEventListener("abort", cancel);
   }
 }
 

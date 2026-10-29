@@ -155,24 +155,24 @@ async def mark_items_ready(
                 po.get("customer_order_id"), po_id, new_status, session, dispatched_boxes=dispatched_boxes,
             )
 
+            # Permanent stock evidence must roll back with the release.
+            for batch in created_batches:
+                await record_movement(
+                    movement_type="release", purchase_order_id=po_id, po_item_id=batch["po_item_id"],
+                    customer_order_id=po.get("customer_order_id"), floor_id=po.get("floor_id", TILES_FLOOR_ID),
+                    customer_id=po.get("customer_id"), customer_name=po.get("customer_name") or "",
+                    brand_id=po.get("brand_id"), brand_name=po.get("brand_name") or po.get("supplier_name") or "Unassigned",
+                    tile_name=batch["tile_name"], series=batch.get("series"), finish=batch.get("finish"), quantity_unit=batch.get("quantity_unit") or "Box",
+                    size=batch.get("size"), sku=batch.get("sku"), boxes=batch["qty"], source="Brand",
+                    destination="BuildCon", performed_by=user.id, performed_by_name=user.full_name, session=session,
+                )
+
     for batch in created_batches:
         await log_event(
             event_type="ready_batch.created", entity_type="purchase", entity_id=po_id, actor=user, floor_id=TILES_FLOOR_ID,
             customer_id=po.get("customer_id"), purchase_id=po_id,
             summary=f"Marked {batch['qty']:g} boxes of '{batch['tile_name']}' ready ({batch['batch_number']})",
             payload={"ready_batch_id": batch["id"], "batch_number": batch["batch_number"], "po_item_id": batch["po_item_id"], "qty": batch["qty"]},
-        )
-        # Material Movement Register — "Release" row. Logged after the
-        # transaction commits (same place the pre-existing activity-log
-        # call above already lives), one row per released line.
-        await record_movement(
-            movement_type="release", purchase_order_id=po_id, po_item_id=batch["po_item_id"],
-            customer_order_id=po.get("customer_order_id"), floor_id=po.get("floor_id", TILES_FLOOR_ID),
-            customer_id=po.get("customer_id"), customer_name=po.get("customer_name") or "",
-            brand_id=po.get("brand_id"), brand_name=po.get("brand_name") or po.get("supplier_name") or "Unassigned",
-            tile_name=batch["tile_name"], series=batch.get("series"), finish=batch.get("finish"), quantity_unit=batch.get("quantity_unit") or "Box",
-            size=batch.get("size"), sku=batch.get("sku"), boxes=batch["qty"], source="Brand",
-            destination="BuildCon", performed_by=user.id, performed_by_name=user.full_name,
         )
     if new_status:
         await log_event(
@@ -514,21 +514,23 @@ async def move_material_to_godown(
             if getattr(updated, "matched_count", 1) == 0:
                 raise HTTPException(status_code=409, detail="Purchase order changed — refresh and try again")
 
+            for row in moved_rows:
+                await record_movement(
+                    movement_type="move_to_godown", purchase_order_id=po_id, po_item_id=row["po_item_id"],
+                    customer_order_id=po.get("customer_order_id"), floor_id=po.get("floor_id", TILES_FLOOR_ID),
+                    customer_id=po.get("customer_id"), customer_name=po.get("customer_name") or "",
+                    brand_id=po.get("brand_id"), brand_name=po.get("brand_name") or po.get("supplier_name") or "Unassigned",
+                    tile_name=row["tile_name"], series=row.get("series"), finish=row.get("finish"), quantity_unit=row.get("quantity_unit") or "Box", size=row.get("size"),
+                    sku=row.get("sku"), boxes=row["qty"], source="Released", destination="BuildCon Godown",
+                    performed_by=user.id, performed_by_name=user.full_name, session=session,
+                )
+
     for row in moved_rows:
         await log_event(
             event_type="item.moved_to_godown", entity_type="purchase", entity_id=po_id, actor=user, floor_id=TILES_FLOOR_ID,
             customer_id=po.get("customer_id"), purchase_id=po_id,
             summary=f"Moved {row['qty']:g} boxes of '{row['tile_name']}' to Godown",
             payload={"po_item_id": row["po_item_id"], "qty": row["qty"]},
-        )
-        await record_movement(
-            movement_type="move_to_godown", purchase_order_id=po_id, po_item_id=row["po_item_id"],
-            customer_order_id=po.get("customer_order_id"), floor_id=po.get("floor_id", TILES_FLOOR_ID),
-            customer_id=po.get("customer_id"), customer_name=po.get("customer_name") or "",
-            brand_id=po.get("brand_id"), brand_name=po.get("brand_name") or po.get("supplier_name") or "Unassigned",
-            tile_name=row["tile_name"], series=row.get("series"), finish=row.get("finish"), quantity_unit=row.get("quantity_unit") or "Box", size=row.get("size"),
-            sku=row.get("sku"), boxes=row["qty"], source="Released", destination="BuildCon Godown",
-            performed_by=user.id, performed_by_name=user.full_name,
         )
     return {"po_id": po_id, "moved": moved_rows}
 
@@ -717,19 +719,19 @@ async def _commit_simple_dispatch(
             )
             await _sync_customer_order_brand_status(co_id, po_id, new_status, session, dispatched_boxes=dispatched_boxes)
 
-    movement_type = "dispatch_from_released" if source == "released" else "dispatch_from_godown"
-    source_label = "Released" if source == "released" else "Godown"
-    for row in movement_rows:
-        await record_movement(
-            movement_type=movement_type, purchase_order_id=po_id, po_item_id=row["po_item_id"],
-            customer_order_id=co_id, floor_id=po.get("floor_id", TILES_FLOOR_ID), customer_id=po.get("customer_id"),
-            customer_name=po.get("customer_name") or "", brand_id=po.get("brand_id"),
-            brand_name=po.get("brand_name") or po.get("supplier_name") or "Unassigned",
-            tile_name=row["tile_name"], series=row.get("series"), finish=row.get("finish"), quantity_unit=row.get("quantity_unit") or "Box", size=row.get("size"),
-            sku=row.get("sku"), boxes=row["qty"], source=source_label, destination=destination_name,
-            dispatch_id=dispatch.id, dispatch_number=dispatch.dispatch_number, chalan_id=chalan.id,
-            chalan_number=chalan.number, performed_by=user.id, performed_by_name=user.full_name,
-        )
+            movement_type = "dispatch_from_released" if source == "released" else "dispatch_from_godown"
+            source_label = "Released" if source == "released" else "Godown"
+            for row in movement_rows:
+                await record_movement(
+                    movement_type=movement_type, purchase_order_id=po_id, po_item_id=row["po_item_id"],
+                    customer_order_id=co_id, floor_id=po.get("floor_id", TILES_FLOOR_ID), customer_id=po.get("customer_id"),
+                    customer_name=po.get("customer_name") or "", brand_id=po.get("brand_id"),
+                    brand_name=po.get("brand_name") or po.get("supplier_name") or "Unassigned",
+                    tile_name=row["tile_name"], series=row.get("series"), finish=row.get("finish"), quantity_unit=row.get("quantity_unit") or "Box", size=row.get("size"),
+                    sku=row.get("sku"), boxes=row["qty"], source=source_label, destination=destination_name,
+                    dispatch_id=dispatch.id, dispatch_number=dispatch.dispatch_number, chalan_id=chalan.id,
+                    chalan_number=chalan.number, performed_by=user.id, performed_by_name=user.full_name, session=session,
+                )
     await log_event(
         event_type="dispatch.created", entity_type="purchase", entity_id=po_id, actor=user, floor_id=TILES_FLOOR_ID,
         customer_id=po.get("customer_id"), purchase_id=po_id,
@@ -1026,21 +1028,21 @@ async def mark_dispatch_delivered(
                     dispatched_boxes=sum(float(i.get("boxes_dispatched") or 0) for i in items),
                 )
 
-    for line in chalan.get("items", []):
-        await record_movement(
-            movement_type="delivered", purchase_order_id=po_id, po_item_id=line.get("po_item_id"),
-            customer_order_id=co_id, floor_id=dispatch.get("floor_id", TILES_FLOOR_ID),
-            customer_id=dispatch.get("customer_id"), customer_name=dispatch.get("customer_name") or "",
-            brand_id=(po or {}).get("brand_id"),
-            brand_name=(po or {}).get("brand_name") or dispatch.get("supplier_name") or "Unassigned",
-            tile_name=line.get("tile_name") or "", series=line.get("series"), finish=line.get("finish"), quantity_unit=line.get("quantity_unit") or "Box",
-            size=line.get("size"), sku=line.get("sku"), boxes=float(line.get("boxes") or 0),
-            source="Godown" if dispatch.get("source") == "godown" else "Released",
-            destination=dispatch.get("destination_name") or "Customer",
-            dispatch_id=dispatch_id, dispatch_number=dispatch.get("dispatch_number"),
-            chalan_id=chalan.get("id"), chalan_number=chalan.get("number"),
-            performed_by=user.id, performed_by_name=user.full_name,
-        )
+            for line in chalan.get("items", []):
+                await record_movement(
+                    movement_type="delivered", purchase_order_id=po_id, po_item_id=line.get("po_item_id"),
+                    customer_order_id=co_id, floor_id=dispatch.get("floor_id", TILES_FLOOR_ID),
+                    customer_id=dispatch.get("customer_id"), customer_name=dispatch.get("customer_name") or "",
+                    brand_id=(po or {}).get("brand_id"),
+                    brand_name=(po or {}).get("brand_name") or dispatch.get("supplier_name") or "Unassigned",
+                    tile_name=line.get("tile_name") or "", series=line.get("series"), finish=line.get("finish"), quantity_unit=line.get("quantity_unit") or "Box",
+                    size=line.get("size"), sku=line.get("sku"), boxes=float(line.get("boxes") or 0),
+                    source="Godown" if dispatch.get("source") == "godown" else "Released",
+                    destination=dispatch.get("destination_name") or "Customer",
+                    dispatch_id=dispatch_id, dispatch_number=dispatch.get("dispatch_number"),
+                    chalan_id=chalan.get("id"), chalan_number=chalan.get("number"),
+                    performed_by=user.id, performed_by_name=user.full_name, session=session,
+                )
     await log_event(
         event_type="dispatch.delivered", entity_type="purchase", entity_id=po_id, actor=user, floor_id=TILES_FLOOR_ID,
         customer_id=dispatch.get("customer_id"), purchase_id=po_id,

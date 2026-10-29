@@ -1,4 +1,5 @@
-import { prepareKitchenFixtureTransition } from './kitchen-pdf-fixtures';
+import { prepareKitchenFixtureTransition, kitchenIndiaToday } from './kitchen-pdf-fixtures';
+import { projectControl } from './kitchen-controls';
 import { expect, test, type APIRequestContext, type Locator, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { captureRuntimeHealth } from './runtime-health';
@@ -90,3 +91,45 @@ for (const stage of ['production', 'installation'] as const) {
     await health.assertHealthy();
   });
 }
+
+
+test('Reloading reopened installation keeps unsaved notes and dates while adopting saved work status', async ({ page, context }) => {
+  let project = await projectAt(context.request, 'installation');
+  const start = kitchenIndiaToday();
+  async function update(payload: object, command = 'installation_update') {
+    const response = await context.request.post(`/api/kitchen-projects/${project.id}/commands`, { headers, data: {
+      expected_version: project.version, idempotency_key: randomUUID(), command, payload,
+    } });
+    expect(response.ok(), await response.text()).toBe(true);
+    project = await response.json();
+  }
+  await update({ status: 'Completed', start_date: start, completion_date: start, notes: 'Saved installation note' });
+  const health = captureRuntimeHealth(page);
+  await page.addInitScript(() => {
+    localStorage.setItem('forge.jwt.kind', JSON.stringify('staff'));
+    localStorage.setItem('forge.active-floor', JSON.stringify('second-floor'));
+  });
+  await page.goto(`/kitchen/${project.id}/stages/installation`);
+  const notes = page.getByTestId('kitchen-installation-notes');
+  await expect(notes).toHaveValue('Saved installation note');
+  await notes.fill('Retain this unsaved installation note');
+  const localDate = new Date(`${start}T12:00:00Z`);
+  localDate.setUTCDate(localDate.getUTCDate() + 1);
+  const editedDate = localDate.toISOString().slice(0, 10);
+  await page.getByTestId('kitchen-installation-start').fill(editedDate);
+  await update({ target_stage: 'completed' }, 'move_stage');
+  await update({ action: 'reopen', reason: 'Owner reopens installation after an external review' }, 'exception');
+  await update({ status: 'In Progress', start_date: start, completion_date: null, notes: 'External saved installation note' });
+  const refreshed = page.waitForResponse(response => response.request().method() === 'GET' && new URL(response.url()).pathname === `/api/kitchen-projects/${project.id}`);
+  await (await projectControl(page, 'kitchen-project-actions')).click();
+  await page.getByRole('menuitem', { name: 'Reload saved project', exact: true }).click();
+  expect((await refreshed).ok()).toBe(true);
+  await expect(page.getByTestId('kitchen-installation-status-in-progress')).toHaveAttribute('aria-pressed', 'true');
+  await expect(notes).toHaveValue('Retain this unsaved installation note');
+  await expect(page.getByTestId('kitchen-installation-start')).toHaveValue(editedDate);
+  await expect(page.getByTestId('kitchen-unsaved-notice')).toBeVisible();
+  const persisted = await context.request.get(`/api/kitchen-projects/${project.id}`, { headers });
+  expect(persisted.ok(), await persisted.text()).toBe(true);
+  expect((await persisted.json()).installation).toMatchObject({ status: 'In Progress', start_date: start, completion_date: null, notes: 'External saved installation note' });
+  await health.assertHealthy();
+});

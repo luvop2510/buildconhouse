@@ -65,7 +65,7 @@ for (const navigator of [
     return element;
   };
   vm.runInNewContext(compile("../src/utils/downloadFile.ts"), {
-    module, exports: module.exports, navigator, File: navigator.fileUnsupported ? undefined : File, Blob,
+    module, exports: module.exports, AbortController, clearTimeout() {}, navigator, File: navigator.fileUnsupported ? undefined : File, Blob,
     require: name => name === "react-native" ? { Platform: { OS: "web" } } : name.includes("Toast")
       ? { toast: { show: value => errors.push(value) } }
       : { beginIdentityOperation: stableIdentity, getToken: async () => null, getRequestFloorId: async () => "ground-floor", api: { base: "", authenticatedUrl: () => { throw new Error("Mobile downloads must not navigate to a one-use URL"); } } },
@@ -134,7 +134,7 @@ for (const [path, disposition, expected] of [
   const module = { exports: {} };
   const anchors = [];
   vm.runInNewContext(compile("../src/utils/downloadFile.ts"), {
-    module, exports: module.exports, Blob, navigator: { userAgent: "Desktop Chrome" },
+    module, exports: module.exports, AbortController, clearTimeout() {}, Blob, navigator: { userAgent: "Desktop Chrome" },
     require: name => name === "react-native" ? { Platform: { OS: "web" } } : name.includes("Toast")
       ? { toast: { show: value => { throw new Error(value); } } }
       : { beginIdentityOperation: stableIdentity, getToken: async () => null, getRequestFloorId: async () => "ground-floor", api: { base: "" } },
@@ -158,7 +158,7 @@ console.log("Quotation response filenames: download/portal routes, Unicode, inva
   const token = new Promise(resolve => { releaseToken = resolve; });
   const element = () => ({ style: {}, click() {}, remove() {} });
   vm.runInNewContext(compile('../src/utils/downloadFile.ts'), {
-    module, exports: module.exports, navigator: { userAgent: 'Desktop Chrome' }, Blob,
+    module, exports: module.exports, AbortController, clearTimeout() {}, navigator: { userAgent: 'Desktop Chrome' }, Blob,
     require: name => name === 'react-native' ? { Platform: { OS: 'web' } } : name.includes('Toast')
       ? { toast: { show: message => { throw new Error(message); } } }
       : { beginIdentityOperation: stableIdentity, getToken: () => token, getRequestFloorId: () => Promise.resolve(selectedFloor), api: { base: '' } },
@@ -298,3 +298,5 @@ for (const source of ['../src/api/client.ts', '../src/api/client.web.ts']) {
   }
 }
 console.log('Private binary identity lifecycle: real native/web clients reject held credentials/response/body after A→B→A, remove stale phone save controls/print frames, and preserve source-floor downloads.');
+
+await import("./test-download-deadline.mjs");

@@ -28,6 +28,39 @@ async function inVisibleArea(input: Locator, height: number, top = 0) {
   }).toBe('visible');
 }
 
+test('critical keyboard viewport: entirely clipped nested scrollport reveals the focused field without document pan', async ({ page }) => {
+  await keyboardFixture(page);
+  await mockSession(page, '/customers', false);
+  await page.goto('/customers');
+  await expect(page.getByRole('heading', { name: 'Customers', exact: true })).toBeVisible();
+  // Exercise the actual shared hook with native browser clipping geometry.
+  // preventScroll isolates the reveal needed after a keyboard/layout change.
+  await page.evaluate(() => {
+    const outer = document.createElement('div');
+    outer.id = 'nested-keyboard-outer';
+    outer.style.cssText = 'position:fixed;top:20px;left:16px;width:240px;height:240px;overflow:auto;background:white;z-index:99999';
+    outer.innerHTML = '<div style="height:600px"></div><div id="nested-keyboard-inner" style="height:180px;overflow:auto"><div style="height:600px"></div><input aria-label="Nested keyboard draft" style="display:block;box-sizing:border-box;width:200px;height:48px;font-size:16px"><div style="height:500px"></div></div><div style="height:300px"></div>';
+    document.body.append(outer);
+    outer.querySelector('input')!.focus({ preventScroll: true });
+  });
+  await resizeKeyboard(page, 300);
+  const field = page.getByRole('textbox', { name: 'Nested keyboard draft', exact: true });
+  await inVisibleArea(field, 300);
+  await expect.poll(() => field.evaluate(element => {
+    const box = element.getBoundingClientRect();
+    const outer = document.getElementById('nested-keyboard-outer')!.getBoundingClientRect();
+    const inner = document.getElementById('nested-keyboard-inner')!.getBoundingClientRect();
+    return box.top >= Math.max(outer.top, inner.top) && box.bottom <= Math.min(outer.bottom, inner.bottom);
+  })).toBe(true);
+  const original = await field.elementHandle();
+  const position = await field.boundingBox();
+  await page.keyboard.type('Draft survives reveal');
+  await expect(field).toHaveValue('Draft survives reveal');
+  expect(await original!.evaluate(element => element === document.activeElement)).toBe(true);
+  expect((await field.boundingBox())!.y).toBeCloseTo(position!.y, 0);
+  expect(await page.evaluate(() => window.scrollY)).toBe(0);
+});
+
 test('critical keyboard viewport: customer entries and save remain visible through keyboard and rotation', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));

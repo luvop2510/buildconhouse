@@ -33,34 +33,51 @@ export default function BrandDashboardScreen() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
-  const requestId = useRef(0);
+  const [failedPage, setFailedPage] = useState(1);
+  const activeScope = useRef({ brandId, active: true });
+  if (activeScope.current.brandId !== brandId) activeScope.current = { brandId, active: true };
+  const scope = activeScope.current;
+  const pendingRequest = useRef<{ scope: typeof scope; controller: AbortController } | null>(null);
 
   const load = useCallback(async (nextPage = 1) => {
-    if (!brandId) return;
-    const currentRequest = ++requestId.current;
-    if (nextPage === 1) setLoading(true);
+    if (!brandId || !scope.active || activeScope.current !== scope || pendingRequest.current?.scope === scope) return;
+    const request = { scope, controller: new AbortController() };
+    pendingRequest.current = request;
+    setLoading(true);
     setLoadError(null);
+    setFailedPage(nextPage);
     try {
-      const r = await tileOrdersApi.brandOrders(brandId, { page: nextPage, page_size: 30 });
-      if (currentRequest !== requestId.current) return;
+      const r = await tileOrdersApi.brandOrders(brandId, { page: nextPage, page_size: 30 }, request.controller.signal);
+      if (!scope.active || activeScope.current !== scope || pendingRequest.current !== request) return;
       setKpi(r.kpi);
-      setOrders((previous) => nextPage === 1 ? r.orders : [...previous, ...r.orders]);
+      setOrders(r.orders);
       setPage(nextPage);
       setHasMore(r.has_more);
     } catch (e: any) {
-      if (currentRequest !== requestId.current) return;
+      if (!scope.active || activeScope.current !== scope || pendingRequest.current !== request) return;
       const message = e?.detail || "Could not load brand orders";
       setLoadError(message);
       toast.error(message);
     } finally {
-      if (currentRequest === requestId.current) setLoading(false);
+      if (pendingRequest.current === request) {
+        pendingRequest.current = null;
+        if (scope.active && activeScope.current === scope) setLoading(false);
+      }
     }
-  }, [brandId]);
+  }, [brandId, scope]);
 
   useEffect(() => {
+    scope.active = true;
+    setOrders([]); setKpi(null); setPage(1); setHasMore(false); setLoadError(null);
     void load(1);
-    return () => { requestId.current += 1; };
-  }, [load]);
+    return () => {
+      scope.active = false;
+      if (pendingRequest.current?.scope === scope) {
+        pendingRequest.current.controller.abort();
+        pendingRequest.current = null;
+      }
+    };
+  }, [load, scope]);
 
   const openOrder = (poId: string) => router.push(`/(admin)/tiles/orders/po/${poId}` as any);
 
@@ -98,7 +115,7 @@ export default function BrandDashboardScreen() {
     },
   ], []);
 
-  if (loading) {
+  if (loading && !kpi) {
     return (
       <PageShell><PageHeader title="Brand release queue" /><OperationStatus label="Loading brand orders…" /></PageShell>
     );
@@ -124,18 +141,19 @@ export default function BrandDashboardScreen() {
         }} />}
       />
 
+      {loading ? <OperationStatus label="Updating brand orders…" /> : null}
       {loadError ? (
         <Section>
           <View style={styles.errorBlock}>
             <Text style={type.titleSm}>{loadError}</Text>
-            <Button label="Retry" variant="primary" testID="tile-brand-queue-retry" onPress={() => load()} />
+            <Button label="Retry" variant="primary" testID="tile-brand-queue-retry" onPress={() => load(failedPage)} />
           </View>
         </Section>
-      ) : (
+      ) : null}
+      {kpi ? (
         <>
-          {kpi ? (
-            <Section>
-              <Disclosure title="Release summary" summary={`${kpi.orders} orders · ${kpi.boxes_remaining} units remaining`}>
+          <Section>
+            <Disclosure title="Release summary" summary={`${kpi.orders} orders · ${kpi.boxes_remaining} units remaining`}>
               <WorkflowRail active="release" testID="tile-brand-queue-workflow-rail" />
               <StatRow testID="tile-brand-queue-kpis">
                 <Stat label="Orders" value={kpi.orders} />
@@ -147,9 +165,8 @@ export default function BrandDashboardScreen() {
                 <Stat label="Units released" value={kpi.boxes_released} />
                 <Stat label="Oldest waiting" value={`${kpi.oldest_pending_days}d`} tone={kpi.oldest_pending_days > 7 ? "warn" : "default"} />
               </StatRow>
-              </Disclosure>
-            </Section>
-          ) : null}
+            </Disclosure>
+          </Section>
 
           <Section>
             <DataTable
@@ -163,19 +180,21 @@ export default function BrandDashboardScreen() {
               onRowPress={(order) => openOrder(order.po_id)}
               emptyMessage="No orders for this brand yet."
             />
-            {hasMore ? (
-              <View style={styles.loadMore}>
-                <Button label="Load more" size="lg" testID="tile-brand-queue-load-more" onPress={() => void load(page + 1)} />
+            {page > 1 || hasMore ? (
+              <View style={styles.paging}>
+                <Button label="Previous page" disabled={loading || page <= 1} testID="tile-brand-queue-previous" onPress={() => void load(page - 1)} />
+                <Text style={type.caption}>Page {page}</Text>
+                <Button label="Next page" disabled={loading || !hasMore} testID="tile-brand-queue-next" onPress={() => void load(page + 1)} />
               </View>
             ) : null}
           </Section>
         </>
-      )}
+      ) : null}
     </PageShell>
   );
 }
 
 const styles = StyleSheet.create({
   errorBlock: { alignItems: "flex-start", gap: spacing.lg },
-  loadMore: { alignItems: "center", paddingTop: spacing.lg },
+  paging: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: spacing.sm, paddingTop: spacing.lg },
 });

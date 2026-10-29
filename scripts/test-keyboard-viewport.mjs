@@ -57,8 +57,36 @@ panel.scrollTop = 0; doc.activeElement.box = { top: 160, bottom: 760 }; doc.disp
 const tallPosition = panel.scrollTop;
 for (let i = 0; i < 5; i++) { doc.dispatchEvent(new Event('input')); flush(); }
 assert.equal(panel.scrollTop, tallPosition, 'A tall field anchors its top instead of alternating between edges');
+// A nested form can be entirely below its outer scrollport after the keyboard
+// opens. The outer form must move before the inner clipping area can intersect it.
+const outer = { overflowY: 'auto', parentElement: doc.body, clientTop: 0, clientHeight: 300,
+  scrollHeight: 1000, scrollTop: 0, getBoundingClientRect: () => ({ top: 0 }) };
+panel.parentElement = outer; panel.clientHeight = 200; panel.scrollTop = 0;
+panel.getBoundingClientRect = () => ({ top: 600 - outer.scrollTop });
+doc.activeElement.getBoundingClientRect = () => {
+  const top = 620 - outer.scrollTop - panel.scrollTop;
+  return { top, bottom: top + 50, height: 50 };
+};
+Object.assign(viewport, { height: 300, offsetTop: 0 });
+viewport.dispatchEvent(new Event('resize')); doc.dispatchEvent(new Event('focusin')); flush();
+assert.equal(outer.scrollTop, 378, 'Reveal an entirely clipped nested form using the outer scrollport');
+assert.equal(panel.scrollTop, 0, 'An already visible inner field needs no inner scrolling');
+assert.equal(doc.activeElement.getBoundingClientRect().bottom, 292, 'Focused field fits with the eight-pixel margin');
+const nestedPosition = outer.scrollTop;
+for (let i = 0; i < 3; i++) { doc.dispatchEvent(new Event('input')); flush(); }
+assert.equal(outer.scrollTop, nestedPosition, 'Nested form stays stable through subsequent typing');
+outer.scrollTop = 0; outer.scrollHeight = 2000; panel.scrollTop = 0;
+doc.activeElement.getBoundingClientRect = () => {
+  const top = 1200 - outer.scrollTop - panel.scrollTop;
+  return { top, bottom: top + 50, height: 50 };
+};
+doc.dispatchEvent(new Event('focusin')); flush();
+assert.equal(panel.scrollTop, 458, 'Reveal inside an offscreen scrollport before moving its outer form');
+assert.equal(outer.scrollTop, 500, 'Outer movement reveals the nested field after its own clipping is resolved');
+assert.equal(doc.activeElement.getBoundingClientRect().bottom, 292);
+panel.parentElement = doc.body;
 Object.assign(viewport, { height: 150, scale: 2 }); viewport.dispatchEvent(new Event('resize')); doc.dispatchEvent(new Event('input')); flush();
-assert.equal(panel.scrollTop, tallPosition); assert.equal(properties.get('--forge-visible-height'), '300px', 'Pinch zoom retains ordinary browser pan/zoom');
+assert.equal(panel.scrollTop, 458); assert.equal(properties.get('--forge-visible-height'), '300px', 'Pinch zoom retains ordinary browser pan/zoom');
 viewport.scale = 1; viewport.dispatchEvent(new Event('resize')); cleanup(); flush();
 assert.equal(properties.size, 0); const finalWrites = writes;
 viewport.dispatchEvent(new Event('resize')); doc.dispatchEvent(new Event('focusin')); doc.dispatchEvent(new Event('input')); win.dispatchEvent(new Event('resize')); flush();

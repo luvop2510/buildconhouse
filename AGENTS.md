@@ -1,5 +1,27 @@
 # AGENTS.md — BuildCon House ERP (forge2.0)
 
+## Ground/Kitchen hardening — 2026-10-30
+
+Ground release, move-to-godown, both dispatch sources and Delivered must write
+permanent movement-register rows in the same Mongo session as quantities,
+batches, dispatch/chalan records and counters. Register failures roll back the
+whole command; optional activity remains best effort. Brand release queues retain
+one 30-row page, acknowledge paging after success, preserve rows during errors
+and retry the intended page. Coalesce reads and cancel obsolete brand scopes.
+
+Shared keyboard reveal resolves local clipping before moving outer scrollports;
+descendant bounds must not block an entirely offscreen nested form. Preserve
+the focused node, typed draft, pinch zoom and document position. Binary download
+preparation has the ordinary 30-second request bound, including credentials and
+response readers that ignore abort. Observe late rejections and allow explicit
+retry; do not time out the user's fresh-tap save/share dialog.
+
+Kitchen upload byte preparation/hash/transfer acknowledgements share one identity
+generation, including A→B→A cancellation. Reloading reopened Installation follows
+untouched saved fields while retaining locally edited notes/dates/status. Preserve
+original uploaded bytes and existing retry keys. See
+`docs/audits/2026-10-30-ground-kitchen-hardening.md` for evidence and device limits.
+
 ## Ground mobile documents and sales loss — 2026-10-30
 
 Static viewport HTML must parse without warnings on older Safari. The blocking

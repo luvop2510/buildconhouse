@@ -12,11 +12,12 @@ let autosaveOptions;
 let autosaveStatus = 'saved';
 let componentState = [];
 let hookIndex = 0;
+let componentEffects = [];
 const host = type => function TestHost(props) { return React.createElement(type, props, props.children); };
 const stages = ['lead', 'visit', 'cad', 'design', 'quotation', 'order', 'production', 'installation', 'completed'];
 const labels = Object.fromEntries(stages.map(stage => [stage, stage[0].toUpperCase() + stage.slice(1)]));
 const mocks = {
-  react: { ...React, useState: initial => { const index = hookIndex++; if (!(index in componentState)) componentState[index] = initial; return [componentState[index], value => { componentState[index] = typeof value === 'function' ? value(componentState[index]) : value; }]; }, useRef: value => ({ current: value }), useEffect: () => {}, useId: () => 'disclosure' },
+  react: { ...React, useState: initial => { const index = hookIndex++; if (!(index in componentState)) componentState[index] = initial; return [componentState[index], value => { componentState[index] = typeof value === 'function' ? value(componentState[index]) : value; }]; }, useRef: value => { const index = hookIndex++; if (!(index in componentState)) componentState[index] = { current: value }; return componentState[index]; }, useEffect: (work, deps) => { const index = hookIndex++; const previous = componentState[index]; if (!previous || deps.some((value, position) => value !== previous[position])) { componentState[index] = deps; componentEffects.push(work); } }, useId: () => 'disclosure' },
   'expo-router': { useRouter: () => ({ push: path => calls.push(['navigate', path]) }) },
   'react-native': { View: host('view'), Pressable: host('button'), Linking: { openURL: () => {} } },
   '@/src/components/AppText': { Text: host('text') },
@@ -63,13 +64,14 @@ const order = { id: 'order', quotation_version_id: 'quotation', confirmed: true,
 const base = { id: 'project', workflow_cycle: 1, final_design_version_id: 'design', visit: {}, design_versions: [design], quotation_versions: [], orders: [], permissions: { can_approve_exceptions: true }, attachments: ['file', 'design-file', 'ss-file', 'mix-file'].map(id => ({id, filename: `${id}.pdf`, content_type: 'application/pdf', uploaded_at: '2026-10-19T10:00:00Z', size_bytes: 1000})) };
 function render(stage, fields = {}, values = {}, command = async (...args) => { calls.push(args); return true; }, mode = 'task') {
   drafts = Object.fromEntries(Object.entries(values).map(([key, value]) => [`commercial.cycle.1.${key}`, value]));
-  componentState = [];
+  componentState = []; componentEffects = [];
   const props = { project: { ...base, stage, ...fields }, stage, disabled: false, command, mode };
   function refresh(projectFields, disabled) {
     if (projectFields) Object.assign(props.project, projectFields);
     if (typeof disabled === 'boolean') props.disabled = disabled;
     hookIndex = 0;
     const nodes = flatten(exports.CommercialStages(props));
+    while (componentEffects.length) componentEffects.shift()();
     return { nodes, text: nodes.filter(node => typeof node === 'string').join(' ').replace(/\s+/g, ' '), control: id => nodes.find(node => node.props?.testID === id), refresh };
   }
   return refresh();
@@ -464,3 +466,23 @@ for(const stage of ['production','installation']) {
     assert.equal(task.control(`kitchen-${stage}-complete`).props.value,'');
   }
 }
+
+// Another session can reopen a completed installation before closure.
+// This unrelated acknowledgement must not discard edits already in its form.
+for (const edited of [false, true]) {
+  const saved = { status: 'Completed', start_date: '2026-10-20', completion_date: '2026-10-25', notes: 'Saved installation note' };
+  let task = render('installation', { installation: saved });
+  if (edited) {
+    task.control('kitchen-installation-notes').props.onChangeText('Keep this unsaved installation note');
+    task = task.refresh();
+    task.control('kitchen-installation-start').props.onChange('2026-10-21');
+    task = task.refresh();
+  }
+  task = task.refresh({ installation: { ...saved, status: 'In Progress', completion_date: null, notes: 'Latest saved installation note' } });
+  task = task.refresh();
+  assert.equal(task.control('kitchen-installation-notes').props.value, edited ? 'Keep this unsaved installation note' : 'Latest saved installation note', 'Reloading reopened installation retains only local note edits');
+  assert.equal(task.control('kitchen-installation-start').props.value, edited ? '2026-10-21' : '2026-10-20', 'Reloading reopened installation retains local date edits');
+  assert.equal(task.control('kitchen-installation-status').props.value, 'In Progress', 'Untouched completion status follows the reopened server record');
+  assert.equal(task.control('kitchen-installation-complete').props.value, '', 'The reopened record clears its untouched completion date');
+}
+console.log('Kitchen Installation reopening: newer local notes/dates survive a reopened saved record while untouched fields follow saved state.');
