@@ -12,6 +12,7 @@ const phaseEvidence = {
   stability: ['output/playwright/stability-results.json', 'output/playwright/stability-summary.json'],
   timing: ['output/playwright/performance-results.json', 'output/playwright/performance-summary.json'],
 };
+const stabilityShardCount = 4;
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
 const json = path => JSON.parse(readFileSync(path, 'utf8'));
 function save(path, value) { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, JSON.stringify(value, null, 2) + '\n'); }
@@ -48,7 +49,7 @@ export function verifyExport(root, env) {
   assert.deepEqual(exportFiles(root), manifest.files, 'Export bytes/bundle evidence changed after preparation');
   return { identity: manifest.identity, artifact: artifact(env), manifestSha256: digest(readFileSync(join(root, manifestPath))) };
 }
-export function verifyBrowserEvidence(report, phase) {
+export function verifyBrowserEvidence(report, phase, partial = false) {
   const profiles = ['android-chrome', 'iphone-safari', 'ipad-safari', 'desktop-chrome'];
   assert.deepEqual(report.config?.projects?.map(project => project.name).sort(), [...profiles].sort(), 'All four browser profiles are mandatory');
   for (const project of report.config.projects) { assert.equal(project.retries, 0); assert.equal(project.timeout, 30000); }
@@ -68,6 +69,7 @@ export function verifyBrowserEvidence(report, phase) {
   }
   collect(report.suites);
   if (phase === 'timing') assert.equal(executed.length, 60, 'All 60 current timing scenarios are mandatory');
+  else if (partial) assert.ok(executed.length > 0, 'Empty stability shard');
   else assert.ok(executed.length >= 620, 'Full current stability scenario evidence is required');
   assert.equal(new Set(executed.map(test => test.key)).size, executed.length, 'Duplicate browser scenarios cannot replace missing evidence');
   assert.equal(report.stats?.expected, executed.length);
@@ -75,9 +77,19 @@ export function verifyBrowserEvidence(report, phase) {
   for (const profile of profiles) {
     const count = executed.filter(test => test.project === profile).length;
     if (phase === 'timing') assert.equal(count, 15, 'Every profile must execute all 15 timing scenarios');
-    else assert.ok(count > 0, 'Browser profile has no executed evidence');
+    else if (!partial) assert.ok(count > 0, 'Browser profile has no executed evidence');
   }
   return executed.length;
+}
+
+export function mergeStabilityShards(reports) {
+  assert.equal(reports.length, stabilityShardCount, 'All four stability shards are mandatory');
+  for (const report of reports) verifyBrowserEvidence(report, 'stability', true);
+  const merged = structuredClone(reports[0]);
+  merged.suites = reports.flatMap(report => report.suites);
+  for (const key of ['expected', 'unexpected', 'flaky', 'skipped']) merged.stats[key] = reports.reduce((sum, report) => sum + report.stats[key], 0);
+  verifyBrowserEvidence(merged, 'stability');
+  return merged;
 }
 
 export function runPerformanceAudit({ args = process.argv.slice(2), env = process.env, root = process.cwd(), run = spawnSync } = {}) {
@@ -107,6 +119,21 @@ export function runPerformanceAudit({ args = process.argv.slice(2), env = proces
     npm('test:e2e:stability'); npm('test:e2e:performance'); summary();
   } else if (phase === 'stability' || phase === 'timing') {
     const binding = verifyExport(root, env);
+    if (phase === 'stability' && env.PERFORMANCE_STABILITY_SHARD) {
+      const shard = env.PERFORMANCE_STABILITY_SHARD;
+      assert.match(shard, /^[1-4]$/, 'Stability shard must be 1 through 4');
+      auditEnv.PERFORMANCE_STABILITY_SHARD = shard;
+      checked(process.execPath, ['scripts/test-release-network-routing.mjs']);
+      checked('npx', ['playwright', 'test', '--config', 'playwright.stability.config.ts', `--shard=${shard}/${stabilityShardCount}`]);
+      const reportPath = `output/playwright/stability-shards/${shard}/results.json`;
+      const report = json(join(root, reportPath));
+      verifyBrowserEvidence(report, 'stability', true);
+      assert.deepEqual(verifyExport(root, env), binding, 'Stability shard modified its immutable export');
+      save(join(root, `output/performance-ci/stability-${shard}.json`), { schema: 'performance-stability-shard/v1', shard: Number(shard), count: stabilityShardCount,
+        ...binding, files: { [reportPath]: digest(readFileSync(join(root, reportPath))) } });
+      console.log(`Stability shard ${shard}/${stabilityShardCount} passed; full acceptance requires all shards and the complete route/scenario registry.`);
+      return;
+    }
     npm(phase === 'stability' ? 'test:e2e:stability' : 'test:e2e:performance');
     if (phase === 'timing') summary();
     verifyBrowserEvidence(json(join(root, phaseEvidence[phase][0])), phase);
@@ -116,7 +143,22 @@ export function runPerformanceAudit({ args = process.argv.slice(2), env = proces
   } else if (phase === 'aggregate') {
     for (const name of ['PREPARE', 'STABILITY', 'TIMING']) assert.equal(env[`PERFORMANCE_${name}_RESULT`], 'success', `${name} job did not succeed, including required artifact upload`);
     const binding = verifyExport(root, env);
+    if (env.PERFORMANCE_STABILITY_SHARDED === 'true') {
+      const reports = [];
+      for (let shard = 1; shard <= stabilityShardCount; shard++) {
+        const receipt = json(join(root, `output/performance-ci/stability-${shard}.json`));
+        assert.equal(receipt.schema, 'performance-stability-shard/v1');
+        assert.equal(receipt.shard, shard); assert.equal(receipt.count, stabilityShardCount);
+        for (const key of ['identity', 'artifact', 'manifestSha256']) assert.deepEqual(receipt[key], binding[key], 'Shard belongs to another export/run');
+        const path = `output/playwright/stability-shards/${shard}/results.json`;
+        assert.deepEqual(Object.keys(receipt.files), [path], 'Required shard report missing');
+        assert.equal(digest(readFileSync(join(root, path))), receipt.files[path], 'Shard evidence changed after its run');
+        reports.push(json(join(root, path)));
+      }
+      save(join(root, phaseEvidence.stability[0]), mergeStabilityShards(reports));
+    }
     for (const name of ['stability', 'timing']) {
+      if (name === 'stability' && env.PERFORMANCE_STABILITY_SHARDED === 'true') continue;
       const receipt = json(join(root, `output/performance-ci/${name}.json`));
       assert.equal(receipt.schema, 'performance-phase/v1'); assert.equal(receipt.phase, name);
       for (const key of ['identity', 'artifact', 'manifestSha256']) assert.deepEqual(receipt[key], binding[key], 'Browser evidence belongs to another export/run');

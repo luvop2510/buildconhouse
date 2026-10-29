@@ -142,3 +142,14 @@ an explicit existing viewport policy. The existing startup browser case now
 asserts the actual capability-dependent policy and zero console errors. No
 console filters, deadlines, retries or timing assertions were relaxed. Backend
 source and migration are unchanged by this compatibility correction.
+
+
+CI follow-up: the full Linux stability job reached 1,010 of 1,096 cases before
+its existing 20-minute cap. Four independent shards now consume the same hashed
+export, retain the existing workers/deadlines/retry policy, and bind each report
+to the source/run/attempt/artifact. Aggregate acceptance requires all four successful
+jobs, verifies every receipt/hash, merges actual results, then runs the unchanged
+full dynamic route/scenario registry. Missing, duplicate, skipped, retried,
+foreign or tampered evidence remains blocking. The full local push gate is
+unchanged. An older Kitchen search fixture now supplies the required synthetic
+customer address; production validation and Kitchen behavior are unchanged.

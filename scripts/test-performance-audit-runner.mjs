@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { runInNewContext } from 'node:vm';
-import { preparationScripts, runPerformanceAudit, verifyBrowserEvidence, verifyExport } from './run-performance-audit.mjs';
+import { preparationScripts, runPerformanceAudit, verifyBrowserEvidence, verifyExport, mergeStabilityShards } from './run-performance-audit.mjs';
 
 // Exercise the actual orchestrator with disposable files/command adapters.
 // No build, browser, provider or operating database is started by these tests.
@@ -25,6 +25,17 @@ function report(phase) {
 }
 let calls = [], failAt;
 function run(command, args, options) {
+  if (command === 'npx') {
+    const shard = Number(options.env.PERFORMANCE_STABILITY_SHARD);
+    assert.deepEqual(args, ['playwright', 'test', '--config', 'playwright.stability.config.ts', `--shard=${shard}/4`]);
+    const partial = report('stability');
+    partial.suites[0].specs = partial.suites[0].specs.slice((shard - 1) * 155, shard * 155);
+    partial.stats.expected = 155;
+    write(`output/playwright/stability-shards/${shard}/results.json`, partial);
+    calls.push(`shard-${shard}`);
+    return { status: failAt === 'shard' ? 42 : 0 };
+  }
+  if (args.includes('scripts/test-release-network-routing.mjs')) { calls.push('network'); return { status: 0 }; }
   const stage = command === 'npm' ? args[1] : args.includes('scripts/summarize-performance.mjs') ? 'summary' : args.includes('scripts/verify-release-stability.mjs') ? 'verify-stability' : 'backend';
   calls.push(stage);
   if (stage !== 'backend') { assert.equal(options.env.EXPO_NO_DOTENV, '1'); assert.match(options.env.BACKEND_URL, /^https:\/\/forge20-production-a8b0\.up\.railway\.app$/); }
@@ -85,12 +96,45 @@ try {
     v => { v.suites[0].specs[0].tests[0].results.push({ status: 'passed', retry: 1 }); }, v => { v.suites[0].specs[1] = v.suites[0].specs[0]; }]) {
     const value = report(phase); change(value); assert.throws(() => verifyBrowserEvidence(value, phase));
   }
+  const partials = [1, 2, 3, 4].map(shard => {
+    const value = report('stability');
+    value.suites[0].specs = value.suites[0].specs.slice((shard - 1) * 155, shard * 155);
+    value.stats.expected = 155; return value;
+  });
+  assert.equal(mergeStabilityShards(partials).stats.expected, 620);
+  assert.throws(() => mergeStabilityShards(partials.slice(1)), /four/);
+  assert.throws(() => mergeStabilityShards([partials[0], partials[0], partials[2], partials[3]]), /Duplicate/);
+  const skippedShard = structuredClone(partials); skippedShard[1].stats.skipped = 1;
+  assert.throws(() => mergeStabilityShards(skippedShard), /skipped/);
+  for (const shard of ['0', '5', '1/4', 'x']) {
+    calls = []; assert.throws(() => audit('stability', { PERFORMANCE_STABILITY_SHARD: shard }), /1 through 4/); assert.deepEqual(calls, []);
+  }
+  failAt = 'shard'; assert.throws(() => audit('stability', { PERFORMANCE_STABILITY_SHARD: '1' }), error => error.exitCode === 42); failAt = undefined;
+  for (const shard of ['1', '2', '3', '4']) {
+    calls = []; audit('stability', { PERFORMANCE_STABILITY_SHARD: shard }); assert.deepEqual(calls, ['network', `shard-${shard}`]);
+  }
+  calls = []; audit('aggregate', { PERFORMANCE_STABILITY_SHARDED: 'true' }); assert.deepEqual(calls, ['verify-stability', 'summary']);
+  const shardPath = 'output/performance-ci/stability-2.json', shardReceipt = read(shardPath);
+  for (const change of [v => { v.shard = 3; }, v => { v.count = 3; }, v => { v.identity.sha = 'f'.repeat(40); }, v => { v.artifact.digest = 'f'.repeat(64); }, v => { v.files = {}; }]) {
+    const value = structuredClone(shardReceipt); change(value); write(shardPath, value);
+    assert.throws(() => audit('aggregate', { PERFORMANCE_STABILITY_SHARDED: 'true' }));
+  }
+  write(shardPath, shardReceipt);
+  rmSync(join(directory, shardPath)); assert.throws(() => audit('aggregate', { PERFORMANCE_STABILITY_SHARDED: 'true' })); write(shardPath, shardReceipt);
+  const partialPath = 'output/playwright/stability-shards/2/results.json', originalPartial = read(partialPath);
+  write(partialPath, { ...originalPartial, errors: ['tampered'] });
+  assert.throws(() => audit('aggregate', { PERFORMANCE_STABILITY_SHARDED: 'true' }), /evidence changed/); write(partialPath, originalPartial);
+  audit('stability');
   for (const failure of ['verify-stability', 'summary']) { failAt = failure; assert.throws(() => audit('aggregate'), error => error.exitCode === 42); }
   const workflow = readFileSync(new URL('../.github/workflows/performance.yml', import.meta.url), 'utf8');
   assert.equal((workflow.match(/timeout-minutes: 20/g) || []).length, 4);
   assert.match(workflow, /performance:\n    if: always\(\)\n    needs: \[prepare, stability, timing\]/);
   assert.equal((workflow.match(/uses: actions\/upload-artifact@v4/g) || []).length, 4);
   assert.equal((workflow.match(/if-no-files-found: error/g) || []).length, 4);
+  assert.match(workflow, /shard: \[1, 2, 3, 4\]/);
+  assert.match(workflow, /fail-fast: false/);
+  assert.match(workflow, /PERFORMANCE_STABILITY_SHARDED: "true"/);
+  assert.match(workflow, /pattern: performance-stability-/);
   assert.match(workflow, /artifact-digest/); assert.match(workflow, /artifact-ids: \$\{\{ needs.prepare.outputs.export_id \}\}/);
   const { packageManager } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
   assert.match(packageManager, /^npm@\d+\.\d+\.\d+$/, 'Dependency setup must use an exact npm version');

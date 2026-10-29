@@ -17,7 +17,7 @@ async function create(api: APIRequestContext, name: string, detail = false) {
   const suffix = randomUUID().replaceAll('-', '');
   const response = await api.post('/api/kitchen-projects', { headers, data: {
     idempotency_key: randomUUID(),
-    customer: { name, phone: `9${BigInt(`0x${suffix.slice(0, 12)}`).toString().slice(-9).padStart(9, '0')}`,
+    customer: { name, address: 'Synthetic complete customer address', phone: `9${BigInt(`0x${suffix.slice(0, 12)}`).toString().slice(-9).padStart(9, '0')}`,
       ...(detail ? { email: `${suffix}@example.com`, address: 'Synthetic complete customer address', company: 'Synthetic kitchen company',
         property_name: 'Synthetic property', city: 'Ahmedabad', state: 'Gujarat', pincode: '380001', alternate_phone: '9000000001', notes: 'Synthetic customer instructions' } : {}) },
     lead: { site_location: `Search site ${suffix}`, notes: 'Saved original lead notes' },

@@ -60,6 +60,10 @@ jobs:
           compression-level: 6
 
   stability:
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     needs: prepare
     runs-on: ubuntu-latest
     # Match @playwright/test exactly; avoid OS mirror downloads inside the audit deadline.
@@ -67,9 +71,8 @@ jobs:
       image: mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27
       options: --ipc=host
     timeout-minutes: 20
-    outputs:
-      evidence_id: ${{ steps.evidence.outputs.artifact-id }}
     env:
+      PERFORMANCE_STABILITY_SHARD: ${{ matrix.shard }}
       PERFORMANCE_EXPORT_ARTIFACT_ID: ${{ needs.prepare.outputs.export_id }}
       PERFORMANCE_EXPORT_ARTIFACT_DIGEST: ${{ needs.prepare.outputs.export_digest }}
     steps:
@@ -98,19 +101,17 @@ jobs:
           merge-multiple: true
           artifact-ids: ${{ needs.prepare.outputs.export_id }}
           path: .
-      - name: All routes and populated runtime stability on four profiles
+      - name: One quarter of all routes and populated runtime stability across four profiles
         run: node scripts/run-performance-audit.mjs --ci-phase=stability
       - name: Preserve required stability evidence
         id: evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: performance-stability-${{ github.run_id }}-${{ github.run_attempt }}
+          name: performance-stability-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.shard }}
           path: |
-            output/playwright/stability-results.json
-            output/playwright/stability-summary.json
-            output/playwright/stability
-            output/performance-ci/stability.json
+            output/playwright/stability-shards/${{ matrix.shard }}
+            output/performance-ci/stability-${{ matrix.shard }}.json
           if-no-files-found: error
           retention-days: 3
           compression-level: 9
@@ -183,6 +184,7 @@ jobs:
       PERFORMANCE_EXPORT_ARTIFACT_DIGEST: ${{ needs.prepare.outputs.export_digest }}
       PERFORMANCE_PREPARE_RESULT: ${{ needs.prepare.result }}
       PERFORMANCE_STABILITY_RESULT: ${{ needs.stability.result }}
+      PERFORMANCE_STABILITY_SHARDED: "true"
       PERFORMANCE_TIMING_RESULT: ${{ needs.timing.result }}
     steps:
       - uses: actions/checkout@v4
@@ -199,7 +201,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           merge-multiple: true
-          artifact-ids: ${{ needs.stability.outputs.evidence_id }}
+          pattern: performance-stability-${{ github.run_id }}-${{ github.run_attempt }}-*
           path: output
       - uses: actions/download-artifact@v4
         with:

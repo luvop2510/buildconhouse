@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
+const shard = process.env.PERFORMANCE_STABILITY_SHARD;
 const baseURL = `http://127.0.0.1:${process.env.FORGE_STABILITY_PORT || '8099'}`;
 
 // The push gate covers every discovered page, populated-data crash regressions,
@@ -14,8 +15,8 @@ export default defineConfig({
   retries: 0,
   forbidOnly: true,
   failOnFlakyTests: true,
-  reporter: [['list'], ['json', { outputFile: 'output/playwright/stability-results.json' }]],
-  outputDir: 'output/playwright/stability',
+  reporter: [['list'], ['json', { outputFile: shard ? `output/playwright/stability-shards/${shard}/results.json` : 'output/playwright/stability-results.json' }]],
+  outputDir: shard ? `output/playwright/stability-shards/${shard}/traces` : 'output/playwright/stability',
   use: {
     baseURL,
     screenshot: 'only-on-failure', trace: 'retain-on-failure', serviceWorkers: 'block',
