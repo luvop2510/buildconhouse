@@ -2,6 +2,7 @@ import { prepareKitchenFixtureCommand, prepareKitchenFixtureTransition, kitchenI
 import { projectControl, expandProjectDetails, openProjectTool } from './kitchen-controls';
 import { expect, test, type Page, type APIRequestContext } from '@playwright/test';
 import { captureRuntimeHealth } from './runtime-health';
+import { kitchenProductionEnd } from '../src/components/kitchen/KitchenDates';
 
 // This suite intentionally does not import mockSession or intercept any API.
 // test-kitchen-e2e.mjs supplies a real synthetic session and actual kitchen API.
@@ -226,35 +227,30 @@ test('Q04 to Q09: all nine stages preserve versions, exact counters and late man
     if (id === 'kitchen-advance-quotation' || id === 'kitchen-advance-order') await expect(await projectControl(page, id)).toBeDisabled();
     else await expect(await projectControl(page, id)).toBeEnabled(); // Routine navigation preserves its existing contract.
   }
-  async function approveAsManager(scope: 'production' | 'closure') {
+  async function approveClosureAsManager() {
     const manager = await browser.newContext({ viewport: page.viewportSize() || undefined });
     try {
       await manager.addCookies([{ name: 'kitchen_acceptance_session', value: 'manager', url: baseURL! }]);
       const managerPage = await manager.newPage();
       const managerHealth = captureRuntimeHealth(managerPage);
       await seedBrowser(managerPage);
-      await managerPage.goto(`/kitchen/${project.id}/stages/${scope === 'production' ? 'order' : 'installation'}`);
-      await openDisclosure(managerPage, `${scope}-decision`);
+      await managerPage.goto(`/kitchen/${project.id}/stages/installation`);
+      await openDisclosure(managerPage, 'closure-decision');
       const response = managerPage.waitForResponse(value => value.url().endsWith(`/api/kitchen-projects/${project.id}/commands`) && value.request().postDataJSON()?.command === 'approval');
-      await managerPage.getByTestId(`kitchen-approve-${scope}`).click();
+      await managerPage.getByTestId('kitchen-approve-closure').click();
       const approved = await response;
       expect(approved.ok(), await approved.text()).toBeTruthy();
       await managerHealth.assertHealthy();
     } finally { await manager.close(); }
-    if (scope === 'closure') {
-      // Refresh the mounted owner provider so its completed installation draft
-      // survives closure and the subsequent sibling route to Owner actions.
-      const refreshed = page.waitForResponse(response => response.request().method() === 'GET' && new URL(response.url()).pathname === `/api/kitchen-projects/${project.id}`);
-      await (await projectControl(page, 'kitchen-project-actions')).click();
-      await page.getByRole('menuitem', { name: 'Reload saved project', exact: true }).click();
-      expect((await (await refreshed).json()).stage).toBe('installation');
-      await projectReady(page);
-      await openProjectPage(page, 'stage');
-      await click('kitchen-advance-completed', 'advance_stage');
-    } else {
-      await page.goto(`/kitchen/${project.id}/stages/order`);
-      await projectReady(page);
-    }
+    // Refresh the mounted owner provider so its completed installation draft
+    // survives closure and the subsequent sibling route to Owner actions.
+    const refreshed = page.waitForResponse(response => response.request().method() === 'GET' && new URL(response.url()).pathname === `/api/kitchen-projects/${project.id}`);
+    await (await projectControl(page, 'kitchen-project-actions')).click();
+    await page.getByRole('menuitem', { name: 'Reload saved project', exact: true }).click();
+    expect((await (await refreshed).json()).stage).toBe('installation');
+    await projectReady(page);
+    await openProjectPage(page, 'stage');
+    await click('kitchen-advance-completed', 'advance_stage');
   }
   async function shareApprove(isDesign: boolean) {
     if (isDesign) {
@@ -356,13 +352,19 @@ test('Q04 to Q09: all nine stages preserve versions, exact counters and late man
   await closeProjectPanel(page);
   await blocked('kitchen-advance-production');
   await expect(page.getByTestId('kitchen-approve-production')).toHaveCount(0);
-  await approveAsManager('production');
-  await click('kitchen-advance-production', 'advance_stage');
+  await expect(page.getByText('Production entry manager approval', { exact: true })).toHaveCount(0);
+  const enteredProduction = await click('kitchen-advance-production', 'advance_stage');
+  expect(enteredProduction.stage).toBe('production');
+  expect(enteredProduction.approvals.filter((row: any) => row.scope === 'production')).toEqual([]);
   await blocked('kitchen-advance-installation');
+  const productionStart = kitchenIndiaToday();
+  const productionEnd = kitchenProductionEnd(productionStart);
   await page.getByTestId('kitchen-production-status-completed').click();
-  await page.getByTestId('kitchen-production-start').fill(kitchenIndiaToday());
-  await page.getByTestId('kitchen-production-complete').fill(kitchenIndiaToday());
-  await click('kitchen-production-save', 'production_update');
+  await page.getByTestId('kitchen-production-start').fill(productionStart);
+  await expect(page.getByTestId('kitchen-production-complete')).toBeDisabled();
+  await expect(page.getByTestId('kitchen-production-complete')).toHaveValue(productionEnd);
+  const productionSaved = await click('kitchen-production-save', 'production_update');
+  expect(productionSaved.production.completion_date).toBe(productionEnd);
   await click('kitchen-advance-installation', 'advance_stage');
   await blocked('kitchen-advance-completed');
   await openDisclosure(page, 'site-visit');
@@ -380,14 +382,19 @@ test('Q04 to Q09: all nine stages preserve versions, exact counters and late man
   }
   await closeProjectPanel(page);
   await page.getByTestId('kitchen-installation-status-completed').click();
-  await page.getByTestId('kitchen-installation-start').fill(kitchenIndiaToday());
-  await page.getByTestId('kitchen-installation-complete').fill(kitchenIndiaToday());
+  await page.getByTestId('kitchen-installation-start').fill(productionEnd);
+  await page.getByTestId('kitchen-installation-complete').fill(productionEnd);
   const waiting = await click('kitchen-installation-save', 'installation_update');
   expect(waiting.stage).toBe('installation');
   expect(waiting.closure_pending_reason).toBeNull();
+  const closureWithoutManager = await context.request.post(`${baseURL}/api/kitchen-projects/${project.id}/commands`, { headers: apiHeaders, data: {
+    expected_version: waiting.version, idempotency_key: `closure-needs-manager-${Date.now()}`, command: 'advance_stage', payload: { target_stage: 'completed' },
+  } });
+  expect(closureWithoutManager.status()).toBe(422);
+  expect((await closureWithoutManager.json()).detail).toContain('manager closure approval');
   await blocked('kitchen-advance-completed');
   await expect(page.getByTestId('kitchen-approve-closure')).toHaveCount(0);
-  await approveAsManager('closure');
+  await approveClosureAsManager();
   const completedResponse = await context.request.get(`${baseURL}/api/kitchen-projects/${project.id}`, { headers: apiHeaders });
   const completed = await completedResponse.json();
   expect(completed.stage).toBe('completed');
@@ -407,18 +414,18 @@ test('Q04 to Q09: all nine stages preserve versions, exact counters and late man
   await expect(page).toHaveURL(new RegExp(`/kitchen/${project.id}/stages/installation(?:\\?.*)?$`));
   await expect(page.getByTestId('kitchen-installation-status-in-progress')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByTestId('kitchen-installation-complete')).toHaveValue(new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10));
-  await expect(page.getByTestId('kitchen-installation-start')).toHaveValue(kitchenIndiaToday());
+  await expect(page.getByTestId('kitchen-installation-start')).toHaveValue(productionEnd);
   await openProjectPage(page, 'history');
   await openProjectPage(page, 'stage');
   await expect(page.getByTestId('kitchen-installation-status-in-progress')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByTestId('kitchen-installation-complete')).toHaveValue(new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10));
   await closeProjectPanel(page);
   await page.getByTestId('kitchen-installation-status-completed').click();
-  await page.getByTestId('kitchen-installation-complete').fill(kitchenIndiaToday());
+  await page.getByTestId('kitchen-installation-complete').fill(productionEnd);
   const completedAgain = await click('kitchen-installation-save', 'installation_update');
   expect(completedAgain.stage).toBe('installation');
   expect(completedAgain.closure_pending_reason).toBeNull();
-  await approveAsManager('closure');
+  await approveClosureAsManager();
   const reclosed = await context.request.get(`${baseURL}/api/kitchen-projects/${project.id}`, { headers: apiHeaders });
   expect(await reclosed.json()).toMatchObject({ stage: 'completed', design_revision_count: 0, site_visit_count: 2, order_amount: '1100.01' });
   await page.reload();

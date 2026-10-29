@@ -98,7 +98,6 @@ test('30 meaningful URLs: every current stage, persisted pages and scoped queues
       if (stage === 'order') {
         project = await command(context, project, 'order_confirm', { quotation_version_id: project.quotation_versions.at(-1).id, order_date: kitchenIndiaToday() });
         project = await command(context, project, 'order_advance', { received: true, amount: '0.01', date: kitchenIndiaToday() });
-        project = await command(manager, project, 'approval', { scope: 'production', decision: 'Approved' });
         project = await command(context, project, 'advance_stage', { target_stage: 'production' });
       }
       if (stage === 'production') {
@@ -106,7 +105,7 @@ test('30 meaningful URLs: every current stage, persisted pages and scoped queues
         project = await command(context, project, 'advance_stage', { target_stage: 'installation' });
       }
       if (stage === 'installation') {
-        project = await command(context, project, 'installation_update', { status: 'Completed', start_date: kitchenIndiaToday(), completion_date: kitchenIndiaToday() });
+        project = await command(context, project, 'installation_update', { status: 'Completed', start_date: project.production.completion_date, completion_date: project.production.completion_date });
         project = await command(manager, project, 'approval', { scope: 'closure', decision: 'Approved' });
       }
     }
