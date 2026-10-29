@@ -193,8 +193,11 @@ def test_direct_intake_quantities_and_prices_are_finite(field, value):
 
 def test_existing_lot_price_can_be_completed(monkeypatch):
     class PriceStock:
+        async def find_one(self, *_args, **_kwargs):
+            return {"id": "lot-1", "floor_id": "first-floor", "name": "Valve", "available_qty": 2}
+
         async def find_one_and_update(self, query, update, **_kwargs):
-            assert query["$and"][1] == {"id": "lot-1", "archived": {"$ne": True}}
+            assert query["$and"][1] == {"id": "lot-1", "archived": {"$ne": True}, **godown._stock_financial_guard({"available_qty": 2})}
             return {"id": "lot-1", "floor_id": "first-floor", "name": "Valve", "available_qty": 2, **update["$set"]}
 
     monkeypatch.setattr(godown, "db", SimpleNamespace(godown_stock=PriceStock()))

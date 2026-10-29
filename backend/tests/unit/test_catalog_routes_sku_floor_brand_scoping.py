@@ -170,7 +170,12 @@ def test_create_custom_product_rejects_same_sku_under_same_floor_brand(monkeypat
 # ---------- update_product ----------
 
 def _patch_setup(monkeypatch, docs):
-    fake_db = _FakeDb(docs)
+    # Stored catalog rows satisfy Product before and after an edit. Keep the
+    # SKU/floor/brand fixture differences while exercising real validation.
+    fake_db = _FakeDb([
+        {"name": "Test Product", "category_id": "cat-1", "mrp": 100.0, "price": 90.0, **doc}
+        for doc in docs
+    ])
     monkeypatch.setattr(catalog_routes, "db", fake_db)
     monkeypatch.setattr(catalog_routes.catalog_service, "patch_product_in_snapshot", lambda *_a, **_kw: None)
     monkeypatch.setattr(catalog_routes.catalog_service, "product_by_id", AsyncMock(return_value={

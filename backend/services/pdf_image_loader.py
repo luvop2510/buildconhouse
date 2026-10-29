@@ -177,9 +177,7 @@ def _valid_image(data: bytes, content_type: str) -> bool:
     if content_type.split(";", 1)[0].strip().lower() not in ALLOWED_IMAGE_MIME_TYPES:
         return False
     try:
-        from PIL import Image
         from PIL import Image as PILImage
-        Image.MAX_IMAGE_PIXELS = MAX_IMAGE_PIXELS
         with PILImage.open(__import__("io").BytesIO(data)) as image:
             if (image.format or "").upper() == "GIF" or getattr(image, "n_frames", 1) != 1:
                 return False

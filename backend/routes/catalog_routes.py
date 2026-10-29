@@ -9,6 +9,7 @@ from typing import Optional
 from uuid import NAMESPACE_URL, uuid5
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import ValidationError
 from pymongo.errors import DuplicateKeyError
 
 from auth import floor_for_write, floor_inherit, floor_query, floor_scope_ids, get_current_user, get_floor_scoped_or_404, require_min_role
@@ -706,6 +707,14 @@ async def _apply_product_updates(product_id: str, body: ProductPatch, user: User
         await _require_product_relations_on_floor(
             new_brand_id, new_category_id, existing.get("floor_id"),
         )
+
+    # Validate the complete candidate before either durable storage or the
+    # shared catalog snapshot changes. Response validation is too late: an
+    # invalid PATCH previously poisoned both stores before it raised.
+    try:
+        Product(**{**existing, **updates})
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail="The product update contains invalid values") from exc
 
     updates["updated_at"] = datetime.now(timezone.utc).isoformat()
     updates["catalog_version"] = int(existing.get("catalog_version") or 0) + 1

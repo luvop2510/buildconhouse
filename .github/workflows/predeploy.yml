@@ -8,11 +8,13 @@ permissions:
 
 jobs:
   release-gate:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: production
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: main
           persist-credentials: false
       - uses: actions/setup-python@v5
         with:
@@ -43,6 +45,7 @@ jobs:
           FORGE_ALLOW_DEMO_SEED: "false"
           ENVIRONMENT: production
         run: |
+          python -m pip install --upgrade pip==26.2.2
           pip install -r requirements-prod.txt pip-audit pytest pytest-asyncio
           pip-audit -r requirements-prod.txt
           python -m pytest tests/unit -q
@@ -51,7 +54,9 @@ jobs:
         env:
           BACKEND_URL: https://forge20-production-a8b0.up.railway.app
         run: |
-          npm ci
+          npm install --global npm@11.17.0 --ignore-scripts --no-audit --no-fund
+          npm ci --ignore-scripts
+          npm run prepare:dependencies
           node scripts/check-npm-audit.mjs
           npx tsc --noEmit
           npx expo lint -- --max-warnings 0

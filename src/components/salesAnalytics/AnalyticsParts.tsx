@@ -6,8 +6,7 @@ import { Text } from '@/src/components/AppText';
 import { Button, SkeletonCard } from '@/src/components/ui';
 import { Sheet } from '@/src/design/components';
 import { colors, spacing, type } from '@/src/theme/tokens';
-import { api, getToken } from '@/src/api/client';
-import { savePreparedFile } from '@/src/utils/downloadFile';
+import { downloadApiFile } from '@/src/utils/downloadFile';
 import { analyticsQuery, type AnalyticsFilters } from '@/src/api/salesAnalytics';
 
 /** React Native Web role=link needs an explicit Enter action without an href. */
@@ -55,18 +54,14 @@ export function ExportMenu({ filters, view, kind, entityId, tab, title }: { filt
  const [error, setError] = useState<string | null>(null);
  const download = async (format: 'pdf' | 'xlsx') => {
   setBusy(true); setError(null);
-  const controller = new AbortController(); const deadline = setTimeout(() => controller.abort(), 60_000);
   try {
-   const token = await getToken();
    const query = analyticsQuery({ ...filters, format, view, ...(kind ? { kind } : {}), ...(entityId ? { entity_id: entityId } : {}), scope, ...(tab ? { tab } : {}), ...(title ? {report_title:title} : {}) });
-   const response = await fetch(`${api.base}/api/sales-analytics/export?${query}`, { signal: controller.signal, credentials: 'same-origin', headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(filters.floor_id && filters.floor_id !== 'all' ? { 'X-Floor-Id': filters.floor_id } : {}) } });
-   if (!response.ok) { const body = await response.json().catch(() => null); throw new Error(typeof body?.detail === 'string' ? body.detail : 'Export failed. Try again.'); }
-   const blob = await response.blob(); const filename = `buildcon-${kind || view}-${entityId || filters.floor_id || 'overall'}.${format}`.replace(/[^a-z0-9._-]/gi, '-');
-   const saved = await savePreparedFile(blob, filename, 'sales analytics report');
+   const filename = `buildcon-${kind || view}-${entityId || filters.floor_id || 'overall'}.${format}`.replace(/[^a-z0-9._-]/gi, '-');
+   const saved = await downloadApiFile(`/sales-analytics/export?${query}`, filename, 'sales analytics report', filters.floor_id && filters.floor_id !== 'all' ? filters.floor_id : '');
    if (!saved) throw new Error('The report is ready. Choose a save location to complete the download.');
    setOpen(false);
   } catch (reason) { setError(reason instanceof Error && reason.name !== 'AbortError' ? reason.message : 'Export timed out. Reduce the range and try again.'); }
-  finally { clearTimeout(deadline); setBusy(false); }
+  finally { setBusy(false); }
  };
  return <><Button label="Export" testID="analytics-export" icon="download" variant="secondary" onPress={() => setOpen(true)} />
  <Sheet open={open} onClose={() => { if (!busy) setOpen(false); }} title="Export analysis"><View style={{ gap: spacing.s16 }}><Text style={type.bodyMuted}>Includes the selected date basis, date range, filters and permitted source record IDs.</Text>

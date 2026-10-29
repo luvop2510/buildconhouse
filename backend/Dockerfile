@@ -18,7 +18,8 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements-prod.txt .
-RUN pip install -r requirements-prod.txt
+RUN python -m pip install --upgrade pip==26.2.2 \
+    && python -m pip install -r requirements-prod.txt
 
 # Allowlist runtime code and assets.  Do not copy the build context wholesale:
 # local environments, reports and credentials must never enter an image layer.

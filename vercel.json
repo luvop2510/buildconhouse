@@ -1,6 +1,8 @@
 {
-  "regions": ["bom1"],
-  "installCommand": "npm ci",
+  "regions": [
+    "bom1"
+  ],
+  "installCommand": "npm install --global npm@11.17.0 --ignore-scripts --no-audit --no-fund && npm ci --ignore-scripts && npm run prepare:dependencies",
   "buildCommand": "npm run build && npm run test:mobile-budget",
   "outputDirectory": "dist/client",
   "routes": [
@@ -18,18 +20,42 @@
     },
     {
       "src": "/(?:_expo/static|assets)/(.*)",
-      "headers": { "Cache-Control": "public, max-age=31536000, immutable" },
+      "headers": {
+        "Cache-Control": "public, max-age=31536000, immutable"
+      },
       "continue": true
     },
     {
       "src": "/(?:|index\\.html|login(?:\\.html)?/?)",
-      "headers": { "Vercel-CDN-Cache-Control": "public, max-age=60" },
+      "headers": {
+        "Vercel-CDN-Cache-Control": "public, max-age=60"
+      },
       "continue": true
     },
-    { "src": "/.*\\.[mM][aA][pP]", "status": 404, "headers": { "Cache-Control": "no-store" } },
-    { "handle": "filesystem" },
-    { "src": "/(?:_expo/static|assets)/(.*)", "status": 404, "headers": { "Cache-Control": "no-store" } },
-    { "src": "/api(?:/(.*))?", "dest": "/api/[...path].js" },
-    { "src": "/(.*)", "dest": "/index.html" }
+    {
+      "src": "/.*\\.[mM][aA][pP]",
+      "status": 404,
+      "headers": {
+        "Cache-Control": "no-store"
+      }
+    },
+    {
+      "handle": "filesystem"
+    },
+    {
+      "src": "/(?:_expo/static|assets)/(.*)",
+      "status": 404,
+      "headers": {
+        "Cache-Control": "no-store"
+      }
+    },
+    {
+      "src": "/api(?:/(.*))?",
+      "dest": "/api/[...path].js"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/index.html"
+    }
   ]
 }

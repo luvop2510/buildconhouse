@@ -4,7 +4,7 @@
 // open dance in the whole app instead of one per screen.
 import { Linking, Platform } from "react-native";
 
-import { api, getRequestFloorId, getToken } from "@/src/api/client";
+import { api, beginIdentityOperation, getRequestFloorId, getToken, type IdentityOperation } from "@/src/api/client";
 import { toast } from "@/src/components/Toast";
 import type { File as NativeFile } from "expo-file-system";
 
@@ -17,19 +17,28 @@ export async function createPreparedNativeFile(filename: string): Promise<Native
 }
 
 /** The caller owns the temporary file and removes it after the share sheet closes. */
-export async function sharePreparedNativeFile(file: NativeFile, filename: string, contentType: string, errorLabel = "file"): Promise<boolean> {
-  const Sharing = await import("expo-sharing");
-  if (!await Sharing.isAvailableAsync()) {
-    toast.show("Sharing is unavailable on this device");
-    return false;
+export async function sharePreparedNativeFile(file: NativeFile, filename: string, contentType: string, errorLabel = "file", guard?: IdentityOperation): Promise<boolean> {
+  const operation = guard || beginIdentityOperation();
+  try {
+    if (!operation.isCurrent()) return false;
+    const Sharing = await import("expo-sharing");
+    if (!operation.isCurrent()) return false;
+    const available = await Sharing.isAvailableAsync();
+    if (!operation.isCurrent()) return false;
+    if (!available) {
+      toast.show("Sharing is unavailable on this device");
+      return false;
+    }
+    const extension = filename.split(".").pop()?.toLowerCase();
+    const mimeType = extension === "pdf" ? "application/pdf"
+      : extension === "pptx" ? "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+      : extension === "xlsx" ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      : extension === "csv" ? "text/csv" : contentType || "application/octet-stream";
+    await Sharing.shareAsync(file.uri, { mimeType, dialogTitle: `Save ${errorLabel} to Files or share` });
+    return operation.isCurrent();
+  } finally {
+    if (!guard) operation.finish();
   }
-  const extension = filename.split(".").pop()?.toLowerCase();
-  const mimeType = extension === "pdf" ? "application/pdf"
-    : extension === "pptx" ? "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-    : extension === "xlsx" ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    : extension === "csv" ? "text/csv" : contentType || "application/octet-stream";
-  await Sharing.shareAsync(file.uri, { mimeType, dialogTitle: `Save ${errorLabel} to Files or share` });
-  return true;
 }
 
 // React Native's Blob implements FileReader, but not Blob.arrayBuffer().
@@ -47,35 +56,40 @@ function nativeBlobBase64(blob: Blob): Promise<string> {
   });
 }
 
-async function fetchApiBlob(path: string, errorLabel: string, floorId?: string): Promise<Blob | null> {
+async function fetchApiBlob(path: string, errorLabel: string, floorId: string | undefined, operation: IdentityOperation): Promise<Blob | null> {
   // Capture the selected workspace before token hydration can yield to a floor switch.
   const floor = floorId === undefined ? getRequestFloorId() : Promise.resolve(floorId);
   const [token, requestFloorId] = await Promise.all([getToken(), floor]);
+  if (!operation.isCurrent()) return null;
   if (!token && Platform.OS !== "web") {
     toast.show("Please sign in again");
     return null;
   }
   try {
     const res = await fetch(`${api.base}/api${path}`, {
-      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(requestFloorId ? { "X-Floor-Id": requestFloorId } : {}) }, credentials: "same-origin",
+      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(requestFloorId ? { "X-Floor-Id": requestFloorId } : {}) }, credentials: "same-origin", signal: operation.signal,
     });
+    if (!operation.isCurrent()) return null;
     if (!res.ok) {
       let detail = "";
       try { detail = String((await res.json())?.detail || ""); } catch { /* non-JSON gateway response */ }
+      if (!operation.isCurrent()) return null;
       toast.show(detail || (res.status === 404 ? `That ${errorLabel} isn't available` : `Couldn't download the ${errorLabel}`));
       return null;
     }
-    return await res.blob();
+    const blob = await res.blob();
+    return operation.isCurrent() ? blob : null;
   } catch {
-    toast.show(`Couldn't download the ${errorLabel} — check your connection`);
+    if (operation.isCurrent()) toast.show(`Couldn't download the ${errorLabel} — check your connection`);
     return null;
   }
 }
 
 // Fetching/generating a PDF outlives Safari's original tap activation. Keep
 // the app open and give the user a fresh tap once the actual file is ready.
-function saveMobileBrowserFile(blob: Blob, filename: string, errorLabel: string): Promise<boolean> {
+function saveMobileBrowserFile(blob: Blob, filename: string, errorLabel: string, operation: IdentityOperation): Promise<boolean> {
   return new Promise((resolve) => {
+    if (!operation.isCurrent()) { resolve(false); return; }
     const dialog = document.createElement("dialog");
     dialog.setAttribute("aria-label", `Save ${errorLabel}`);
     dialog.setAttribute("data-testid", "mobile-file-save");
@@ -97,10 +111,13 @@ function saveMobileBrowserFile(blob: Blob, filename: string, errorLabel: string)
     const finish = (saved: boolean) => {
       if (settled) return;
       settled = true;
+      operation.signal.removeEventListener("abort", cancelled);
       if (typeof dialog.close === "function" && dialog.open) dialog.close();
       dialog.remove();
       resolve(saved);
     };
+    const cancelled = () => finish(false);
+    operation.signal.addEventListener("abort", cancelled, { once: true });
     const button = (label: string, action: () => void) => {
       const element = document.createElement("button");
       element.type = "button";
@@ -112,6 +129,7 @@ function saveMobileBrowserFile(blob: Blob, filename: string, errorLabel: string)
     };
     let saveOrShare: HTMLButtonElement | null = null;
     const download = button("Download", () => {
+      if (!operation.isCurrent()) { finish(false); return; }
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
@@ -129,12 +147,13 @@ function saveMobileBrowserFile(blob: Blob, filename: string, errorLabel: string)
         const file = new globalThis.File([blob], filename, { type: blob.type || "application/octet-stream" });
         if (navigator.canShare({ files: [file] })) {
           saveOrShare = button("Save or share", () => {
+            if (!operation.isCurrent()) { finish(false); return; }
             // Invoke share synchronously from this fresh user gesture.
             try {
-              void navigator.share({ files: [file] }).then(() => finish(true)).catch((error) => {
-                if (error?.name !== "AbortError") toast.show(`Couldn't share the ${errorLabel} — use Download instead`);
+              void navigator.share({ files: [file] }).then(() => finish(operation.isCurrent())).catch((error) => {
+                if (operation.isCurrent() && error?.name !== "AbortError") toast.show(`Couldn't share the ${errorLabel} — use Download instead`);
               });
-            } catch { toast.show(`Couldn't share the ${errorLabel} — use Download instead`); }
+            } catch { if (operation.isCurrent()) toast.show(`Couldn't share the ${errorLabel} — use Download instead`); }
           });
           actions.insertBefore(saveOrShare, download);
         }
@@ -173,51 +192,67 @@ function saveMobileBrowserFile(blob: Blob, filename: string, errorLabel: string)
 // URLs, so desktop web uses an <a download> click instead. Native shares a
 // named local file; mobile web offers a fresh Save/Share tap after fetching.
 export async function downloadApiFile(path: string, filename: string, errorLabel = "file", floorId?: string): Promise<boolean> {
-  const blob = await fetchApiBlob(path, errorLabel, floorId);
-  return blob ? savePreparedFile(blob, filename, errorLabel) : false;
+  const operation = beginIdentityOperation();
+  try {
+    const blob = await fetchApiBlob(path, errorLabel, floorId, operation);
+    return blob && operation.isCurrent() ? await savePreparedFile(blob, filename, errorLabel, operation) : false;
+  } finally { operation.finish(); }
 }
 
 /** Save already authenticated, verified bytes through the same device file UI. */
-export async function savePreparedFile(blob: Blob, filename: string, errorLabel = "file"): Promise<boolean> {
-  if (Platform.OS !== "web") {
-    let file: NativeFile | undefined;
-    try {
-      const base64 = await nativeBlobBase64(blob);
-      file = await createPreparedNativeFile(filename);
-      file.write(base64, { encoding: "base64" });
-      return await sharePreparedNativeFile(file, filename, blob.type, errorLabel);
-    } catch {
-      toast.show(`Couldn't open the ${errorLabel}`);
-      return false;
-    } finally {
-      if (file?.exists) file.delete();
+export async function savePreparedFile(blob: Blob, filename: string, errorLabel = "file", guard?: IdentityOperation): Promise<boolean> {
+  const operation = guard || beginIdentityOperation();
+  try {
+    if (!operation.isCurrent()) return false;
+    if (Platform.OS !== "web") {
+      let file: NativeFile | undefined;
+      const removePrivateFile = () => { if (file?.exists) file.delete(); };
+      operation.signal.addEventListener("abort", removePrivateFile, { once: true });
+      try {
+        const base64 = await nativeBlobBase64(blob);
+        if (!operation.isCurrent()) return false;
+        file = await createPreparedNativeFile(filename);
+        if (!operation.isCurrent()) return false;
+        file.write(base64, { encoding: "base64" });
+        return await sharePreparedNativeFile(file, filename, blob.type, errorLabel, operation);
+      } catch {
+        if (operation.isCurrent()) toast.show(`Couldn't open the ${errorLabel}`);
+        return false;
+      } finally {
+        operation.signal.removeEventListener("abort", removePrivateFile);
+        removePrivateFile();
+      }
     }
-  }
-  const mobileBrowser = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
-    || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-  if (mobileBrowser) return saveMobileBrowserFile(blob, filename, errorLabel);
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = filename;
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 60_000);
-  return true;
+    const mobileBrowser = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
+      || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+    if (mobileBrowser) return await saveMobileBrowserFile(blob, filename, errorLabel, operation);
+    if (!operation.isCurrent()) return false;
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    return true;
+  } finally { if (!guard) operation.finish(); }
 }
 
 // File-only sharing: a browser share payload contains the PDF attachment and no URL.
 // Fetching loses transient activation, so web uses a fresh user tap in the file panel.
 export async function shareApiPdf(path: string, filename: string, floorId?: string): Promise<boolean> {
   if (Platform.OS !== "web") return downloadApiFile(path, filename, "PDF", floorId);
-  const blob = await fetchApiBlob(path, "PDF", floorId);
-  if (!blob) return false;
-  if (blob.type && blob.type !== "application/pdf") {
-    toast.show("The PDF could not be prepared. Try again.");
-    return false;
-  }
-  return saveMobileBrowserFile(blob, filename, "PDF");
+  const operation = beginIdentityOperation();
+  try {
+    const blob = await fetchApiBlob(path, "PDF", floorId, operation);
+    if (!blob || !operation.isCurrent()) return false;
+    if (blob.type && blob.type !== "application/pdf") {
+      toast.show("The PDF could not be prepared. Try again.");
+      return false;
+    }
+    return await saveMobileBrowserFile(blob, filename, "PDF", operation);
+  } finally { operation.finish(); }
 }
 
 // Print an authenticated PDF: web renders it into a hidden iframe and calls
@@ -228,42 +263,60 @@ export async function printApiFile(path: string, errorLabel = "file", floorId?: 
     await openApiFile(path, errorLabel, floorId);
     return;
   }
-  const blob = await fetchApiBlob(path, errorLabel, floorId);
-  if (!blob) return;
-  const url = URL.createObjectURL(blob);
-  const frame = document.createElement("iframe");
-  frame.style.position = "fixed";
-  frame.style.right = "0";
-  frame.style.bottom = "0";
-  frame.style.width = "0";
-  frame.style.height = "0";
-  frame.style.border = "0";
-  frame.src = url;
-  frame.onload = () => {
-    try {
-      frame.contentWindow?.focus();
-      frame.contentWindow?.print();
-    } catch {
-      window.open(url, "_blank");
-    }
-  };
-  document.body.appendChild(frame);
-  // Give the print dialog ample time before tearing the frame down.
-  setTimeout(() => { frame.remove(); URL.revokeObjectURL(url); }, 120_000);
+  const operation = beginIdentityOperation();
+  let waitingForFrame = false;
+  try {
+    const blob = await fetchApiBlob(path, errorLabel, floorId, operation);
+    if (!blob || !operation.isCurrent()) return;
+    const url = URL.createObjectURL(blob);
+    const frame = document.createElement("iframe");
+    let removed = false;
+    const cleanup = () => {
+      if (removed) return;
+      removed = true;
+      operation.signal.removeEventListener("abort", cleanup);
+      frame.onload = null;
+      frame.remove();
+      URL.revokeObjectURL(url);
+      operation.finish();
+    };
+    frame.style.position = "fixed";
+    frame.style.right = "0";
+    frame.style.bottom = "0";
+    frame.style.width = "0";
+    frame.style.height = "0";
+    frame.style.border = "0";
+    frame.src = url;
+    frame.onload = () => {
+      if (!operation.isCurrent()) { cleanup(); return; }
+      try {
+        frame.contentWindow?.focus();
+        frame.contentWindow?.print();
+      } catch {
+        if (operation.isCurrent()) window.open(url, "_blank", "noopener,noreferrer");
+      }
+    };
+    operation.signal.addEventListener("abort", cleanup, { once: true });
+    document.body.appendChild(frame);
+    waitingForFrame = true;
+    // Retain identity cancellation until the private print frame is removed.
+    setTimeout(cleanup, 120_000);
+  } finally { if (!waitingForFrame) operation.finish(); }
 }
 
 export async function openApiFile(path: string, errorLabel = "file", floorId?: string): Promise<void> {
-  const blob = await fetchApiBlob(path, errorLabel, floorId);
-  if (!blob) return;
+  const operation = beginIdentityOperation();
   try {
+    const blob = await fetchApiBlob(path, errorLabel, floorId, operation);
+    if (!blob || !operation.isCurrent()) return;
     if (Platform.OS === "web") {
       const url = URL.createObjectURL(blob);
-      window.open(url, "_blank");
+      window.open(url, "_blank", "noopener,noreferrer");
       setTimeout(() => URL.revokeObjectURL(url), 60_000);
       return;
     }
-    const reader = new FileReader();
-    reader.onloadend = () => Linking.openURL(reader.result as string);
-    reader.readAsDataURL(blob);
-  } catch { toast.show(`Couldn't open the ${errorLabel}`); }
+    const base64 = await nativeBlobBase64(blob);
+    if (operation.isCurrent()) await Linking.openURL(`data:${blob.type || "application/octet-stream"};base64,${base64}`);
+  } catch { if (operation.isCurrent()) toast.show(`Couldn't open the ${errorLabel}`); }
+  finally { operation.finish(); }
 }

@@ -100,7 +100,7 @@ def decode_token(token: str) -> dict:
     try:
         return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALG])
     except jwt.PyJWTError as e:
-        raise HTTPException(status_code=401, detail=f"Invalid token: {e}") from e
+        raise HTTPException(status_code=401, detail="Invalid or expired token") from e
 
 
 def _extract_token(authorization: Optional[str]) -> str:
@@ -271,6 +271,20 @@ async def authorize_staff_request(user: UserPublic, request: Request | None) -> 
         if permitted == [] or (user.active_floor_id and permitted is not None and user.active_floor_id not in permitted):
             raise HTTPException(status_code=403, detail="This account is not permitted to use this function")
     return user
+
+
+async def authorize_staff_resource(user: UserPublic, *, method: str, path: str, floor_id: str) -> None:
+    """Reapply current policy before a workflow mutates a second resource.
+
+    Keep the original request's floor constraints intact: authorizing a
+    quotation must not replace the stock capability used for the first write.
+    """
+    scoped = user.model_copy(deep=True)
+    scoped.active_floor_id = floor_id
+    request = Request({"type": "http", "method": method, "path": path,
+                       "headers": [], "query_string": b"", "scheme": "https",
+                       "server": ("resource-check.invalid", 443)})
+    await authorize_staff_request(scoped, request)
 
 
 def _device_label(user_agent: Optional[str]) -> str:

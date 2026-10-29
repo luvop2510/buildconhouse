@@ -9,6 +9,7 @@ from time import monotonic
 from typing import Any
 
 from fastapi import APIRouter, FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.middleware.cors import CORSMiddleware
 from starlette.middleware.gzip import GZipMiddleware
@@ -241,6 +242,16 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Forge API", version="0.1.1", lifespan=lifespan)
 api = APIRouter(prefix="/api")
+
+
+@app.exception_handler(RequestValidationError)
+async def safe_request_validation_error(_request: Request, exc: RequestValidationError):
+    # Raw input and validator context can contain credentials, private bodies
+    # or non-JSON numbers. Return only bounded field locations and error types.
+    detail = [{"loc": list(error.get("loc", ()))[:12],
+               "type": error.get("type", "value_error"), "msg": "Invalid value"}
+              for error in exc.errors()[:100]]
+    return JSONResponse(status_code=422, content={"detail": detail}, headers={"Cache-Control": "no-store"})
 
 
 @app.middleware("http")

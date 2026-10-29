@@ -149,6 +149,26 @@ export function invalidateApiRequests(scope: "identity" | "workspace" = "identit
   });
 }
 
+/** A private file operation follows the account, even when its source floor differs. */
+export type IdentityOperation = {
+  signal: AbortSignal;
+  isCurrent: () => boolean;
+  finish: () => void;
+};
+
+export function beginIdentityOperation(): IdentityOperation {
+  const version = identityContextVersion;
+  const controller = new AbortController();
+  // Explicit source-floor downloads survive workspace navigation. Any identity
+  // transition still aborts them, including an A → B → A account round trip.
+  activeRequests.set(controller, true);
+  return {
+    signal: controller.signal,
+    isCurrent: () => !controller.signal.aborted && version === identityContextVersion,
+    finish: () => { activeRequests.delete(controller); },
+  };
+}
+
 // Only these exact, read-only endpoints hydrate account-wide identity/grants.
 // Business reads and every mutation retain workspace cancellation semantics.
 function isIdentityRead(method: string, path: string) {

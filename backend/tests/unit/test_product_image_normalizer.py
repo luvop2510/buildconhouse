@@ -1,10 +1,12 @@
 from io import BytesIO
 
 from PIL import Image
+import pytest
 
 import services.media_service as media_service
 from media_storage.base import StoredObject
 from services.product_image_normalizer import normalize_product_image
+import services.product_image_normalizer as normalizer
 
 
 def _image_bytes(size: tuple[int, int], *, fmt: str = "PNG", exif_orientation: int | None = None) -> bytes:
@@ -64,6 +66,41 @@ def test_gif_bytes_are_not_reencoded():
 def test_non_image_media_is_not_modified():
     source = b"%PDF-1.4 sample"
     assert normalize_product_image(source, "application/pdf") == (source, "application/pdf")
+
+
+@pytest.mark.parametrize("mime", ["image/png", "image/jpeg", "image/gif"])
+def test_header_budget_rejects_before_exif_or_decoding(monkeypatch, mime):
+    class HeaderOnly:
+        width = normalizer.MAX_IMAGE_DIMENSION + 1
+        height = 1
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def getexif(self):
+            pytest.fail("EXIF must not be read before the dimension check")
+
+    monkeypatch.setattr(normalizer.Image, "open", lambda *_args: HeaderOnly())
+    with pytest.raises(normalizer.ProductImageNormalizationError, match="size limit"):
+        normalize_product_image(b"header fixture", mime)
+
+
+def test_pixel_budget_applies_to_images_that_need_no_reencoding(monkeypatch):
+    source = _image_bytes((20, 20))
+    monkeypatch.setattr(normalizer, "MAX_IMAGE_PIXELS", 399)
+    with pytest.raises(normalizer.ProductImageNormalizationError, match="size limit"):
+        normalize_product_image(source, "image/png")
+
+
+def test_landscape_canvas_budget_is_checked_before_transpose(monkeypatch):
+    source = _image_bytes((10, 20))
+    monkeypatch.setattr(normalizer, "MAX_IMAGE_PIXELS", 300)
+    monkeypatch.setattr(normalizer.ImageOps, "exif_transpose", lambda *_args: pytest.fail("canvas expansion must be checked first"))
+    with pytest.raises(normalizer.ProductImageNormalizationError, match="size limit"):
+        normalize_product_image(source, "image/png", force_landscape=True)
 
 
 def test_media_quality_uses_the_longest_edge_for_portrait_photography():

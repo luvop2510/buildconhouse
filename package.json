@@ -5,6 +5,7 @@
   "scripts": {
     "preinstall": "./scripts/cmd-guard.js --preinstall",
     "postinstall": "node scripts/patch-react19-compat.mjs && node scripts/patch-uri-decoder-compat.mjs",
+    "prepare:dependencies": "node scripts/cmd-guard.js --preinstall && node scripts/patch-react19-compat.mjs && node scripts/patch-uri-decoder-compat.mjs",
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",

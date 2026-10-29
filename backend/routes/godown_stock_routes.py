@@ -11,6 +11,7 @@ import hashlib
 import json
 import logging
 import re
+from math import isfinite
 from datetime import date, datetime, timezone
 from typing import Literal
 from uuid import NAMESPACE_URL, uuid4, uuid5
@@ -19,7 +20,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, HttpUrl, field_validator
 from pymongo.errors import DuplicateKeyError, PyMongoError
 
-from auth import floor_for_write, floor_query, get_current_user, get_floor_scoped_or_404, require_min_role
+from auth import authorize_staff_resource, floor_for_write, floor_query, get_current_user, get_floor_scoped_or_404, require_min_role
 from db import client, db
 from pymongo import ReturnDocument
 from models import (
@@ -37,6 +38,7 @@ from services.multi_filters import filter_values
 from services.product_image_normalizer import ProductImageNormalizationError
 from services.godown_transfer_receipts import completion_receipt, receipt_id as transfer_receipt_id, removed_history_result
 from routes.media_routes import _read_bounded_upload
+from routes.quotation_routes import _require_valid_quotation_financials
 
 router = APIRouter(prefix="/godown-stock", tags=["godown-stock"])
 logger = logging.getLogger(__name__)
@@ -56,13 +58,13 @@ async def ensure_godown_stock_indexes() -> None:
 class Intake(BaseModel):
     purchase_order_id: str
     purchase_item_id: str
-    qty: float = Field(gt=0)
+    qty: float = Field(gt=0, allow_inf_nan=False)
     reason: str = Field(min_length=2, max_length=280)
 
 
 class Allocation(BaseModel):
     quotation_id: str
-    qty: float = Field(gt=0)
+    qty: float = Field(gt=0, allow_inf_nan=False)
 
 
 class StockPriceVariant(BaseModel):
@@ -186,6 +188,51 @@ class ReturnTransfer(BaseModel):
     note: str | None = Field(default=None, max_length=280)
 
 
+def _require_stock_number(value) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise HTTPException(422, "Stock quantities and amounts must be finite and nonnegative") from exc
+    if not isfinite(number) or number < 0:
+        raise HTTPException(422, "Stock quantities and amounts must be finite and nonnegative")
+    return number
+
+
+def _require_stock_financials(lot: dict) -> None:
+    """Check new stock state without tightening historical read models."""
+    for field in ("qty_received", "available_qty", "loaned_out_qty", "transferred_value", "payment_credit_amount"):
+        if lot.get(field) is not None:
+            _require_stock_number(lot[field])
+    quantity = _require_stock_number(lot.get("available_qty") or 0)
+    prices = [lot.get("unit_price"), lot.get("mrp")]
+    prices.extend(variant.get("price") for variant in lot.get("price_variants") or [])
+    for price in prices:
+        if price is not None:
+            _require_stock_number(quantity * _require_stock_number(price))
+
+
+def _stock_financial_guard(lot: dict) -> dict:
+    # A price and a quantity can each be valid yet overflow together. Bind
+    # validation to both operands so concurrent single-document writers cannot
+    # combine values that neither request validated.
+    return {field: lot.get(field) for field in (
+        "available_qty", "qty_received", "loaned_out_qty", "unit_price", "mrp", "price_variants",
+    )}
+
+
+def _stock_quotation_candidate(quote: dict, items: list[dict]) -> dict:
+    _require_valid_quotation_financials({**quote, "items": items})
+    project = quote.get("project_discount_pct") or 0
+    categories = quote.get("category_discounts") or {}
+    rooms = {key: RoomDiscountCfg(**value) for key, value in (quote.get("room_discounts") or {}).items()}
+    typed = [QuotationLineItem(**item) for item in items]
+    totals = recalc_quotation_totals(typed, project, categories, rooms)
+    totals["grand_total"] += _require_stock_number(quote.get("transportation_fee") or 0)
+    candidate = {**quote, **totals, "items": stamp_net_amounts([dict(item) for item in items], project, categories, rooms)}
+    _require_valid_quotation_financials(candidate)
+    return candidate
+
+
 def _stock_view(lot: dict) -> dict:
     row = {key: value for key, value in lot.items() if key not in {"_id", "intake_command", "source_provenance", "catalog_provenance", "image_local"}}
     if "quantity_counts" in row:
@@ -292,7 +339,18 @@ async def _persist_intake(
     lot_inserted = False
     payment: dict | None = None
     try:
+        _require_stock_financials(lot)
+        _require_stock_number(qty * _require_stock_number(item.get("unit_cost") or 0))
         quotation_id = po.get("quotation_id")
+        # Every settlement writer locks the same order before taking its
+        # balance snapshot. Different brand POs otherwise have disjoint write
+        # sets and can both credit the same remaining balance under snapshot
+        # isolation (including a concurrent cash collection).
+        if quotation_id:
+            await db.quotations.update_one(
+                {"id": quotation_id, "floor_id": po["floor_id"]},
+                {"$inc": {"payment_revision": 1}}, session=session,
+            )
         quotation = await db.quotations.find_one(
             {"id": quotation_id, "floor_id": po["floor_id"]}, {"_id": 0}, session=session,
         ) if quotation_id else None
@@ -302,8 +360,11 @@ async def _persist_intake(
             quote_line = next((line for line in quotation.get("items") or [] if line.get("id") == line_id), None)
             if quote_line and float(quote_line.get("qty") or 0) > 0:
                 sold_unit = per_line_net_amounts(quotation).get(line_id, sold_unit * float(quote_line["qty"])) / float(quote_line["qty"])
-        transferred_value = round(qty * sold_unit, 2)
+        transferred_value = round(_require_stock_number(qty * _require_stock_number(sold_unit)), 2)
         lot["transferred_value"] = transferred_value
+        for field, increment in (("godown_transferred_qty", qty), ("godown_valued_qty", qty),
+                                 ("godown_transferred_value", transferred_value)):
+            _require_stock_number(_require_stock_number(item.get(field) or 0) + increment)
         # Many existing purchase rows predate godown_transferred_qty. Mongo's
         # $lte does not match an absent field, which made valid legacy rows
         # fail with the misleading concurrent-change error.
@@ -314,6 +375,8 @@ async def _persist_intake(
                     "id": item["id"],
                     "loan_replenishment_promised_qty": item.get("loan_replenishment_promised_qty"),
                     "loaned_qty": item.get("loaned_qty"),
+                    "godown_valued_qty": item.get("godown_valued_qty"),
+                    "godown_transferred_value": item.get("godown_transferred_value"),
                     "$and": [
                         {"$or": [
                             {"godown_transferred_qty": {"$lte": received_qty - float(item.get("loan_replenishment_returned_qty") or 0) - float(item.get("loaned_qty") or 0) - max(0.0, float(item.get("loan_replenishment_promised_qty") or 0) - float(item.get("loan_replenishment_returned_qty") or 0)) - qty}},
@@ -341,8 +404,8 @@ async def _persist_intake(
             raise HTTPException(status_code=409, detail="This purchase item was changed while transferring it. Refresh and try again.")
         source_updated = True
 
-        # Re-read and calculate inside the transaction so a simultaneous cash
-        # collection cannot make this ledger credit over-settle the order.
+        # The shared order write above serializes this balance read against
+        # cash collections and credits created from other source POs.
         if quotation_id:
             if quotation and quotation.get("status") in {"ordered", "won"}:
                 paid_rows = await db.payments.aggregate([
@@ -351,8 +414,9 @@ async def _persist_intake(
                     }},
                     {"$group": {"_id": None, "total": {"$sum": "$amount"}}},
                 ], session=session).to_list(1)
-                already_settled = float(paid_rows[0].get("total") or 0) if paid_rows else 0.0
-                credit_amount = round(min(transferred_value, max(0.0, _collection_total(quotation) - already_settled)), 2)
+                already_settled = _require_stock_number(paid_rows[0].get("total") or 0) if paid_rows else 0.0
+                order_total = _require_stock_number(_collection_total(quotation))
+                credit_amount = round(min(transferred_value, max(0.0, order_total - already_settled)), 2)
                 lot["payment_credit_amount"] = credit_amount
                 if credit_amount > 0:
                     payment = Payment(
@@ -698,6 +762,7 @@ def _replayed_transfer(existing: dict, stock_id: str, body: CustomerTransfer, us
 
 def _transfer_quotation_line(lot: dict, body: CustomerTransfer, stock_id: str, at: str) -> QuotationLineItem:
     unit_price = float(body.unit_price if body.unit_price is not None else lot.get("unit_price") or 0)
+    _require_stock_number(body.qty * _require_stock_number(unit_price))
     line = QuotationLineItem(
         product_id=lot.get("product_id") or f"godown:{stock_id}", sku=lot.get("sku") or "",
         name=lot.get("name") or "Godown stock", image=lot.get("image"),
@@ -708,14 +773,16 @@ def _transfer_quotation_line(lot: dict, body: CustomerTransfer, stock_id: str, a
         godown_source_purchased_at=lot.get("source_purchased_at"), godown_transferred_at=at,
     )
     line.net_amount = recalc_quotation_totals([line])["grand_total"]
+    _require_valid_quotation_financials({"items": [line.model_dump()]})
     return line
 
 
 async def _new_transfer_quotation(lot: dict, recipient: dict, body: CustomerTransfer,
                                   stock_id: str, at: str, user: UserPublic, session) -> tuple[dict, QuotationLineItem]:
+    line = _transfer_quotation_line(lot, body, stock_id, at)
+    _stock_quotation_candidate({}, [line.model_dump()])
     year = datetime.now(timezone.utc).year
     number = await next_number("quotation", f"FQ-{year}-", collection="quotations", session=session)
-    line = _transfer_quotation_line(lot, body, stock_id, at)
     quote = Quotation(
         number=number, customer_id=recipient["id"], customer_name=recipient.get("company") or recipient.get("name"),
         status="ordered", ordered_at=at, items=[line],
@@ -785,6 +852,7 @@ async def _customer_transfer_quotation(lot: dict, recipient: dict, body: Custome
         "revisions": [*(current.get("revisions") or []), revision], "updated_at": at,
         "transfer_group_key": group_key,
     }
+    _require_valid_quotation_financials({**current, **update})
     await db.quotations.update_one(
         {"id": current["id"], "floor_id": lot["floor_id"]}, {"$set": update}, session=session,
     )
@@ -818,6 +886,10 @@ async def _transfer_stock_to_customer_once(stock_id: str, body: CustomerTransfer
                 raise HTTPException(status_code=422, detail="Record a unit price before transferring this stock")
             if float(lot.get("available_qty") or 0) - float(lot.get("loaned_out_qty") or 0) < body.qty:
                 raise HTTPException(status_code=409, detail="Requested quantity exceeds stock available for customer transfer")
+            _require_stock_financials(lot)
+            # Reject finite-operand overflow before customer/counter/order
+            # writes, including the PO Final branch that reuses an old quote.
+            _transfer_quotation_line(lot, body, stock_id, now_iso())
             recipient = None
             created_customer = False
             if body.recipient_customer_id:
@@ -1021,14 +1093,19 @@ async def get_stock(stock_id: str, user: UserPublic = Depends(get_current_user))
 
 @router.patch("/{stock_id}/pricing")
 async def update_stock_pricing(stock_id: str, body: StockPricingUpdate, user: UserPublic = Depends(require_min_role("warehouse"))):
+    current = await get_floor_scoped_or_404(db.godown_stock, stock_id, user, not_found="Godown stock lot not found", projection={"_id": 0})
+    if current.get("archived"):
+        raise HTTPException(404, "Godown stock lot not found")
+    changes = {"unit_price": body.unit_price, "price_variants": [variant.model_dump() for variant in body.price_variants]}
+    _require_stock_financials({**current, **changes})
     at = now_iso()
     lot = await db.godown_stock.find_one_and_update(
-        floor_query(user, {"id": stock_id, "archived": {"$ne": True}}),
-        {"$set": {"unit_price": body.unit_price, "price_variants": [variant.model_dump() for variant in body.price_variants], "updated_at": at}},
+        floor_query(user, {"id": stock_id, "archived": {"$ne": True}, **_stock_financial_guard(current)}),
+        {"$set": {**changes, "updated_at": at}},
         return_document=ReturnDocument.AFTER,
     )
     if not lot:
-        raise HTTPException(status_code=404, detail="Godown stock lot not found")
+        raise HTTPException(status_code=409, detail="Stock changed while saving pricing; refresh and try again")
     await log_event(event_type="godown_stock.pricing_updated", entity_type="godown_stock", entity_id=stock_id, actor=user, floor_id=lot["floor_id"], summary=f"Updated pricing for {lot['name']}", payload={"unit_price": body.unit_price, "variant_count": len(body.price_variants)})
     return await _stock_response(lot)
 
@@ -1055,11 +1132,13 @@ async def record_missing_quantity(stock_id: str, body: MissingQuantityCount, use
         raise HTTPException(409, "This lot has transfer history. Reconcile its history before recording a count.")
     if lot.get("updated_at") != body.expected_updated_at:
         raise HTTPException(409, "Stock details changed. Reload and review this lot before recording the count.")
+    _require_stock_financials({**lot, "qty_received": body.qty, "available_qty": body.qty, "quantity_missing": False})
     at = now_iso()
     count = {"id": str(uuid4()), "qty": body.qty, "unit": "product_stock_unit", "counted_on": body.counted_on.isoformat(),
              "reason": body.reason, "actor_id": user.id, "actor_name": user.full_name, "recorded_at": at,
              "command_key": body.idempotency_key, "payload_sha256": fingerprint}
     guard = {"id": stock_id, "archived": {"$ne": True}, "quantity_missing": True, "updated_at": body.expected_updated_at,
+             **_stock_financial_guard(lot),
              **{field: lot.get(field) for field in ("qty_received", "available_qty", "loaned_out_qty", "allocations", "customer_transfers", "quantity_counts")}}
     updated = await db.godown_stock.find_one_and_update(floor_query(user, guard), {
         "$set": {"qty_received": body.qty, "available_qty": body.qty, "quantity_missing": False, "updated_at": at},
@@ -1096,6 +1175,12 @@ async def record_stock_movement(stock_id: str, body: StockMovement, user: UserPu
         raise HTTPException(409, "Stock changed. Refresh this lot and review the movement.")
     if body.kind == "adjustment_out" and body.qty > float(lot.get("available_qty") or 0) - float(lot.get("loaned_out_qty") or 0):
         raise HTTPException(409, "The movement exceeds stock available after reserved transfers.")
+    increments = {"available_qty": body.qty if body.kind == "receipt" else -body.qty}
+    if body.kind == "receipt":
+        increments["qty_received"] = body.qty
+    _require_stock_financials({**lot, **{
+        field: _require_stock_number(lot.get(field) or 0) + amount for field, amount in increments.items()
+    }})
     changes = {"updated_at": now_iso()}
     if body.kind == "receipt" and not lot.get("catalog_product_id") and (not lot.get("product_id") or str(lot["product_id"]).startswith("godown:")):
         # Preserve legacy lot identity used by saved quotations while making its SKU reusable.
@@ -1109,10 +1194,8 @@ async def record_stock_movement(stock_id: str, body: StockMovement, user: UserPu
     movement = {"id": str(uuid4()), "kind": body.kind, "qty": body.qty, "occurred_on": body.occurred_on.isoformat(),
                 "reason": body.reason, "actor_id": user.id, "actor_name": user.full_name, "recorded_at": at,
                 "command_key": body.idempotency_key, "payload_sha256": fingerprint}
-    increments = {"available_qty": body.qty if body.kind == "receipt" else -body.qty}
-    if body.kind == "receipt":
-        increments["qty_received"] = body.qty
     guard = {"id": stock_id, "archived": {"$ne": True}, "quantity_missing": {"$ne": True},
+             **_stock_financial_guard(lot),
              "updated_at": body.expected_updated_at, "stock_movements": lot.get("stock_movements"),
              "available_qty": lot.get("available_qty"), "loaned_out_qty": lot.get("loaned_out_qty")}
     updated = await db.godown_stock.find_one_and_update({**guard, "floor_id": lot["floor_id"]}, {
@@ -1136,12 +1219,16 @@ async def update_stock_details(stock_id: str, body: StockDetailsUpdate, user: Us
     # and the manufacturer's catalog photo retain their original snapshots.
     if "image" in changes:
         changes["image_media_id"] = None
+    current = await get_floor_scoped_or_404(db.godown_stock, stock_id, user, not_found="Godown stock lot not found", projection={"_id": 0})
+    if current.get("archived"):
+        raise HTTPException(404, "Godown stock lot not found")
+    _require_stock_financials({**current, **changes})
     lot = await db.godown_stock.find_one_and_update(
-        floor_query(user, {"id": stock_id, "archived": {"$ne": True}}),
+        floor_query(user, {"id": stock_id, "archived": {"$ne": True}, **_stock_financial_guard(current)}),
         {"$set": {**changes, "updated_at": now_iso()}}, return_document=ReturnDocument.AFTER,
     )
     if not lot:
-        raise HTTPException(status_code=404, detail="Godown stock lot not found")
+        raise HTTPException(status_code=409, detail="Stock changed while saving details; refresh and try again")
     await log_event(event_type="godown_stock.details_updated", entity_type="godown_stock", entity_id=stock_id,
                     actor=user, floor_id=lot["floor_id"], summary=f"Updated stock details for {lot['name']}",
                     payload={"fields": sorted(body.model_fields_set)})
@@ -1181,6 +1268,8 @@ async def _intake_catalog_product(body: DirectIntake, floor_id: str) -> dict:
     """Persist reusable catalog identity before inventory; retries reuse its SKU."""
     if not body.sku or not body.sku.strip() or not body.name or not body.name.strip():
         raise HTTPException(422, "SKU and product name are required to register reusable stock. Add a labelled intake for unlabelled material.")
+    _require_stock_financials({"available_qty": body.qty, "unit_price": body.unit_price,
+                               "price_variants": [variant.model_dump() for variant in body.price_variants]})
     async def relation(collection, name, kind):
         existing = await collection.find_one({"floor_id": floor_id, "name": {"$regex": f"^{re.escape(name)}$", "$options": "i"}}, {"_id": 0})
         if existing:
@@ -1190,13 +1279,17 @@ async def _intake_catalog_product(body: DirectIntake, floor_id: str) -> dict:
         await collection.update_one({"_id": f"godown-{kind}:{identity}"}, {"$setOnInsert": row}, upsert=True)
         return row
     brand = await relation(db.brands, (body.brand or "").strip() or "Unbranded", "brand")
-    category = await relation(db.categories, (body.category or "").strip() or "Godown stock", "category")
     lookup = {"floor_id": floor_id, "brand_id": brand["id"], "sku": body.sku.strip()}
     product = await db.products.find_one(lookup, {"_id": 0})
     if product:
         if not product.get("active", True):
             raise HTTPException(409, "This SKU is inactive in the catalog. Restore it before adding stock.")
+        catalog_price = product.get("mrp") if (product.get("price_status") or (product.get("specs") or {}).get("price_status")) != "unspecified" else None
+        _require_stock_financials({"available_qty": body.qty,
+                                   "unit_price": body.unit_price if body.unit_price is not None else catalog_price,
+                                   "mrp": catalog_price if catalog_price is not None else body.unit_price})
         return product
+    category = await relation(db.categories, (body.category or "").strip() or "Godown stock", "category")
     identity = str(uuid5(NAMESPACE_URL, f"godown-product:{floor_id}:{brand['id']}:{body.sku.strip()}"))
     product = Product(id=identity, floor_id=floor_id, sku=body.sku.strip(), name=body.name.strip(),
                       brand_id=brand["id"], category_id=category["id"], mrp=body.unit_price or 0, price=body.unit_price or 0,
@@ -1250,6 +1343,10 @@ async def direct_intake(body: DirectIntake, user: UserPublic = Depends(require_m
         raise HTTPException(status_code=422, detail="SKU and product name are required")
     if not product and body.unit_price is None:
         raise HTTPException(status_code=422, detail="Unit price is required for a product outside the catalog")
+    # Manual catalog registration itself writes brand/category/product rows.
+    # Reject an impossible stock value before entering that path.
+    _require_stock_financials({"available_qty": body.qty, "qty_received": body.qty,
+                               "unit_price": body.unit_price, "price_variants": [variant.model_dump() for variant in body.price_variants]})
     manual = product is None
     if manual:
         product = await _intake_catalog_product(body, floor_id)
@@ -1261,6 +1358,9 @@ async def direct_intake(body: DirectIntake, user: UserPublic = Depends(require_m
     # Carry the explicit unknown status into stock instead of asserting a gift.
     stock_price = body.unit_price if body.unit_price is not None else catalog_price
     stock_mrp = catalog_price if catalog_price is not None else body.unit_price
+    _require_stock_financials({"available_qty": body.qty, "qty_received": body.qty,
+                               "unit_price": stock_price, "mrp": stock_mrp,
+                               "price_variants": [variant.model_dump() for variant in body.price_variants]})
     lot = {
         "id": lot_id, "floor_id": floor_id,
         "product_id": product["id"],
@@ -1327,23 +1427,29 @@ async def intake_stock(body: Intake, user: UserPublic = Depends(require_min_role
         "source_purchased_at": (source_quote or {}).get("ordered_at") or (source_quote or {}).get("created_at") or po.get("created_at"),
         "reason": body.reason.strip(), "transferred_at": at, "transferred_by": user.id, "transferred_by_name": user.full_name, "allocations": [], "created_at": at, "updated_at": at,
     }
+    _require_stock_financials(lot)
     payment: dict | None = None
+    # A retried transaction must not reuse fields mutated by an aborted
+    # attempt (for example its generated credit payment ID).
+    initial_lot = dict(lot)
+
+    async def write_intake(session=None):
+        return await _persist_intake(
+            po=po, item=item, qty=body.qty, reason=initial_lot["reason"], user=user,
+            lot=dict(initial_lot), at=at, session=session,
+        )
+
     try:
         async with await client.start_session() as session:
-            async with session.start_transaction():
-                lot, payment = await _persist_intake(
-                    po=po, item=item, qty=body.qty, reason=lot["reason"], user=user,
-                    lot=lot, at=at, session=session,
-                )
+            lot, payment = await session.with_transaction(write_intake)
     except Exception as exc:
         if not _transaction_unsupported(exc):
             raise
-        # Local standalone Mongo has no transactions. _persist_intake has
-        # explicit compensating writes for this development-only fallback.
-        lot, payment = await _persist_intake(
-            po=po, item=item, qty=body.qty, reason=lot["reason"], user=user,
-            lot=lot, at=at,
-        )
+        from settings import settings
+        if settings.environment == "production":
+            raise HTTPException(503, "Stock intake requires a MongoDB replica set in production") from exc
+        # Standalone development Mongo uses explicit compensating writes.
+        lot, payment = await write_intake()
     credit_amount = float((payment or {}).get("amount") or 0)
     await log_event(event_type="godown_stock.intaken", entity_type="purchase", entity_id=po["id"], actor=user, floor_id=po["floor_id"], customer_id=po.get("customer_id"), purchase_id=po["id"], summary=f"Moved {body.qty:g} × {item.get('name')} to godown stock", payload={"stock_id": lot["id"], "reason": lot["reason"], "source_purchased_at": lot["source_purchased_at"], "payment_credit_amount": credit_amount, "payment_id": (payment or {}).get("id")})
     await notify(user.id, "Godown stock added", body=(f"{body.qty:g} × {item.get('name')} from {po.get('customer_name')} is available to reuse." + (f" Customer balance reduced by ₹{format_indian_money(credit_amount)}." if credit_amount else "")), kind="success", link="/(admin)/godown-stock", floor_id=po["floor_id"])
@@ -1361,21 +1467,55 @@ async def intake_stock(body: Intake, user: UserPublic = Depends(require_min_role
 @router.post("/{stock_id}/allocate")
 async def allocate_stock(stock_id: str, body: Allocation, user: UserPublic = Depends(require_min_role("sales"))):
     quote = await get_floor_scoped_or_404(db.quotations, body.quotation_id, user, not_found="Quotation not found", projection={"_id": 0})
-    if quote.get("status") not in {"draft", "sent", "approved"}:
-        raise HTTPException(status_code=409, detail="Godown stock can only be added to an open quotation")
-    at = now_iso()
-    allocation = {"id": str(uuid4()), "quotation_id": quote["id"], "quotation_number": quote.get("number"), "customer_id": quote.get("customer_id"), "customer_name": quote.get("customer_name"), "qty": body.qty, "allocated_at": at, "allocated_by": user.id, "allocated_by_name": user.full_name}
-    lot = await db.godown_stock.find_one_and_update(
-        floor_query(user, {"id": stock_id, "archived": {"$ne": True}, "quantity_missing": {"$ne": True}, "unit_price": {"$ne": None}, "$expr": {"$gte": [
-            {"$subtract": [{"$ifNull": ["$available_qty", 0]}, {"$ifNull": ["$loaned_out_qty", 0]}]}, body.qty,
-        ]}}),
-        {"$inc": {"available_qty": -body.qty}, "$push": {"allocations": allocation}, "$set": {"updated_at": at}},
-        return_document=ReturnDocument.AFTER,
-    )
-    if not lot:
-        raise HTTPException(status_code=409, detail="That stock is no longer available in the requested quantity")
-    line = {"id": str(uuid4()), "product_id": lot["product_id"], "sku": lot["sku"], "name": lot["name"], "image": lot.get("image"), "finish": lot.get("finish"), "qty": body.qty, "unit_price": float(lot.get("unit_price") or 0), "room": None, "godown_stock_id": stock_id, "godown_allocation_id": allocation["id"], "godown_source_customer_name": lot.get("source_customer_name"), "godown_source_purchased_at": lot.get("source_purchased_at"), "godown_transferred_at": lot.get("transferred_at"), "godown_allocated_at": at}
-    await db.quotations.update_one({"id": quote["id"]}, {"$push": {"items": line}, "$set": {"updated_at": at}})
+    await authorize_staff_resource(user, method="PATCH", path=f"/api/quotations/{quote['id']}", floor_id=quote["floor_id"])
+    async def allocate(session):
+        current = await db.quotations.find_one(
+            floor_query(user, {"id": quote["id"], "floor_id": quote["floor_id"]}), {"_id": 0}, session=session,
+        )
+        if not current:
+            raise HTTPException(404, "Quotation not found")
+        if current.get("status") not in {"draft", "sent", "approved"}:
+            raise HTTPException(status_code=409, detail="Godown stock can only be added to an open quotation")
+        lot = await db.godown_stock.find_one(
+            floor_query(user, {"id": stock_id, "floor_id": current["floor_id"], "archived": {"$ne": True}, "quantity_missing": {"$ne": True}}),
+            {"_id": 0}, session=session,
+        )
+        if not lot or lot.get("unit_price") is None:
+            raise HTTPException(409, "That stock is no longer available in the requested quantity")
+        _require_stock_financials(lot)
+        if float(lot.get("available_qty") or 0) - float(lot.get("loaned_out_qty") or 0) < body.qty:
+            raise HTTPException(409, "That stock is no longer available in the requested quantity")
+        at = now_iso()
+        allocation = {"id": str(uuid4()), "quotation_id": current["id"], "quotation_number": current.get("number"), "customer_id": current.get("customer_id"), "customer_name": current.get("customer_name"), "qty": body.qty, "allocated_at": at, "allocated_by": user.id, "allocated_by_name": user.full_name}
+        line = {"id": str(uuid4()), "product_id": lot["product_id"], "sku": lot["sku"], "name": lot["name"], "image": lot.get("image"), "finish": lot.get("finish"), "qty": body.qty, "unit_price": float(lot["unit_price"]), "room": None, "godown_stock_id": stock_id, "godown_allocation_id": allocation["id"], "godown_source_customer_name": lot.get("source_customer_name"), "godown_source_purchased_at": lot.get("source_purchased_at"), "godown_transferred_at": lot.get("transferred_at"), "godown_allocated_at": at}
+        candidate = _stock_quotation_candidate(current, [*(current.get("items") or []), line])
+        # The transaction binds both financial snapshots to the writes. A
+        # concurrent price/quantity/quote edit conflicts and retries from a new
+        # snapshot, so no unvalidated price can enter the quotation.
+        claimed = await db.godown_stock.find_one_and_update(
+            {"id": stock_id, "floor_id": current["floor_id"], **_stock_financial_guard(lot)},
+            {"$inc": {"available_qty": -body.qty}, "$push": {"allocations": allocation}, "$set": {"updated_at": at}},
+            return_document=ReturnDocument.AFTER, session=session,
+        )
+        if not claimed:
+            raise HTTPException(409, "Stock changed while allocating; refresh and try again")
+        updated = await db.quotations.update_one(
+            {"id": current["id"], "floor_id": current["floor_id"], "items": current.get("items")},
+            {"$set": {**{field: candidate[field] for field in ("items", "subtotal", "discount_total", "grand_total")}, "updated_at": at}},
+            session=session,
+        )
+        if not updated.modified_count:
+            raise HTTPException(409, "Quotation changed while allocating; refresh and try again")
+        return allocation, candidate["items"][-1], claimed
+
+    try:
+        async with await client.start_session() as session:
+            allocation, line, lot = await session.with_transaction(allocate)
+    except Exception as exc:
+        if _transaction_unsupported(exc):
+            raise HTTPException(503, "Stock allocation requires a MongoDB replica set") from exc
+        raise
+    at = allocation["allocated_at"]
     await log_event(event_type="godown_stock.allocated", entity_type="quotation", entity_id=quote["id"], actor=user, floor_id=quote["floor_id"], customer_id=quote.get("customer_id"), quotation_id=quote["id"], summary=f"Added {body.qty:g} × {lot['name']} from godown stock", payload={"stock_id": stock_id, "allocation_id": allocation["id"], "source_customer": lot.get("source_customer_name"), "source_purchased_at": lot.get("source_purchased_at"), "allocated_at": at})
     await notify(user.id, "Godown stock allocated", body=f"{body.qty:g} × {lot['name']} was added to {quote.get('number')} for {quote.get('customer_name')}.", kind="info", link=f"/(admin)/quotations/{quote['id']}", floor_id=quote["floor_id"])
     return {"allocation": allocation, "line": line, "remaining_qty": float(lot.get("available_qty") or 0)}

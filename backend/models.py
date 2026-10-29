@@ -1,7 +1,8 @@
 """Pydantic models for Forge. Every persisted doc uses a UUID id string."""
 from __future__ import annotations
 from datetime import datetime, timezone
-from typing import Any, Literal, Optional
+from math import isfinite
+from typing import Annotated, Any, Literal, Optional
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
@@ -454,6 +455,8 @@ class ConcealedPart(BaseModel):
     remaining fields expose current catalog values for future quotation lines;
     saved quotations retain their own independent commercial snapshots.
     """
+    model_config = ConfigDict(allow_inf_nan=False)
+
     sku: str = Field(min_length=1, max_length=160)
     product_id: Optional[str] = None
     name: Optional[str] = None
@@ -511,8 +514,8 @@ class Product(TimestampedModel):
     dimension_image_urls: list[str] = []
     seat_cover_image_urls: list[str] = []
     warranty: Optional[str] = None
-    mrp: float = Field(ge=0)
-    price: float = Field(ge=0)              # trade price
+    mrp: float = Field(ge=0, allow_inf_nan=False)
+    price: float = Field(ge=0, allow_inf_nan=False)  # trade price
     stock: int = 0
     # DEPRECATED (kept for read-back compatibility) — new media lives in
     # `product_media` collection referenced via ProductMedia.
@@ -551,6 +554,8 @@ class Product(TimestampedModel):
 
 
 class ProductCreate(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
+
     name: str
     sku: str
     brand_id: str
@@ -572,8 +577,8 @@ class ProductCreate(BaseModel):
     material: Optional[str] = None
     dimensions: Optional[str] = None
     warranty: Optional[str] = None
-    mrp: float
-    price: float
+    mrp: float = Field(ge=0)
+    price: float = Field(ge=0)
     stock: int = 0
     images: list[str] = []
     tags: list[str] = []
@@ -592,6 +597,8 @@ class ProductPatch(BaseModel):
     this one shape). Every field is optional; only fields actually present in
     the request body are applied (exclude_unset), so callers never
     accidentally blank out a field they didn't mean to touch."""
+    model_config = ConfigDict(allow_inf_nan=False)
+
     name: Optional[str] = None
     sku: Optional[str] = None
     brand_id: Optional[str] = None
@@ -608,13 +615,22 @@ class ProductPatch(BaseModel):
     dimensions: Optional[str] = None
     dimension_image_urls: Optional[list[str]] = None
     seat_cover_image_urls: Optional[list[str]] = None
-    mrp: Optional[float] = None
-    price: Optional[float] = None
+    mrp: Optional[float] = Field(default=None, ge=0)
+    price: Optional[float] = Field(default=None, ge=0)
     specs: Optional[dict] = None
     must_buy_concealed: Optional[bool] = None
     concealed_sku: Optional[str] = None
     concealed_skus: Optional[list[str]] = None
     concealed_part: Optional[ConcealedPart] = None
+
+    @field_validator("name", "sku", "brand_id", "category_id", "mrp", "price")
+    @classmethod
+    def required_product_fields_cannot_be_cleared(cls, value):
+        # An omitted PATCH field is unchanged. Explicit null would persist an
+        # invalid required Product and fail only after the database write.
+        if value is None:
+            raise ValueError("This product field cannot be null")
+        return value
 
 
 class SizeVariantResolution(BaseModel):
@@ -748,6 +764,37 @@ class RoomDiscountCfg(BaseModel):
     value: float = 0
 
 
+DiscountPercentageInput = Annotated[float, Field(ge=0, le=100, allow_inf_nan=False)]
+
+
+class _QuotationWritePayload(BaseModel):
+    """New financial inputs are strict; historical read models stay readable."""
+
+    model_config = ConfigDict(allow_inf_nan=False)
+
+    @field_validator("room_discounts", check_fields=False)
+    @classmethod
+    def validate_room_discount_input(cls, value):
+        for discount in (value or {}).values():
+            if not isfinite(discount.value) or discount.value < 0:
+                raise ValueError("Room discounts must be finite and nonnegative")
+            if discount.type == "percent" and discount.value > 100:
+                raise ValueError("Room percentage discounts must not exceed 100")
+        return value
+
+    @field_validator("items", check_fields=False)
+    @classmethod
+    def validate_finite_line_input(cls, value):
+        # QuotationLineItem also reads historical records. Validate nested
+        # request values here, including pre-existing model instances, without
+        # tightening the legacy net_amount read contract.
+        for item in value or []:
+            if any(isinstance(number, float) and not isfinite(number)
+                   for number in item.model_dump().values()):
+                raise ValueError("Quotation item numbers must be finite")
+        return value
+
+
 # ---------- Referrers (Sales Data > Referred By) ----------
 # Architects and interior designers who send business our way. Deliberately
 # minimal — just enough to attribute revenue to a specific person. Existing
@@ -860,7 +907,7 @@ class Quotation(TimestampedModel):
     source_item_id: Optional[str] = None
 
 
-class QuotationCreate(BaseModel):
+class QuotationCreate(_QuotationWritePayload):
     # Stable local tile-draft identity; replay recovers the original document.
     client_draft_id: Optional[str] = Field(default=None, min_length=1, max_length=100)
     customer_id: str
@@ -873,8 +920,8 @@ class QuotationCreate(BaseModel):
     reference_source: Optional[str] = None
     referrer_type: Optional[ReferrerType] = None
     referrer_id: Optional[str] = None
-    project_discount_pct: float = 0
-    category_discounts: dict[str, float] = {}
+    project_discount_pct: DiscountPercentageInput = 0
+    category_discounts: dict[str, DiscountPercentageInput] = {}
     room_discounts: dict[str, RoomDiscountCfg] = {}
     doc_type: Literal["standard", "tiles_selection", "tiles_quotation"] = "standard"
     attended_by: Optional[str] = None
@@ -885,7 +932,7 @@ class QuotationCreate(BaseModel):
     transportation_fee: float = Field(default=0, ge=0)
 
 
-class QuotationUpdate(BaseModel):
+class QuotationUpdate(_QuotationWritePayload):
     expected_updated_at: Optional[str] = Field(default=None, max_length=100)
     customer_id: Optional[str] = None    # change the customer on an existing quotation
     items: Optional[list[QuotationLineItem]] = None
@@ -900,8 +947,8 @@ class QuotationUpdate(BaseModel):
     referrer_type: Optional[ReferrerType] = None
     referrer_id: Optional[str] = None
     ui_state: Optional[dict] = None
-    project_discount_pct: Optional[float] = None
-    category_discounts: Optional[dict[str, float]] = None
+    project_discount_pct: Optional[DiscountPercentageInput] = None
+    category_discounts: Optional[dict[str, DiscountPercentageInput]] = None
     room_discounts: Optional[dict[str, RoomDiscountCfg]] = None
     attended_by: Optional[str] = None
     prepared_by: Optional[str] = None

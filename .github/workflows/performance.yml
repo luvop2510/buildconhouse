@@ -34,8 +34,8 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install backend performance dependencies
-        run: pip install -r backend/requirements-prod.txt pytest pytest-asyncio
-      - run: npm ci
+        run: python -m pip install --upgrade pip==26.2.2 && pip install -r backend/requirements-prod.txt pytest pytest-asyncio
+      - run: npm install --global npm@11.17.0 --ignore-scripts --no-audit --no-fund && npm ci --ignore-scripts && npm run prepare:dependencies
       - name: Verify audit orchestration and stability guards
         run: |
           node scripts/test-performance-audit-runner.mjs
@@ -81,7 +81,7 @@ jobs:
           node-version: "22"
           cache: npm
           cache-dependency-path: package-lock.json
-      - run: npm ci
+      - run: npm install --global npm@11.17.0 --ignore-scripts --no-audit --no-fund && npm ci --ignore-scripts && npm run prepare:dependencies
       - name: Verify pinned Playwright browsers
         run: |
           node <<'NODE'
@@ -137,7 +137,7 @@ jobs:
           node-version: "22"
           cache: npm
           cache-dependency-path: package-lock.json
-      - run: npm ci
+      - run: npm install --global npm@11.17.0 --ignore-scripts --no-audit --no-fund && npm ci --ignore-scripts && npm run prepare:dependencies
       - name: Verify pinned Playwright browsers
         run: |
           node <<'NODE'

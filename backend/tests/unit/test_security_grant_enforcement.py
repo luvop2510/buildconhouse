@@ -93,6 +93,7 @@ async def test_update_grant_cannot_borrow_view_grant_on_other_floor(monkeypatch)
 @pytest.mark.asyncio
 @pytest.mark.parametrize("path,resource", [
     ("/api/quotations/quote-1/items/line-1/cancel", "quotations"),
+    ("/api/quotations/quote-1/items", "quotations"),
     ("/api/quotations/quote-1/move-to-quotation", "quotations"),
     ("/api/quotations/quote-1/place-order/confirm", "quotations"),
     ("/api/purchases/items/item-1/move", "purchases"),
@@ -117,11 +118,54 @@ async def test_post_business_mutations_require_update_instead_of_create(monkeypa
         assert exc.value.status_code == 403
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("quote_actions,allowed", [([], False), (["view", "create"], False), (["view", "update"], True)])
+async def test_stock_allocation_requires_quotation_update_before_stock_write(monkeypatch, quote_actions, allowed):
+    import routes.godown_stock_routes as godown
+
+    grants = [grant(resource="godown_stock", actions=["view", "update"], floor="first-floor")]
+    if quote_actions:
+        grants.append(grant(resource="quotations", actions=quote_actions, floor="first-floor"))
+    mock_staff(monkeypatch, grants)
+    user = await auth.get_current_user(request=request("/api/godown-stock/s/allocate", "POST", "first-floor"),
+                                       authorization="Bearer test", x_floor_id="first-floor", dl=None)
+    before = auth.accessible_floor_ids(user)
+    writes = []
+
+    class Quotes:
+        async def find_one(self, *_args, **_kwargs):
+            return {"id": "q", "floor_id": "first-floor", "status": "draft", "items": []}
+
+    class Stock:
+        async def find_one(self, *_args, **_kwargs):
+            return {"id": "s", "floor_id": "first-floor", "product_id": "p", "sku": "SKU", "name": "Basin",
+                    "unit_price": 100, "available_qty": 1}
+
+        async def find_one_and_update(self, *_args, **_kwargs):
+            writes.append(True)
+            return None  # Stop at the minimum admission effect; no mutation.
+
+    class Session:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *_args): return False
+        async def with_transaction(self, callback): return await callback(self)
+
+    async def start_session(): return Session()
+
+    monkeypatch.setattr(godown, "db", SimpleNamespace(quotations=Quotes(), godown_stock=Stock()))
+    monkeypatch.setattr(godown, "client", SimpleNamespace(start_session=start_session))
+    with pytest.raises(HTTPException) as exc:
+        await godown.allocate_stock("s", godown.Allocation(quotation_id="q", qty=1), user)
+    assert exc.value.status_code == (409 if allowed else 403)
+    assert bool(writes) is allowed
+    assert auth.accessible_floor_ids(user) == before
+
+
 def test_semantic_mutation_patterns_are_exact_and_preserve_real_create_operations():
     from services.access_grants import action_for_api_request
     assert action_for_api_request("POST", "/api/quotations") == "create"
     assert action_for_api_request("POST", "/api/quotations/quote-1/duplicate") == "create"
-    assert action_for_api_request("POST", "/api/quotations/quote-1/items") == "create"
+    assert action_for_api_request("POST", "/api/quotations/quote-1/items") == "update"
     assert action_for_api_request("POST", "/api/purchases/po-1/chalans") == "create"
     assert action_for_api_request("POST", "/api/quotations/quote-1/place-order/confirm/extra") == "create"
     assert action_for_api_request("POST", "/api/purchases/items/item-1/move-other") == "create"

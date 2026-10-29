@@ -42,11 +42,12 @@ def test_partial_details_preserve_omitted_fields_and_floor_scope(monkeypatch, ch
     async def update(query, update, **_kwargs):
         captured.update(query=query, update=update)
         return {**lot, **update["$set"]}
-    monkeypatch.setattr(routes, "db", SimpleNamespace(godown_stock=SimpleNamespace(find_one_and_update=update)))
+    monkeypatch.setattr(routes, "db", SimpleNamespace(godown_stock=SimpleNamespace(find_one=AsyncMock(return_value=lot), find_one_and_update=update)))
     monkeypatch.setattr(routes, "log_event", AsyncMock())
     result = asyncio.run(routes.update_stock_details("lot", routes.StockDetailsUpdate(**changes), user()))
     assert captured["query"]["$and"][0] == {"floor_id": {"$in": ["first-floor"]}}
-    assert captured["query"]["$and"][1] == {"id": "lot", "archived": {"$ne": True}}
+    guard = captured["query"]["$and"][1]
+    assert guard == {"id": "lot", "archived": {"$ne": True}, **routes._stock_financial_guard(lot)}
     for key in ("unit_price", "image", "price_variants"):
         assert result[key] == changes.get(key, lot[key])
     if "image" in changes: assert captured["update"]["$set"]["image_media_id"] is None
@@ -66,7 +67,7 @@ def test_empty_details_and_missing_lot_rejected(monkeypatch):
     with pytest.raises(HTTPException) as exc:
         asyncio.run(routes.update_stock_details("lot", routes.StockDetailsUpdate(), user()))
     assert exc.value.status_code == 422
-    monkeypatch.setattr(routes, "db", SimpleNamespace(godown_stock=SimpleNamespace(find_one_and_update=AsyncMock(return_value=None))))
+    monkeypatch.setattr(routes, "db", SimpleNamespace(godown_stock=SimpleNamespace(find_one=AsyncMock(return_value=None), find_one_and_update=AsyncMock(return_value=None))))
     with pytest.raises(HTTPException) as exc:
         asyncio.run(routes.update_stock_details("lot", routes.StockDetailsUpdate(image=None), user()))
     assert exc.value.status_code == 404

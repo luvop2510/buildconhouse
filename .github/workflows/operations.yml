@@ -54,7 +54,7 @@ jobs:
           retention-days: 3
 
   private-backup:
-    if: inputs.private_backup
+    if: inputs.private_backup && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: production
     timeout-minutes: 30
@@ -64,11 +64,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: main
           persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: pip install -r requirements-prod.txt
+      - run: python -m pip install --upgrade pip==26.2.2 && pip install -r requirements-prod.txt
       - name: Verify private backup source identity before export
         env:
           MONGO_URL: ${{ secrets.MONGO_URL }}

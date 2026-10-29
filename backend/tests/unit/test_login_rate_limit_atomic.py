@@ -34,6 +34,38 @@ class _AtomicRedis:
 
 
 @pytest.mark.asyncio
+async def test_configured_redis_outage_cannot_reset_an_exhausted_budget(monkeypatch):
+    redis = _AtomicRedis()
+    monkeypatch.setattr(rate_limit, "_redis_client", lambda: redis)
+    for _ in range(rate_limit._PER_KEY_LIMIT):
+        await rate_limit.reserve_login_attempt("203.0.113.8", "fixture@example.test")
+    with pytest.raises(HTTPException) as exhausted:
+        await rate_limit.reserve_login_attempt("203.0.113.8", "fixture@example.test")
+    assert exhausted.value.status_code == 429
+
+    async def disconnected(*_args):
+        raise ConnectionError("dummy Redis outage")
+
+    monkeypatch.setattr(redis, "eval", disconnected)
+    with pytest.raises(HTTPException) as unavailable:
+        await rate_limit.reserve_login_attempt("203.0.113.8", "fixture@example.test")
+    assert unavailable.value.status_code == 503
+    assert unavailable.value.headers["Retry-After"] == "30"
+    assert not rate_limit._attempts
+
+
+def test_failed_redis_initialization_stays_closed_on_later_requests(monkeypatch):
+    monkeypatch.setenv("REDIS_URL", "redis://dummy.invalid")
+    # Models the state retained after a failed initialization, without any I/O.
+    monkeypatch.setattr(rate_limit, "_redis", None)
+    monkeypatch.setattr(rate_limit, "_redis_checked", True)
+    for _ in range(2):
+        with pytest.raises(HTTPException) as unavailable:
+            rate_limit._redis_client()
+        assert unavailable.value.status_code == 503
+
+
+@pytest.mark.asyncio
 async def test_redis_failure_record_is_atomic_at_the_limit(monkeypatch):
     redis = _AtomicRedis()
     monkeypatch.setattr(rate_limit, "_redis_client", lambda: redis)

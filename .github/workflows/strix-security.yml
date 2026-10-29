@@ -1,0 +1,80 @@
+name: Strix Security
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: strix-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pentest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install integrity-pinned Strix CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 2 --max-time 180 \
+            https://github.com/usestrix/strix/releases/download/v1.7.0/strix-1.7.0-linux-x86_64.tar.gz \
+            --output "$RUNNER_TEMP/strix.tar.gz"
+          echo "b8cd7e84d63cbeff6726301a9e08fddedf40fc6a4edcdb4edda8a853b3312de6  $RUNNER_TEMP/strix.tar.gz" | sha256sum --check --strict
+          tar --extract --gzip --file "$RUNNER_TEMP/strix.tar.gz" --directory "$RUNNER_TEMP" strix-1.7.0-linux-x86_64
+          chmod 755 "$RUNNER_TEMP/strix-1.7.0-linux-x86_64"
+      - name: Scan the complete PR diff
+        id: scan
+        env:
+          STRIX_LLM: ${{ secrets.STRIX_LLM }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          PR_BASE_REF: ${{ github.base_ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$STRIX_LLM" && test -n "$LLM_API_KEY" || {
+            echo "::error::Configure STRIX_LLM and LLM_API_KEY repository secrets before enabling this gate. No scan ran."
+            exit 1
+          }
+          if [ -n "$PR_BASE_REF" ]; then
+            git rev-parse --verify "refs/remotes/origin/$PR_BASE_REF"
+            "$RUNNER_TEMP/strix-1.7.0-linux-x86_64" -n -t ./ --scan-mode quick \
+              --scope-mode diff --diff-base "refs/remotes/origin/$PR_BASE_REF" --max-budget 10
+          else
+            "$RUNNER_TEMP/strix-1.7.0-linux-x86_64" -n -t ./ --scan-mode standard --scope-mode full --max-budget 20
+          fi
+      - name: Require a completed scan with budget headroom
+        if: ${{ !cancelled() && steps.scan.outcome == 'success' }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json, pathlib
+          runs = sorted(pathlib.Path('strix_runs').glob('*/run.json'), key=lambda p: p.stat().st_mtime)
+          if len(runs) != 1:
+              raise SystemExit('Expected exactly one scan result; coverage is unverified')
+          run = json.loads(runs[0].read_text())
+          if run.get('status') != 'completed':
+              raise SystemExit('Strix did not complete; no clean security result')
+          cost = (run.get('llm_usage') or {}).get('cost')
+          if not isinstance(cost, (int, float)) or isinstance(cost, bool) or cost < 0:
+              raise SystemExit('Missing valid usage evidence; review the scan')
+          # Budget-warning wrap-up can otherwise report completed prematurely.
+          # A conservative fixed ceiling retains headroom under either budget.
+          if cost >= 8:
+              raise SystemExit('Scan approached its budget; raise the budget and verify coverage')
+          PY
+      - name: Retain scan evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: strix-security
+          path: strix_runs
+          if-no-files-found: warn
+          retention-days: 7

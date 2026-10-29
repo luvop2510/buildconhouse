@@ -85,6 +85,80 @@ async def test_valid_upload_and_json_keep_working():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("number", ["NaN", "Infinity", "-Infinity", "1e999", "-1e999"])
+async def test_nonfinite_json_is_rejected_before_any_handler(number):
+    app = FastAPI()
+    handled = []
+
+    @app.post("/record")
+    async def record(body: dict):
+        handled.append(body)
+        return {"ok": True}
+
+    app.add_middleware(RequestBodyLimitMiddleware)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://fixture") as client:
+        response = await client.post("/record", content='{"nested":{"amount":' + number + '}}',
+                                     headers={"Content-Type": "application/json"})
+    assert response.status_code == 422
+    assert not handled
+    assert "nested" not in response.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("headers", [
+    [(b"content-type", b"application/json"), (b"content-type", b"text/plain")],
+    [(b"content-type", b"text/plain"), (b"content-type", b"application/json")],
+    [(b"content-length", b"10"), (b"content-length", b"1")],
+])
+async def test_ambiguous_parser_headers_cannot_bypass_json_or_body_bounds(headers):
+    async def app(*_args):
+        pytest.fail("Ambiguous metadata must never reach a different downstream parser")
+
+    async def receive():
+        pytest.fail("Reject ambiguous headers before reading input")
+
+    sent = []
+    async def send(message):
+        sent.append(message)
+
+    await RequestBodyLimitMiddleware(app)({"type": "http", "path": "/api/products/fixture", "headers": headers}, receive, send)
+    assert sent[0]["status"] == 400
+
+
+@pytest.mark.asyncio
+async def test_json_validation_preserves_exact_signed_body_and_valid_numbers():
+    from fastapi import Request
+
+    app = FastAPI()
+    raw = b'{ "amount": 1.25e2, "text": "Infinity is only text" }'
+
+    @app.post("/webhook")
+    async def webhook(request: Request):
+        assert await request.body() == raw
+        return await request.json()
+
+    app.add_middleware(RequestBodyLimitMiddleware)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://fixture") as client:
+        response = await client.post("/webhook", content=raw, headers={"Content-Type": "application/json"})
+    assert response.status_code == 200
+    assert response.json()["amount"] == 125
+
+
+@pytest.mark.asyncio
+async def test_validation_errors_never_echo_credential_input_or_nonfinite_context():
+    from fastapi.exceptions import RequestValidationError
+    from server import safe_request_validation_error
+
+    response = await safe_request_validation_error(None, RequestValidationError([
+        {"loc": ("body", "password"), "type": "value_error", "msg": "Dummy secret fixture", "input": "dummy-private",
+         "ctx": {"error": ValueError("dummy-private"), "numeric": float("inf")}},
+    ]))
+    assert response.status_code == 422
+    assert b"dummy-private" not in response.body
+    assert b"fixture" not in response.body
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("path", ["/api/team/member/password", "/api/team/member/reset-password", "/api/auth/change-password"])
 async def test_credential_endpoints_reject_oversized_payload_before_auth_or_parse(path):
     called = False

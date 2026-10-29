@@ -11,11 +11,10 @@ Shared-state upgrade (PRODUCTION_FIXES_2026-07-16.md item 3): the original
 version documented its own limitation — per-process state does not survive a
 restart and is not shared across replicas, so a horizontally-scaled deploy
 could be bypassed by hitting a different pod per attempt. This module now
-uses Redis (INCR+EXPIRE fixed-window counters, the standard swap the original
-docstring called out) whenever REDIS_URL is set, and falls back to the exact
-original in-memory behavior when it isn't — so a single-instance deploy that
-hasn't provisioned Redis yet keeps working unchanged. See DEPLOYMENT.md for
-how to provision Redis (Upstash's free tier is the fastest path).
+uses Redis atomic fixed-window counters whenever REDIS_URL is set. A configured
+store failure refuses password work with retryable 503 rather than resetting
+the shared budget into fresh per-process counters. Without REDIS_URL, the
+bounded in-memory implementation supports a single-process deployment.
 
 Scope/limits of the in-memory fallback (documented, not hidden): state is
 per-process and resets on restart/deploy, and does not share state across
@@ -118,6 +117,8 @@ _redis_checked = False
 def _redis_client():
     global _redis, _redis_checked
     if _redis_checked:
+        if _redis is None and (os.environ.get("REDIS_URL") or "").strip():
+            raise HTTPException(503, "Sign-in protection is temporarily unavailable. Please try again shortly.", headers={"Retry-After": "30"})
         return _redis
     _redis_checked = True
     url = (os.environ.get("REDIS_URL") or "").strip()
@@ -126,20 +127,20 @@ def _redis_client():
         return None
     try:
         import redis.asyncio as redis_asyncio
-        _redis = redis_asyncio.from_url(url, decode_responses=True, socket_connect_timeout=3)
-    except Exception as exc:  # noqa: BLE001 — rate limiting must never block startup
-        logger.warning("Redis client initialization failed; using bounded local fallback (%s)", type(exc).__name__)
+        _redis = redis_asyncio.from_url(url, decode_responses=True, socket_connect_timeout=3, socket_timeout=3)
+    except Exception as exc:  # noqa: BLE001 — invoked at admission, not startup
+        logger.warning("Configured login limiter initialization failed (%s)", type(exc).__name__)
         _redis = None
+        raise HTTPException(503, "Sign-in protection is temporarily unavailable. Please try again shortly.", headers={"Retry-After": "30"}) from exc
     return _redis
 
 
 async def _check_redis(r, limits: list[tuple[str, int]]) -> None:
     try:
         counts = await r.mget([key for key, _ in limits])
-    except Exception as exc:  # noqa: BLE001 — a Redis outage must not take down login
-        logger.warning("Redis unavailable for rate-limit check; using bounded local fallback (%s)", type(exc).__name__)
-        _check_memory(limits)
-        return
+    except Exception as exc:  # noqa: BLE001 — preserve the configured shared budget
+        logger.warning("Configured login limiter check failed (%s)", type(exc).__name__)
+        raise HTTPException(503, "Sign-in protection is temporarily unavailable. Please try again shortly.", headers={"Retry-After": "30"}) from exc
     for (_key, limit), count in zip(limits, counts):
         if count is not None and int(count) >= limit:
             raise _TOO_MANY
@@ -167,9 +168,9 @@ async def _record_redis(r, keys: list[str], limits: list[int]) -> None:
             raise _TOO_MANY
     except HTTPException:
         raise
-    except Exception as exc:  # noqa: BLE001 — best-effort; a Redis outage must not break login
-        logger.warning("Redis unavailable for rate-limit record; using bounded local fallback (%s)", type(exc).__name__)
-        _record_memory(keys, limits)
+    except Exception as exc:  # noqa: BLE001 — do not grant a fresh local guess budget
+        logger.warning("Configured login limiter admission failed (%s)", type(exc).__name__)
+        raise HTTPException(503, "Sign-in protection is temporarily unavailable. Please try again shortly.", headers={"Retry-After": "30"}) from exc
 
 
 async def _clear_redis(r, keys: list[str]) -> None:

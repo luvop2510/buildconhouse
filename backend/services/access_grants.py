@@ -132,6 +132,7 @@ POST_UPDATE_ROUTE_PATTERNS = (
     r"/api/godown-stock/[^/]+/quantity-count",
     r"/api/godown-stock/[^/]+/movements",
     r"/api/quotations/[^/]+/items/[^/]+/cancel",
+    r"/api/quotations/[^/]+/items",
     r"/api/quotations/[^/]+/move-to-quotation",
     r"/api/quotations/[^/]+/place-order/confirm",
     r"/api/quotations/[^/]+/use-godown-stock",

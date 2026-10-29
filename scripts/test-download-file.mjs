@@ -7,6 +7,11 @@ const compile = (path) => ts.transpileModule(readFileSync(new URL(path, import.m
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
 }).outputText;
 
+const stableIdentity = () => {
+  const controller = new AbortController();
+  return { signal: controller.signal, isCurrent: () => !controller.signal.aborted, finish() {} };
+};
+
 // Exercise the real web API client: a token for a quotation from another
 // workspace must inherit the explicitly requested floor, including query flags.
 const client = { exports: {} };
@@ -63,7 +68,7 @@ for (const navigator of [
     module, exports: module.exports, navigator, File: navigator.fileUnsupported ? undefined : File, Blob,
     require: name => name === "react-native" ? { Platform: { OS: "web" } } : name.includes("Toast")
       ? { toast: { show: value => errors.push(value) } }
-      : { getToken: async () => null, getRequestFloorId: async () => "ground-floor", api: { base: "", authenticatedUrl: () => { throw new Error("Mobile downloads must not navigate to a one-use URL"); } } },
+      : { beginIdentityOperation: stableIdentity, getToken: async () => null, getRequestFloorId: async () => "ground-floor", api: { base: "", authenticatedUrl: () => { throw new Error("Mobile downloads must not navigate to a one-use URL"); } } },
     document: { body: makeElement("body"), createElement: makeElement },
     URL: { createObjectURL: () => "blob:ready-pdf", revokeObjectURL() {} }, setTimeout() {},
     fetch: async (url, options) => {
@@ -129,7 +134,7 @@ console.log("PDF/PPT downloads: floor binding, mobile fresh-gesture save, and re
     module, exports: module.exports, navigator: { userAgent: 'Desktop Chrome' }, Blob,
     require: name => name === 'react-native' ? { Platform: { OS: 'web' } } : name.includes('Toast')
       ? { toast: { show: message => { throw new Error(message); } } }
-      : { getToken: () => token, getRequestFloorId: () => Promise.resolve(selectedFloor), api: { base: '' } },
+      : { beginIdentityOperation: stableIdentity, getToken: () => token, getRequestFloorId: () => Promise.resolve(selectedFloor), api: { base: '' } },
     document: { body: { appendChild() {} }, createElement: element },
     window: { open: url => previews.push(url) },
     URL: { createObjectURL: () => 'blob:pdf', revokeObjectURL() {} }, setTimeout() {},
@@ -161,7 +166,7 @@ console.log('PDF download/preview: selected-floor fallback, explicit floor, dela
     document: { body: { appendChild: anchor => anchors.push(anchor) }, createElement: tag => ({ tag, click: () => clicked++, remove() {} }) },
     URL: { createObjectURL: blob => { assert.equal(blob.type, 'application/pdf'); return 'blob:verified-kitchen-pdf'; }, revokeObjectURL() {} },
     setTimeout() {},
-    require: name => name === 'react-native' ? { Platform: { OS: 'web' } } : name.includes('Toast') ? { toast: { show() {} } } : {},
+    require: name => name === 'react-native' ? { Platform: { OS: 'web' } } : name.includes('Toast') ? { toast: { show() {} } } : { beginIdentityOperation: stableIdentity },
   });
   assert.equal(await downloadModule.exports.savePreparedFile(new Blob(['%PDF-verified'], { type: 'application/pdf' }), 'Final GI kitchen.pdf', 'project document'), true);
   assert.equal(clicked, 1);
@@ -170,3 +175,99 @@ console.log('PDF download/preview: selected-floor fallback, explicit floor, dela
   assert.equal(anchors[0].target, undefined);
   console.log('Desktop Kitchen PDF Download: original named PDF saves through a browser download anchor.');
 }
+
+// Run the binary lifecycle against both actual API-client implementations.
+// Transport promises deliberately ignore abort so generation checks, rather
+// than a cooperative fetch double, must prevent stale publication.
+function realIdentityClient(path) {
+  const loaded = { exports: {} };
+  const storage = { getItem: async () => null, setItem: async () => true, removeItem: async () => true,
+    secureGet: async () => null, secureSet: async () => true, secureRemove: async () => true };
+  vm.runInNewContext(compile(path), {
+    module: loaded, exports: loaded.exports, require: () => ({ storage, browserStorage: storage }),
+    __DEV__: true, process: { env: { EXPO_PUBLIC_BACKEND_URL: 'https://dummy.invalid' } },
+    document: { cookie: '' }, AbortController, DOMException, setTimeout, clearTimeout,
+  });
+  return loaded.exports;
+}
+function fileLifecycleHarness(identity, { mobile = false, transport } = {}) {
+  const loaded = { exports: {} }, elements = [], clicks = [], opens = [], errors = [], revoked = [], timers = [], fetches = [];
+  let prints = 0, shares = 0;
+  const makeElement = tag => {
+    const element = { tag, style: {}, children: [], removed: false, open: false,
+      setAttribute() {}, append(...items) { this.children.push(...items); }, appendChild(item) { this.children.push(item); },
+      insertBefore(item, before) { this.children.splice(this.children.indexOf(before), 0, item); },
+      remove() { this.removed = true; }, close() { this.open = false; }, showModal() { this.open = true; }, focus() {},
+      click() { clicks.push(this.download); }, contentWindow: { focus() {}, print() { prints++; } } };
+    elements.push(element); return element;
+  };
+  vm.runInNewContext(compile('../src/utils/downloadFile.ts'), {
+    module: loaded, exports: loaded.exports, Blob, File, AbortController, DOMException,
+    navigator: { userAgent: mobile ? 'iPhone Safari' : 'Desktop Chrome', platform: mobile ? 'iPhone' : 'MacIntel', maxTouchPoints: mobile ? 5 : 0,
+      canShare: () => true, share: async () => { shares++; } },
+    document: { body: makeElement('body'), createElement: makeElement }, window: { open: url => opens.push(url) },
+    URL: { createObjectURL: () => 'blob:private-dummy', revokeObjectURL: url => revoked.push(url) },
+    setTimeout: (callback, delay) => { timers.push({ callback, delay }); return timers.length; }, clearTimeout() {},
+    require: name => name === 'react-native' ? { Platform: { OS: 'web' } }
+      : name.includes('Toast') ? { toast: { show: message => errors.push(message) } } : identity,
+    fetch: (url, options) => {
+      fetches.push({ url, options });
+      return transport ? transport(url, options) : Promise.resolve({ ok: true, blob: async () => new Blob(['%PDF dummy private marker'], { type: 'application/pdf' }) });
+    },
+  });
+  return { files: loaded.exports, elements, clicks, opens, errors, revoked, timers, fetches, prints: () => prints, shares: () => shares };
+}
+const nextTurn = () => new Promise(resolve => setImmediate(resolve));
+for (const source of ['../src/api/client.ts', '../src/api/client.web.ts']) {
+  for (const phase of ['credentials', 'response', 'body']) {
+    const identity = realIdentityClient(source);
+    await identity.setToken('dummy-A', 'staff'); identity.setRequestFloorId('first-floor');
+    let release;
+    const held = new Promise(resolve => { release = resolve; });
+    const normal = { ok: true, blob: async () => new Blob(['%PDF dummy A marker'], { type: 'application/pdf' }) };
+    const apiDependency = phase === 'credentials' ? { ...identity, getToken: async () => { const value = await identity.getToken(); await held; return value; } } : identity;
+    const harness = fileLifecycleHarness(apiDependency, { transport: async () => phase === 'response' ? held : phase === 'body' ? { ok: true, blob: () => held } : normal });
+    const pending = harness.files.downloadApiFile('/portal/quotations/dummy-A/pdf', 'A-private.pdf');
+    await nextTurn();
+    await identity.clearToken(); await identity.setToken('dummy-B', 'customer'); await identity.setToken('dummy-A-new-session', 'staff');
+    release(phase === 'response' ? normal : phase === 'body' ? await normal.blob() : undefined);
+    assert.equal(await pending, false, `${source} ${phase}: A→B→A never revives old private bytes`);
+    assert.deepEqual(harness.clicks, []); assert.deepEqual(harness.opens, []); assert.deepEqual(harness.errors, []);
+    if (phase === 'credentials') assert.equal(harness.fetches.length, 0, 'identity changed during hydration: never start the old download');
+    else assert.equal(harness.fetches[0].options.signal.aborted, true, 'identity transition aborts the actual binary transport');
+  }
+  {
+    const identity = realIdentityClient(source); await identity.setToken('dummy-A', 'staff'); identity.setRequestFloorId('first-floor');
+    let release; const body = new Promise(resolve => { release = resolve; });
+    const harness = fileLifecycleHarness(identity, { transport: async () => ({ ok: true, blob: () => body }) });
+    const pending = harness.files.downloadApiFile('/quotations/dummy/pdf', 'Permitted.pdf', 'PDF', 'ground-floor');
+    await nextTurn(); identity.setRequestFloorId('second-floor');
+    assert.equal(harness.fetches[0].options.signal.aborted, false, 'workspace navigation preserves explicit-source-floor downloads');
+    release(new Blob(['%PDF permitted'], { type: 'application/pdf' }));
+    assert.equal(await pending, true); assert.equal(harness.fetches[0].options.headers['X-Floor-Id'], 'ground-floor');
+    assert.deepEqual(harness.clicks, ['Permitted.pdf']);
+  }
+  {
+    const identity = realIdentityClient(source); await identity.setToken('dummy-A', 'staff');
+    const harness = fileLifecycleHarness(identity, { mobile: true });
+    const pending = harness.files.shareApiPdf('/quotations/dummy/pdf', 'A-private.pdf');
+    await nextTurn();
+    const dialog = harness.elements.find(element => element.tag === 'dialog');
+    const download = harness.elements.find(element => element.textContent === 'Download');
+    const share = harness.elements.find(element => element.textContent === 'Save or share');
+    assert(dialog?.open); await identity.clearToken();
+    assert.equal(await pending, false); assert.equal(dialog.removed, true, 'logout removes private filename and save controls');
+    download.onclick(); share.onclick(); await nextTurn();
+    assert.deepEqual(harness.clicks, []); assert.equal(harness.shares(), 0, 'retained stale gesture handlers cannot publish');
+  }
+  {
+    const identity = realIdentityClient(source); await identity.setToken('dummy-A', 'staff');
+    const harness = fileLifecycleHarness(identity);
+    await harness.files.printApiFile('/quotations/dummy/pdf');
+    const frame = harness.elements.find(element => element.tag === 'iframe'); const delayedLoad = frame.onload;
+    assert.equal(typeof delayedLoad, 'function'); await identity.clearToken();
+    assert.equal(frame.removed, true); assert.equal(frame.onload, null); delayedLoad();
+    assert.equal(harness.prints(), 0); assert.deepEqual(harness.opens, []); assert.deepEqual(harness.revoked, ['blob:private-dummy']);
+  }
+}
+console.log('Private binary identity lifecycle: real native/web clients reject held credentials/response/body after A→B→A, remove stale phone save controls/print frames, and preserve source-floor downloads.');

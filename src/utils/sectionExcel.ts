@@ -1,7 +1,6 @@
-import { Platform } from "react-native";
-
 import { filterValues } from "./filters";
-import { api, csrfHeaders, getToken } from "@/src/api/client";
+import { api, beginIdentityOperation, csrfHeaders, getToken } from "@/src/api/client";
+import { savePreparedFile } from "./downloadFile";
 
 /** Export explicit rows for one business section; no DOM scraping or page-wide dump. */
 export async function downloadSectionExcel({
@@ -15,11 +14,15 @@ export async function downloadSectionExcel({
   resource: string;
 }): Promise<void> {
   if (rows.length < 2) throw new Error("There are no rows to export.");
+  const operation = beginIdentityOperation();
+  try {
   const token = await getToken();
+  if (!operation.isCurrent()) return;
   const selectedFloors = filterValues(floorId).filter(value => value !== "both");
   const workspaceFloor = selectedFloors.length === 1 ? selectedFloors[0] : null;
   const response = await fetch(`${api.base}/api/exports/page.xlsx`, {
     method: "POST",
+    signal: operation.signal,
     credentials: "same-origin",
     headers: {
       ...csrfHeaders(),
@@ -29,30 +32,19 @@ export async function downloadSectionExcel({
     },
     body: JSON.stringify({ page: page.slice(0, 80), resource, sections: [{ name: section.slice(0, 80), rows: rows.map(row => row.map(cell => String(cell ?? ""))) }] }),
   });
+  if (!operation.isCurrent()) return;
   if (!response.ok) {
     const detail = await response.json().then(body => body?.detail).catch(() => null);
+    if (!operation.isCurrent()) return;
     throw new Error(typeof detail === "string" ? detail : "Excel export failed.");
   }
   const blob = await response.blob();
+  if (!operation.isCurrent()) return;
   const safeName = filename.replace(/[\\/]/g, "").replace(/\.xlsx$/i, "") + ".xlsx";
-  if (Platform.OS !== "web") {
-    const [{ File, Paths }, Sharing] = await Promise.all([import("expo-file-system"), import("expo-sharing")]);
-    if (!await Sharing.isAvailableAsync()) throw new Error("Sharing is unavailable on this device.");
-    const file = new File(Paths.cache, `${Date.now()}-${safeName}`);
-    file.create();
-    file.write(new Uint8Array(await blob.arrayBuffer()));
-    await Sharing.shareAsync(file.uri, {
-      mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      dialogTitle: `Save ${section} Excel`,
-    });
-    return;
+  await savePreparedFile(blob, safeName, `${section} Excel`, operation);
+  } catch (error) {
+    if (operation.isCurrent()) throw error;
+  } finally {
+    operation.finish();
   }
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = safeName;
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }

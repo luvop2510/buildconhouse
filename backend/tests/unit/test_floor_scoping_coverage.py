@@ -32,6 +32,7 @@ MUTATING_METHODS = {"post", "patch", "put", "delete"}
 # Correctness is the reviewer's job; this test catches the total absence.
 SCOPING_HELPERS = {
     "floor_query",
+    "execute_transfer",  # canonical transaction/replay helper; verified below
     "tiles_floor_query",
     "get_floor_scoped_or_404",
     "require_floor_access",
@@ -172,15 +173,6 @@ ALLOWLIST: dict[str, str] = {
         "floor_query(user, {'items.id': item_id}) and 404s if it is not visible to the "
         "caller's floor(s) before mutating the item's stage."
     ),
-    "transfer_item_command": (
-        "purchases_tracker.py:1027 delegates to services/transfer_workflow.py::execute_transfer, "
-        "which floor_query()s all four lookups it performs inside the transaction: the "
-        "source purchase order (line 72, by items.id), the source customer (line 83), and "
-        "the destination customer both by id (line 92) and by email (line 98). This is the "
-        "modern replacement for the legacy transfer_item handler whose unscoped destination "
-        "lookup was fixed in Phase 0 (2d817b9); the replacement was built floor-scoped from "
-        "the start."
-    ),
     "dispatch_from_released": (
         "tile_orders.py:655 delegates to _commit_simple_dispatch (tile_orders.py:510), which "
         "loads the purchase order with tiles_floor_query(user, {'id': po_id}) at line 523 "
@@ -281,3 +273,12 @@ def test_gate_actually_detects_an_unscoped_handler():
     )
     node = ast.parse(src).body[0]
     assert not (_names_in(node) & SCOPING_HELPERS)
+
+
+def test_canonical_transfer_scope_covers_both_creation_and_replay():
+    source = (ROUTES_DIR.parent / "services" / "transfer_workflow.py").read_text()
+    functions = {node.name: node for node in ast.parse(source).body
+                 if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))}
+    assert {"_create_loan_transfer", "_validate_transfer_replay"} <= _names_in(functions["execute_transfer"])
+    assert "floor_query" in _names_in(functions["_create_loan_transfer"])
+    assert "floor_query" in _names_in(functions["_validate_transfer_replay"])

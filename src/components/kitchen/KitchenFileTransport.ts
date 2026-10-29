@@ -1,6 +1,7 @@
 import { Platform } from "react-native";
 import type { DocumentPickerAsset } from "expo-document-picker";
 import { kitchenProjectsApi, type KitchenAttachment, type KitchenFileTransfer, type KitchenProject } from "@/src/api/kitchenProjects";
+import { beginIdentityOperation } from "@/src/api/client";
 import { createPreparedNativeFile, savePreparedFile, sharePreparedNativeFile } from "@/src/utils/downloadFile";
 import type { File as NativeFile, FileHandle } from "expo-file-system";
 
@@ -62,21 +63,32 @@ export async function uploadKitchenFile(project: KitchenProject, file: DocumentP
 
 export async function downloadKitchenFile(projectId: string, attachment: KitchenAttachment, progress: (percent: number) => void, preview?: Window) {
   if (!attachment.size_bytes || attachment.size_bytes > KITCHEN_MAX_FILE_BYTES) throw new Error("This file exceeds the supported download size.");
+  const operation = beginIdentityOperation();
   const parts: Uint8Array<ArrayBuffer>[] = [];
   let nativeFile: NativeFile | undefined;
   let handle: FileHandle | undefined;
+  const cancelPublication = () => {
+    if (preview && !preview.closed) preview.close();
+    handle?.close(); handle = undefined;
+    if (nativeFile?.exists) nativeFile.delete();
+    parts.length = 0;
+  };
+  operation.signal.addEventListener("abort", cancelPublication, { once: true });
   try {
     if (Platform.OS !== "web") {
       nativeFile = await createPreparedNativeFile(attachment.filename);
+      if (!operation.isCurrent()) return false;
       handle = nativeFile.open();
     }
     const count = Math.ceil(attachment.size_bytes / PART_BYTES);
     let fullDigest = attachment.sha256;
     for (let index = 0; index < count; index += 1) {
       const response = await kitchenProjectsApi.downloadPart(projectId, attachment.id, index);
+      if (!operation.isCurrent()) return false;
       const bytes = decoded(response.data_base64);
       if (response.index !== index || response.size_bytes !== attachment.size_bytes || bytes.length !== Math.min(PART_BYTES, attachment.size_bytes - index * PART_BYTES)) throw new Error("File part failed length verification.");
       const partDigest = await digest(bytes);
+      if (!operation.isCurrent()) return false;
       if (partDigest !== response.sha256) throw new Error("File part failed integrity verification.");
       if (fullDigest && fullDigest !== response.file_sha256) throw new Error("File changed during download.");
       fullDigest = response.file_sha256;
@@ -87,11 +99,13 @@ export async function downloadKitchenFile(projectId: string, attachment: Kitchen
     if (nativeFile) {
       handle!.close(); handle = undefined;
       const resultDigest = await digest(await nativeFile.bytes());
+      if (!operation.isCurrent()) return false;
       if (resultDigest !== fullDigest) throw new Error("Downloaded file failed integrity verification.");
-      return await sharePreparedNativeFile(nativeFile, attachment.filename, attachment.content_type, "project document");
+      return await sharePreparedNativeFile(nativeFile, attachment.filename, attachment.content_type, "project document", operation);
     }
     const blob = new Blob(parts, { type: attachment.content_type });
     const resultDigest = await digest(new Uint8Array(await blob.arrayBuffer()));
+    if (!operation.isCurrent()) return false;
     if (resultDigest !== fullDigest) throw new Error("Downloaded file failed integrity verification.");
     if (preview) {
       if (preview.closed) throw new Error("The PDF preview was closed. Open it again.");
@@ -100,8 +114,13 @@ export async function downloadKitchenFile(projectId: string, attachment: Kitchen
       setTimeout(() => URL.revokeObjectURL(url), 120_000);
       return true;
     }
-    return await savePreparedFile(blob, attachment.filename, "project document");
+    return await savePreparedFile(blob, attachment.filename, "project document", operation);
+  } catch (error) {
+    if (!operation.isCurrent()) return false;
+    throw error;
   } finally {
+    operation.signal.removeEventListener("abort", cancelPublication);
+    operation.finish();
     handle?.close();
     if (nativeFile?.exists) nativeFile.delete();
   }

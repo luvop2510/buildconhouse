@@ -2,6 +2,7 @@ from services.followup_engine import reconcile_followups_admitted
 """Quotation Builder API — v2 with multi-level discounts, autosave, duplicate."""
 import asyncio
 import logging
+from math import isfinite
 from typing import Literal
 from datetime import datetime, timezone
 from urllib.parse import quote
@@ -9,7 +10,7 @@ from uuid import UUID, NAMESPACE_URL, uuid4, uuid5
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 from pymongo import ReturnDocument, UpdateOne
 from pymongo.errors import DuplicateKeyError
 from starlette.concurrency import run_in_threadpool
@@ -64,6 +65,13 @@ class QuotationLineMutation(BaseModel):
     item: QuotationLineItem
     reason: str | None = None
     silent: bool = False
+
+    @field_validator("item")
+    @classmethod
+    def validate_financial_input(cls, value):
+        # Focused item commands use the same financial-input boundary as the
+        # full builder PATCH, while historical line reads remain compatible.
+        return QuotationUpdate(items=[value]).items[0]
 
 
 class QuotationLineRemoval(BaseModel):
@@ -247,6 +255,40 @@ def _normalize_tile_items(items: list[QuotationLineItem], doc_type: str) -> list
     for item in items:
         normalize_tile_line_item(item)
     return items
+
+
+def _require_finite_nonnegative_amount(value) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise HTTPException(status_code=422, detail="Quotation amounts must be finite and nonnegative") from exc
+    if not isfinite(number) or number < 0:
+        raise HTTPException(status_code=422, detail="Quotation amounts must be finite and nonnegative")
+    return number
+
+
+def _require_valid_quotation_financials(document: dict) -> None:
+    """Reject invalid candidate state before any quotation/stock/order write.
+
+    Payload validation catches new bad values. This final boundary also checks
+    stored inputs reused by commands and overflow from finite operands without
+    imposing new constraints on the historical Quotation read model.
+    """
+    try:
+        financial = QuotationUpdate(**{key: document[key] for key in (
+            "items", "project_discount_pct", "category_discounts", "room_discounts", "transportation_fee",
+        ) if key in document})
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail="Quotation financial inputs are outside their permitted bounds") from exc
+    for key in ("subtotal", "discount_total", "grand_total", "payment_extra_amount"):
+        if key in document:
+            _require_finite_nonnegative_amount(document[key])
+    gross_total = 0.0
+    for item in financial.items or []:
+        gross = _require_finite_nonnegative_amount(item.qty * item.unit_price)
+        gross_total = _require_finite_nonnegative_amount(gross_total + gross)
+        if item.net_amount is not None:
+            _require_finite_nonnegative_amount(item.net_amount)
 
 
 def _tile_totals(totals: dict, transportation_fee: float, doc_type: str) -> dict:
@@ -600,6 +642,14 @@ async def create_quotation(
     # would silently collapse two lines onto one value.
     for _it, _net in zip(items, net_amount_list(items, body.project_discount_pct or 0, body.category_discounts or {}, body.room_discounts or {}), strict=True):
         _it.net_amount = _net
+    _require_valid_quotation_financials({
+        "items": [item.model_dump() for item in items],
+        "project_discount_pct": body.project_discount_pct,
+        "category_discounts": body.category_discounts,
+        "room_discounts": body.room_discounts,
+        "transportation_fee": body.transportation_fee,
+        **totals,
+    })
     quot = Quotation(
         number=await _next_number(),
         customer_id=customer["id"],
@@ -1036,6 +1086,8 @@ async def update_quotation(
     if not update:
         return Quotation(**doc)
 
+    _require_valid_quotation_financials({**doc, **update})
+
     # Builder autosaves intentionally skip public quotation revisions, but
     # PO Final must still retain material product and amount edits. Record a
     # compact audit delta only when the sale itself changed.
@@ -1383,6 +1435,7 @@ async def move_to_quotation(
             status_code=400,
             detail="Only an editable Tiles Selection can be moved to the Quotation stage",
         )
+    _require_valid_quotation_financials(doc)
     await db.quotations.update_one(
         {"id": quotation_id},
         {"$set": {"doc_type": "tiles_quotation", "status": "draft", "updated_at": now_iso()}},
@@ -1859,6 +1912,7 @@ async def use_godown_stock(quotation_id: str, user: UserPublic = Depends(require
         raise HTTPException(status_code=404, detail="Godown stock replacement is only available for sanitary quotations")
     if doc.get("status") not in {"draft", "sent", "approved"}:
         raise HTTPException(status_code=409, detail="Godown stock can only replace products on an open quotation")
+    _require_valid_quotation_financials(doc)
     output: list[dict] = []
     replacements = 0
     for raw in doc.get("items", []):
@@ -1894,6 +1948,7 @@ async def use_godown_stock(quotation_id: str, user: UserPublic = Depends(require
         doc.get("category_discounts", {}) or {},
         doc.get("room_discounts", {}) or {},
     )
+    _require_valid_quotation_financials({**doc, "items": output})
     await db.quotations.update_one({"id": quotation_id}, {"$set": {"items": output, "updated_at": now_iso()}})
     await log_event(event_type="godown_stock.replaced_on_quotation", entity_type="quotation", entity_id=quotation_id, actor=user, floor_id=doc.get("floor_id"), customer_id=doc.get("customer_id"), quotation_id=quotation_id, summary=f"Reserved {replacements} godown stock lot(s) for {doc.get('customer_name')}", payload={"replacements": replacements})
     return {"replacements": replacements, "godown_matches": await _godown_matches({**doc, "items": output})}
@@ -1934,6 +1989,7 @@ async def place_order_confirm(quotation_id: str, body: PlaceOrderConfirmPayload,
                     if not doc.get("items"):
                         raise HTTPException(status_code=400, detail="Cannot place order — quotation has no items")
                     _require_tiles_quotation_address(doc.get("doc_type", "standard"), doc.get("address_snapshot"))
+                    _require_valid_quotation_financials(doc)
                     review = await price_review(doc, db.products, session=session)
                     items = apply_price_choice(doc, review, body.catalog_price_choice, body.catalog_price_token)
                     price_patch = {}
@@ -1944,6 +2000,7 @@ async def place_order_confirm(quotation_id: str, body: PlaceOrderConfirmPayload,
                             price_patch = _tile_totals(_recalc(typed_items, doc.get("project_discount_pct") or 0, doc.get("category_discounts") or {}, room_discounts), doc.get("transportation_fee") or 0, doc.get("doc_type", "standard"))
                             price_patch["items"] = stamp_net_amounts([item.model_dump() for item in typed_items], doc.get("project_discount_pct") or 0, doc.get("category_discounts") or {}, doc.get("room_discounts") or {})
                         price_patch["catalog_price_decision"] = {"choice": body.catalog_price_choice, "at": now_iso(), "by": user.id, "changes": review["changes"]}
+                    _require_valid_quotation_financials({**doc, **price_patch})
                     await db.quotations.update_one(
                         {"id": quotation_id, "floor_id": doc.get("floor_id")},
                         {"$set": {**price_patch, "status": "ordered", "updated_at": now_iso(), **_ordered_at_patch(doc, "ordered")}},
