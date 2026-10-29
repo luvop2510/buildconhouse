@@ -96,7 +96,7 @@ jobs:
           for (const browser of [chromium, webkit]) accessSync(browser.executablePath(), constants.X_OK);
           console.log('Pinned Playwright version and Chromium/WebKit executables verified');
           NODE
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           merge-multiple: true
           artifact-ids: ${{ needs.prepare.outputs.export_id }}
@@ -150,7 +150,7 @@ jobs:
           for (const browser of [chromium, webkit]) accessSync(browser.executablePath(), constants.X_OK);
           console.log('Pinned Playwright version and Chromium/WebKit executables verified');
           NODE
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           merge-multiple: true
           artifact-ids: ${{ needs.prepare.outputs.export_id }}
@@ -193,17 +193,17 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           merge-multiple: true
           artifact-ids: ${{ needs.prepare.outputs.export_id }}
           path: .
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           merge-multiple: true
           pattern: performance-stability-${{ github.run_id }}-${{ github.run_attempt }}-*
           path: output
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           merge-multiple: true
           artifact-ids: ${{ needs.timing.outputs.evidence_id }}
