@@ -148,9 +148,39 @@ async def test_kitchen_dates_and_progress_are_projected_without_history(monkeypa
     assert result["task_summary"]["open"] == 1
     pipeline = db.calls[0][1]
     assert pipeline[0]["$match"]["floor_id"] == "second-floor"
+    assert pipeline[0]["$match"]["assigned_to"] == "staff"
     assert pipeline[1]["$set"]["due_at"]["$dateFromString"]["timezone"] == "Asia/Kolkata"
     projection = pipeline[-1]["$facet"]["tasks"][-1]["$project"]
     assert "orders" not in projection and "attachments" not in projection and result["payments"] is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("role", ["worker", "sales", "accounts", "purchase", "warehouse"])
+async def test_kitchen_employee_queue_filters_current_assignment_even_with_full_floor_access(monkeypatch, role):
+    actor = user(role, "second-floor", custom_access=True)
+    async def grants(*args): return [grant("kitchen_projects", "second-floor")]
+    monkeypatch.setattr(service, "grants_for_user", grants)
+    calls = []
+    def aggregate(self, pipeline, **kwargs):
+        calls.append(pipeline)
+        return Cursor([])
+    monkeypatch.setattr(Collection, "aggregate", aggregate)
+    result = await service.today_dashboard(Database(), actor, NOW)
+    assert result["full_floor_access"]
+    assert calls[0][0]["$match"] == {"floor_id": "second-floor", "is_deleted": {"$ne": True}, "assigned_to": "staff"}
+    assert result["task_summary"] == {"open": 0, "overdue": 0, "due_today": 0, "completed_today": 0}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("role", ["owner", "admin", "manager"])
+async def test_kitchen_floor_supervisors_retain_complete_work_queue(monkeypatch, role):
+    calls = []
+    def aggregate(self, pipeline, **kwargs):
+        calls.append(pipeline)
+        return Cursor([])
+    monkeypatch.setattr(Collection, "aggregate", aggregate)
+    await service.today_dashboard(Database(), user(role, "second-floor"), NOW)
+    assert calls[0][0]["$match"] == {"floor_id": "second-floor", "is_deleted": {"$ne": True}}
 
 
 @pytest.mark.asyncio

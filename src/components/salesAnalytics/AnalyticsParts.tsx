@@ -15,8 +15,8 @@ export const analyticNumber = (value: number | null | undefined) => value == nul
 export const analyticMoney = (value: number | null | undefined, currency = 'INR') => value == null ? 'Unavailable' : `${currency === 'RNB' ? 'RNB ' : '₹'}${value.toLocaleString('en-IN',{maximumFractionDigits:2})}`;
 export const FLOOR_NAMES: Record<string, string> = { all: 'Overall sales', 'ground-floor': 'Tiles', 'first-floor': 'Sanitary / Bathroom', 'second-floor': 'Kitchen', 'third-floor': 'Furniture' };
 export const BASIS_NAMES: Record<string, string> = { confirmation: 'Order confirmation', quotation: 'Quotation date', payment: 'Payment received', delivery: 'Delivery / completion' };
-/** One data accent; actions and navigation use the shared graphite palette. */
-export const chartColors = { primary: '#22766D', tint: '#E6F1EF', secondary: '#626267', tertiary: '#A3A3AA' };
+/** One shared blue accent for data, actions and navigation. */
+export const chartColors = { primary: colors.brand, tint: colors.brandTint, secondary: colors.onSurfaceMuted, tertiary: '#A3A3AA' };
 export function Panel({ title, description, children, action, testID }: { title: string; description?: string; children: ReactNode; action?: ReactNode; testID?: string }) {
  const { isPhone } = useBp();
  return <View testID={testID} style={{ flexGrow: 1, minWidth: 0, padding: isPhone ? spacing.s16 : spacing.s24, gap: spacing.s16, borderWidth: 1, borderColor: colors.border, borderRadius: 12, backgroundColor: colors.surfaceSecondary }}>
@@ -38,11 +38,11 @@ export function Choice({ label, value, options, onChange, testID }: { label: str
 export function DataLink({ label, detail, value, secondary, onPress, testID, proportion }: { label: string; detail?: string; value?: string; secondary?: string; onPress?: () => void; testID?: string; proportion?: number }) {
  const {isPhone}=useBp();
  const content=<><View style={{flexDirection:'row',alignItems:'center',gap:spacing.s12,minWidth:0}}>
-  <View style={{flex:1,minWidth:0,gap:spacing.s4}}><Text style={type.bodyStrong}>{label}</Text>{detail ? <Text style={type.bodySm}>{detail}</Text>:null}
+  <View style={{flex:1,minWidth:0,gap:spacing.s4}}><Text style={[type.bodyStrong, onPress ? {color: colors.brand} : null]}>{label}</Text>{detail ? <Text style={type.bodySm}>{detail}</Text>:null}
    {isPhone && value ? <Text style={[type.bodyStrong,{fontVariant:['tabular-nums']}]}>{value}{secondary ? ` · ${secondary}` : ''}</Text>:null}
   </View>
   {!isPhone && value ? <View style={{maxWidth:'44%',alignItems:'flex-end',gap:spacing.s4}}><Text style={[type.bodyStrong,{fontVariant:['tabular-nums'],textAlign:'right'}]}>{value}</Text>{secondary?<Text style={type.caption}>{secondary}</Text>:null}</View>:null}
-  {onPress?<Feather name="chevron-right" size={16} color={colors.onSurfaceMuted} aria-hidden accessibilityElementsHidden/>:null}
+  {onPress?<Feather name="chevron-right" size={16} color={colors.brand} aria-hidden accessibilityElementsHidden/>:null}
  </View>{proportion!==undefined?<View aria-hidden accessibilityElementsHidden style={{height:6,backgroundColor:colors.surfaceTertiary,marginTop:spacing.s12,borderRadius:3,overflow:'hidden'}}><View style={{height:6,width:`${Math.max(0,Math.min(1,proportion))*100}%`,backgroundColor:chartColors.primary}}/></View>:null}</>;
  const style={minWidth:0,minHeight:64,paddingVertical:spacing.s12,borderBottomWidth:1,borderBottomColor:colors.border};
  return onPress ? <Pressable accessibilityRole="link" {...linkActivation(onPress)} accessibilityLabel={`${label}${value?`: ${value}`:''}. Open details`} testID={testID} onPress={onPress} style={({hovered,pressed}:any)=>[style,{backgroundColor:hovered||pressed?colors.surfaceTertiary:'transparent'}]}>{content}</Pressable>:<View testID={testID} style={style}>{content}</View>;

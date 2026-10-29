@@ -88,11 +88,30 @@ async def test_today_dates_counts_floor_scope_and_department_projection():
         tile_queue = await today_dashboard(db, tile_actor, now)
         assert next(task for task in tile_queue["tasks"] if task["id"] == "tile")["href"] == "/tiles/selection?id=tile"
         await db.kitchen_projects.insert_one({"id": "kitchen", "floor_id": "second-floor", "stage": "visit", "customer": {"name": "Kitchen"},
+                                            "assigned_to": "person", "assigned_to_name": "Person",
                                             "visit": {"visit_date": "2026-10-29"}, "target_completion_date": "2026-10-31"})
         kitchen = actor.model_copy(update={"role": "sales", "active_floor_id": "second-floor", "floor_ids": ["second-floor"]})
         result = await today_dashboard(db, kitchen, now)
         assert result["task_summary"]["due_today"] == 1 and result["tasks"][0]["due_at"] == "2026-10-28T18:30:00+00:00"
         assert result["tasks"][0]["progress"] is None and result["payments"] is None
+        await db.kitchen_projects.insert_many([
+            {"id": "other-worker", "floor_id": "second-floor", "stage": "cad", "assigned_to": "other", "assignments": {"lead": "person", "cad": "other"}},
+            {"id": "unassigned", "floor_id": "second-floor", "stage": "lead"},
+            {"id": "own-cad", "floor_id": "second-floor", "stage": "cad", "assigned_to": "person", "cad": {"progress": 43}},
+            {"id": "completed", "floor_id": "second-floor", "stage": "completed", "assigned_to": "person", "completion_date": "2026-10-29"},
+            {"id": "lost", "floor_id": "second-floor", "stage": "lead", "assigned_to": "person", "status": "Lost"},
+            {"id": "paused", "floor_id": "second-floor", "stage": "cad", "assigned_to": "person", "lifecycle_status": "On Hold"},
+            {"id": "foreign-assigned", "floor_id": "ground-floor", "stage": "cad", "assigned_to": "person"},
+        ])
+        result = await today_dashboard(db, kitchen, now)
+        assert {task["id"] for task in result["tasks"]} == {"kitchen", "own-cad"}
+        assert result["task_summary"] == {"open": 2, "due_today": 1, "overdue": 0, "completed_today": 1}
+        assert next(task for task in result["tasks"] if task["id"] == "own-cad")["progress"] == 43
+        await db.kitchen_projects.update_one({"id": "kitchen"}, {"$set": {"stage": "cad", "assigned_to": "other", "assignments": {"visit": "person", "cad": "other"}}})
+        result = await today_dashboard(db, kitchen, now)
+        assert [task["id"] for task in result["tasks"]] == ["own-cad"]
+        overview = await today_dashboard(db, actor.model_copy(update={"active_floor_id": "second-floor"}), now)
+        assert {task["id"] for task in overview["tasks"]} == {"kitchen", "other-worker", "unassigned", "own-cad"}
     finally:
         await client.drop_database(name)
         client.close()

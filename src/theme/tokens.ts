@@ -1,5 +1,5 @@
 // BuildCon House · Design System V1 tokens.
-// Graphite actions and a calm neutral surface foundation.
+// Blue actions and a calm white/graphite surface foundation.
 // One system face, touch-first controls and predictable spacing across workflows.
 // Everything downstream (primitives, screens) references these tokens; no hardcoded hex.
 
@@ -43,7 +43,7 @@ export const colors = {
   onSurfaceSubtle: palette.gray400,    // placeholders, disabled
   onSurfaceInverse: palette.gray0,     // text on dark
 
-  // Primary actions — graphite; legacy brand names remain compatible
+  // Primary actions — blue; legacy brand names remain compatible
   brand: palette.blue600,
   brandHover: palette.blue700,
   brandTint: palette.blue50,
@@ -59,7 +59,7 @@ export const colors = {
   borderMuted: "rgba(15, 23, 42, 0.06)",
   divider: palette.gray100,
 
-  // Focus and selection — visible teal focus, neutral selected surfaces
+  // Focus and selection — the shared blue accent
   focusRing: color.focus,
   selection: color.brassTint,
 

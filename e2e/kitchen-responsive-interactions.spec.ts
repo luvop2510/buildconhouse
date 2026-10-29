@@ -89,7 +89,14 @@ test('Lead records a new customer inline, carries identity forward and reuses th
   const name = `Inline Kitchen ${info.project.name}`;
   await page.getByTestId('kitchen-customer-name').fill(name);
   await page.getByTestId('kitchen-customer-phone').fill(phone);
+  for (const key of ['property_name', 'city', 'state', 'pincode', 'email', 'alternate_phone', 'company', 'gstin', 'notes']) await expect(page.getByTestId(`kitchen-customer-${key}`)).toHaveCount(0);
+  await expect(page.getByTestId('kitchen-create-lead-site_location')).toHaveCount(1);
   await page.getByTestId('kitchen-create-lead-site_location').fill('Synthetic inline intake site');
+  await expect(page.getByTestId('kitchen-create-submit')).toBeDisabled();
+  await page.getByTestId('kitchen-customer-address').fill('  ');
+  await expect(page.getByTestId('kitchen-create-submit')).toBeDisabled();
+  await page.getByTestId('kitchen-customer-address').fill('Synthetic inline customer address');
+  await expect(page.getByTestId('kitchen-create-submit')).toBeEnabled();
   const saved = page.waitForResponse(response => new URL(response.url()).pathname === '/api/kitchen-projects' && response.request().method() === 'POST');
   await page.getByTestId('kitchen-create-submit').click();
   const response = await saved;
@@ -104,7 +111,7 @@ test('Lead records a new customer inline, carries identity forward and reuses th
   await (await projectControl(page, 'kitchen-convert')).click();
   const visit = await (await converted).json();
   expect(visit).toMatchObject({ id: project.id, customer_id: project.customer_id, stage: 'visit' });
-  const reused = await context.request.post('/api/kitchen-projects', { headers, data: { customer: { name: 'Do not overwrite this existing customer', phone: `+91 ${phone}` }, idempotency_key: `inline-reuse-${Date.now()}-${Math.random()}`, lead: { site_location: 'Second synthetic location' } } });
+  const reused = await context.request.post('/api/kitchen-projects', { headers, data: { customer: { name: 'Do not overwrite this existing customer', phone: `+91 ${phone}`, address: 'Typed address must not overwrite the saved contact' }, idempotency_key: `inline-reuse-${Date.now()}-${Math.random()}`, lead: { site_location: 'Second synthetic location' } } });
   expect(reused.ok(), await reused.text()).toBe(true);
   expect(await reused.json()).toMatchObject({ customer_id: project.customer_id, customer: { name }, stage: 'lead', duplicate_review: { status: 'pending' } });
   await health.assertHealthy();

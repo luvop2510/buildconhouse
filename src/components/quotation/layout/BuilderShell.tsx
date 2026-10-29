@@ -191,9 +191,9 @@ const styles = StyleSheet.create({
   referenceErrorBody: { fontSize: 11, color: colors.onSurfaceMuted, marginTop: 2 },
   retryButton: {
     minWidth: 72, minHeight: 44, paddingHorizontal: 14, borderRadius: 10,
-    alignItems: "center", justifyContent: "center", backgroundColor: colors.onSurface,
+    alignItems: "center", justifyContent: "center", backgroundColor: colors.brand,
   },
-  retryLabel: { fontSize: 13, fontWeight: "700", color: colors.surface },
+  retryLabel: { fontSize: 13, fontWeight: "700", color: colors.onBrand },
   quotationToggle: { height: 44, alignItems: "center", justifyContent: "center", borderBottomWidth: StyleSheet.hairlineWidth, borderColor: colors.border, backgroundColor: colors.surfaceSecondary },
   quotationToggleText: { fontSize: 24, lineHeight: 28, color: colors.onSurfaceMuted },
 });

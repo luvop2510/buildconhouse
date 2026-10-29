@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // BuildCon House · Workspace Design System — the single source of truth.
 //
-// Mobile-first spacing, Apple system typography, graphite actions and teal focus.
+// Mobile-first spacing, Apple system typography, neutral surfaces and blue accents.
 // Legacy brass keys remain aliases so every existing module shares this palette.
 //
 // Every module MUST consume these tokens. Zero local styling downstream.
@@ -19,17 +19,17 @@ const pal = {
   line:    "#E2E2E7",  // hairline
   line2:   "#C7C7CC",  // emphasized hairline
   controlBoundary: "#85858A", // 3:1+ against all light input surfaces
-  ink:     "#1D1D1F",  // graphite — text & the primary action
+  ink:     "#1D1D1F",  // graphite — primary text
   ink2:    "#545458",  // secondary text
   ink3:    "#626267",  // tertiary text, captions
   ink4:    "#8E8E93",  // placeholders, disabled
   inkHover:"#353538",
 
   // Action accent. Brass names are retained for source compatibility.
-  brass:      "#1D1D1F",
-  brassDeep:  "#353538",
-  brassTint:  "#EEEEF0",
-  brassLine:  "#C7C7CC",
+  brass:      "#0066CC",
+  brassDeep:  "#004F9F",
+  brassTint:  "#EAF2FF",
+  brassLine:  "#BED6F7",
 
   // Muted status hues — always dot+word, never shouting pills.
   ok:      "#39724D",
@@ -55,7 +55,7 @@ export const color = {
   inkSoft: pal.ink3,
   inkFaint: pal.ink4,
 
-  // Graphite actions keep attention on the business data.
+  // Blue identifies actions and selection; graphite stays with content.
   action: pal.brass,
   actionHover: pal.brassDeep,
   onAction: pal.white,
@@ -68,7 +68,7 @@ export const color = {
   brassDeep: pal.brassDeep,
   brassTint: pal.brassTint,
   brassLine: pal.brassLine,
-  focus: "#22766D",
+  focus: pal.brass,
 
   ok: pal.ok,
   okTint: pal.okTint,

@@ -122,7 +122,9 @@ async def scheduled_tasks(database, user, floor, resources, full, start, end):
                       {"status": "returned", "returned_at": {"$gte": start.isoformat(), "$lt": end.isoformat()}}))
     if "kitchen_projects" in resources:
         due = {"$cond": [{"$eq": ["$stage", "visit"]}, "$visit.visit_date", "$target_completion_date"]}
-        specs.append(("kitchen_projects", "kitchen_projects", {},
+        # The denormalized assignee follows the current stage, never an old handoff.
+        assigned = {} if user.role in {"owner", "admin", "manager"} else {"assigned_to": user.id}
+        specs.append(("kitchen_projects", "kitchen_projects", assigned,
                       {"stage": {"$ne": "completed"}, "status": {"$nin": ["Lost", "Cancelled", "On Hold"]}, "lifecycle_status": {"$nin": ["Cancelled", "On Hold"]}}, due,
                       {**fields, "stage": 1, "customer.name": 1, "cad.progress": 1, "production.progress": 1, "installation.progress": 1},
                       {"stage": "completed", "completion_date": start.astimezone(INDIA).date().isoformat()}))

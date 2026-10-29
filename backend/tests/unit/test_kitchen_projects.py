@@ -178,7 +178,7 @@ async def test_inline_intake_reuses_phone_contact_without_overwriting_or_crossin
     assert database.customers.rows[0]["address"] == original["address"] and len(database.customers.rows) == 1
     database.customers.rows.append({"_id": "other-floor", "id": "other-floor", "name": "Sanitary customer",
                                     "phone": "9888800123", "floor_id": "first-floor"})
-    other = await service.create(owner, create_request(customer={"name": "Kitchen customer", "phone": "9888800123"},
+    other = await service.create(owner, create_request(customer={"name": "Kitchen customer", "phone": "9888800123", "address": "Kitchen site"},
                                                        idempotency_key="inline-floor"))
     assert other["customer_id"] != "other-floor" and other["customer"]["name"] == "Kitchen customer"
 
@@ -186,7 +186,7 @@ async def test_inline_intake_reuses_phone_contact_without_overwriting_or_crossin
 @pytest.mark.asyncio
 async def test_inline_intake_retry_after_project_write_failure_reuses_created_customer(setup, monkeypatch):
     database, service, owner = setup
-    body = create_request(customer={"name": "New enquiry", "phone": "9888800123"}, idempotency_key="inline-recovery")
+    body = create_request(customer={"name": "New enquiry", "phone": "9888800123", "address": "New site"}, idempotency_key="inline-recovery")
     insert = database.kitchen_projects.insert_one
     async def unavailable(_):
         raise RuntimeError("Synthetic write interruption")
@@ -205,7 +205,7 @@ async def test_inline_intake_retry_after_project_write_failure_reuses_created_cu
 async def test_inline_intake_validates_before_writes_and_refuses_ambiguous_contacts(setup):
     database, service, owner = setup
     staff = UserPublic(id="staff-a", full_name="Staff A", role="sales", custom_access=True, floor_ids=["second-floor"], active_floor_id="second-floor")
-    body = create_request(customer={"name": "New enquiry", "phone": "9888800123"}, idempotency_key="inline-permission")
+    body = create_request(customer={"name": "New enquiry", "phone": "9888800123", "address": "New site"}, idempotency_key="inline-permission")
     with pytest.raises(HTTPException):
         await service.create(staff, body)
     with pytest.raises(HTTPException):
@@ -213,10 +213,47 @@ async def test_inline_intake_validates_before_writes_and_refuses_ambiguous_conta
     assert len(database.customers.rows) == 1 and not database.kitchen_projects.rows
     database.customers.rows.append({**database.customers.rows[0], "id": "existing-duplicate"})
     with pytest.raises(HTTPException) as ambiguous:
-        await service.create(owner, create_request(customer={"name": "Any name", "phone": "9000000000"},
+        await service.create(owner, create_request(customer={"name": "Any name", "phone": "9000000000", "address": "Another site"},
                                                   idempotency_key="inline-ambiguous"))
     assert ambiguous.value.status_code == 409 and "select" in ambiguous.value.detail
     assert len(database.customers.rows) == 2 and not database.kitchen_projects.rows
+
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("address", [None, "", "  "])
+async def test_intake_requires_address_before_any_customer_or_project_write(setup, address):
+    database, service, owner = setup
+    body = create_request(customer={"name": "New enquiry", "phone": "9888800123", "address": address},
+                          idempotency_key="missing-inline-address")
+    with pytest.raises(HTTPException) as invalid:
+        await service.create(owner, body)
+    assert invalid.value.status_code == 422 and "address" in invalid.value.detail
+    assert len(database.customers.rows) == 1 and not database.kitchen_projects.rows
+    database.customers.rows[0]["address"] = address
+    for request in (
+        create_request(customer_id="customer-a", idempotency_key="missing-saved-address"),
+        create_request(customer={"name": "Typed name", "phone": "9000000000", "address": "Typed address"},
+                       idempotency_key="missing-matched-address"),
+    ):
+        with pytest.raises(HTTPException) as invalid:
+            await service.create(owner, request)
+        assert invalid.value.status_code == 422 and "update the existing customer" in invalid.value.detail
+    assert len(database.customers.rows) == 1 and not database.kitchen_projects.rows
+    assert not database.customers.rows[0].get("kitchen_reference_reserved")
+
+
+@pytest.mark.asyncio
+async def test_address_requirement_preserves_existing_creation_replay_and_historical_work(setup):
+    database, service, owner = setup
+    body = create_request(customer_id="customer-a", idempotency_key="historic-address")
+    first = await service.create(owner, body)
+    database.customers.rows[0]["address"] = None
+    database.kitchen_projects.rows[0]["customer"]["address"] = None
+    replay = await service.create(owner, body)
+    assert replay["id"] == first["id"] and replay["replayed"]
+    converted = await service.command(owner, first["id"], cmd(1, "convert"))
+    assert converted["stage"] == "visit" and len(database.kitchen_projects.rows) == 1
 
 
 def test_lead_requires_one_customer_source_and_valid_inline_identity():

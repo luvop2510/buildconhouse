@@ -12,6 +12,7 @@ import { color, radius, space } from "@/src/design/tokens";
 import { useAuth } from "@/src/state/auth";
 import { useActionAccess } from "@/src/hooks/use-permissions";
 import { useFloorAccess } from "@/src/hooks/use-floor-access";
+import { KITCHEN_FLOOR_ID } from "@/src/constants/floors";
 import type { TodayData, TodayOverview, TodayTask } from "@/src/api/today";
 
 const DEPARTMENTS: Record<string, string> = {
@@ -55,6 +56,7 @@ export default function Today() {
   const { selectedFloorId, floors } = useFloorAccess();
   const { isPhone, isDesktop, gutter } = useBp();
   const canUpdateFollowups = useActionAccess("followups", "update");
+  const assignedKitchenWork = selectedFloorId === KITCHEN_FLOOR_ID && !["owner", "admin", "manager"].includes(staff?.role || "");
   const accessVersion = JSON.stringify([staff?.role, staff?.custom_access, staff?.access_profile, staff?.access_grants]);
   const scope = useMemo(() => ({ floorId: selectedFloorId, staffId: staff?.id, accessVersion, pending: new Set<string>(), confirmed: new Set<string>(), revision: 0 }),
     [selectedFloorId, staff?.id, accessVersion]);
@@ -169,9 +171,9 @@ export default function Today() {
       <View style={{ flexDirection: isDesktop && data?.full_floor_access ? "row" : "column", alignItems: "stretch", gap: space.x4 }}>
         <View style={{ flex: isDesktop ? 2 : undefined, minWidth: 0 }}><Surface style={{ gap: space.x3 }}>
           <Txt v="heading">Scheduled work & tasks</Txt>
-          <Txt v="sub" tone="soft">{data?.full_floor_access ? "Current work across this floor’s departments" : "Tasks and progress for your departments"}</Txt>
+          <Txt v="sub" tone="soft">{assignedKitchenWork ? "Your assigned Kitchen tasks and recorded progress" : data?.full_floor_access ? "Current work across this floor’s departments" : "Tasks and progress for your departments"}</Txt>
           {pendingIds.length ? <View accessibilityLiveRegion="polite"><Txt v="sub" tone="soft">Saving {pendingIds.length} follow-up{pendingIds.length === 1 ? "" : "s"}…</Txt></View> : null}
-          {loading ? <View accessibilityLabel="Loading floor tasks" style={{ gap: space.x4 }}><Skeleton h={64} /><Skeleton h={64} /><Skeleton h={64} /></View> : visibleTasks.length ? visibleTasks.map((task, i) => <View key={`${task.resource}:${task.id}`}>{i ? <Hairline /> : null}<TaskRow task={task} open={() => openTask(task)} complete={task.resource === "followups" && canUpdateFollowups ? () => complete(task) : undefined} /></View>) : <View style={{ paddingVertical: space.x6, gap: space.x2 }}><Txt v="bodyMid">{error ? "Tasks are unavailable." : "No open tasks recorded."}</Txt><Txt v="sub" tone="soft">{error ? "Retry to load your work." : "Scheduled work will appear here when it is recorded in your departments."}</Txt></View>}
+          {loading ? <View accessibilityLabel="Loading floor tasks" style={{ gap: space.x4 }}><Skeleton h={64} /><Skeleton h={64} /><Skeleton h={64} /></View> : visibleTasks.length ? visibleTasks.map((task, i) => <View key={`${task.resource}:${task.id}`}>{i ? <Hairline /> : null}<TaskRow task={task} open={() => openTask(task)} complete={task.resource === "followups" && canUpdateFollowups ? () => complete(task) : undefined} /></View>) : <View style={{ paddingVertical: space.x6, gap: space.x2 }}><Txt v="bodyMid">{error ? "Tasks are unavailable." : assignedKitchenWork ? "No open Kitchen tasks assigned to you." : "No open tasks recorded."}</Txt><Txt v="sub" tone="soft">{error ? "Retry to load your work." : assignedKitchenWork ? "Tasks appear here when the owner assigns the current stage to you." : "Scheduled work will appear here when it is recorded in your departments."}</Txt></View>}
           {(queue && queue.length > visibleTasks.length) || data?.truncated ? <Txt v="sub" tone="soft">Showing the next {visibleTasks.length} tasks. Open a department below for its complete list.</Txt> : null}
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space.x2 }}>{data?.resources.filter(resource => DESTINATIONS[resource]).map(resource => <Button key={resource} label={`Open ${DEPARTMENTS[resource] || resource.replace(/_/g, " ")}`} variant="ghost" size="sm" onPress={() => router.push(DESTINATIONS[resource] as never)} />)}</View>
         </Surface></View>

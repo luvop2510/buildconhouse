@@ -1,5 +1,17 @@
 # BuildCon House project documentation
 
+## Kitchen intake, Today and blue accents — 29 October 2026
+
+Native fallback delta scan: Kitchen intake reuses its existing form and service,
+with required name/phone/address and one Site location. Existing customer history
+and successful command replays remain. Shared Today now scopes Kitchen employee
+tasks to current assignment and is reachable from Kitchen phone/sidebar navigation.
+Canonical action/focus/selection roles restore the original blue palette with
+white/graphite content. No new dependency, migration, framework, architectural
+layer or authentication pattern; AGENTS.md needs no architectural update.
+Changed files and verification: docs/audits/2026-10-29-kitchen-leads-today-blue.md.
+Last scanned: 2026-10-29.
+
 Generated: 27 October 2026. Native fallback scan for Ground Floor refinement.
 
 ## Tech stack and entry points

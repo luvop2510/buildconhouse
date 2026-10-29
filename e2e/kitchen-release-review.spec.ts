@@ -288,6 +288,7 @@ test('Kitchen lead intake retains entries, fits its panel and creates without as
   expect(focusedInput!.width).toBeCloseTo(restingInput!.width, 0);
   expect(focusedInput!.height).toBeCloseTo(restingInput!.height, 0);
   await page.getByTestId('kitchen-customer-phone').fill(phone);
+  await page.getByTestId('kitchen-customer-address').fill('Synthetic lead review address');
   await page.getByTestId('kitchen-create-lead-site_location').fill('A long site location that should wrap without changing any other controls');
   const before = await page.getByTestId('kitchen-customer-name').inputValue();
   const viewport = page.viewportSize()!;

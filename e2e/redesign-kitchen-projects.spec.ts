@@ -1046,15 +1046,13 @@ test('Kitchen named stages preview without writes and design details can be corr
   await expect((await projectControl(page, 'kitchen-advance-quotation'))).toBeDisabled();
 });
 
-test('Kitchen lead references create a directory entry and retain complete customer details', async ({ page, context }, info) => {
+test('Kitchen lead references create a directory entry and retain required customer details', async ({ page, context }, info) => {
   await seedBrowser(page);
   await page.goto('/kitchen/stages/lead');
   await page.getByTestId('kitchen-create').click();
   await page.getByTestId('kitchen-customer-name').fill('Reference acceptance customer');
   await page.getByTestId('kitchen-customer-phone').fill(`990${String(Date.now()).slice(-7)}`);
   await page.getByTestId('kitchen-customer-address').fill('Synthetic complete street address');
-  await page.getByTestId('kitchen-customer-city').fill('Ahmedabad');
-  await page.getByTestId('kitchen-customer-email').fill(`kitchen-${info.project.name}-${Date.now()}@example.com`);
   await page.getByTestId('kitchen-create-lead-site_location').fill('Synthetic site');
   await page.getByRole('button', { name: 'Architect / Interior designer', exact: true }).click();
   const name = `Kitchen architect ${info.project.name} ${Date.now()}`;
@@ -1074,7 +1072,7 @@ test('Kitchen lead references create a directory entry and retain complete custo
   expect(response.ok(), await response.text()).toBeTruthy();
   const project = await response.json();
   expect(project.lead).toMatchObject({ referrer_id: reference.id, referrer_name: name, referrer_company: 'Synthetic studio' });
-  expect(project.customer).toMatchObject({ address: 'Synthetic complete street address', city: 'Ahmedabad' });
+  expect(project.customer).toMatchObject({ address: 'Synthetic complete street address' });
   const details = await context.request.get(`/api/sales-data/referrers/${reference.id}?floor_id=second-floor`);
   expect(details.ok(), await details.text()).toBeTruthy();
   expect((await details.json()).kitchen_projects).toEqual(expect.arrayContaining([expect.objectContaining({ id: project.id, status: 'lead' })]));
@@ -1102,7 +1100,6 @@ for (const referenceType of ['architect', 'interior_designer'] as const) {
     await page.getByTestId('kitchen-customer-name').fill(customerName);
     await page.getByTestId('kitchen-customer-phone').fill(phone);
     await page.getByTestId('kitchen-customer-address').fill('Synthetic reference selection address');
-    await page.getByTestId('kitchen-customer-city').fill('Ahmedabad');
     await page.getByTestId('kitchen-create-lead-site_location').fill(`Existing ${referenceType} selection site`);
     const directoryRead = page.waitForResponse(response => new URL(response.url()).pathname === '/api/referrers' && response.request().method() === 'GET');
     await page.getByRole('button', { name: 'Architect / Interior designer', exact: true }).click();
@@ -1129,7 +1126,7 @@ for (const referenceType of ['architect', 'interior_designer'] as const) {
     const identity = { referrer_id: reference.id, referrer_type: referenceType, referrer_name: reference.name, referrer_company: reference.company };
     expect(project).toMatchObject(identity);
     expect(project.lead).toMatchObject(identity);
-    expect(project.customer).toMatchObject({ name: customerName, phone, address: 'Synthetic reference selection address', city: 'Ahmedabad' });
+    expect(project.customer).toMatchObject({ name: customerName, phone, address: 'Synthetic reference selection address' });
     const persisted = await context.request.get(`/api/kitchen-projects/${project.id}`, { headers });
     expect(persisted.ok(), await persisted.text()).toBeTruthy();
     expect(await persisted.json()).toMatchObject({ ...identity, lead: identity, customer_id: project.customer.id });

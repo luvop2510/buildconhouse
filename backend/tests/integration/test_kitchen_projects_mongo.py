@@ -280,6 +280,11 @@ def test_inline_lead_intake_uses_one_floor_local_contact_and_retries_without_dup
             path = "/api/kitchen-projects"
             body = {"customer": {"name": "New inline enquiry", "phone": "+91 98888 00123", "address": "Inline site"},
                     "lead": {"site_location": "Inline site", "status": "New"}, "idempotency_key": str(uuid4())}
+            for address in (None, "", "  "):
+                missing = await env["api"].post(path, json={**body, "customer": {**body["customer"], "address": address}}, headers=headers(env))
+                assert missing.status_code == 422 and "address" in missing.json()["detail"]
+                assert await env["db"].customers.count_documents({"phone": body["customer"]["phone"]}) == 0
+                assert await env["db"].kitchen_projects.count_documents({}) == 0
             forbidden = await env["api"].post(path, json=body, headers=headers(env, "denied"))
             assert forbidden.status_code in {403, 422}
             assert await env["db"].customers.count_documents({"phone": body["customer"]["phone"]}) == 0
@@ -289,7 +294,7 @@ def test_inline_lead_intake_uses_one_floor_local_contact_and_retries_without_dup
             retry = await env["api"].post(path, json=body, headers=headers(env))
             assert retry.status_code == 200 and retry.json()["id"] == project["id"] and retry.json()["replayed"]
             assert await env["db"].customers.count_documents({"id": project["customer_id"]}) == 1
-            second = await env["api"].post(path, json={**body, "customer": {"name": "Different typed name", "phone": "9888800123"},
+            second = await env["api"].post(path, json={**body, "customer": {"name": "Different typed name", "phone": "9888800123", "address": "Another inline site"},
                                                       "idempotency_key": str(uuid4())}, headers=headers(env))
             assert second.status_code == 200, second.text
             assert second.json()["customer_id"] == project["customer_id"]
@@ -299,12 +304,12 @@ def test_inline_lead_intake_uses_one_floor_local_contact_and_retries_without_dup
             project = await accepted(env, project, "convert")
             assert project["stage"] == "visit" and project["customer"]["name"] == "New inline enquiry"
             # The directory's pre-existing formatted number is reused too.
-            reused = await env["api"].post(path, json={**body, "customer": {"name": "Typed existing name", "phone": "+91 99000 00031"},
+            reused = await env["api"].post(path, json={**body, "customer": {"name": "Typed existing name", "phone": "+91 99000 00031", "address": "Another inline site"},
                                                       "idempotency_key": str(uuid4())}, headers=headers(env))
             assert reused.status_code == 200 and reused.json()["customer_id"] == env["ids"]["customer"]
             assert await env["db"].customers.count_documents({"floor_id": "second-floor"}) == 2
             # A contact in another department must never be linked across floors.
-            scoped = await env["api"].post(path, json={**body, "customer": {"name": "Separate Kitchen contact", "phone": "9900000032"},
+            scoped = await env["api"].post(path, json={**body, "customer": {"name": "Separate Kitchen contact", "phone": "9900000032", "address": "Another inline site"},
                                                       "idempotency_key": str(uuid4())}, headers=headers(env))
             assert scoped.status_code == 200 and scoped.json()["customer_id"] != env["ids"]["other_customer"]
     asyncio.run(run())

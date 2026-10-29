@@ -607,12 +607,16 @@ class KitchenProjectService:
             raise HTTPException(422, "A lost reason is required")
         if not str(lead.get("site_location") or "").strip():
             raise HTTPException(422, "Customer Name, Phone Number and Site Location are required")
+        if body.customer is not None and not str(body.customer.address or "").strip():
+            raise HTTPException(422, "Customer address is required before creating a lead")
         reference_fields = await self.referrer_fields(lead.get("referrer_id"))
         customer = (await self.lead_customer(body.customer) if body.customer is not None else
                     await self.db.customers.find_one({"id": body.customer_id, "floor_id": access.KITCHEN_FLOOR},
                                                     CUSTOMER_PROJECTION))
         if not customer:
             raise HTTPException(404, "Kitchen customer not found; select an existing customer")
+        if not str(customer.get("address") or "").strip():
+            raise HTTPException(422, "Customer address is required; update the existing customer before creating a lead")
         customer_id = customer["id"]
         lead.update(reference_fields)
         if not lead.get("lead_date"):

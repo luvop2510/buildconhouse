@@ -30,7 +30,7 @@ export function TrendChart({ points }: { points: { bucket: string; revenue: numb
             style={{
               width: "100%",
               height: Math.max(0, (p.revenue / max) * 90),
-              backgroundColor: selected === p.bucket ? colors.onSurface : colors.brand,
+              backgroundColor: selected === p.bucket ? colors.brandHover : colors.brand,
               borderRadius: radius.sm,
             }}
           />

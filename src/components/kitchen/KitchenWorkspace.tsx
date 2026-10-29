@@ -160,7 +160,6 @@ function stageColumns(stage?: KitchenStage): StageColumn[] {
     default: return [];
   }
 }
-const customerDetailFields: [keyof KitchenCustomer, string][] = [["address", "Address"], ["property_name", "Property / site name"], ["city", "City"], ["state", "State"], ["pincode", "PIN code"], ["email", "Email"], ["alternate_phone", "Alternate phone"], ["company", "Company"], ["gstin", "GSTIN"], ["notes", "Customer notes"]];
 function CreateLead({ onClose, onRegisterClose, onCreated }: { onClose: () => void; onRegisterClose: (handler: () => void) => void; onCreated: (project: KitchenProject) => void }) {
   const { staff } = useAuth();
   const [assignee, setAssignee] = useState("");
@@ -168,7 +167,7 @@ function CreateLead({ onClose, onRegisterClose, onCreated }: { onClose: () => vo
   const [existingMode, setExistingMode] = useState(false);
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
-  const [customerDetails, setCustomerDetails] = useState<Partial<KitchenCustomer>>({});
+  const [customerAddress, setCustomerAddress] = useState("");
   const [initialLeadDate, setInitialLeadDate] = useState(kitchenToday);
   const [duplicates, setDuplicates] = useState<{ reference: string }[]>([]);
   const [duplicateError, setDuplicateError] = useState(false);
@@ -180,9 +179,9 @@ function CreateLead({ onClose, onRegisterClose, onCreated }: { onClose: () => vo
   const [retry, setRetry] = useState(0);
   const [lead, setLead] = useState<KitchenLead>(() => ({ status: "New", lead_date: kitchenToday() }));
   const submission = useKitchenSubmission();
-  const dirty = Boolean(assignee || customer || customerName || customerPhone || Object.values(customerDetails).some(Boolean) || query || Object.entries(lead).some(([key, value]) => key === "status" ? value !== "New" : key === "lead_date" ? value !== initialLeadDate : Boolean(value)));
+  const dirty = Boolean(assignee || customer || customerName || customerPhone || customerAddress || query || Object.entries(lead).some(([key, value]) => key === "status" ? value !== "New" : key === "lead_date" ? value !== initialLeadDate : Boolean(value)));
   const { allowLeave } = useKitchenExitGuard({ dirty, scope: "/kitchen/stages/lead" });
-  const reset = () => { setAssignee(""); setCustomer(null); setCustomerName(""); setCustomerPhone(""); setCustomerDetails({}); setInitialLeadDate(kitchenToday()); setLead({ status: "New", lead_date: kitchenToday() }); setQuery(""); setExistingMode(false); };
+  const reset = () => { setAssignee(""); setCustomer(null); setCustomerName(""); setCustomerPhone(""); setCustomerAddress(""); setInitialLeadDate(kitchenToday()); setLead({ status: "New", lead_date: kitchenToday() }); setQuery(""); setExistingMode(false); };
   const close = () => {
     if (submission.busy) return;
     const discard = () => { reset(); allowLeave(); onClose(); };
@@ -209,21 +208,22 @@ function CreateLead({ onClose, onRegisterClose, onCreated }: { onClose: () => vo
       .finally(() => { if (!controller.signal.aborted) setLoading(false); }); }, 200);
     return () => { clearTimeout(timer); controller.abort(); };
   }, [query, customerPage, retry, existingMode]);
-  const name = customer?.name || customerName;
-  const phone = customer?.phone || customerPhone;
+  const name = customer ? customer.name || "" : customerName;
+  const phone = customer ? customer.phone || "" : customerPhone;
+  const address = customer ? customer.address || "" : customerAddress;
   const save = () => {
     if (existingMode && !customer) { submission.setError("Select an existing customer or choose New customer."); return; }
-    if (!name.trim() || !phone.trim()) { submission.setError("Customer name and phone are required."); return; }
+    if (!name.trim() || !phone.trim() || !address.trim()) { submission.setError("Customer name, phone number and address are required."); return; }
     if (!lead.site_location?.trim()) { submission.setError("Enter the site location before creating the lead."); return; }
-    const body = { ...(assignee ? { assigned_to: assignee } : {}), ...(customer ? { customer_id: customer.id } : { customer: { ...customerDetails, name: name.trim(), phone: phone.trim() } }), lead };
+    const body = { ...(assignee ? { assigned_to: assignee } : {}), ...(customer ? { customer_id: customer.id } : { customer: { name: name.trim(), phone: phone.trim(), address: address.trim() } }), lead };
     void submission.submit(body, key => kitchenProjectsApi.create({ ...body, idempotency_key: key }), project => { allowLeave(); reset(); onCreated(project); });
   };
   return <View testID="kitchen-create-page" style={{ width: "100%", maxWidth: 760 }}>
     <View style={{ gap: 24 }}>
       <Text style={type.bodyMuted}>Enter the customer once. Their details follow this project through all nine stages.</Text>
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}><KitchenOption label="New customer" active={!existingMode} disabled={submission.busy} onPress={() => { setExistingMode(false); setCustomer(null); }} testID="kitchen-new-customer" /><KitchenOption label="Existing customer" active={existingMode} disabled={submission.busy} onPress={() => setExistingMode(true)} testID="kitchen-existing-customer" /></View>
-      {!existingMode ? <><TextField label="Customer name (required)" value={customerName} onChangeText={setCustomerName} editable={!submission.busy} testID="kitchen-customer-name" /><TextField label="Phone number (required)" value={customerPhone} onChangeText={setCustomerPhone} keyboardType="phone-pad" editable={!submission.busy} testID="kitchen-customer-phone" />{customerDetailFields.map(([key, label]) => <TextField key={key} label={label} value={String(customerDetails[key] || "")} onChangeText={value => setCustomerDetails(current => ({ ...current, [key]: value || null }))} editable={!submission.busy} multiline={key === "address" || key === "notes"} keyboardType={key === "email" ? "email-address" : key === "alternate_phone" ? "phone-pad" : "default"} autoCapitalize={key === "email" ? "none" : "sentences"} testID={`kitchen-customer-${key}`} />)}<Text style={type.caption}>An existing Kitchen customer with the same phone is reused automatically; saved contact details are preserved.</Text></> : null}
-      {existingMode ? customer ? <KitchenPanel title={customer.name}><Text style={type.body}>{customer.phone || "No phone recorded"}</Text>{customerDetailFields.map(([key, label]) => customer[key] ? <Text key={key} style={type.body}>{label}: {customer[key]}</Text> : null)}{!customer.address ? <Text style={type.bodyMuted}>No address recorded</Text> : null}{customer.referrer_id ? <Text style={type.body}>Architect / Interior: {referrerLabel(customer)}</Text> : null}<Button label="Choose another customer" variant="secondary" disabled={submission.busy} onPress={() => setCustomer(null)} /></KitchenPanel> : <>
+      {!existingMode ? <><TextField label="Customer name (required)" value={customerName} onChangeText={setCustomerName} editable={!submission.busy} testID="kitchen-customer-name" /><TextField label="Phone number (required)" value={customerPhone} onChangeText={setCustomerPhone} keyboardType="phone-pad" editable={!submission.busy} testID="kitchen-customer-phone" /><TextField label="Address (required)" value={customerAddress} onChangeText={setCustomerAddress} editable={!submission.busy} multiline testID="kitchen-customer-address" /><Text style={type.caption}>An existing Kitchen customer with the same phone is reused automatically; saved contact details are preserved.</Text></> : null}
+      {existingMode ? customer ? <KitchenPanel title={customer.name}><Text style={type.body}>{customer.phone || "No phone recorded"}</Text><Text style={type.body}>Address: {customer.address || "Not recorded"}</Text>{customer.referrer_id ? <Text style={type.body}>Architect / Interior: {referrerLabel(customer)}</Text> : null}<Button label="Choose another customer" variant="secondary" disabled={submission.busy} onPress={() => setCustomer(null)} /></KitchenPanel> : <>
         <SearchField placeholder="Search customer name or phone" accessibilityLabel="Choose customer" value={query} onChangeText={value => { setQuery(value); setCustomerPage(1); }} testID="kitchen-customer" />
         {loading ? <LoadingState label="Loading customers…" /> : customerError ? <ErrorState title="Customer directory unavailable" subtitle={customerError} onRetry={() => setRetry(value => value + 1)} /> : !customers?.rows.length ? <Text style={type.bodyMuted}>No customers match. Choose New customer to record this enquiry here.</Text> : <>
           {customers.rows.map(value => <Button key={value.id} label={`${value.name}${value.phone ? ` · ${value.phone}` : ""}`} variant="secondary" testID={`kitchen-customer-${value.id}`} onPress={() => setCustomer(value)} />)}
@@ -232,13 +232,13 @@ function CreateLead({ onClose, onRegisterClose, onCreated }: { onClose: () => vo
       </> : null}
       {duplicates.length ? <Alert tone="warning" title="Possible matching projects" description={`Review ${duplicates.map(row => row.reference).join(", ")}. The lead will require owner review before conversion, even if it is a legitimate separate project.`} /> : null}
       {duplicateError ? <Alert tone="warning" title="Matching projects could not be checked" description="The server will check for possible duplicates when the lead is created. Any matches require owner review before conversion." /> : null}
-      {customer && (!customer.name.trim() || !customer.phone?.trim()) ? <Alert tone="warning" title="Customer name and phone required" description="Update the existing customer in the customer directory, then select it again. This form does not overwrite shared customer details." /> : null}
+      {customer && (!customer.name.trim() || !customer.phone?.trim() || !customer.address?.trim()) ? <Alert tone="warning" title="Customer name, phone number and address required" description="Update the existing customer in the customer directory, then select it again. This form does not overwrite shared customer details." /> : null}
       <>
       <View style={{ paddingTop: 24, borderTopWidth: 1, borderColor: colors.divider, gap: 6 }}><Text style={type.titleMd}>Project enquiry</Text><Text style={type.caption}>Record the site and the customer’s kitchen requirements.</Text></View>
       {staff?.role === "owner" ? <AssigneeChoice value={assignee} onChange={setAssignee} disabled={submission.busy} testID="kitchen-create-assignee" /> : null}
       <LeadFields value={lead} onChange={setLead} disabled={submission.busy} prefix="kitchen-create-lead" />
       <ErrorNotice error={submission.error} />
-      <Button label="Create lead" onPress={save} loading={submission.busy} disabled={!name.trim() || !phone.trim() || (existingMode && !customer) || !lead.site_location?.trim() || submission.busy} testID="kitchen-create-submit" />
+      <Button label="Create lead" onPress={save} loading={submission.busy} disabled={!name.trim() || !phone.trim() || !address.trim() || (existingMode && !customer) || !lead.site_location?.trim() || submission.busy} testID="kitchen-create-submit" />
       </>
       <Button label="Cancel" variant="secondary" disabled={submission.busy} onPress={close} />
     </View>

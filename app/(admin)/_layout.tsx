@@ -294,6 +294,7 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
   const router = useRouter();
   const segments = useResolvedFloorSegments();
   const { staff, logout } = useAuth();
+  const { selectedFloorId } = useFloorAccess(!!staff);
   const visible = useVisibleNav();
   const tilesNav = useTilesNav();
   const palette = usePalette();
@@ -328,7 +329,9 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
         {(["Kitchen", "Daily work", "Records & operations", "Management"] as const).map(group => {
           const destinations = group === "Management" ? visible(SECONDARY)
             : [...visible(PRIMARY), ...tilesNav.items].filter(n => {
-              if (group === "Kitchen") return n.match.startsWith("kitchen-");
+              const kitchenToday = selectedFloorId === KITCHEN_FLOOR_ID && n.match === "dashboard";
+              if (group === "Kitchen") return n.match.startsWith("kitchen-") || kitchenToday;
+              if (kitchenToday) return false;
               if (n.match.startsWith("kitchen-")) return false;
               const daily = ["dashboard", "walkins", "followups", "catalog", "quotations", "tiles", "kitchen", "furniture", "quotation-follow-up"].includes(n.match);
               return group === "Daily work" ? daily : !daily;
@@ -388,7 +391,8 @@ function PhoneBar() {
   if (!shellReady) return <PhoneBarSkeleton />;
   const all = [...visible(PRIMARY), ...tilesNav.items, ...visible(SECONDARY)];
   const notebook = selectedFloorId === KITCHEN_FLOOR_ID || selectedFloorId === FURNITURE_FLOOR_ID;
-  const priorities = selectedFloorId === KITCHEN_FLOOR_ID ? all.filter(item => item.match.startsWith('kitchen-')).slice(0, 3)
+  const priorities = selectedFloorId === KITCHEN_FLOOR_ID ? ['dashboard', 'kitchen-dashboard', 'kitchen-lead']
+      .flatMap(match => all.filter(item => item.match === match))
     : notebook ? all.filter(item => item.match === 'walkins' || item.match === 'followups' || item.href.includes('/notebook/'))
     : ['dashboard', 'catalog', selectedFloorId === TILES_FLOOR_ID ? 'tiles' : 'quotations', 'followups']
       .flatMap(match => all.filter(item => item.match === match));
@@ -629,7 +633,7 @@ const styles = StyleSheet.create({
   floorAccessState: { flex: 1, alignItems: "center", justifyContent: "center", padding: space.x6, gap: space.x3, backgroundColor: color.canvas },
   floorAccessTitle: { fontFamily: font.semibold, fontWeight: "600", fontSize: 17, color: color.ink, textAlign: "center" },
   floorAccessCopy: { fontFamily: font.regular, fontSize: 13, lineHeight: 19, color: color.inkSoft, textAlign: "center", maxWidth: 360 },
-  floorAccessButton: { minHeight: 44, paddingHorizontal: space.x4, borderRadius: radius.md, alignItems: "center", justifyContent: "center", backgroundColor: color.ink, marginTop: space.x1 },
+  floorAccessButton: { minHeight: 44, paddingHorizontal: space.x4, borderRadius: radius.md, alignItems: "center", justifyContent: "center", backgroundColor: color.action, marginTop: space.x1 },
   floorAccessButtonText: { fontFamily: font.medium, fontWeight: "500", fontSize: 13, color: color.onAction },
   sidebar: { flex: 1, backgroundColor: color.surface },
   rail: { flex: 1, backgroundColor: color.surface },
@@ -681,7 +685,7 @@ const styles = StyleSheet.create({
   },
   tabIconWrapActive: { backgroundColor: color.brassTint },
   tabLabel: { fontFamily: font.medium, fontWeight: "500", fontSize: 10.5, textAlign: "center", color: color.inkMid, letterSpacing: 0.1 },
-  tabLabelActive: { color: color.ink, fontWeight: "600" },
+  tabLabelActive: { color: color.action, fontWeight: "600" },
   fabSlot: { width: 68, alignItems: "center", justifyContent: "center", paddingTop: 4 },
   fab: {
     width: 52, height: 52, borderRadius: 26, backgroundColor: color.brass,

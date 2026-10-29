@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { ScrollViewStyleReset } from "expo-router/html";
 import type { PropsWithChildren } from "react";
+import { color } from "@/src/design/tokens";
 import { WEB_SYSTEM_FONT_STACK } from "@/src/components/appTextFamily";
 
 export default function Root({ children }: PropsWithChildren) {
@@ -26,13 +27,13 @@ export default function Root({ children }: PropsWithChildren) {
               body, input, textarea, select, button { font-family: ${WEB_SYSTEM_FONT_STACK}; }
               body { -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
               :is(button, a, input, textarea, select, [role="button"], [role="link"], [role="tab"], [role="checkbox"], [tabindex]):focus-visible {
-                outline: 3px solid #22766D !important;
+                outline: 3px solid ${color.focus} !important;
                 outline-offset: 3px !important;
               }
               /* Composite controls paint focus on their rounded outer shell. */
-              [data-field-shell="true"]:focus-within { box-shadow: 0 0 0 2px #22766D; }
+              [data-field-shell="true"]:focus-within { box-shadow: 0 0 0 2px ${color.focus}; }
               [data-field-shell="true"] :is(input, textarea):focus { outline: none !important; box-shadow: none !important; }
-              :is(input, textarea, select):focus-visible { outline: none !important; box-shadow: 0 0 0 2px #22766D; }
+              :is(input, textarea, select):focus-visible { outline: none !important; box-shadow: 0 0 0 2px ${color.focus}; }
               @media (forced-colors: active) {
                 [data-field-shell="true"]:focus-within, :is(input, textarea, select):focus-visible { outline: 2px solid Highlight !important; outline-offset: 2px; }
               }

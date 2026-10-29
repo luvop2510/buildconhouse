@@ -47,13 +47,13 @@ These are acceptance surfaces, not a request to add removed pages or controls. N
 - [ ] Use the established 12/14/16/18–20/24/28 scale by role. Essential values wrap or switch to one column rather than shrinking to fit.
 - [ ] Use regular body, medium labels and semibold headings. Do not use a bold eyebrow above every panel or thin small labels.
 - [ ] Use Feather outline icons at consistent 16/18/20 sizes. Decorative icons are hidden from accessibility; icon controls have names and selected/expanded state.
-- [ ] Keep graphite actions, white surfaces, cool neutral canvas and teal data/focus. Status color always has a word or meaningful icon.
+- [ ] Keep blue actions, selected navigation and data/focus accents with white surfaces, black/graphite text and a cool neutral canvas. Status color always has a word or meaningful icon.
 - [ ] Keep 4/8px spacing, 16px phone gutters and shared regular gutters. Related controls align; equal metrics have equal padding.
 - [ ] Use 12px panel / 8px control radii from the contract. Quiet borders separate resting panels; shadows belong to floating overlays.
 - [ ] Remove accessory surfaces: no tinted icon squares, glow, gradient chart decoration, nested card around every row or fabricated delta.
 - [ ] Labels describe the next action. Dates use India calendar boundaries; money uses Indian grouping and an explicit currency where ambiguous.
 
-Measured foreground contrast against white: primary `#1D1D1F` 16.83:1; secondary `#545458` 7.54:1; supporting `#626267` 6.07:1; teal `#22766D` 5.41:1. Canonical success/warning/risk text colors are 5.69:1 / 5.88:1 / 5.46:1 on white. These are calculated token pairs, not screenshot estimates. Measure text on tinted fills, disabled controls and composed overlays separately. The current application theme is light; do not advertise dark mode until all semantic pairs and rendered states are verified.
+Measured foreground contrast against white: primary `#1D1D1F` 16.83:1; secondary `#545458` 7.54:1; supporting `#626267` 6.07:1; blue `#0066CC` 5.57:1. Canonical success/warning/risk text colors are 5.69:1 / 5.88:1 / 5.46:1 on white. These are calculated token pairs, not screenshot estimates. Measure text on tinted fills, disabled controls and composed overlays separately. The current application theme is light; do not advertise dark mode until all semantic pairs and rendered states are verified.
 
 ## Layout, boxes and navigation
 
@@ -63,7 +63,7 @@ Measured foreground contrast against white: primary `#1D1D1F` 16.83:1; secondary
 - [ ] On phones, stack in task reading order. Two-up compact counts are allowed while complete labels and values fit; no fixed minimum card width causes overflow.
 - [ ] `responsive.ts` remains the breakpoint authority (768 / 1024 / 1366). The actual content width decides editor columns and overflow.
 - [ ] One page owns vertical scrolling. Only a table with meaningful columns gets its own bounded horizontal region.
-- [ ] Sidebar displays the product/floor scope, stable destination labels and a clear neutral selected state. Keep no more than two visible hierarchy levels; preserve labelled mobile navigation.
+- [ ] Sidebar displays the product/floor scope, stable destination labels and a clear blue selected state. Keep no more than two visible hierarchy levels; preserve labelled mobile navigation.
 - [ ] Sidebar icons use the same family and optical alignment. Primary page actions belong with the task, not hidden at the sidebar bottom.
 - [ ] Existing route/deep-link/back behavior remains valid, including legacy redirects. A floor change cannot leave a detail link aimed at the previous floor.
 - [ ] Compact/tablet/desktop navigation offers the same permitted functions without repeated navigation structures.
@@ -137,9 +137,9 @@ Each completion report should state: changed behavior, root cause, passed eviden
 
 ## Reference review and decisions
 
-The user's [Salesly Framer reference](https://salesly.framer.website/) is a marketing template. Its saved capture is `outputs/redesign-investigation/reference/salesly.html` in the parent workspace, titled “Salesly – Modern Sales & CRM Framer Template”; the accompanying `salesly-main.mjs` contains its generated site runtime. The useful ideas are coherent alignment, restrained white surfaces, compact text hierarchy and grouping. Reuse these principles through existing primitives. Do not ship its marketing runtime, font payloads, demo statistics or ornamental sections into the ERP. The earlier Inter Tight/blue preview is superseded by the current system-font/graphite contract. Live web extraction was unavailable during this audit, so no claim of inspecting its latest published revision is made.
+The user's [Salesly Framer reference](https://salesly.framer.website/) is a marketing template. Its saved capture is `outputs/redesign-investigation/reference/salesly.html` in the parent workspace, titled “Salesly – Modern Sales & CRM Framer Template”; the accompanying `salesly-main.mjs` contains its generated site runtime. The useful ideas are coherent alignment, restrained white surfaces, compact text hierarchy and grouping. Reuse these principles through existing primitives. Do not ship its marketing runtime, font payloads, demo statistics or ornamental sections into the ERP. The latest user direction restores the original blue accent while retaining the current system-font/neutral foundation. Live web extraction was unavailable during this audit, so no claim of inspecting its latest published revision is made.
 
-The requested Taste app-screen draw selected **achromatic ledger** for long operational sessions and money clarity, retaining the existing palette/type. The generated no-sidebar shell was rejected because this ERP has many established destinations and floor navigation. The existing labelled adaptive shell remains. This is an explicit product constraint, not a reason to add another navigation variant. The first UI/UX Pro Max design-system match returned a marketing hero and an unrelated green/red palette; focused product searches returned no verified ERP match, so those suggestions were not persisted. Its React Native loading/list guidance and the supplied accessibility checklist apply where they fit the current stack.
+The requested Taste app-screen draw selected **achromatic ledger** for long operational sessions and money clarity, retaining the neutral surfaces/type. The latest user direction restores blue actions and accents. The generated no-sidebar shell was rejected because this ERP has many established destinations and floor navigation. The existing labelled adaptive shell remains. This is an explicit product constraint, not a reason to add another navigation variant. The first UI/UX Pro Max design-system match returned a marketing hero and an unrelated green/red palette; focused product searches returned no verified ERP match, so those suggestions were not persisted. Its React Native loading/list guidance and the supplied accessibility checklist apply where they fit the current stack.
 
 Apple references read for this audit: accessibility, layout, typography, color, designing for iOS, sidebars, charting data, loading, icons and the skill's cross-platform translation. Native principles are translated to Expo / React Native Web; the result is not Apple certification. Selected foundations:
 
@@ -149,4 +149,4 @@ Apple references read for this audit: accessibility, layout, typography, color, 
 - `charting-data.md › Best practices`: “Keep a chart simple, letting people choose when they want additional details.” This favors meaningful charts and source drilldowns. [Apple Charting data](https://developer.apple.com/design/human-interface-guidelines/charting-data)
 - `loading.md › Best practices`: “Show something as soon as possible.” This supports independently published sections. [Apple Loading](https://developer.apple.com/design/human-interface-guidelines/loading)
 
-The specific bento spans, graphite/teal palette and showroom handoff signature are product design judgments. Their acceptance depends on rendered evidence and usefulness, not a template name.
+The specific bento spans, white/graphite foundation with blue accents and showroom handoff signature are product design judgments. Their acceptance depends on rendered evidence and usefulness, not a template name.

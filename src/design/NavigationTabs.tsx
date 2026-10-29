@@ -42,7 +42,7 @@ export function NavigationTabs<T extends string>({ value, options, onChange, tes
           backgroundColor: segmented && active ? color.surface : pressed ? color.hoverWash : 'transparent' })}>
         {option.icon ? <Feather accessible={false} name={option.icon} size={16} color={active ? color.action : color.inkSoft} /> : null}
         <Text style={{ fontFamily: active ? font.semibold : font.medium, fontWeight: active ? '600' : '500',
-          fontSize: 13, lineHeight: 18, color: active ? color.ink : color.inkMid }}>{option.label}</Text>
+          fontSize: 13, lineHeight: 18, color: active ? color.action : color.inkMid }}>{option.label}</Text>
         {typeof option.count === 'number' ? <Text style={{ fontSize: 12, color: color.inkSoft }}>{option.count}</Text> : null}
       </Pressable>;
     })}
