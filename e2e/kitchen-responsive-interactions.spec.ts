@@ -306,21 +306,20 @@ test('Kitchen mobile input and blur taps preserve the form viewport and select t
   const created = await context.request.post('/api/kitchen-projects', { headers, data: {
     customer_id: process.env.KITCHEN_E2E_CUSTOMER_ID,
     idempotency_key: `mobile-blur-geometry-${Date.now()}-${Math.random()}`,
-    lead: { site_location: 'Historical mobile form location', notes: 'Mobile form position check' },
+    lead: { lead_date: '2026-10-20' },
   } });
   expect(created.ok(), await created.text()).toBe(true);
   const project = await created.json();
   await seedBrowser(page);
   await page.goto(`/kitchen/${project.id}/stages/lead`);
   await expect(page.getByTestId('kitchen-project-ready')).toHaveCount(1);
-  const field = page.getByTestId('kitchen-lead-notes');
-  // Leave reveal clearance below the lower notes field before measuring typing stability.
-  await page.getByTestId('kitchen-lead-save').scrollIntoViewIfNeeded();
-  await expect(field).toBeInViewport();
+  // Use the first single-line field; lower-note clipping has its own keyboard coverage.
+  const field = page.getByTestId('kitchen-lead-date');
+  await field.scrollIntoViewIfNeeded();
   const scroll = page.getByTestId('kitchen-page-scroll');
   const before = await scroll.boundingBox();
   const restingField = await field.boundingBox();
-  await field.fill('Entered value remains in place');
+  await field.fill('2026-10-21');
   await expect(page.getByTestId('mobile-workspace-header')).toBeVisible();
   await expect(page.getByRole('navigation', { name: 'Primary', exact: true })).toBeHidden();
   const editingViewport = await scroll.boundingBox();
@@ -328,12 +327,12 @@ test('Kitchen mobile input and blur taps preserve the form viewport and select t
   expect(editingViewport!.height, 'Hidden navigation gives its space to the form').toBeGreaterThan(before!.height);
   const inputBeforeBlur = await field.boundingBox();
   expect(Math.abs(inputBeforeBlur!.y - restingField!.y), 'Typing the first dirty value must not move the field').toBeLessThan(2);
-  await page.getByText('Lead notes', { exact: true }).click();
+  await page.getByText('Lead status', { exact: true }).click();
   await expect(page.getByTestId('mobile-workspace-header')).toBeVisible();
   await expect(page.getByRole('navigation', { name: 'Primary', exact: true })).toBeVisible();
   await expect.poll(() => scroll.boundingBox(), { message: 'Dismissal restores the resting viewport after the tap settles' }).toEqual(before);
   expect(Math.abs((await field.boundingBox())!.y - inputBeforeBlur!.y), 'A tap outside the input keeps its vertical position').toBeLessThan(2);
-  await expect(field).toHaveValue('Entered value remains in place');
+  await expect(field).toHaveValue('2026-10-21');
   // Model the reduced usable browser height while a phone keyboard is open.
   await page.setViewportSize({ width: 390, height: 550 });
   await field.focus();
@@ -346,7 +345,7 @@ test('Kitchen mobile input and blur taps preserve the form viewport and select t
   await page.setViewportSize({ width: 390, height: 844 });
   const status = page.getByTestId('kitchen-lead-status-contacted');
   await status.scrollIntoViewIfNeeded();
-  await field.fill('Value immediately before the status tap');
+  await field.fill('2026-10-22');
   await status.click();
   await expect(status).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByTestId('mobile-workspace-header')).toBeVisible();
@@ -355,5 +354,5 @@ test('Kitchen mobile input and blur taps preserve the form viewport and select t
   await page.getByTestId('kitchen-lead-save').click();
   const response = await saved;
   expect(response.ok(), await response.text()).toBe(true);
-  expect((await response.json()).lead).toMatchObject({ notes: 'Value immediately before the status tap', status: 'Contacted' });
+  expect((await response.json()).lead).toMatchObject({ lead_date: '2026-10-22', status: 'Contacted' });
 });
