@@ -5,6 +5,15 @@
   // deferred Expo script. Keep hydration here instead of a separate HEAD
   // request that can prevent the static loading indicator from painting.
   globalThis.__EXPO_ROUTER_HYDRATE__ = true;
+  // Both features shipped in Chromium by 108; older Safari must never parse
+  // this Chromium keyboard directive. Keep its visual-viewport handling.
+  if (typeof navigator !== 'undefined' && 'virtualKeyboard' in navigator &&
+      typeof CSS !== 'undefined' && CSS.supports('height', '100dvh')) {
+    var viewportMeta = document.querySelector('meta[name="viewport"]');
+    if (viewportMeta && viewportMeta.content.indexOf('interactive-widget=') === -1) {
+      viewportMeta.content += ', interactive-widget=resizes-content';
+    }
+  }
   // Capture business deep links before Expo initializes and can normalize an
   // unmounted admin Slot to /access. Keep this tab's pending destination across
   // a reload in that short initialization window; the mounted shell clears it.

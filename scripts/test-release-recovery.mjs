@@ -18,19 +18,23 @@ class Element extends EventTarget {
   querySelector() { return this.interactive ? {} : null; }
   remove() { this.parent.children = this.parent.children.filter(child => child !== this); }
 }
-function harness({ storage = new Map(), storageFails = false, initial = '', interactive = false, entry = asset, readyState = 'complete', pathname = '/quotations/q1' } = {}) {
+function harness({ storage = new Map(), storageFails = false, initial = '', interactive = false, entry = asset, readyState = 'complete', pathname = '/quotations/q1', virtualKeyboard = false, dynamicUnits = true, viewportContent = 'width=device-width, initial-scale=1' } = {}) {
   const root = new Element('div'); root.id = 'root'; root.innerHTML = initial; root.interactive = interactive;
   if (initial) root.appendChild(new Element('div'));
   const body = new Element('body'); body.appendChild(root);
   const window = new EventTarget(); window.__FORGE_APP_MOUNTED__ = false; const document = new EventTarget();
   const timers = []; let reloads = 0; let observerCallback;
+  const viewportMeta = { content: viewportContent };
   Object.assign(document, { readyState, body,
+    querySelector(selector) { assert.equal(selector, 'meta[name="viewport"]'); return viewportMeta; },
     getElementById(id) { return [root, ...body.children].find(element => element.id === id) || null; },
     createElement(tag) { return new Element(tag); },
     querySelectorAll() { return entry ? [{ src: entry }] : []; },
   });
   const location = { origin: base, href: `${base}${pathname}`, pathname, reload() { reloads++; } };
-  const environment = { window, document, location, URL, setTimeout(callback, delay = 0) { timers.push({ callback, delay }); },
+  const environment = { window, document, location, URL, navigator: virtualKeyboard ? { virtualKeyboard: {} } : {},
+    CSS: { supports: (property, value) => { assert.equal(property, 'height'); assert.equal(value, '100dvh'); return dynamicUnits; } },
+    setTimeout(callback, delay = 0) { timers.push({ callback, delay }); },
     sessionStorage: { getItem(key) { if (storageFails) throw Error('blocked'); return storage.get(key); }, setItem(key, value) { if (storageFails) throw Error('blocked'); storage.set(key, value); }, removeItem(key) { if (storageFails) throw Error('blocked'); storage.delete(key); } },
     MutationObserver: class { constructor(callback) { observerCallback = callback; } observe() {} disconnect() {} },
   };
@@ -40,11 +44,16 @@ function harness({ storage = new Map(), storageFails = false, initial = '', inte
     for (const [key, value] of Object.entries(values)) Object.defineProperty(actual, key, { value });
     window.dispatchEvent(actual);
   }
-  return { root, body, document, storage, window, hydrated: environment.__EXPO_ROUTER_HYDRATE__, initialRoute: window.__FORGE_INITIAL_ROUTE__, isReleaseError: window.__FORGE_IS_RELEASE_ERROR__, get reloads() { return reloads; }, panel() { return body.children.find(element => element.id === 'release-startup-recovery'); }, flush(maxDelay = 0) { let index; while ((index = timers.findIndex(timer => timer.delay <= maxDelay)) >= 0) timers.splice(index, 1)[0].callback(); }, event,
+  return { root, body, document, storage, window, viewportMeta, hydrated: environment.__EXPO_ROUTER_HYDRATE__, initialRoute: window.__FORGE_INITIAL_ROUTE__, isReleaseError: window.__FORGE_IS_RELEASE_ERROR__, get reloads() { return reloads; }, panel() { return body.children.find(element => element.id === 'release-startup-recovery'); }, flush(maxDelay = 0) { let index; while ((index = timers.findIndex(timer => timer.delay <= maxDelay)) >= 0) timers.splice(index, 1)[0].callback(); }, event,
     markMounted() { window.__FORGE_APP_MOUNTED__ = true; window.dispatchEvent(new Event('forge:app-mounted')); },
     script(url = asset) { event({ target: { tagName: 'SCRIPT', src: url } }); }, clearRoot() { root.innerHTML = ''; root.children = []; root.interactive = false; }, mutate() { root.innerHTML = '<div>Live app</div>'; root.children = [new Element('div')]; observerCallback?.(); },
   };
 }
+assert.equal(harness().viewportMeta.content, 'width=device-width, initial-scale=1', 'Safari keeps its supported static viewport');
+assert.equal(harness({ virtualKeyboard: true, dynamicUnits: false }).viewportMeta.content, 'width=device-width, initial-scale=1', 'Older Chromium keeps its original keyboard behavior');
+assert.equal(harness({ virtualKeyboard: true }).viewportMeta.content, 'width=device-width, initial-scale=1, interactive-widget=resizes-content', 'Modern Chromium retains content resizing with the keyboard');
+assert.equal(harness({ virtualKeyboard: true, viewportContent: 'width=device-width, interactive-widget=overlays-content' }).viewportMeta.content,
+  'width=device-width, interactive-widget=overlays-content', 'Respect an explicitly configured viewport policy');
 const stalled = harness({ readyState: 'loading', initial: '<div>Loading</div>' });
 assert.equal(stalled.hydrated, true, 'The recovery bootstrap must set hydration before the following Expo entry executes');
 stalled.flush(); assert.equal(stalled.panel(), undefined);

@@ -2,6 +2,12 @@
 
 ## Ground Floor completion delta — 30 October 2026
 
+Independent Linux WebKit CI exposed an unsupported static interactive-widget
+viewport directive after the first publication. Its existing blocking bootstrap
+now enables that Chromium policy only with VirtualKeyboard/dynamic-unit support;
+Safari retains visual-viewport handling. No API, framework, dependency, data or
+architecture change; console-error and performance gates remain intact.
+
 Native fallback delta scan retains Expo/React Native Web, FastAPI, MongoDB and
 the existing authorization/transport layers; no new framework, dependency or
 authentication pattern is introduced. Mobile tile editors use bounded media and

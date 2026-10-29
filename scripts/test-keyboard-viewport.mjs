@@ -99,5 +99,6 @@ for (const platform of ['android', 'ios', 'web']) {
 }
 const config = JSON.parse(readFileSync(new URL('../app.json', import.meta.url), 'utf8'));
 assert.equal(config.expo.android.softwareKeyboardLayoutMode, 'resize');
-assert.match(readFileSync(new URL('../app/+html.tsx', import.meta.url), 'utf8'), /interactive-widget=resizes-content/);
+assert.doesNotMatch(readFileSync(new URL('../app/+html.tsx', import.meta.url), 'utf8'), /interactive-widget=/, 'Static HTML must also parse without warnings on older Safari');
+assert.match(readFileSync(new URL('./release-recovery.js', import.meta.url), 'utf8'), /interactive-widget=resizes-content/);
 console.log('Android shared entry: fullscreen IME disabled by default, hidden navigation leaves no blank band, native and Chrome viewport resizing configured.');

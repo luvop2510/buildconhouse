@@ -118,3 +118,27 @@ outcomes, to be recorded only after they succeed. Retain rollback deployments
 Vercel dpl_beJ32M9Hd5Gp8x9Eh2H8f2BppCxx and Railway
 08f15898-1189-4ce8-b2c6-e23af5ee202a. Physical Android/iOS keyboards and signed
 native rebuilds remain outside the available browser/device evidence.
+
+## Safari CI compatibility follow-up
+
+Release 14b2b82c passed the complete local gate and was published to both
+providers, with 18 public, 20 authenticated, six Ground browser and 12 API checks.
+The independent Linux timing job then failed 12 WebKit cases solely on the
+browser diagnostic `Viewport argument key "interactive-widget" not recognized
+and ignored.` Its 48 remaining cases passed. This was not a timing-budget failure.
+The original CI report and logs are preserved in the parent release evidence.
+
+Static viewport HTML now contains only the shared supported policy. The existing
+blocking bootstrap adds `interactive-widget=resizes-content` only when the
+VirtualKeyboard API and dynamic viewport units are both present. Chromium's
+layout-resize policy and dynamic units shipped in
+[Chrome 108](https://developer.chrome.com/blog/new-in-chrome-108); its
+[keyboard viewport behavior](https://developer.chrome.com/blog/viewport-resize-behavior/)
+explains the opt-in. Older Safari retains the existing visual-viewport hook, with
+no unsupported initial HTML directive. Native Android resize is unchanged.
+
+Executable bootstrap cases cover supported Chromium, older Chromium, Safari and
+an explicit existing viewport policy. The existing startup browser case now
+asserts the actual capability-dependent policy and zero console errors. No
+console filters, deadlines, retries or timing assertions were relaxed. Backend
+source and migration are unchanged by this compatibility correction.

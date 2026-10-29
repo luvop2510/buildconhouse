@@ -2,6 +2,11 @@
 
 ## Ground mobile documents and sales loss — 2026-10-30
 
+Static viewport HTML must parse without warnings on older Safari. The blocking
+bootstrap adds Chromium's interactive-widget resize policy only when both the
+VirtualKeyboard API and dynamic viewport units are supported. Keep native resize
+and the visual-viewport reveal hook; never filter console errors to pass CI.
+
 Ground and Sanitary document lists page 30 summaries with a 31st-row sentinel,
 literal server search, deterministic created_at/id order, exact floors and stale
 callback guards. Summary reads omit product/history payloads and catalog-media

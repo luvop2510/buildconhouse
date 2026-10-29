@@ -1,6 +1,8 @@
 import { expect, test } from '@playwright/test';
 
 test('critical startup paints and hydrates without requesting the legacy head bootstrap', async ({ page }) => {
+  const consoleErrors: string[] = [];
+  page.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text()); });
   let release!: () => void;
   const held = new Promise<void>(resolve => { release = resolve; });
   let releaseFonts!: () => void;
@@ -19,6 +21,12 @@ test('critical startup paints and hydrates without requesting the legacy head bo
     await expect(page.getByTestId('login-email')).toBeEditable({ timeout: 5000 });
     expect(legacyRequests).toBe(0);
     expect(await page.evaluate(() => (globalThis as any).__EXPO_ROUTER_HYDRATE__)).toBe(true);
+    const viewport = await page.evaluate(() => ({
+      content: document.querySelector<HTMLMetaElement>('meta[name="viewport"]')!.content,
+      supportsKeyboardResize: 'virtualKeyboard' in navigator && CSS.supports('height', '100dvh'),
+    }));
+    expect(viewport.content.includes('interactive-widget=resizes-content')).toBe(viewport.supportsKeyboardResize);
+    expect(consoleErrors).toEqual([]);
   } finally { release(); releaseFonts(); }
 });
 
