@@ -106,26 +106,15 @@ test('critical zero-stock inventory stays listed and has no available transfer o
   await expect(page.getByRole('button', { name: 'Transfer Empty Basin Mixer to a customer' })).toBeDisabled();
   await expect(page.getByRole('button', { name: /Add Empty Basin Mixer.*to a new quotation/ })).toBeDisabled();
   expect(requestedHistory).toBe(true);
-  // Checking registered, loaded FontFaces catches a failed web decoder or
-  // fallback font that a computed font-family name alone would miss.
-  const expectedFonts = ['Inter-Bold', 'Inter-Medium', 'Inter-Regular', 'Inter-SemiBold'];
-  await expect.poll(() => page.evaluate(() => [...new Set(Array.from(document.fonts as FontFaceSet & Iterable<FontFace>)
-    .map(face => face.family.replace(/["']/g, ''))
-    .filter(family => /^Inter-(Regular|Medium|SemiBold|Bold)$/.test(family)))].sort())).toEqual(expectedFonts);
-  // Responsive layouts may not render every weight. Explicitly decode each
-  // registered face; CSS and runtime registrations may contain duplicates.
-  await page.evaluate(() => Promise.all(Array.from(document.fonts as FontFaceSet & Iterable<FontFace>)
-    .filter(face => /^Inter-(Regular|Medium|SemiBold|Bold)$/.test(face.family.replace(/["']/g, '')))
-    .map(face => face.load())));
-  await expect.poll(() => page.evaluate(() => [...new Set(Array.from(document.fonts as FontFaceSet & Iterable<FontFace>)
-    .filter(face => face.status === 'loaded')
-    .map(face => face.family.replace(/["']/g, ''))
-    .filter(family => /^Inter-(Regular|Medium|SemiBold|Bold)$/.test(family)))].sort())).toEqual(expectedFonts);
+  // Interface text uses the OS face without downloading alternate text fonts.
+  expect(await page.evaluate(() => Array.from(document.fonts as FontFaceSet & Iterable<FontFace>)
+    .filter(face => /^Inter-/.test(face.family.replace(/["']/g, ''))).length)).toBe(0);
   // Icon fonts load asynchronously in the hosted export. Keep the strict
   // family assertion, but first wait for the icon elements to render.
   await expect.poll(() => page.locator('[style*="feather" i]').count()).toBeGreaterThan(0);
   const families = await page.getByText('Empty Basin Mixer', { exact: true }).evaluate(element => ({ text: getComputedStyle(element).fontFamily, icons: Array.from(document.querySelectorAll('[style*="feather" i]')).map(icon => getComputedStyle(icon).fontFamily) }));
-  expect(families.text).toContain('Inter-SemiBold');
+  expect(families.text).toContain('system-ui');
+  expect(await page.getByText('Empty Basin Mixer', { exact: true }).evaluate(element => getComputedStyle(element).fontWeight)).toBe('600');
   expect(families.icons.length).toBeGreaterThan(0);
   expect(families.icons.every(family => family.toLowerCase().includes('feather'))).toBe(true);
 });

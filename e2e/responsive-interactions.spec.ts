@@ -155,7 +155,7 @@ test('phone More destinations open with Enter and dismiss the workspace sheet', 
 });
 
 test('dashboard pipeline and follow-up links expose names and keyboard destinations', async ({ page }) => {
-  await mockSession(page, '/dashboard');
+  await mockSession(page, '/dashboard', false, { staff: { id: 'audit-manager', email: 'manager@example.test', full_name: 'Audit Manager', role: 'manager', active: true, floor_ids: ['first-floor'] } });
   await page.route('**/api/followups/mission', route => route.fulfill({ json: {
     due_count: 1, revenue_at_risk: 0, revenue_at_risk_short: '0', overdue_payments: 0,
     quotations_expiring_today: 0, critical_count: 0, estimated_minutes: 1, greeting_name: 'Fixture',

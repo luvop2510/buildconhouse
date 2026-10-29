@@ -6,6 +6,7 @@ import { spacing, type } from '@/src/theme/tokens';
 import { analyticsQuery, salesAnalyticsApi, type AnalyticsKind } from '@/src/api/salesAnalytics';
 import { AnalyticsFilters } from './AnalyticsFilters';
 import { analyticMoney, analyticNumber, Choice, DataLink, Empty, ExportMenu, Panel, ReadState } from './AnalyticsParts';
+import { analyticsCurrency, analyticEntityAmount } from './currencyScope';
 import { useAnalyticsRead, useAnalyticsScope } from './useAnalytics';
 
 const TITLES:Record<AnalyticsKind,string>={companies:'Companies / brands',products:'Products',architects:'Architects',customers:'Customers'};
@@ -17,7 +18,7 @@ export function AnalyticsEntities({kind}:{kind:AnalyticsKind}) {
  <AnalyticsFilters filters={filters} update={update} floors={floors}/>
  <View style={{maxWidth:280}}><Choice label="Rank by" value={filters.sort||'sales_desc'} options={[{value:'sales_desc',label:'Confirmed sales — highest first'},{value:'sales_asc',label:'Confirmed sales — lowest first'},{value:'orders_desc',label:'Order count'},{value:'aov_desc',label:'Average order value'},{value:'name_asc',label:'Name A–Z'}]} onChange={sort=>update({sort})} testID="analytics-sort"/></View>
  {!canView?<Empty text="Your account does not have permission to view Sales Data."/>:<><ReadState loading={read.loading&&!read.data} error={read.error} retry={read.refresh}/>{read.data?<Panel title={`${analyticNumber(read.data.total)} ${TITLES[kind].toLowerCase()}`}>
- {read.data.items.length?read.data.items.map(row=><DataLink key={row.id} testID={`analytics-entity-${row.id}`} label={row.name} detail={[row.detail,`${analyticNumber(row.orders)} orders`,row.customers==null?'':`${analyticNumber(row.customers)} customers`,row.quantity==null?'':`${analyticNumber(row.quantity)} ${row.unit||'units'}`].filter(Boolean).join(' · ')} value={analyticMoney(row.sales)} secondary={row.sales_rnb?analyticMoney(row.sales_rnb,'RNB'):undefined} onPress={()=>go(`/(admin)/sales-data/profile/${kind}/${encodeURIComponent(row.id)}`)}/>):<Empty text={`No ${kind} match this scope. Try another date range or search.`}/>}
+ {read.data.items.length?read.data.items.map(row=><DataLink key={row.id} testID={`analytics-entity-${row.id}`} label={row.name} detail={[row.detail,`${analyticNumber(row.orders)} orders`,row.customers==null?'':`${analyticNumber(row.customers)} customers`,row.quantity==null?'':`${analyticNumber(row.quantity)} ${row.unit||'units'}`].filter(Boolean).join(' · ')} value={filters.floor_id!=='third-floor'&&row.floor_ids?.length===1&&row.floor_ids[0]==='third-floor'?'Furniture ledger':analyticMoney(analyticEntityAmount(row,filters.floor_id),analyticsCurrency(filters.floor_id))} onPress={()=>go(`/(admin)/sales-data/profile/${kind}/${encodeURIComponent(row.id)}`,row.floor_ids?.length===1&&row.floor_ids[0]==='third-floor'?{floor_id:'third-floor'}:{})}/>):<Empty text={`No ${kind} match this scope. Try another date range or search.`}/>}
  <Pagination total={read.data.total} page={read.data.page} size={read.data.page_size} update={update}/>
  </Panel>:null}</>}
  </AdminPage>;

@@ -196,7 +196,7 @@ function FloorSwitcher({ compact = false }: { compact?: boolean }) {
     >
       <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 12, height: 42, borderRadius: radius.lg, backgroundColor: color.surface, borderWidth: layout.hairline, borderColor: color.line }}>
         <Feather name="layers" size={15} color={color.brass} />
-        {!compact ? <Text numberOfLines={1} style={{ flex: 1, fontFamily: font.medium, fontSize: 12.5, color: color.ink }}>{currentLabel}</Text> : null}
+        {!compact ? <Text numberOfLines={1} style={{ flex: 1, fontFamily: font.medium, fontWeight: "500", fontSize: 12.5, color: color.ink }}>{currentLabel}</Text> : null}
         <Feather name="chevron-down" size={14} color={color.inkSoft} />
       </View>
     </Menu>
@@ -335,7 +335,7 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
               return group === "Daily work" ? daily : !daily;
             });
           return destinations.length ? <View key={group} style={{ gap: 1, marginBottom: space.x3 }}>
-            {!collapsed ? <Text style={{ fontFamily: font.semibold, fontSize: 10.5, letterSpacing: 1.05, textTransform: "uppercase", color: color.inkSoft, paddingHorizontal: space.x3, paddingVertical: space.x2 }}>{group}</Text> : null}
+            {!collapsed ? <Text style={{ fontFamily: font.semibold, fontWeight: "600", fontSize: 10.5, letterSpacing: 1.05, textTransform: "uppercase", color: color.inkSoft, paddingHorizontal: space.x3, paddingVertical: space.x2 }}>{group}</Text> : null}
             {destinations.map(n => <SideItem key={n.href} item={n} active={isActive(n)} compact={collapsed}
               onPress={() => { if (tilesNav.items.includes(n)) void tilesNav.open(n); else router.push(n.href as any); }} />)}
           </View> : null;
@@ -663,7 +663,7 @@ const styles = StyleSheet.create({
     minHeight: 44, minWidth: 44, borderRadius: radius.sm, paddingHorizontal: 8,
     backgroundColor: color.sunken,
   },
-  sidebarToggleLabel: { fontFamily: font.medium, fontSize: 11.5, color: color.inkMid },
+  sidebarToggleLabel: { fontFamily: font.medium, fontWeight: "500", fontSize: 11.5, color: color.inkMid },
   brassBar: {
     position: "absolute", left: 0, top: 8, bottom: 8, width: 2.5, borderRadius: 2,
   },
@@ -700,7 +700,7 @@ const styles = StyleSheet.create({
     alignItems: "center", justifyContent: "center", marginTop: -22,
     borderWidth: 4, borderColor: color.canvas,
   },
-  actionLabel: { marginTop: -2, fontFamily: font.medium, fontSize: 10.5, textAlign: "center", color: color.inkMid },
+  actionLabel: { marginTop: -2, fontFamily: font.medium, fontWeight: "500", fontSize: 10.5, textAlign: "center", color: color.inkMid },
   navLoadingSlot: { flex: 1, alignItems: "center", justifyContent: "center", gap: 6 },
   navLoadingFabSlot: { width: 68, alignItems: "center", justifyContent: "center" },
   navLoadingIcon: { width: 20, height: 20, borderRadius: 10, backgroundColor: color.sunken },

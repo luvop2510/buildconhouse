@@ -1,8 +1,8 @@
 import { expect, test } from '@playwright/test';
 
-const required = ['Inter-Bold', 'Inter-Medium', 'Inter-Regular', 'Inter-SemiBold', 'feather'];
+const required = ['feather'];
 
-test('cold sign-in waits for decoded text and icon fonts before the first form paint', async ({ page }, info) => {
+test('cold sign-in uses system text and waits for decoded icons before the first form paint', async ({ page }, info) => {
   let release!: () => void;
   const held = new Promise<void>(resolve => { release = resolve; });
   let fontRequests = 0;
@@ -25,10 +25,11 @@ test('cold sign-in waits for decoded text and icon fonts before the first form p
     await expect.poll(() => fontRequests).toBeGreaterThan(0);
     const formVisibleBeforeFonts = await page.getByTestId('login-email').isVisible();
     await info.attach('held-font-evidence', { body: JSON.stringify({ formVisibleBeforeFonts, fontRequests }), contentType: 'application/json' });
-    expect(formVisibleBeforeFonts, 'SSR and Safari must not paint a fallback-font form').toBe(false);
+    expect(formVisibleBeforeFonts, 'SSR and Safari must not paint controls with undecoded icon glyphs').toBe(false);
     await expect(page.getByTestId('app-font-loading')).toBeVisible();
   } finally { release(); }
   await expect(page.getByTestId('login-email')).toBeEditable();
+  expect(await page.getByTestId('login-email').evaluate(element => getComputedStyle(element).fontFamily)).toContain('system-ui');
   const paints = await page.evaluate(() => (window as any).__fontPaints as string[][]);
   expect(paints.length).toBeGreaterThan(0);
   for (const loaded of paints) expect(loaded).toEqual(required);
@@ -61,7 +62,7 @@ test('failed font assets show recovery and a retry reload reaches the complete s
   const loaded = await page.evaluate(() => [...new Set(Array.from(document.fonts as FontFaceSet & Iterable<FontFace>)
     .filter(face => face.status === 'loaded').map(face => face.family.replace(/["']/g, '')))].sort());
   expect(loaded).toEqual(required);
-  expect(requested.filter(url => new URL(url).searchParams.has('font_retry')).length).toBeGreaterThanOrEqual(5);
+  expect(requested.filter(url => new URL(url).searchParams.has('font_retry')).length).toBeGreaterThanOrEqual(1);
 });
 
 

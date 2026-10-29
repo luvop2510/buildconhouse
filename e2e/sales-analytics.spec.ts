@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { analyticsDashboard, mockSalesAnalytics } from './sales-analytics-fixtures';
-import { analyticsExport, analyticsFitsViewport, analyticsFloor } from './sales-analytics-helpers';
+import { analyticsExplore, analyticsExport, analyticsFitsViewport, analyticsFloor } from './sales-analytics-helpers';
 import { captureRuntimeHealth } from './runtime-health';
 
 test('overall dashboard charts and all floor destinations fit compact and regular widths', async ({ page }, info) => {
@@ -20,6 +20,7 @@ test('overall dashboard charts and all floor destinations fit compact and regula
     range.selectNodeContents(text);
     return range.getClientRects().length === 1;
   }), 'Exact currency amount keeps its decimal on the same line').toBe(true);
+  expect(await page.getByTestId('analytics-kpi-aov').evaluate(root => { const text=Array.from(root.querySelectorAll('*')).find(node=>node.textContent==='₹1,50,000.25'); if(!text)return false; const range=document.createRange(); range.selectNodeContents(text); return range.getClientRects().length===1; }), 'Average order amount stays on one line').toBe(true);
   await health.assertHealthy();
   await page.screenshot({ path: info.outputPath('analytics-responsive.png'), fullPage: true });
   const trend = page.getByTestId('analytics-trend');
@@ -73,20 +74,48 @@ test('forbidden direct profile and export requests show recovery without protect
   await analyticsFitsViewport(page);
 });
 
-test('dashboard banner dismissal persists across reload without changing sales scope', async ({ page }) => {
+test('owner homepage is the same company overview with independently scoped team effort', async ({ page }) => {
   const health = captureRuntimeHealth(page);
-  await mockSalesAnalytics(page);
-  await page.goto('/dashboard');
-  const banner = page.getByTestId('banner-dashboard-confirmed-sales-v1');
-  const close = page.getByTestId('banner-dashboard-confirmed-sales-v1-dismiss');
-  await expect(banner).toBeVisible();
-  await analyticsFitsViewport(page, [close]);
-  await close.click();
-  await expect(banner).toHaveCount(0);
-  await page.reload();
-  await expect(page.getByTestId('analytics-kpi-sales')).toContainText('₹2,40,000');
-  await expect(banner).toHaveCount(0);
+  const requests: URL[] = [];
+  await mockSalesAnalytics(page, { onRequest: url => requests.push(url) });
+  await page.goto('/dashboard?preset=custom&date_from=2026-09-01&date_to=2026-09-30');
+  await expect(page.getByRole('heading', { name: 'Company overview', exact: true })).toBeVisible();
+  await expect(page.getByTestId('analytics-kpi-sales')).toContainText('₹3,00,000.5');
+  const operations = page.getByTestId('analytics-owner-operations');
+  await expect(operations).toContainText('Mira Patel');
+  await expect(operations).toContainText('3 contacts');
+  await expect(operations).toContainText('last 30 days');
+  await expect(operations.getByTestId('analytics-workflow-second-floor')).toContainText('7 projects · 4 active · 2 completed · 1 overdue');
+  await operations.getByRole('button',{name:'View workflow stages',exact:true}).click();
+  await expect(operations.getByText('Production',{exact:true})).toBeVisible();
+  expect(requests.filter(url => url.pathname.endsWith('/owner-operations')).at(-1)?.searchParams.has('date_from')).toBe(false);
+  await expect(page.getByTestId('dashboard-personal-operations')).toBeVisible();
+  await expect(page.getByRole('button', {name:'View quotation & payment snapshot',exact:true})).toBeVisible();
+  await expect(page.getByText('Won this month', { exact: true })).toHaveCount(0);
+  await expect(page.getByTestId('analytics-kpis')).toHaveCount(1);
+  await analyticsFloor(page, 'ground-floor');
+  await expect(operations).toContainText('Arjun Shah');
+  await expect(operations).not.toContainText('Mira Patel');
+  await expect(page.getByTestId('analytics-page')).not.toContainText('RNB');
+  expect(requests.filter(url => url.pathname.endsWith('/owner-operations')).at(-1)?.searchParams.get('floor_id')).toBe('ground-floor');
+  await analyticsFitsViewport(page);
   await health.assertHealthy();
+});
+
+test('owner team read failure leaves sales usable and has an explicit recovery', async ({ page }) => {
+  let fail = true;
+  await mockSalesAnalytics(page, { operations: route => fail
+    ? route.fulfill({ status: 503, json: { detail: 'Team activity temporarily unavailable' } })
+    : route.fulfill({ json: { generated_at: '2026-10-29T06:30:00Z', floor_ids: ['first-floor'], period_label: 'Current follow-ups · contacts in the last 30 days', open_followups: 0, overdue_followups: 0, completed_followups: 0, dismissed_followups: 0, unassigned_followups: 0, team: [], notes: [] } }) });
+  await page.goto('/dashboard?floor_id=first-floor');
+  const operations = page.getByTestId('analytics-owner-operations');
+  await expect(operations.getByRole('alert')).toContainText('Team activity temporarily unavailable');
+  await expect(page.getByTestId('analytics-kpi-sales')).toContainText('₹2,40,000');
+  fail = false;
+  await operations.getByTestId('analytics-retry').click();
+  await expect(operations).toContainText('No assigned follow-ups');
+  await expect(operations.getByRole('alert')).toHaveCount(0);
+  await analyticsFitsViewport(page);
 });
 
 test('report preview and device history preserve the selected filter state', async ({ page }) => {
@@ -99,7 +128,7 @@ test('report preview and device history preserve the selected filter state', asy
   await expect(page.getByTestId('analytics-kpi-sales')).toContainText('₹1,80,000');
   await expect(page.getByTestId('analytics-kpi-sales')).toContainText('Collected amount');
   await page.reload();
-  const saved = page.getByRole('link', { name: 'Open October sanitary collections review', exact: true });
+  const saved = page.getByRole('link', { name: 'October sanitary collections review. Open details', exact: true });
   await expect(saved).toBeVisible();
   await saved.click();
   await expect(page.getByTestId('analytics-kpi-sales')).toContainText('₹1,80,000');
@@ -154,8 +183,7 @@ test('keyboard navigation carries edited filters between analytics destinations'
   await page.getByTestId('analytics-date-basis-payment').click();
   await page.getByTestId('analytics-filter-apply').click();
   await expect(page.getByTestId('analytics-kpi-sales')).toContainText('₹1,80,000');
-  await page.getByTestId('analytics-nav-customers').focus();
-  await page.keyboard.press('Enter');
+  await analyticsExplore(page, 'customers', true);
   await expect(page).toHaveURL(/\/sales-data\/customers\?/);
   for (const [key, value] of [['floor_id', 'first-floor'], ['preset', 'custom'], ['date_basis', 'payment'], ['date_from', '2026-10-01'], ['date_to', '2026-10-28']]) expect(new URL(page.url()).searchParams.get(key)).toBe(value);
   await page.reload();
@@ -231,11 +259,12 @@ test('floor detail filters can switch to another business unit and back to overa
   await analyticsFloor(page, 'third-floor');
   await expect(page.getByTestId('analytics-kpi-sales')).toContainText('RNB 75,000.5');
   expect(new URL(page.url()).searchParams.get('floor_id')).toBe('third-floor');
-  await expect(page.getByRole('heading', { name: 'Furniture analysis', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Furniture overview', exact: true })).toBeVisible();
   await analyticsFloor(page, 'all');
-  await expect(page.getByRole('heading', { name: 'Overall sales data', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Company overview', exact: true })).toBeVisible();
   await expect(page.getByTestId('analytics-kpi-sales')).toContainText('₹3,00,000.5');
-  await expect(page.getByTestId('analytics-kpi-sales')).toContainText('RNB 75,000.5');
+  await expect(page.getByTestId('analytics-kpi-sales')).not.toContainText('RNB');
+  await expect(page.getByTestId('analytics-furniture')).toContainText('RNB 75,000.5');
   expect(new URL(page.url()).pathname).toBe('/sales-data');
   await analyticsFitsViewport(page);
 });
@@ -263,4 +292,43 @@ test('chart timestamp bounds display India calendar dates and apply unchanged wi
   expect(new URL(page.url()).searchParams.get('date_to')).toBe(end);
   await expect(page.getByTestId('analytics-record-order-a')).toBeVisible();
   await analyticsFitsViewport(page);
+});
+
+test('chart modes, exact values and keyboard controls use the same recorded data', async ({ page }, info) => {
+  await mockSalesAnalytics(page);
+  await page.goto('/sales-data?floor_id=first-floor');
+  await expect(page.getByTestId('analytics-kpi-sales')).toContainText('₹2,40,000');
+  const chart = page.getByTestId('analytics-trend');
+  await expect(chart).toContainText('₹2,40,000');
+  await chart.getByRole('button', { name: 'Bars', exact: true }).click();
+  await expect(chart.getByRole('button', { name: 'Bars', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await chart.getByRole('button', { name: 'View chart data', exact: true }).click();
+  await expect(chart.getByRole('link', { name: '10 Oct: ₹2,40,000. Open details', exact: true })).toBeVisible();
+  await chart.getByRole('button', { name: 'View supporting orders', exact: true }).focus();
+  await page.keyboard.press('Enter');
+  const query = new URL(page.url()).searchParams;
+  expect(query.get('currency')).toBe('INR');
+  expect(query.get('floor_id')).toBe('first-floor');
+  await expect(page.getByTestId('analytics-record-order-a')).toBeVisible();
+  await analyticsFitsViewport(page);
+  await page.goto('/sales-data');
+  await expect(page.getByTestId('analytics-trend')).toBeVisible();
+  expect(await page.getByTestId('analytics-page').evaluate(root => Array.from(root.querySelectorAll('a,[role="link"]')).every(node => getComputedStyle(node).textDecorationLine !== 'underline'))).toBe(true);
+  await page.screenshot({ path: info.outputPath('owner-overview-top.png') });
+});
+
+
+test('currency drilldown cannot hide Furniture and customer segment links remain available',async({page})=>{
+ await mockSalesAnalytics(page);
+ await page.goto('/sales-data/records?currency=INR');
+ await page.getByTestId('analytics-nav-dashboard').click();
+ expect(new URL(page.url()).searchParams.get('currency')).toBeFalsy();
+ await expect(page.getByTestId('analytics-furniture')).toContainText('RNB 75,000.5');
+ await page.goto('/sales-data?currency=INR');
+ await analyticsFloor(page,'third-floor');
+ expect(new URL(page.url()).searchParams.get('currency')).toBeFalsy();
+ await expect(page.getByTestId('analytics-kpi-sales')).toContainText('RNB 75,000.5');
+ await page.goto('/sales-data');
+ await page.getByRole('link',{name:/New customers: 3/}).click();
+ expect(new URL(page.url()).searchParams.get('dimension')).toBe('new');
 });

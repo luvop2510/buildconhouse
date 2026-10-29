@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useId } from 'react';
 import { View, Platform } from "react-native";
 import { Text, TextInput } from "@/src/components/AppText";
-import { color, font, radius } from './tokens';
+import { color, control, font, radius, space } from './tokens';
 import { Txt } from './typography';
 
 const FieldLabelContext = createContext<{ label?: string; description?: string; invalid?: boolean }>({});
@@ -10,7 +10,7 @@ export function Field({
 }: { label?: string; error?: string | null; helper?: string; children: React.ReactNode }) {
   const description = useId();
   return (
-    <View style={{ gap: 7 }}>
+    <View style={{ gap: space.x2 }}>
       {label ? <Txt v="caption" tone="mid">{label}</Txt> : null}
       <FieldLabelContext.Provider value={{ label, description: error || helper ? description : undefined, invalid: !!error }}>{children}</FieldLabelContext.Provider>
       {error ? <Text nativeID={description} accessibilityRole="alert" accessibilityLiveRegion="assertive" style={{ color: color.risk, fontFamily: font.regular, fontSize: 12 }}>{error}</Text>
@@ -30,11 +30,11 @@ export const Input = React.forwardRef<TextInput, React.ComponentProps<typeof Tex
       {...(Platform.OS === "web" ? { dataSet: { fieldShell: "true" } } : {})}
       style={[
         {
-          flexDirection: "row", alignItems: "center", gap: 10,
-          height: 44, borderRadius: radius.md, paddingHorizontal: 14,
+          flexDirection: "row", alignItems: "center", gap: space.x2,
+          minHeight: control.height.md, borderRadius: radius.md, paddingHorizontal: space.x4,
           backgroundColor: color.surface,
           borderWidth: 1,
-          borderColor: invalid ? color.risk : focused ? color.brass : color.line,
+          borderColor: invalid ? color.risk : focused ? color.focus : color.line,
         },
         focused && Platform.OS === "web" ? ({ boxShadow: `0 0 0 3px ${color.focus}` } as any) : null,
       ]}
@@ -42,13 +42,13 @@ export const Input = React.forwardRef<TextInput, React.ComponentProps<typeof Tex
       {left}
       <TextInput
         ref={ref}
-        placeholderTextColor={color.inkFaint}
+        placeholderTextColor={color.inkSoft}
         onFocus={(e) => { setFocused(true); onFocus?.(e); }}
         onBlur={(e) => { setFocused(false); onBlur?.(e); }}
         style={[
           {
             flex: 1, minWidth: 0, fontFamily: font.regular, fontSize: 16, color: color.ink,
-            paddingVertical: 0, height: "100%",
+            paddingVertical: space.x3, minHeight: control.height.md,
           },
           Platform.OS === "web" ? ({ outlineStyle: "none" } as any) : null,
           style,

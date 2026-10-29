@@ -1,6 +1,7 @@
 import { useFocusEffect, useGlobalSearchParams, usePathname, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '@/src/state/auth';
+import { analyticsNextFilters } from './currencyScope';
 import { useSalesScope } from '@/src/components/salesData/SalesScope';
 import { analyticsQuery, type AnalyticsFilters } from '@/src/api/salesAnalytics';
 
@@ -13,12 +14,13 @@ export function useAnalyticsScope() {
  const filters: AnalyticsFilters = { preset: 'this_month', date_basis: 'confirmation', granularity: 'day', floor_id: 'all', page: '1', page_size: '25' };
  FILTER_KEYS.forEach(key => { const value = params[key]; if (typeof value === 'string' && value) filters[key] = value; });
  if (isFloorRoute && !params.floor_id && typeof params.id === 'string' && ['ground-floor','first-floor','second-floor','third-floor'].includes(params.id)) filters.floor_id=params.id;
- const update = (next: AnalyticsFilters) => {
+ const update = (input: AnalyticsFilters) => {
+  const next = analyticsNextFilters(filters, input);
   if (isFloorRoute && next.floor_id !== undefined) {
    router.replace(`/(admin)/sales-data?${analyticsQuery({...filters,...next,page:next.page||'1'})}` as never);
   } else router.setParams({ ...next, page: next.page || '1' });
  };
- const href = (path: string, next: AnalyticsFilters = {}) => `${path}?${analyticsQuery({ ...filters, ...next })}`;
+ const href = (path: string, next: AnalyticsFilters = {}) => `${path}?${analyticsQuery({ ...filters, ...analyticsNextFilters(filters, next) })}`;
  const go = (path: string, next: AnalyticsFilters = {}) => router.push(href(path, next) as never);
  return { filters, update, href, go, router, ...access };
 }

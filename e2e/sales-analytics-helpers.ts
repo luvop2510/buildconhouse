@@ -40,3 +40,19 @@ export async function analyticsExport(page: Page, format: 'pdf' | 'xlsx') {
   if (mobileSave) await page.getByTestId('mobile-file-download').click();
   return downloaded;
 }
+
+/** The compact menu keeps every destination keyboard-reachable without a long phone tab strip. */
+export async function analyticsExplore(page: Page, destination: string, keyboard = false) {
+  const opener = page.getByTestId('analytics-navigation-open');
+  if (keyboard) {
+    await opener.focus();
+    await page.keyboard.press('Enter');
+    const option = page.getByTestId(`analytics-nav-${destination}`);
+    await option.focus();
+    await expect(option).toBeFocused();
+    await page.keyboard.press('Enter');
+  } else {
+    await opener.click();
+    await page.getByTestId(`analytics-nav-${destination}`).click();
+  }
+}

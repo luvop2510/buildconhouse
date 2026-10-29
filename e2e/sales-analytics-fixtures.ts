@@ -26,7 +26,7 @@ export function analyticsDashboard(floorId = 'all', basis = 'confirmation') {
     period: { label: 'October 2026', start: '2026-10-01T00:00:00+05:30', end: '2026-11-01T00:00:00+05:30' },
     filters: { floor_id: floorId, preset: 'this_month', date_basis: basis },
     metric_label: basis === 'payment' ? 'Collected amount' : 'Confirmed sales',
-    kpis: { sales, sales_rnb: salesRnb, orders: orders.length, customers: orders.length, average_order_value: inr.length ? sales / inr.length : null, average_order_value_rnb: rnb.length ? salesRnb / rnb.length : null, collected: sum(inr, 'collected'), outstanding: sum(inr, 'outstanding'), products: catalog ? orders.length : null, change_pct: null },
+    kpis: { sales, sales_rnb: salesRnb, orders: orders.length, customers: orders.length, average_order_value: inr.length ? sales / inr.length : null, average_order_value_rnb: rnb.length ? salesRnb / rnb.length : null, collected: sum(inr, 'collected'), collected_rnb: sum(rnb, 'collected'), outstanding: sum(inr, 'outstanding'), outstanding_rnb: sum(rnb, 'outstanding'), change_pct_rnb: null, products: catalog ? orders.length : null, change_pct: null },
     floors: floors.filter(row => floorId === 'all' || row.id === floorId).map(row => {
       const source = orders.filter(order => order.floor_id === row.id);
       const amount = sum(source, basis === 'payment' ? 'collected' : 'sales');
@@ -49,7 +49,25 @@ if (analyticsDashboard().kpis.sales !== analyticsOrders.filter(row => row.curren
   throw new Error('Analytics source orders do not reconcile with confirmed sales');
 }
 
-type Options = { floorId?: string; dashboard?: (route: Route) => Promise<unknown>; onRequest?: (url: URL) => void };
+export function analyticsOwnerOperations(floorId = 'all') {
+  const people = [
+    { id: 'team-mira', name: 'Mira Patel', floor_id: 'first-floor', open: 2, overdue: 1, completed: 1, contacts: 3, calls: 2 },
+    { id: 'team-arjun', name: 'Arjun Shah', floor_id: 'ground-floor', open: 1, overdue: 1, completed: 1, contacts: 2, calls: 1 },
+  ].filter(row => floorId === 'all' || row.floor_id === floorId);
+  const unassigned = floorId === 'all' || floorId === 'first-floor' ? 1 : 0;
+  return {
+    generated_at: '2026-10-29T06:30:00Z', floor_ids: floors.filter(row => floorId === 'all' || row.id === floorId).map(row => row.id),
+    period_label: 'Current follow-ups · contacts in the last 30 days',
+    open_followups: people.reduce((sum, row) => sum + row.open, unassigned),
+    overdue_followups: people.reduce((sum, row) => sum + row.overdue, 0),
+    completed_followups: people.reduce((sum, row) => sum + row.completed, 0),
+    dismissed_followups: 0, unassigned_followups: unassigned, team: people,
+    workflows: floorId === 'all' || floorId === 'second-floor' ? [{floor_id:'second-floor',name:'Kitchen',unit:'projects',total:7,active:4,completed:2,on_hold:1,overdue:1,stages:[{id:'lead',name:'Lead',count:2},{id:'production',name:'Production',count:2},{id:'completed',name:'Completed',count:2}],workload:[{id:'team-mira',name:'Mira Patel',count:3}]}] : [],
+    notes: ['Contacts count recorded attempts in the last 30 days; calls are included in contacts.', 'Completed assigned follow-ups describe recorded status, not the actor who completed them.'],
+  };
+}
+
+type Options = { floorId?: string; operations?: (route: Route) => Promise<unknown>; dashboard?: (route: Route) => Promise<unknown>; onRequest?: (url: URL) => void };
 export async function mockSalesAnalytics(page: Page, options: Options = {}) {
   await mockSession(page, '/sales-data', false, { floorId: options.floorId, seedStorageOnce: true });
   let review: Record<string, unknown> | null = null;
@@ -66,6 +84,7 @@ export async function mockSalesAnalytics(page: Page, options: Options = {}) {
       review = { decision: body.decision, note: body.note, reviewed_at: '2026-10-29T00:30:00+05:30', reviewed_by_name: 'Audit Owner', revision: (review ? Number(review.revision) : 0) + 1 };
       return route.fulfill({ json: review });
     }
+    if (path === '/owner-operations') return options.operations ? options.operations(route) : route.fulfill({ json: analyticsOwnerOperations(floor) });
     if (path === '/dashboard') return options.dashboard ? options.dashboard(route) : route.fulfill({ json: dashboard });
     if (path === '/records') {
       const items = analyticsOrders.filter(row => floor === 'all' || row.floor_id === floor);

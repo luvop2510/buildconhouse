@@ -1,19 +1,44 @@
-# BuildCon showroom UI
+# Buildcon House interface system
 
-`src/design` owns shared visual tokens and interaction boundaries. Keep the Expo / React Native Web implementation and the existing Feather family. Use real product images and existing document values; keep business calculations in their current modules.
+This file replaces the previous showroom design direction. It is the app-wide contract for every floor, workflow, dialog and analytics page. Mobile is the default: most people use the app on a phone. Desktop uses the same language with more room for comparison.
 
-- `tokens.ts`: porcelain canvas, graphite text, action blue, semantic colors, system/Inter typography, spacing, geometry and elevation. `brass*` exports are compatibility aliases for blue; use `accent*` or `action*` in new code.
-- `responsive.ts`: 768 / 1024 / 1366 breakpoints and quotation **container** calculations. Do not substitute window width for the quotation workspace's measured width.
-- `PageHeader.tsx`, `Screen.tsx`: adaptive page hierarchy. Titles wrap; tablet actions take their own row. Keep one vertical scroll owner per page.
-- `controls.tsx`, `forms.tsx`: buttons and labelled fields. Inputs use readable 16px text, associated helper/errors and explicit disabled states; interactive targets are at least 44px.
-- `Overlay.tsx`, `useOverlayFocus.ts`: shared modal boundary, focus entry/containment/restoration, Escape, nested-modal background isolation, safe areas and reduced motion. Short phone tasks use sheets; long editors can request fullscreen. `scroll={false}` gives the child ownership of scrolling inside a bounded overlay.
-- `NavigationTabs.tsx`, `navigationControls.tsx`: selected semantics, keyboard tabs and menus. Use `navigation.ts` for route labels and destinations; access checks remain in the existing permission helpers.
-- `Disclosure.tsx`: optional summaries and secondary form details. Keep field state in the parent so collapsing a section cannot lose input.
-- `feedback.tsx`, `ConnectionStatus.tsx`: reduced-motion feedback and connection status. Reconnection never replays mutations.
-- `typography.tsx`, `surfaces.tsx`: text, currency, surfaces and status treatments.
+## Foundations
 
-`components.tsx` is a public barrel. Existing `src/components/ui.tsx`, `ds.tsx`, `BottomSheet.tsx` and tile layout exports adapt older contracts to these foundations. Migrate callers incrementally without changing their business contracts.
+Use `src/design/tokens.ts` as the canonical source. `src/theme/tokens.ts` adapts its roles for legacy consumers. Do not introduce another palette, type family or spacing scale in a screen.
 
-Loading is not empty. A failed request must expose retry; an empty result may offer creation; a filtered-empty result should offer changing filters. Preserve usable sections and entered values during partial failures. Financial and order mutations require an explicit user retry. Do not convert unavailable values to zero.
+- Typography: the platform system face for every text role. Apple devices use San Francisco through `System` / `-apple-system`; other devices use their system sans. No bundled imitation or downloaded Apple fonts. Weights are explicit (400 body, 500 labels, 600 headings); data uses tabular figures in the same face. Icon glyph fonts are preserved separately.
+- Type scale: 12px metadata, 14px secondary content, 16px mobile input/body, 18–20px section headings, 24px phone page titles and 28px regular titles. Text wraps and scales; never disable zoom. Small labels are supporting content, never the only explanation.
+- Canvas `#F5F5F7`, surface `#FFFFFF`, primary text/action `#1D1D1F`, secondary text `#545458`, supporting text `#626267`, separators `#E2E2E7`. Text against white has contrast approximately 16.8:1, 7.6:1 and 6.1:1 respectively. Chart/focus teal `#22766D` is approximately 5.4:1 on white. Use roles rather than raw colors in components.
+- Semantic status colors retain their own labels/icons. A zero or unavailable value is neutral. Color alone never conveys a state or identifies a series.
+- Use the existing Feather outline family consistently. Typical sizes are 16px for inline affordances, 18px for controls, 20px for navigation. Hide decorative glyphs from accessibility; name icon-only controls. Avoid emoji, tinted icon tiles and competing icon families.
+- Spacing follows 4/8px increments. Phone gutters 16px, inter-control gaps at least 8px, panel padding 16px, regular panel padding 24px, section gap 16–24px. Use shared token aliases. Keep equal metrics aligned with equal padding and radius; use a 12px panel radius and an 8px inset/control radius.
 
-Use subtle motion and existing reduced-motion hooks. Resting surfaces have borders rather than prominent shadows; elevation is reserved for overlays and raised controls. Existing legacy page styles remain where they carry layout or operational behavior; remove them only with confirmed call-site coverage.
+## Mobile structure
+
+A phone page has one vertical scroll owner. Its title, filter summary and content scroll together below the shared app header. Keep primary information visible early: title, one compact filter/action row, a two-column KPI group and the primary chart. Secondary filters open a sheet; do not stack several complete filter forms above the data. Phone navigation keeps icon and text labels and uses existing floor/grant checks.
+
+Buttons and text fields default to comfortable 44–48px targets. Charts support tap, keyboard controls and a readable data alternative. Lists retain identity and values by wrapping secondary information onto another line. Never rely on hover, truncate essential financial values, or create page-level horizontal scrolling. Tables may scroll only inside a bounded table frame when their meaning requires columns.
+
+The breakpoint authority is `responsive.ts`: 768 / 1024 / 1366. Start with one content column; introduce two columns only when each remains useful, then additional comparison columns on desktop. Quotation editors continue to use measured container widths. Layout must survive 320px, landscape and enlarged text without hiding actions or drafts.
+
+## Common components
+
+`controls.tsx`, `forms.tsx` and the legacy `ui.tsx` adapter own controls. `typography.tsx` and AppText own type. `PageHeader`, `AdminPage` and `Screen` own page structure. `Overlay` owns safe areas, focus containment/restoration, Escape and sheet behavior. `NavigationTabs` / navigation controls own selected state and keyboard behavior. Retain those boundaries.
+
+Navigation and row actions use graphite text, clear selected states, chevrons and restrained hover/press fills. Blue underlined labels and breadcrumb trails are removed from sales analytics. Use a single Back action for detail screens. Preserve meaningful document links and existing access checks.
+
+Resting panels use a quiet border and a consistent surface. Shadows belong to floating overlays. Motion is brief, optional and interruptible; existing reduced-motion hooks and `prefers-reduced-motion` apply. No decorative chart animation delays access to values. The current theme is light; do not claim dark appearance support without a complete semantic theme and device verification.
+
+## Data and owner overview
+
+The homepage and sales dashboards share `AnalyticsDashboard`. The supplied dashboard reference informs the layout: metric group, primary chart, comparison panels, team work and recent operational context. Business data replaces every sample statistic. Detailed source directories remain available through Explore data.
+
+Confirmed-sales totals exclude drafts and supplier purchase orders. Every chart reads the same API model as its labels and supporting records. Time filters use India calendar boundaries. Missing values stay unavailable; do not create growth, targets, progress rates or activity that was not recorded. The RNB ledger is visible in explicit Furniture analysis and a dedicated Furniture section of the company overview. Never add RNB to INR, compare their amounts on a shared scale, or repeat RNB zero under non-furniture metrics.
+
+Current team workload is a separate read and visibly separate time basis from period sales. Assignments describe current responsibility; recorded contacts/calls describe actual actor effort. Completed history is not a fabricated completion rate. Failure in one section exposes retry and preserves the rest.
+
+## Finish gate
+
+Review real rendered output at compact, tablet and desktop sizes. Check labels, focus order, enlarged text, currency wrapping, safe-area clearance and tap affordances. Run focused domain contracts first, then the existing required performance/stability gate once for the final source. Preserve auth, floor isolation, optimistic recovery and in-flight drafts while changing visual structure.
+
+Apple HIG principles used: `charting-data.md` (simple charts and descriptive context), `charts.md` (labels, keyboard exploration and accessible values), `typography.md` (consistent readable type), `layout.md` (adaptation), `icons.md` (consistent visual language), `motion.md` (optional purposeful motion), and `accessibility.md` (operable controls). The web/native translation uses existing React Native primitives rather than requiring web-only shadcn components.

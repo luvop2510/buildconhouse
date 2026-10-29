@@ -32,6 +32,7 @@ class Query:
     date_from: str | None = None
     date_to: str | None = None
     date_basis: str = "confirmation"
+    currency: str | None = None
     company_id: str | None = None
     product_id: str | None = None
     architect_id: str | None = None
@@ -271,6 +272,8 @@ def select_period(rows, q, period):
     field = BASIS[q.date_basis]
     result = []
     for row in rows:
+        if q.currency and row.get("currency") != q.currency:
+            continue
         dates = row[field] if field == "payment_dates" else [row[field]]
         selected = [value for value in dates if value and (not period.start or value >= period.start) and (not period.end or value < period.end)]
         if not selected:
@@ -362,18 +365,20 @@ def record_public(row):
     return {key: row.get(key) for key in ("id", "number", "source", "floor_id", "currency", "customer_id", "customer_name", "architect_id", "architect_name", "date", "confirmation_date", "status", "sales", "collected", "outstanding")}
 
 
-def sorted_rows(rows, sort):
+def sorted_rows(rows, sort, currency="INR"):
+    sales_key = "sales_rnb" if currency == "RNB" else "sales"
+    aov_key = "average_order_value_rnb" if currency == "RNB" else "average_order_value"
     if sort in {"name", "name_asc"}:
         return sorted(rows, key=lambda r: ((r.get("name") or r.get("customer_name") or "").casefold(), r["id"]))
     if sort in {"orders", "orders_desc"}:
         return sorted(rows, key=lambda r: (-r.get("orders", 0), r["id"]))
     if sort in {"aov", "aov_desc"}:
-        return sorted(rows, key=lambda r: (-(r.get("average_order_value") or 0), r["id"]))
+        return sorted(rows, key=lambda r: (-(r.get(aov_key) or 0), r["id"]))
     if sort in {"date", "date_desc", "date_asc"}:
         return sorted(rows, key=lambda r: (r.get("date") or "", r["id"]), reverse=sort != "date_asc")
     if sort == "sales_asc":
-        return sorted(rows, key=lambda r: (r.get("sales") or 0, r["id"]))
-    return sorted(rows, key=lambda r: (-(r.get("sales") or 0), -(r.get("sales_rnb") or 0), r["id"]))
+        return sorted(rows, key=lambda r: (r.get(sales_key) or 0, r["id"]))
+    return sorted(rows, key=lambda r: (-(r.get(sales_key) or 0), -(r.get("sales_rnb") or 0), r["id"]))
 
 
 def page_rows(rows, page=1, page_size=25):
@@ -389,7 +394,11 @@ def dashboard(rows, q, floors, now=None):
     kpis = totals(selected)
     before = totals(prior)
     kpis["change_pct"] = money((kpis["sales"] - before["sales"]) / before["sales"] * 100) if kpis["sales"] is not None and before["sales"] else None
+    kpis["change_pct_rnb"] = money((kpis["sales_rnb"] - before["sales_rnb"]) / before["sales_rnb"] * 100) if kpis["sales_rnb"] is not None and before["sales_rnb"] else None
     permitted = scope_for(q, floors)["floor_id"]["$in"]
+    currencies = (["INR"] if any(floor != "third-floor" for floor in permitted) else []) + (["RNB"] if "third-floor" in permitted else [])
+    if q.currency:
+        currencies = [currency for currency in currencies if currency == q.currency]
     floor_rows = []
     for floor in permitted:
         members = [r for r in selected if r["floor_id"] == floor]
@@ -413,13 +422,15 @@ def dashboard(rows, q, floors, now=None):
         if q.date_basis == "payment":
             part = select_period(rows, q, bucket)
             total = totals(part)
-        prev_sales = None
+        prev_sales = prev_sales_rnb = None
         if prior_period and period.start and period.end:
             delta = datetime.fromisoformat(period.start) - datetime.fromisoformat(prior_period.start)
             prior_start = (datetime.fromisoformat(bucket.start) - delta).isoformat()
             prior_end = (datetime.fromisoformat(bucket.end) - delta).isoformat()
-            prev_sales = totals([r for r in prior if prior_start <= r["date"] < prior_end])["sales"]
-        trend.append({"id": str(index), "label": bucket.label, "start": bucket.start, "end": bucket.end, "sales": total["sales"], "sales_rnb": total["sales_rnb"], "orders": total["orders"], "previous_sales": prev_sales, **quantity_summary([line for row in part for line in row["lines"]])})
+            prior_bucket = Period(prior_start, prior_end, bucket.label)
+            comparison = totals(select_period(rows, q, prior_bucket))
+            prev_sales, prev_sales_rnb = comparison["sales"], comparison["sales_rnb"]
+        trend.append({"id": str(index), "label": bucket.label, "start": bucket.start, "end": bucket.end, "sales": total["sales"], "sales_rnb": total["sales_rnb"], "orders": total["orders"], "orders_inr": total["orders_inr"], "orders_rnb": total["orders_rnb"], "previous_sales": prev_sales, "previous_sales_rnb": prev_sales_rnb, **quantity_summary([line for row in part for line in row["lines"]])})
     first = {}
     for row in rows:
         if row.get("customer_id") and row.get("confirmation_date"):
@@ -427,7 +438,9 @@ def dashboard(rows, q, floors, now=None):
     customers = {r["customer_id"] for r in selected if r.get("customer_id")}
     new = sum(1 for customer in customers if first.get(customer) and (not period.start or first[customer] >= period.start))
     missing_dates = sum(not (row["payment_dates"] if q.date_basis == "payment" else row[BASIS[q.date_basis]]) for row in rows)
-    notes = ["Architect attribution uses the single recorded stable reference ID. Split attribution across several architects is unavailable.", "INR and Furniture RNB are separate currencies; contribution percentages use each currency's own total.", "Customer orders are counted once. Supplier purchase orders and unconfirmed quotations are excluded.", "Products and companies use saved catalog order lines; Kitchen projects and Furniture ledgers have no catalog product attribution.", "Outstanding is the current balance on the selected orders. Collections are recorded receipts, separate from order value.", "Returns and cancellation net-sales accounting, stock, margin and conversion are unavailable in this read model."]
+    notes = ["Architect attribution uses the single recorded stable reference ID. Split attribution across several architects is unavailable.", "Customer orders are counted once. Supplier purchase orders and unconfirmed quotations are excluded.", "Products and companies use saved catalog order lines; Kitchen projects and Furniture ledgers have no catalog product attribution.", "Outstanding is the current balance on the selected orders. Collections are recorded receipts, separate from order value.", "Returns and cancellation net-sales accounting, stock, margin and conversion are unavailable in this read model."]
+    if "RNB" in currencies:
+        notes.append("Furniture uses its own RNB ledger; it is never added to INR sales.")
     if any(r["source"] == "kitchen" for r in selected):
         notes.append("Kitchen collections contain only the recorded order advance; other payment history is unavailable.")
     if q.date_basis == "quotation":
@@ -450,7 +463,7 @@ def dashboard(rows, q, floors, now=None):
         insights.append(f"{top['name']} contributes {top['contribution_pct']}% of selected INR sales.")
     if kpis["change_pct"] is not None:
         insights.append(f"INR confirmed order value changed {kpis['change_pct']}% from the preceding equal period.")
-    return {"attribute_breakdowns": attribute_breakdowns(selected), "metric_label": "Collected amount" if q.date_basis == "payment" else "Confirmed sales", "title": "Overall Sales Data" if q.floor_id == "all" else f"{FLOORS.get(q.floor_id, 'Department')} Analysis", "generated_at": now.isoformat(), "period": {"label": period.label, "start": period.start, "end": period.end}, "filters": q.public(), "kpis": kpis, "floors": floor_rows, "trend": trend,
+    return {"currencies": currencies, "attribute_breakdowns": attribute_breakdowns(selected), "metric_label": "Collected amount" if q.date_basis == "payment" else "Confirmed sales", "title": "Overall Sales Data" if q.floor_id == "all" else f"{FLOORS.get(q.floor_id, 'Department')} Analysis", "generated_at": now.isoformat(), "period": {"label": period.label, "start": period.start, "end": period.end}, "filters": q.public(), "kpis": kpis, "floors": floor_rows, "trend": trend,
             **{kind: ranking(selected, kind)[:10] for kind in KINDS}, "customer_segments": [{"id": "new", "name": "New purchasing customers", "customers": new}, {"id": "repeat", "name": "Repeat purchasing customers", "customers": len(customers) - new}],
             "coverage": {"notes": notes, "missing_dates": missing_dates, "missing_customer_ids": sum(not r.get("customer_id") for r in selected), "products_available": all(r["source"] == "catalog" for r in selected) and all(line.get("product_id") for r in selected for line in r["lines"])}, "insights": insights}
 

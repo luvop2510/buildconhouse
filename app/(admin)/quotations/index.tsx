@@ -254,7 +254,7 @@ const styles = StyleSheet.create({
   listContentPhone: { paddingTop: 0 },
   listHeader: { gap: space.x4, marginBottom: space.x4 },
   ledgerHeader: { flexDirection: "row", gap: space.x4, paddingHorizontal: space.x4, alignItems: "center", paddingTop: space.x2 },
-  columnLabel: { fontSize: 13, fontFamily: font.medium, color: ds.inkMid },
+  columnLabel: { fontSize: 13, fontFamily: font.medium, fontWeight: "500", color: ds.inkMid },
   identityColumn: { flex: 1, minWidth: 0 },
   dateColumn: { width: 108 },
   amountColumn: { width: 152, alignItems: "flex-end", textAlign: "right", gap: space.x2 },

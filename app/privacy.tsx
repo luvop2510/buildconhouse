@@ -45,7 +45,7 @@ export default function PublicPrivacyPolicy() {
           <PrivacyPolicyContent />
 
           <NavigationLink href="/(auth)/login" accessibilityRole="link" accessibilityLabel="Back to sign in" style={{ minHeight: 44, justifyContent: "center" }} hitSlop={8}>
-            <Text style={{ fontFamily: font.medium, fontSize: 13, color: color.brassDeep }}>← Back to sign in</Text>
+            <Text style={{ fontFamily: font.medium, fontWeight: "500", fontSize: 13, color: color.brassDeep }}>← Back to sign in</Text>
           </NavigationLink>
         </View>
       </ScrollView>

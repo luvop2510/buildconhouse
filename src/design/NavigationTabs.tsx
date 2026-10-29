@@ -36,11 +36,11 @@ export function NavigationTabs<T extends string>({ value, options, onChange, tes
           });
         }} : {})}
         style={({ pressed }) => ({ minHeight: 44, paddingHorizontal: segmented ? 10 : 2,
-          flex: fullWidth ? 1 : undefined, flexShrink: 0, flexDirection: 'row', gap: 6,
+          flex: fullWidth ? 1 : undefined, flexShrink: 0, flexDirection: 'row', gap: space.x2,
           alignItems: 'center', justifyContent: 'center', borderRadius: segmented ? radius.sm : 0,
           borderBottomWidth: segmented ? 0 : 2, borderBottomColor: active ? color.action : 'transparent',
           backgroundColor: segmented && active ? color.surface : pressed ? color.hoverWash : 'transparent' })}>
-        {option.icon ? <Feather name={option.icon} size={15} color={active ? color.action : color.inkSoft} /> : null}
+        {option.icon ? <Feather accessible={false} name={option.icon} size={16} color={active ? color.action : color.inkSoft} /> : null}
         <Text style={{ fontFamily: active ? font.semibold : font.medium, fontWeight: active ? '600' : '500',
           fontSize: 13, lineHeight: 18, color: active ? color.ink : color.inkMid }}>{option.label}</Text>
         {typeof option.count === 'number' ? <Text style={{ fontSize: 12, color: color.inkSoft }}>{option.count}</Text> : null}

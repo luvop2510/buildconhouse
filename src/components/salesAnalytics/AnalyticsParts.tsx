@@ -1,4 +1,6 @@
 import { useState, type ReactNode } from 'react';
+import Feather from '@expo/vector-icons/Feather';
+import { useBp } from '@/src/design/responsive';
 import { Platform, Pressable, View } from 'react-native';
 import { Text } from '@/src/components/AppText';
 import { Button, SkeletonCard } from '@/src/components/ui';
@@ -14,9 +16,12 @@ export const analyticNumber = (value: number | null | undefined) => value == nul
 export const analyticMoney = (value: number | null | undefined, currency = 'INR') => value == null ? 'Unavailable' : `${currency === 'RNB' ? 'RNB ' : '₹'}${value.toLocaleString('en-IN',{maximumFractionDigits:2})}`;
 export const FLOOR_NAMES: Record<string, string> = { all: 'Overall sales', 'ground-floor': 'Tiles', 'first-floor': 'Sanitary / Bathroom', 'second-floor': 'Kitchen', 'third-floor': 'Furniture' };
 export const BASIS_NAMES: Record<string, string> = { confirmation: 'Order confirmation', quotation: 'Quotation date', payment: 'Payment received', delivery: 'Delivery / completion' };
-export function Panel({ title, children, action, testID }: { title: string; children: ReactNode; action?: ReactNode; testID?: string }) {
- return <View testID={testID} style={{ minWidth: 0, padding: spacing.s16, gap: spacing.s12, borderWidth: 1, borderColor: colors.border, borderRadius: 8, backgroundColor: colors.surfaceSecondary }}>
-  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: spacing.s8 }}><Text accessibilityRole="header" aria-level={2} style={type.titleMd}>{title}</Text>{action}</View>{children}
+/** One data accent; actions and navigation use the shared graphite palette. */
+export const chartColors = { primary: '#22766D', tint: '#E6F1EF', secondary: '#626267', tertiary: '#A3A3AA' };
+export function Panel({ title, description, children, action, testID }: { title: string; description?: string; children: ReactNode; action?: ReactNode; testID?: string }) {
+ const { isPhone } = useBp();
+ return <View testID={testID} style={{ flexGrow: 1, minWidth: 0, padding: isPhone ? spacing.s16 : spacing.s24, gap: spacing.s16, borderWidth: 1, borderColor: colors.border, borderRadius: 12, backgroundColor: colors.surfaceSecondary }}>
+  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: spacing.s8 }}><View style={{flex:1,minWidth:120,gap:spacing.s4}}><Text accessibilityRole="header" aria-level={2} style={type.titleMd}>{title}</Text>{description ? <Text style={type.bodySm}>{description}</Text> : null}</View>{action}</View>{children}
  </View>;
 }
 export function Empty({ text = 'No confirmed orders match these filters. Try another date range or business unit.' }: { text?: string }) { return <Text testID="analytics-empty" style={[type.bodyMuted, { paddingVertical: spacing.s16 }]}>{text}</Text>; }
@@ -32,10 +37,16 @@ export function Choice({ label, value, options, onChange, testID }: { label: str
  </View>;
 }
 export function DataLink({ label, detail, value, secondary, onPress, testID, proportion }: { label: string; detail?: string; value?: string; secondary?: string; onPress?: () => void; testID?: string; proportion?: number }) {
- const body = <><View style={{ flex: 1, minWidth: 0, gap: spacing.s4 }}><Text style={[type.bodyStrong, onPress ? { color: colors.brand, textDecorationLine: 'underline' } : null]}>{label}</Text>{detail ? <Text style={type.bodySm}>{detail}</Text> : null}</View>{value ? <View style={{ maxWidth: '48%', alignItems: 'flex-end', gap: spacing.s4 }}><Text style={[type.bodyStrong, { fontVariant: ['tabular-nums'], textAlign: 'right' }]}>{value}</Text>{secondary ? <Text style={[type.caption, { textAlign: 'right' }]}>{secondary}</Text> : null}</View> : null}</>;
- const style = { flexDirection: 'row' as const, alignItems: 'center' as const, minWidth: 0, minHeight: 60, paddingVertical: spacing.s12, gap: spacing.s12, borderBottomWidth: 1, borderBottomColor: colors.border };
- const content=<><View style={{flexDirection:'row',gap:spacing.s12,alignItems:'center',minWidth:0}}>{body}</View>{proportion!==undefined?<View aria-hidden accessibilityElementsHidden style={{height:3,backgroundColor:colors.surfaceTertiary,marginTop:spacing.s8}}><View style={{height:3,width:`${Math.max(0,Math.min(1,proportion))*100}%`,backgroundColor:colors.brand}}/></View>:null}</>;
- return onPress ? <Pressable accessibilityRole="link" {...linkActivation(onPress)} accessibilityLabel={`Open ${label}`} testID={testID} onPress={onPress} style={({ hovered, pressed }: any) => [style, { flexDirection:'column',alignItems:'stretch',gap:0,backgroundColor: hovered || pressed ? colors.surfaceTertiary : 'transparent' }]}>{content}</Pressable> : <View testID={testID} style={[style,{flexDirection:'column',alignItems:'stretch',gap:0}]}>{content}</View>;
+ const {isPhone}=useBp();
+ const content=<><View style={{flexDirection:'row',alignItems:'center',gap:spacing.s12,minWidth:0}}>
+  <View style={{flex:1,minWidth:0,gap:spacing.s4}}><Text style={type.bodyStrong}>{label}</Text>{detail ? <Text style={type.bodySm}>{detail}</Text>:null}
+   {isPhone && value ? <Text style={[type.bodyStrong,{fontVariant:['tabular-nums']}]}>{value}{secondary ? ` · ${secondary}` : ''}</Text>:null}
+  </View>
+  {!isPhone && value ? <View style={{maxWidth:'44%',alignItems:'flex-end',gap:spacing.s4}}><Text style={[type.bodyStrong,{fontVariant:['tabular-nums'],textAlign:'right'}]}>{value}</Text>{secondary?<Text style={type.caption}>{secondary}</Text>:null}</View>:null}
+  {onPress?<Feather name="chevron-right" size={16} color={colors.onSurfaceMuted} aria-hidden accessibilityElementsHidden/>:null}
+ </View>{proportion!==undefined?<View aria-hidden accessibilityElementsHidden style={{height:6,backgroundColor:colors.surfaceTertiary,marginTop:spacing.s12,borderRadius:3,overflow:'hidden'}}><View style={{height:6,width:`${Math.max(0,Math.min(1,proportion))*100}%`,backgroundColor:chartColors.primary}}/></View>:null}</>;
+ const style={minWidth:0,minHeight:64,paddingVertical:spacing.s12,borderBottomWidth:1,borderBottomColor:colors.border};
+ return onPress ? <Pressable accessibilityRole="link" {...linkActivation(onPress)} accessibilityLabel={`${label}${value?`: ${value}`:''}. Open details`} testID={testID} onPress={onPress} style={({hovered,pressed}:any)=>[style,{backgroundColor:hovered||pressed?colors.surfaceTertiary:'transparent'}]}>{content}</Pressable>:<View testID={testID} style={style}>{content}</View>;
 }
 export function ExportMenu({ filters, view, kind, entityId, tab, title }: { filters: AnalyticsFilters; view: string; kind?: string; entityId?: string; tab?: string; title?: string }) {
  const [open, setOpen] = useState(false);

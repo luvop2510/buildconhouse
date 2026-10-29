@@ -13,7 +13,7 @@ export type TextInput = ElementRef<typeof NativeTextInput>;
 
 // eslint-disable-next-line @typescript-eslint/no-redeclare -- component and instance type intentionally share the native export name
 export const Text = forwardRef<Text, TextProps>(function AppText({ style, ...props }, ref) {
-  return <NativeText {...props} ref={ref} style={[{ fontFamily: appTextFamily(StyleSheet.flatten(style)) }, style]} />;
+  return <NativeText {...props} ref={ref} style={[{ fontFamily: appTextFamily(StyleSheet.flatten(style), Platform.OS) }, style]} />;
 });
 
 // eslint-disable-next-line @typescript-eslint/no-redeclare -- preserve the TextInput instance type used by existing refs
@@ -28,5 +28,5 @@ export const TextInput = forwardRef<TextInput, TextInputProps>(function AppTextI
     blurOnSubmit={props.blurOnSubmit ?? (props.submitBehavior || props.onSubmitEditing ? undefined : false)}
     onFocus={event => { if (Platform.OS !== "web") reportInputFocus(focusId.current, true); onFocus?.(event); }}
     onBlur={event => { if (Platform.OS !== "web") reportInputFocus(focusId.current, false); onBlur?.(event); }}
-    style={[{ fontFamily: appTextFamily(StyleSheet.flatten(style)) }, style]} />;
+    style={[{ fontFamily: appTextFamily(StyleSheet.flatten(style), Platform.OS) }, style]} />;
 });

@@ -7,7 +7,7 @@ test.beforeEach(async ({ context }) => {
 });
 
 test('dashboard publishes ready sections while an unrelated request is pending', async ({ page }) => {
-  await mockSession(page, '/dashboard');
+  await mockSession(page, '/dashboard', false, { staff: { id: 'audit-manager', email: 'manager@example.test', full_name: 'Audit Manager', role: 'manager', active: true, floor_ids: ['first-floor'] } });
   let release!: () => void;
   const pending = new Promise<void>(resolve => { release = resolve; });
   let delayedRequestStarted = false;

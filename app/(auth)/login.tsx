@@ -142,7 +142,7 @@ export default function Login() {
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ flexGrow: 1, paddingHorizontal: isPhone ? 24 : 48, paddingTop: Math.max(insets.top + 24, 40), paddingBottom: Math.max(insets.bottom + 24, 40), justifyContent: "center" }}>
         <View style={{ width: "100%", maxWidth: 1040, alignSelf: "center", flexDirection: "row", alignItems: "center", gap: 72 }}>
           {!isPhone ? <View style={{ flex: 1, gap: space.x5 }}>
-            <Text style={{ fontFamily: font.medium, fontSize: 12, letterSpacing: 1.4, color: color.inkMid }}>BUILDCON HOUSE</Text>
+            <Text style={{ fontFamily: font.medium, fontWeight: "500", fontSize: 12, letterSpacing: 1.4, color: color.inkMid }}>BUILDCON HOUSE</Text>
             <Txt v="display" style={{ fontSize: 44, lineHeight: 54 }}>Every detail.
 Every delivery.</Txt>
             <Txt v="bodyMid">One workspace for the people, products and documents behind each customer project.</Txt>

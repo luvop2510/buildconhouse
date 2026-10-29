@@ -15,7 +15,7 @@ export function KeyCap({ label }: { label: string }) {
       backgroundColor: color.surface, borderWidth: 1, borderColor: color.line,
       alignItems: "center", justifyContent: "center",
     }}>
-      <Text style={{ fontFamily: font.medium, fontSize: 11, color: color.inkSoft }}>{label}</Text>
+      <Text style={{ fontFamily: font.medium, fontWeight: "500", fontSize: 11, color: color.inkSoft }}>{label}</Text>
     </View>
   );
 }

@@ -39,16 +39,16 @@ async def profile(db, rows, q, floors, kind, identity, *, contacts=False, table_
     report = dashboard(rows, q, floors)
     selected = select_period(rows, q, period_for(q))
     lifetime = totals(select_period(rows, replace(q, date_basis="confirmation", dimension=None), period_for(replace(q, preset="all"))))
+    currency = "RNB" if q.floor_id == "third-floor" else "INR"
+    suffix = "_rnb" if currency == "RNB" else ""
     entity["attributes"].extend([
-        {"label": "Lifetime confirmed sales (INR)", "value": lifetime["sales"]},
-        {"label": "Lifetime confirmed sales (RNB)", "value": lifetime["sales_rnb"]},
+        {"label": f"Lifetime confirmed sales ({currency})", "value": lifetime[f"sales{suffix}"]},
         {"label": "Last order date", "value": max((row.get("confirmation_date") or "" for row in rows), default="") or None},
     ])
     if kind == "customers":
         entity["attributes"].extend([
             {"label": "Products purchased", "value": report["kpis"].get("products")},
-            {"label": "Current outstanding balance (INR)", "value": report["kpis"].get("outstanding")},
-            {"label": "Current outstanding balance (RNB)", "value": report["kpis"].get("outstanding_rnb")},
+            {"label": f"Current outstanding balance ({currency})", "value": report["kpis"].get(f"outstanding{suffix}")},
         ])
     product = next(iter(ranking(selected, "products")), None) if kind == "products" else None
     if kind == "products":
@@ -171,7 +171,7 @@ async def directory(db, rows, q, floors, kind, *, page=1, page_size=25):
         if q.search and q.search.casefold() not in (row["id"] + " " + row["name"]).casefold():
             continue
         items.append({**row, "historical": True})
-    return page_rows(sorted_rows(items, q.sort), page, page_size)
+    return page_rows(sorted_rows(items, q.sort, "RNB" if q.floor_id == "third-floor" else "INR"), page, page_size)
 
 
 async def profile_history(db, q, floors):

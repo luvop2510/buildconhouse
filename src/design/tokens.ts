@@ -1,33 +1,34 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // BuildCon House · Workspace Design System — the single source of truth.
 //
-// Calm neutral surfaces, readable system typography and one blue action accent.
+// Mobile-first spacing, Apple system typography, graphite actions and teal focus.
 // Legacy brass keys remain aliases so every existing module shares this palette.
 //
 // Every module MUST consume these tokens. Zero local styling downstream.
 // ─────────────────────────────────────────────────────────────────────────────
-import { StyleSheet } from "react-native";
+import { Platform, StyleSheet } from "react-native";
+import { systemTextFamily } from "../components/appTextFamily";
 
 // ── Raw palette (never import this from screens — use `color`) ──────────────
 const pal = {
   // Neutral surfaces and contrast-tested foregrounds.
   white:   "#FFFFFF",
-  canvas:  "#F7F8FA",  // app background — cool porcelain
-  sunken:  "#F0F2F5",  // inset fills: inputs, washes, rails
-  sunken2: "#E5E9F0",  // pressed / deeper inset
-  line:    "#E2E6ED",  // hairline
-  line2:   "#C7CFDA",  // emphasized hairline
-  ink:     "#101828",  // graphite — text & the primary action
-  ink2:    "#475467",  // secondary text
-  ink3:    "#667085",  // tertiary text, captions
-  ink4:    "#98A2B3",  // placeholders, disabled
-  inkHover:"#1D2939",
+  canvas:  "#F5F5F7",  // app background — cool porcelain
+  sunken:  "#EEEEF0",  // inset fills: inputs, washes, rails
+  sunken2: "#E5E5EA",  // pressed / deeper inset
+  line:    "#E2E2E7",  // hairline
+  line2:   "#C7C7CC",  // emphasized hairline
+  ink:     "#1D1D1F",  // graphite — text & the primary action
+  ink2:    "#545458",  // secondary text
+  ink3:    "#626267",  // tertiary text, captions
+  ink4:    "#8E8E93",  // placeholders, disabled
+  inkHover:"#353538",
 
   // Action accent. Brass names are retained for source compatibility.
-  brass:      "#0066CC",
-  brassDeep:  "#004F9F",
-  brassTint:  "#EAF2FF",
-  brassLine:  "#BED6F7",
+  brass:      "#1D1D1F",
+  brassDeep:  "#353538",
+  brassTint:  "#EEEEF0",
+  brassLine:  "#C7C7CC",
 
   // Muted status hues — always dot+word, never shouting pills.
   ok:      "#39724D",
@@ -52,7 +53,7 @@ export const color = {
   inkSoft: pal.ink3,
   inkFaint: pal.ink4,
 
-  // Blue indicates the primary action; graphite is reserved for text.
+  // Graphite actions keep attention on the business data.
   action: pal.brass,
   actionHover: pal.brassDeep,
   onAction: pal.white,
@@ -65,7 +66,7 @@ export const color = {
   brassDeep: pal.brassDeep,
   brassTint: pal.brassTint,
   brassLine: pal.brassLine,
-  focus: "#0066CC",
+  focus: "#22766D",
 
   ok: pal.ok,
   okTint: pal.okTint,
@@ -80,15 +81,16 @@ export const color = {
 } as const;
 
 // ── Fonts ────────────────────────────────────────────────────────────────────
+const systemSans = systemTextFamily(Platform.OS);
 export const font = {
-  regular: "Inter-Regular",
-  medium: "Inter-Medium",
-  semibold: "Inter-SemiBold",
-  bold: "Inter-Bold",
-  display: "Inter-SemiBold",        // headings, greetings and authentication
-  displayItalic: "Inter-Medium",
-  serif: "Inter-Regular", // compatibility alias; all interface text uses Inter
-  mono: "Inter-Regular", // numeric consumers use tabular-nums
+  regular: systemSans,
+  medium: systemSans,
+  semibold: systemSans,
+  bold: systemSans,
+  display: systemSans,
+  displayItalic: systemSans,
+  serif: systemSans, // compatibility alias; every interface role uses the system face
+  mono: systemSans, // numeric consumers keep tabular-nums without a second typeface
 } as const;
 
 // ── Type scale — 4pt baseline rhythm ────────────────────────────────────────
@@ -106,8 +108,8 @@ export const text = {
   rowTitle: { fontFamily: font.medium,  fontSize: 15, lineHeight: 21, letterSpacing: -0.1, color: color.ink, fontWeight: "500" as const } as Style,
 
   // Body
-  body:    { fontFamily: font.regular, fontSize: 15, lineHeight: 22, color: color.ink } as Style,
-  bodyMid: { fontFamily: font.regular, fontSize: 15, lineHeight: 22, color: color.inkMid } as Style,
+  body:    { fontFamily: font.regular, fontSize: 16, lineHeight: 24, color: color.ink } as Style,
+  bodyMid: { fontFamily: font.regular, fontSize: 16, lineHeight: 24, color: color.inkMid } as Style,
   sub:     { fontFamily: font.regular, fontSize: 13, lineHeight: 18, color: color.inkMid } as Style,
   caption: { fontFamily: font.medium,  fontSize: 12, lineHeight: 16, color: color.inkSoft, fontWeight: "500" as const } as Style,
   eyebrow: { fontFamily: font.semibold, fontSize: 11, lineHeight: 14, letterSpacing: 1.3, textTransform: "uppercase" as const, color: color.inkSoft, fontWeight: "600" as const } as Style,
@@ -126,17 +128,25 @@ export const space = {
   x1: 4, x2: 8, x3: 12, x4: 16, x5: 20, x6: 24, x8: 32, x10: 40, x12: 48, x16: 64,
 } as const;
 
+// ── Shared controls — touch-first dimensions across both component adapters ──
+export const control = {
+  height: { sm: 44, md: 48, lg: 52 },
+  inset: { sm: 12, md: 16, lg: 20 },
+  label: { sm: 13, md: 14, lg: 15 },
+  icon: { sm: 16, md: 18, lg: 20 },
+} as const;
+
 // ── Radii ───────────────────────────────────────────────────────────────────
-export const radius = { sm: 10, md: 12, lg: 16, xl: 20, pill: 999 } as const;
+export const radius = { sm: 6, md: 8, lg: 12, xl: 16, pill: 999 } as const;
 
 // ── Elevation — exactly two levels. Everything else is hairlines. ───────────
 export const shadow = {
   raised: {
-    shadowColor: "#101828", shadowOpacity: 0.06, shadowRadius: 18,
+    shadowColor: "#1D1D1F", shadowOpacity: 0.06, shadowRadius: 18,
     shadowOffset: { width: 0, height: 6 }, elevation: 2,
   },
   overlay: {
-    shadowColor: "#101828", shadowOpacity: 0.16, shadowRadius: 44,
+    shadowColor: "#1D1D1F", shadowOpacity: 0.16, shadowRadius: 44,
     shadowOffset: { width: 0, height: 18 }, elevation: 16,
   },
 } as const;

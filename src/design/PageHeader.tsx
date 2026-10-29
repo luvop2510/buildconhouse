@@ -25,7 +25,7 @@ export function PageHeader({ title, subtitle, actions, back, overline, testID, d
           <Feather name="arrow-left" size={20} color={color.ink} />
         </Pressable> : null}
         <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
-          {overline ? <Text style={{ fontFamily: font.medium, fontSize: 13, lineHeight: 20, color: color.inkMid }}>{overline}</Text> : null}
+          {overline ? <Text style={{ fontFamily: font.medium, fontWeight: "500", fontSize: 13, lineHeight: 20, color: color.inkMid }}>{overline}</Text> : null}
           <Text accessibilityRole="header" aria-level={1} style={{ fontFamily: font.semibold, fontWeight: '600',
             fontSize: dense ? 20 : 24, lineHeight: dense ? 28 : 32,
             letterSpacing: isPhone ? -0.5 : -0.9, color: color.ink }}>{title}</Text>

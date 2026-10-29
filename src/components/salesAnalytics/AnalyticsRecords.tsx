@@ -12,7 +12,7 @@ export function AnalyticsRecords() {
  const {filters,update,go,floors,router,canView}=useAnalyticsScope();
  const read=useAnalyticsRead(analyticsQuery(filters),signal=>salesAnalyticsApi.records(filters,signal),canView);
  return <AdminPage title="Supporting orders" header={false} contentStyle={{gap:spacing.s16,paddingTop:spacing.s16}}>
- <View style={{flexDirection:'row',alignItems:'center',flexWrap:'wrap',gap:spacing.s8}}><Button label="Back" icon="arrow-left" variant="ghost" onPress={()=>router.canGoBack()?router.back():go('/(admin)/sales-data')}/><Button label="Sales analytics" variant="ghost" onPress={()=>go('/(admin)/sales-data')}/><Text style={type.caption}>/ Supporting records</Text></View>
+ <View style={{flexDirection:'row',alignItems:'center',flexWrap:'wrap',gap:spacing.s8}}><Button label="Back" icon="arrow-left" variant="ghost" onPress={()=>router.canGoBack()?router.back():go('/(admin)/sales-data')}/></View>
  <View style={{flexDirection:'row',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:spacing.s12}}><Text accessibilityRole="header" aria-level={1} style={type.displayMd}>Supporting records</Text><ExportMenu filters={filters} view="records"/></View>
  <AnalyticsFilters filters={filters} update={update} floors={floors}/>
  <View style={{maxWidth:280}}><Choice label="Sort orders" value={filters.sort||'date_desc'} options={[{value:'date_desc',label:'Newest first'},{value:'date_asc',label:'Oldest first'},{value:'sales_desc',label:'Highest sales'},{value:'sales_asc',label:'Lowest sales'}]} onChange={sort=>update({sort})} testID="analytics-sort"/></View>

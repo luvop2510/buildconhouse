@@ -20,7 +20,7 @@ from services.money import format_indian_money
 from pdf_generator import RUPEE_FONT
 
 MAX_EXPORT_ROWS = 10_000
-ACCENT = "0066CC"
+ACCENT = "22766D"
 MONEY_FIELDS = {"sales", "sales_rnb", "average_order_value", "average_order_value_rnb", "collected", "outstanding", "collected_rnb", "outstanding_rnb", "unit_price", "line_total", "amount", "subtotal", "total", "discount", "tax", "taxes"}
 
 
@@ -76,9 +76,18 @@ def cell(value):
 
 def report_sections(report, records=None, *, view="dashboard", scope="full", tab=None):
     result = []
+    furniture = report.get("filters", {}).get("floor_id") == "third-floor"
+    inr_fields = {"sales", "average_order_value", "collected", "outstanding", "orders_inr", "previous_sales", "change_pct"}
+    def visible(key, aggregate=False):
+        if key.endswith("_rnb"):
+            return furniture
+        return not (furniture and aggregate and key in inr_fields)
+
     summary = report.get("kpis") or report.get("summary")
     if scope != "records" and summary:
-        result.append(("Summary", [{"metric": key.replace("_", " "), "value": value} for key, value in summary.items()]))
+        result.append(("Summary", [{"metric": key.replace("_", " "), "value": value} for key, value in summary.items() if visible(key, "sales_rnb" in summary)]))
+        if not furniture and any(floor.get("currency") == "RNB" for floor in report.get("floors", [])):
+            result.append(("Furniture ledger", [{"metric": key.replace("_", " "), "value": value} for key, value in summary.items() if key.endswith("_rnb")]))
     if "identity" in report and scope != "records":
         identity = report["identity"]
         result.append(("Identity", [{"field": "Stable ID", "value": identity["id"]}, {"field": "Name", "value": identity["name"]}, *[{"field": a["label"], "value": a["value"]} for a in identity.get("attributes", [])]]))
@@ -115,6 +124,9 @@ def report_sections(report, records=None, *, view="dashboard", scope="full", tab
             result.append((name.title() + " Analysis", values))
         if records is not None:
             result.append(("Source Details", records))
+    # Aggregate columns follow the visible currency; actual source records keep
+    # their explicit currency, including Furniture rows in company-wide reports.
+    result = [(name, [{key: value for key, value in row.items() if visible(key, "sales_rnb" in row)} for row in rows]) for name, rows in result]
     if sum(len(rows) for _, rows in result) > MAX_EXPORT_ROWS:
         raise HTTPException(422, "Export exceeds 10,000 rows; narrow the period, floor or entity filters")
     return result
@@ -217,7 +229,7 @@ def pdf(report, sections, metadata):
             values = [[Paragraph(escape(key.replace("_", " ")), small) for key in band]]
             values.extend([[Paragraph(escape(display(row.get(key), row.get("metric", "").replace(" ", "_") if key == "value" else key, row.get("currency", "INR"))), small) for key in band] for row in rows])
             table = Table(values, repeatRows=1, colWidths=[750 / len(band)] * len(band), hAlign="LEFT", splitInRow=1)
-            table.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#EAF2FF")), ("VALIGN", (0, 0), (-1, -1), "TOP"), ("LINEBELOW", (0, 0), (-1, 0), .5, colors.HexColor("#" + ACCENT)), ("BOTTOMPADDING", (0, 0), (-1, -1), 6), ("TOPPADDING", (0, 0), (-1, -1), 6)]))
+            table.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#E6F1EF")), ("VALIGN", (0, 0), (-1, -1), "TOP"), ("LINEBELOW", (0, 0), (-1, 0), .5, colors.HexColor("#" + ACCENT)), ("BOTTOMPADDING", (0, 0), (-1, -1), 6), ("TOPPADDING", (0, 0), (-1, -1), 6)]))
             story.extend([table, Spacer(1, 8)])
     def footer(canvas, doc):
         canvas.setFont("Helvetica", 8)

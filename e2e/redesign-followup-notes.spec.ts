@@ -36,7 +36,7 @@ test('critical Follow-ups Done is note-free and retains the task after a failed 
 });
 
 test('critical dashboard Done completes directly without a note', async ({ page }) => {
-  await mockSession(page, '/dashboard');
+  await mockSession(page, '/dashboard', false, { staff: { id: 'audit-manager', email: 'manager@example.test', full_name: 'Audit Manager', role: 'manager', active: true, floor_ids: ['first-floor'] } });
   await page.route('**/api/followups?limit=12', r => r.fulfill({ json: [row] }));
   const writes: any[] = [];
   await page.route('**/api/followups/note-required/complete', r => {

@@ -1,6 +1,14 @@
-/** Pick a bundled Inter weight for interface text without a family. */
-export function appTextFamily(style?: { fontFamily?: string; fontWeight?: string | number } | null): string {
-  if (style?.fontFamily) return style.fontFamily;
-  const weight = style?.fontWeight === "bold" ? 700 : Number(style?.fontWeight || 400);
-  return weight >= 700 ? "Inter-Bold" : weight >= 600 ? "Inter-SemiBold" : weight >= 500 ? "Inter-Medium" : "Inter-Regular";
+/** Use the operating system UI face; Apple devices resolve this to San Francisco. */
+export const WEB_SYSTEM_FONT_STACK = '-apple-system, BlinkMacSystemFont, system-ui, sans-serif';
+
+export function systemTextFamily(platform: string): string {
+  return platform === "web" ? WEB_SYSTEM_FONT_STACK : platform === "android" ? "sans-serif" : "System";
+}
+
+/** Keep explicit icon families intact. Font weight belongs to the text style. */
+export function appTextFamily(
+  style?: { fontFamily?: string; fontWeight?: string | number } | null,
+  platform = "ios",
+): string {
+  return style?.fontFamily || systemTextFamily(platform);
 }

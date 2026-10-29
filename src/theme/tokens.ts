@@ -1,6 +1,6 @@
 // BuildCon House · Design System V1 tokens.
-// Blue-forward primary + premium neutral graphite/porcelain foundation.
-// Inspired by Linear, Stripe, Notion, Arc — never a Tailwind template.
+// Graphite actions and a calm neutral surface foundation.
+// One system face, touch-first controls and predictable spacing across workflows.
 // Everything downstream (primitives, screens) references these tokens; no hardcoded hex.
 
 import { color, radius as designRadius, font as designFont, shadow as designShadow } from "@/src/design/tokens";
@@ -28,8 +28,8 @@ const palette = {
 // Semantic color roles — the ONLY thing screens should reference.
 // ─────────────────────────────────────────────────────────────────────────────
 export const colors = {
-  // Surfaces (page → card → nested) — LOCKED to spec
-  surface: palette.gray15,             // #FAFBFC — page background
+  // Surfaces (page → card → nested) — aliases of the shared palette
+  surface: palette.gray15,             // neutral page background
   surfaceSecondary: palette.gray0,     // #FFFFFF — cards, sheets, elevated
   surfaceTertiary: palette.gray25,     // hover fill on white cards
   surfaceInverse: palette.gray900,     // dark heroes, inverse chips
@@ -43,7 +43,7 @@ export const colors = {
   onSurfaceSubtle: palette.gray400,    // placeholders, disabled
   onSurfaceInverse: palette.gray0,     // text on dark
 
-  // Brand — BuildCon House brass (single accent)
+  // Primary actions — graphite; legacy brand names remain compatible
   brand: palette.blue600,
   brandHover: palette.blue700,
   brandTint: palette.blue50,
@@ -52,13 +52,13 @@ export const colors = {
   onBrand: palette.gray0,
   brandSecondary: palette.gray900,     // neutral secondary CTA
 
-  // Borders & dividers — LOCKED to #E5E7EB
-  border: palette.gray100,             // #E5E7EB — default hairline
+  // Borders & dividers — shared neutral separators
+  border: palette.gray100,             // default separator
   borderStrong: palette.gray150,       // hovered/emphasized
   borderMuted: "rgba(15, 23, 42, 0.06)",
   divider: palette.gray100,
 
-  // Focus & selection — brass guidance (Showroom)
+  // Focus and selection — visible teal focus, neutral selected surfaces
   focusRing: color.focus,
   selection: color.brassTint,
 
@@ -182,23 +182,17 @@ export const motion = {
 } as const;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Font families — Inter loaded via expo-font (weight-specific families).
-// Fallback to system when custom files fail to load.
+// Font families — one native system face shared with the canonical design tokens.
+// Weight stays explicit in each text style, so all roles use the same family.
 // ─────────────────────────────────────────────────────────────────────────────
-const systemSans = "Inter-Regular"; // compatibility alias for old interface styles
-const systemMono = designFont.mono;
-
 export const font = {
-  // `useAppFonts` loads these bundled files before either root shell renders.
-  // Keep the family names platform-neutral so browser and native typography
-  // have the same metrics, weights, and hierarchy.
-  regular:  "Inter-Regular",
-  medium:   "Inter-Medium",
-  semibold: "Inter-SemiBold",
-  bold:     "Inter-Bold",
-  sans:     "Inter-Regular", // default alias
-  mono:     systemMono as string,
-  systemSans: systemSans as string,
+  regular: designFont.regular,
+  medium: designFont.medium,
+  semibold: designFont.semibold,
+  bold: designFont.bold,
+  sans: designFont.regular,
+  mono: designFont.mono,
+  systemSans: designFont.regular,
 } as const;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -218,9 +212,9 @@ export const type = {
 
   // Body
   bodyLg: { fontFamily: font.regular, fontSize: 16, lineHeight: 24, color: colors.onSurface, fontWeight: "400" as const },
-  body:   { fontFamily: font.regular, fontSize: 15, lineHeight: 22, color: colors.onSurface, fontWeight: "400" as const },
-  bodyStrong: { fontFamily: font.medium, fontSize: 15, lineHeight: 22, color: colors.onSurface, fontWeight: "500" as const },
-  bodyMuted: { fontFamily: font.regular, fontSize: 15, lineHeight: 22, color: colors.onSurfaceMuted, fontWeight: "400" as const },
+  body:   { fontFamily: font.regular, fontSize: 16, lineHeight: 24, color: colors.onSurface, fontWeight: "400" as const },
+  bodyStrong: { fontFamily: font.medium, fontSize: 16, lineHeight: 24, color: colors.onSurface, fontWeight: "500" as const },
+  bodyMuted: { fontFamily: font.regular, fontSize: 16, lineHeight: 24, color: colors.onSurfaceMuted, fontWeight: "400" as const },
   bodySm: { fontFamily: font.regular, fontSize: 13, lineHeight: 18, color: colors.onSurface, fontWeight: "400" as const },
 
   // Meta

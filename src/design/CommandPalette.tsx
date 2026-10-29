@@ -321,7 +321,7 @@ function PaletteSession({ open, onClose, selectedFloorId, returnFocusRef }: { op
             />
             {isPhone ? (
               <Pressable onPress={onClose} hitSlop={layout.hitSlop} accessibilityRole="button" accessibilityLabel="Close command palette">
-                <Text style={{ fontFamily: font.medium, fontSize: 14, color: color.inkMid }}>Cancel</Text>
+                <Text style={{ fontFamily: font.medium, fontWeight: "500", fontSize: 14, color: color.inkMid }}>Cancel</Text>
               </Pressable>
             ) : <KeyCap label="esc" />}
           </View>
@@ -344,7 +344,7 @@ function PaletteSession({ open, onClose, selectedFloorId, returnFocusRef }: { op
                 <View key={it.key}>
                   {showHeader ? (
                     <Text style={{
-                      fontFamily: font.semibold, fontSize: 11, letterSpacing: 1.2,
+                      fontFamily: font.semibold, fontWeight: "600", fontSize: 11, letterSpacing: 1.2,
                       textTransform: "uppercase", color: color.inkFaint,
                       paddingHorizontal: space.x3, paddingTop: i === 0 ? space.x2 : space.x4, paddingBottom: 6,
                     }}>
@@ -381,7 +381,7 @@ function PaletteSession({ open, onClose, selectedFloorId, returnFocusRef }: { op
                       ) : null}
                     </View>
                     {it.meta ? (
-                      <Text style={{ fontFamily: font.medium, fontSize: 13, color: color.inkMid, fontVariant: ["tabular-nums"] }}>
+                      <Text style={{ fontFamily: font.medium, fontWeight: "500", fontSize: 13, color: color.inkMid, fontVariant: ["tabular-nums"] }}>
                         {it.meta}
                       </Text>
                     ) : null}

@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import { captureRuntimeHealth } from './runtime-health';
 import { mockSalesSummary } from './sales-fixtures';
 import { analyticsDashboard, mockSalesAnalytics } from './sales-analytics-fixtures';
-import { analyticsChoice, analyticsCustomRange, analyticsExport, analyticsFitsViewport, analyticsFloor } from './sales-analytics-helpers';
+import { analyticsChoice, analyticsCustomRange, analyticsExplore, analyticsExport, analyticsFitsViewport, analyticsFloor } from './sales-analytics-helpers';
 
 // The complete analytics specification supersedes the former three-view layout.
 // These release regressions retain the original financial, scope and recovery checks.
@@ -13,7 +13,10 @@ test('critical analytics presents confirmed sales and every shared entity destin
   await expect(page.getByTestId('analytics-kpi-orders')).toContainText('3');
   await expect(page.getByTestId('analytics-entity-company-a')).toContainText('Hansgrohe');
   await expect(page.getByTestId('analytics-entity-product-a')).toContainText('Talis basin mixer');
-  await analyticsFitsViewport(page, ['dashboard','companies','products','architects','customers','reports'].map(name => page.getByTestId(`analytics-nav-${name}`)));
+  await analyticsFitsViewport(page, [page.getByTestId('analytics-nav-dashboard'), page.getByTestId('analytics-navigation-open')]);
+  await page.getByTestId('analytics-navigation-open').click();
+  await analyticsFitsViewport(page, ['companies','products','architects','customers','reports'].map(name => page.getByTestId(`analytics-nav-${name}`)));
+  await page.keyboard.press('Escape');
   await health.assertHealthy();
   await page.screenshot({ path: info.outputPath('sales-analytics.png'), fullPage: true });
 });
@@ -21,10 +24,7 @@ test('critical analytics presents confirmed sales and every shared entity destin
 test('critical analytics destinations work with keyboard and open shared customer profiles', async ({ page }) => {
   await mockSalesAnalytics(page);
   await page.goto('/sales-data');
-  const customers = page.getByTestId('analytics-nav-customers');
-  await customers.focus();
-  await expect(customers).toBeFocused();
-  await page.keyboard.press('Enter');
+  await analyticsExplore(page, 'customers', true);
   await expect(page).toHaveURL(/\/sales-data\/customers(?:\?|$)/);
   await page.getByTestId('analytics-entity-customer-a').click();
   await expect(page).toHaveURL(/\/profile\/customers\/customer-a(?:\?|$)/);
@@ -61,8 +61,8 @@ test('critical reporting range validates dates and remains selected across tabs 
   await page.getByTestId('analytics-date-to').fill('2026-09-17');
   await analyticsChoice(page, 'analytics-date-basis', 'payment');
   await page.getByTestId('analytics-filter-apply').click();
-  await expect.poll(() => requests.at(-1)?.searchParams.get('date_basis')).toBe('payment');
-  await page.getByTestId('analytics-nav-customers').click();
+  await expect.poll(() => requests.filter(url => url.pathname.endsWith('/dashboard')).at(-1)?.searchParams.get('date_basis')).toBe('payment');
+  await analyticsExplore(page, 'customers');
   await expect(page.getByTestId('analytics-entity-customer-a')).toBeVisible();
   await page.reload();
   await expect(page.getByTestId('analytics-entity-customer-a')).toBeVisible();
@@ -109,11 +109,15 @@ test('critical all four departments preserve separate INR and RNB totals and cus
   await page.goto('/sales-data?floor_id=all');
   const sales = page.getByTestId('analytics-kpi-sales');
   await expect(sales).toContainText('₹3,00,000.5');
-  await expect(sales).toContainText('RNB 75,000.5');
+  await expect(sales).not.toContainText('RNB');
+  await expect(page.getByTestId('analytics-furniture')).toContainText('RNB 75,000.5');
   await expect(sales).not.toContainText('3,75,001');
   await expect(page.getByTestId('analytics-kpi-orders')).toContainText('3');
-  await page.getByTestId('analytics-nav-customers').click();
+  await analyticsExplore(page, 'customers');
   await expect(page.getByTestId('analytics-entity-customer-a')).toContainText('Ananya Shah');
+  await expect(page.getByTestId('analytics-entity-customer-c')).toContainText('Falguni Furniture Client');
+  await expect(page.getByTestId('analytics-entity-customer-c')).not.toContainText('RNB');
+  await analyticsFloor(page, 'third-floor');
   await expect(page.getByTestId('analytics-entity-customer-c')).toContainText('RNB 75,000.5');
   await analyticsFitsViewport(page);
 });

@@ -4,7 +4,7 @@ import { mockSession } from './audit-fixtures';
 for (const outcome of ['success', 'failure']) test(`critical dashboard completion is immediate and handles ${outcome}`, async ({ page, baseURL }) => {
   const origin = new URL(baseURL!).origin;
   await page.context().route('**/*', route => new URL(route.request().url()).origin === origin ? route.continue() : route.abort());
-  await mockSession(page, '/dashboard');
+  await mockSession(page, '/dashboard', false, { staff: { id: 'audit-manager', email: 'manager@example.test', full_name: 'Audit Manager', role: 'manager', active: true, floor_ids: ['first-floor'] } });
   const rows = ['First', 'Second'].map((name, i) => ({ id: `followup-${i}`, customer_name: `${name} fixture customer`, status: 'open', reason: 'Call about quotation', priority_level: 'high' }));
   await page.route('**/api/followups?**', route => route.fulfill({ json: rows }));
   await page.route('**/api/followups/mission', route => route.fulfill({ json: { due_count: 2, revenue_at_risk_short: '1000', estimated_minutes: 2, greeting_name: 'Fixture' } }));

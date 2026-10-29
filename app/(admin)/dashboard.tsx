@@ -18,8 +18,10 @@ import { color, layout, space } from "@/src/design/tokens";
 import { useAuth } from "@/src/state/auth";
 import { useActionAccess } from "@/src/hooks/use-permissions";
 import { useFloorAccess } from "@/src/hooks/use-floor-access";
-import { AnalyticsDashboardPreview } from "@/src/components/salesAnalytics/AnalyticsDashboard";
-import { Banner } from "@/src/components/ui/Banner";
+import { AnalyticsNavigation } from "@/src/components/salesAnalytics/AnalyticsNavigation";
+import { AnalyticsDashboard } from "@/src/components/salesAnalytics/AnalyticsDashboard";
+import { Panel } from "@/src/components/salesAnalytics/AnalyticsParts";
+import { SalesScopeProvider } from "@/src/components/salesData/SalesScope";
 
 type Mission = {
   due_count: number; revenue_at_risk: number; revenue_at_risk_short: string;
@@ -37,7 +39,7 @@ type RecentQ = { id: string; number: string; customer_name: string; grand_total:
 type Shortage = { id: string; customer_id: string; customer_name: string; name: string; shortage_qty: number };
 
 function greeting(): string {
-  const h = new Date().getHours();
+  const h = Number(new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", hour: "numeric", hourCycle: "h23" }).format(new Date()));
   if (h < 12) return "Good morning";
   if (h < 17) return "Good afternoon";
   return "Good evening";
@@ -57,12 +59,16 @@ function QueueRow({
   onDone: () => void; onCall: () => void; onWhatsApp: () => void; onOpen: () => void;
 }) {
   const [hover, setHover] = useState(false);
+  const [focused, setFocused] = useState(false);
   const preferCall = (fu.suggested_channel || "").toLowerCase() === "call";
   return (
     <Pressable
       onPress={onOpen}
       onHoverIn={() => setHover(true)}
       onHoverOut={() => setHover(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      accessibilityRole="button"
       accessibilityLabel={`${fu.customer_name}, ${fu.next_action || fu.reason}`}
       style={[
         {
@@ -84,17 +90,17 @@ function QueueRow({
         <View style={{ flexDirection: "row", alignItems: "center", gap: 2 }}>
           <IconButton
             icon={preferCall ? "phone" : "message-circle"}
-            size={34} iconSize={16}
+            size={44} iconSize={18}
             onPress={preferCall ? onCall : onWhatsApp}
             label={preferCall ? "Call" : "WhatsApp"}
           />
-          <IconButton icon="check" size={34} iconSize={17} tone="ink" onPress={onDone} label="Mark done" />
+          <IconButton icon="check" size={44} iconSize={18} tone="ink" onPress={onDone} label="Mark done" />
         </View>
       ) : (
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 2, opacity: hover ? 1 : 0 }}>
-          <IconButton icon="phone" size={32} iconSize={15} onPress={onCall} label="Call" />
-          <IconButton icon="message-circle" size={32} iconSize={15} onPress={onWhatsApp} label="WhatsApp" />
-          <IconButton icon="check" size={32} iconSize={16} tone="ink" onPress={onDone} label="Mark done" />
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 2, opacity: hover || focused ? 1 : 0 }}>
+          <IconButton icon="phone" size={44} iconSize={18} onPress={onCall} label="Call" />
+          <IconButton icon="message-circle" size={44} iconSize={18} onPress={onWhatsApp} label="WhatsApp" />
+          <IconButton icon="check" size={44} iconSize={18} tone="ink" onPress={onDone} label="Mark done" />
         </View>
       )}
     </Pressable>
@@ -127,6 +133,10 @@ export default function Today() {
   const canPurchases = selectedFloorId === "first-floor" && hasPurchasesAccess;
   const canViewSalesAnalytics = useActionAccess("sales_data", "view", !!staff && ["owner", "admin", "manager"].includes(staff.role));
 
+  const showPersonalWorkspace = true;
+  const [showSnapshot,setShowSnapshot] = useState(false);
+  const [workRefresh,setWorkRefresh] = useState(0);
+
   const [mission, setMission] = useState<Mission | null>(null);
   const [queueRows, setQueue] = useState<Fu[] | null>(null);
   const completionScope = useMemo(() => ({
@@ -149,7 +159,8 @@ export default function Today() {
   const requestVersion = useRef(0);
 
   const load = useCallback(async (isRefresh = false) => {
-    if (!selectedFloorId) return;
+    if (!selectedFloorId || !showPersonalWorkspace) return;
+    if (isRefresh) setWorkRefresh(value=>value+1);
     const version = ++requestVersion.current;
     const queueRevision = completionScope.revision;
     const missionRead = ++completionScope.missionRead;
@@ -185,7 +196,7 @@ export default function Today() {
       canPurchases && section<{ items: Shortage[] }>("/purchases/shortages?status=awaiting_reorder", value => setShortages(value.items || [])),
     ]);
     if (current()) setRefreshing(false);
-  }, [selectedFloorId, canFollowups, canQuotations, canPayments, canPurchases, completionScope]);
+  }, [selectedFloorId, canFollowups, canQuotations, canPayments, canPurchases, completionScope, showPersonalWorkspace]);
 
   useEffect(() => { void load(); return () => { requestVersion.current += 1; }; }, [load]);
 
@@ -248,6 +259,8 @@ export default function Today() {
   // ── The business column ────────────────────────────────────────────────────
   const business = (
     <View style={{ gap: space.x6 }}>
+      {canViewSalesAnalytics ? <Button label={showSnapshot ? "Hide operational snapshot" : "View quotation & payment snapshot"} variant="secondary" onPress={()=>setShowSnapshot(!showSnapshot)} /> : null}
+      {!canViewSalesAnalytics || showSnapshot ? <>
       <Section eyebrow="The business" />
       <View style={isPhone ? { flexDirection: "row", flexWrap: "wrap", gap: space.x6, rowGap: space.x5 } : { gap: space.x5 }}>
         {canPayments ? <>
@@ -273,6 +286,8 @@ export default function Today() {
           <Stat label="Won this month" value={stats?.revenue_month} compactValue noteTone="ok" />
         </View>
       </View>
+
+      </> : null}
 
       {canQuotations && stats && stats.pending_approval > 0 ? (
         <NavigationLink href="/(admin)/quotations"
@@ -395,7 +410,7 @@ export default function Today() {
         <View style={{ paddingVertical: space.x8, alignItems: "center", gap: 8 }}>
           <Feather name="coffee" size={20} color={color.inkFaint} />
           <Txt v="bodyMid">All clear. No follow-ups waiting.</Txt>
-          <Txt v="sub" tone="soft">New tasks appear here as quotations age, payments come due, and customers go quiet.</Txt>
+          <Txt v="sub" tone="soft">New follow-ups appear here when customer conversations need attention.</Txt>
         </View>
       ) : (
         <View>
@@ -418,6 +433,26 @@ export default function Today() {
       )}
     </View>
   );
+
+  if (canViewSalesAnalytics) {
+    const operations = (
+      <View testID="dashboard-personal-operations" style={{ gap: space.x4 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: space.x3 }}>
+          <View style={{ flex: 1, minWidth: 0, gap: space.x1 }}>
+            <Txt v="heading">{greeting()}, {name}.</Txt>
+            <Txt v="sub" tone="soft">Current work on your selected floor · {todayLabel()}</Txt>
+          </View>
+          <Button label={refreshing ? "Updating…" : "Refresh work"} variant="secondary" onPress={() => void load(true)} />
+        </View>
+        {loadError ? <Alert tone="warning" title="Some information is unavailable" description="Working sections remain available below." action={<Button label="Retry" variant="secondary" onPress={() => void load(true)} />} /> : null}
+        <View style={{ flexDirection: isDesktop ? "row" : "column", alignItems: "stretch", gap: space.x4 }}>
+          {canFollowups ? <View style={{ flex: isDesktop ? 1 : undefined, minWidth: 0 }}><Panel title="Your follow-ups">{upNext}</Panel></View> : null}
+          {canQuotations || canPurchases ? <View style={{ flex: isDesktop ? 1 : undefined, minWidth: 0 }}><Panel title="Current pipeline">{business}</Panel></View> : null}
+        </View>
+      </View>
+    );
+    return <SalesScopeProvider><View style={{flex:1,minHeight:0}}><AnalyticsNavigation/><AnalyticsDashboard operations={operations} operationsRevision={`${completionScope.revision}:${workRefresh}`} /></View></SalesScopeProvider>;
+  }
 
   return (
     <>
@@ -453,11 +488,6 @@ export default function Today() {
             ) : null}
           </View>
         </FadeIn>
-
-        {canViewSalesAnalytics && selectedFloorId ? <View style={{ gap: space.x4, marginBottom: space.x6 }}>
-          <Banner id="dashboard-confirmed-sales-v1" message="Sales analytics traces confirmed customer orders across the business. Select a figure or chart to view the supporting records." />
-          <AnalyticsDashboardPreview floorId={selectedFloorId} />
-        </View> : null}
 
         {/* ── Body ── */}
         <FadeIn delay={60}>

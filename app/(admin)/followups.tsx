@@ -1944,7 +1944,7 @@ function CustomSnoozeSheet({ visible, f, onClose, onSave }: { visible: boolean; 
           {Platform.OS === "web" ? (
             // @ts-ignore native HTML date input
             <input type="date" value={date} onChange={(e: any) => setDate(e.target.value)}
-              style={{ border: `1px solid ${colors.border}`, borderRadius: radius.md, padding: "10px 12px", fontSize: 14, backgroundColor: colors.surfaceSecondary, color: colors.onSurface, fontFamily: "inherit", outline: "none", boxSizing: "border-box", height: 40 } as any} />
+              style={{ border: `1px solid ${colors.border}`, borderRadius: radius.md, padding: "10px 12px", fontSize: 16, backgroundColor: colors.surfaceSecondary, color: colors.onSurface, fontFamily: "inherit", outline: "none", boxSizing: "border-box", height: 44 } as any} />
           ) : (
             <TextInput value={date} onChangeText={setDate} placeholder="YYYY-MM-DD" placeholderTextColor={colors.onSurfaceMuted} style={styles.textInput} />
           )}
@@ -1953,7 +1953,7 @@ function CustomSnoozeSheet({ visible, f, onClose, onSave }: { visible: boolean; 
           {Platform.OS === "web" ? (
             // @ts-ignore native HTML time input
             <input type="time" value={time} onChange={(e: any) => setTime(e.target.value)}
-              style={{ border: `1px solid ${colors.border}`, borderRadius: radius.md, padding: "10px 12px", fontSize: 14, backgroundColor: colors.surfaceSecondary, color: colors.onSurface, fontFamily: "inherit", outline: "none", boxSizing: "border-box", height: 40 } as any} />
+              style={{ border: `1px solid ${colors.border}`, borderRadius: radius.md, padding: "10px 12px", fontSize: 16, backgroundColor: colors.surfaceSecondary, color: colors.onSurface, fontFamily: "inherit", outline: "none", boxSizing: "border-box", height: 44 } as any} />
           ) : (
             <TextInput value={time} onChangeText={setTime} placeholder="HH:MM" placeholderTextColor={colors.onSurfaceMuted} style={styles.textInput} />
           )}

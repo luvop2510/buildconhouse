@@ -4,6 +4,7 @@ import { Text } from "@/src/components/AppText";
 import { color, font, layout, radius, space, statusTone, toneColor, type Tone } from './tokens';
 import { Txt, Hairline } from './typography';
 import { webCursor } from './shared';
+import { useBp } from './responsive';
 
 export function StatusWord({ status, tone, label }: { status?: string; tone?: Tone; label?: string }) {
   const meta = status ? statusTone[status] : undefined;
@@ -41,11 +42,12 @@ export function Avatar({ name, size = 34 }: { name?: string | null; size?: numbe
 
 // ═════════════════════════════════════════════ Surface / Section ════════════
 export function Surface({
-  children, pad = space.x5, style,
+  children, pad, style,
 }: { children: React.ReactNode; pad?: number; style?: StyleProp<ViewStyle> }) {
+  const { isPhone } = useBp();
   return (
     <View style={[{
-      backgroundColor: color.surface, borderRadius: radius.lg, padding: pad,
+      backgroundColor: color.surface, borderRadius: radius.lg, padding: pad ?? (isPhone ? space.x4 : space.x6), minWidth: 0,
       borderWidth: layout.hairline, borderColor: color.line,
     }, style]}
     >

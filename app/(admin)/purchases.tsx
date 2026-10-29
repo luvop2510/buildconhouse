@@ -1492,7 +1492,7 @@ function ShortagesModal({ visible, shortages, onClose, onChanged }: {
 // -----------------------------------------------------------------------------
 const styles = { ...customerStyles, ...StyleSheet.create({
   scroll: { padding: spacing.xl, gap: spacing.lg, paddingBottom: spacing.xxxl },
-  pageTitle: { fontFamily: dsFont.display, fontSize: 30, lineHeight: 38, color: colors.onSurface, letterSpacing: -0.3 },
+  pageTitle: { fontFamily: dsFont.display, fontWeight: "600", fontSize: 30, lineHeight: 38, color: colors.onSurface, letterSpacing: -0.3 },
 
   // Top action bar
   headerRow: { flexDirection: "row", alignItems: "flex-end", gap: spacing.md },
@@ -1766,7 +1766,7 @@ const styles = { ...customerStyles, ...StyleSheet.create({
   tabletListContent: { paddingHorizontal: spacing.xl, paddingTop: spacing.xl, alignItems: "stretch" },
   mobileHeaderContent: { width: "100%", maxWidth: 1120, gap: spacing.md, paddingBottom: spacing.md },
   mobileTitleRow: { flexDirection: "row", alignItems: "center", gap: 12 },
-  mobilePageTitle: { fontFamily: dsFont.display, fontSize: 28, lineHeight: 34, color: colors.onSurface, letterSpacing: -0.3 },
+  mobilePageTitle: { fontFamily: dsFont.display, fontWeight: "600", fontSize: 28, lineHeight: 34, color: colors.onSurface, letterSpacing: -0.3 },
   mobileIconButton: { width: 44, height: 44, borderRadius: 12, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceSecondary, flexShrink: 0 },
   mobileChips: { gap: 8, paddingRight: 16 },
   mobileChip: { minHeight: 44, paddingHorizontal: 14, borderRadius: 22, flexDirection: "row", alignItems: "center", gap: 7, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceSecondary },

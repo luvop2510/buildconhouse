@@ -28,6 +28,7 @@ def filters(
     floor_id: str = Query("all", max_length=200), preset: str = Query("this_month", max_length=40),
     date_from: str | None = Query(None, max_length=50), date_to: str | None = Query(None, max_length=50),
     date_basis: Literal["confirmation", "quotation", "payment", "delivery"] = "confirmation",
+    currency: Literal["INR", "RNB"] | None = None,
     company_id: str | None = Query(None, max_length=200), product_id: str | None = Query(None, max_length=200),
     architect_id: str | None = Query(None, max_length=200), customer_id: str | None = Query(None, max_length=200),
     status: str | None = Query(None, max_length=40), search: str | None = Query(None, max_length=150),
@@ -60,6 +61,20 @@ async def get_dashboard(response: Response, q: SalesQuery = Depends(filters), us
     rows, floors = await model(q, user)
     response.headers["Cache-Control"] = "no-store"
     return dashboard(rows, q, floors)
+
+
+@router.get("/owner-operations")
+async def get_owner_operations(response: Response, q: SalesQuery = Depends(filters), user: UserPublic = Depends(require_roles("owner"))):
+    from services.analytics.owner_operations import owner_operations
+    try:
+        async with asyncio.timeout(20):
+            result = await owner_operations(db, q, accessible_floor_ids(user), user=user)
+    except FloorAccessError as exc:
+        raise HTTPException(403, "You do not have access to the selected business unit") from exc
+    except (TimeoutError, ExecutionTimeout) as exc:
+        raise HTTPException(503, "Current team activity is unavailable. Try again.") from exc
+    response.headers["Cache-Control"] = "no-store"
+    return result
 
 
 @router.get("/records")
@@ -164,7 +179,7 @@ async def export_report(
             if entity_rows["total"] > len(entity_rows["items"]):
                 raise HTTPException(422, "Directory export exceeds 10,000 rows; narrow the department or entity search")
             records = entity_rows["items"]
-            report = {"title": view.title(), "coverage": report["coverage"], "insights": [f"{len(records)} permitted {view} match the selected directory filters."]}
+            report = {"title": view.title(), "filters": q.public(), "coverage": report["coverage"], "insights": [f"{len(records)} permitted {view} match the selected directory filters."]}
     if isinstance(report_title, str) and report_title.strip():
         report = {**report, "title": report_title.strip()}
     sections = report_sections(report, records, view=view, scope=scope, tab=tab)

@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { ScrollViewStyleReset } from "expo-router/html";
 import type { PropsWithChildren } from "react";
+import { WEB_SYSTEM_FONT_STACK } from "@/src/components/appTextFamily";
 
 export default function Root({ children }: PropsWithChildren) {
   return (
@@ -22,16 +23,16 @@ export default function Root({ children }: PropsWithChildren) {
           dangerouslySetInnerHTML={{
             __html: `
               html { color-scheme: light; }
-              body, input, textarea, select, button { font-family: Inter-Regular, sans-serif; }
+              body, input, textarea, select, button { font-family: ${WEB_SYSTEM_FONT_STACK}; }
               body { -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
               :is(button, a, input, textarea, select, [role="button"], [role="link"], [role="tab"], [role="checkbox"], [tabindex]):focus-visible {
-                outline: 3px solid #0066CC !important;
+                outline: 3px solid #22766D !important;
                 outline-offset: 3px !important;
               }
               /* Composite controls paint focus on their rounded outer shell. */
-              [data-field-shell="true"]:focus-within { box-shadow: 0 0 0 2px #0066CC; }
+              [data-field-shell="true"]:focus-within { box-shadow: 0 0 0 2px #22766D; }
               [data-field-shell="true"] :is(input, textarea):focus { outline: none !important; box-shadow: none !important; }
-              :is(input, textarea, select):focus-visible { outline: none !important; box-shadow: 0 0 0 2px #0066CC; }
+              :is(input, textarea, select):focus-visible { outline: none !important; box-shadow: 0 0 0 2px #22766D; }
               @media (forced-colors: active) {
                 [data-field-shell="true"]:focus-within, :is(input, textarea, select):focus-visible { outline: 2px solid Highlight !important; outline-offset: 2px; }
               }

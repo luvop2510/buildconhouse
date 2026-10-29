@@ -2,9 +2,9 @@ import { Button as DesignButton } from "@/src/design/controls";
 import { Overlay } from "@/src/design/Overlay";
 import { NavigationTabs } from "@/src/design/NavigationTabs";
 import { useReducedMotion } from "@/src/hooks/use-reduced-motion";
-// BuildCon House · Design System V1 · Primitives
+// BuildCon House · Shared mobile-first primitives
 // Every screen composes UI from this file. No hardcoded colors, spacing, or
-// typography allowed anywhere else. Feels closer to Linear / Stripe / Notion.
+// typography outside the canonical design system.
 
 import Feather from "@expo/vector-icons/Feather";
 import { Children, cloneElement, isValidElement, useEffect, useRef, useId } from "react";
@@ -80,7 +80,7 @@ export function IconButton({
     translucent: { bg: "rgba(255,255,255,0.92)", border: colors.border, fg: colors.onSurface },
     danger:      { bg: colors.errorBg,          border: colors.errorBorder, fg: colors.error },
   }[tone];
-  const iconSize = Math.max(14, Math.floor(size * 0.44));
+  const buttonIconSize = iconSize.xl;
 
   return (
     <Pressable
@@ -100,7 +100,7 @@ export function IconButton({
         opacity: disabled ? 0.5 : pressed ? 0.85 : 1,
       }]}
     >
-      <Feather name={icon} size={iconSize} color={active ? colors.brand : skin.fg} />
+      <Feather accessible={false} name={icon} size={buttonIconSize} color={active ? colors.brand : skin.fg} />
       {badge !== undefined && badge !== 0 && badge !== "" ? (
         <View style={styles.iconBadge}>
           <Text style={styles.iconBadgeText}>{typeof badge === "number" && badge > 99 ? "99+" : String(badge)}</Text>
@@ -134,11 +134,11 @@ export function Card({
     <View testID={testID} style={[
       {
         backgroundColor: skin.bg,
-        borderRadius: radius.xl,
+        borderRadius: radius.lg,
         borderWidth: skin.borderWidth,
         borderColor: skin.borderColor,
         padding: padding ?? (isPhone ? spacing.md : spacing.lg),
-        overflow: "hidden",
+        minWidth: 0,
       },
       skin.shadow,
       style,
@@ -149,7 +149,7 @@ export function Card({
 
   if (onPress) {
     return (
-      <Pressable onPress={onPress} style={({ pressed }) => ({ opacity: pressed ? 0.92 : 1 })}>
+      <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => ({ opacity: pressed ? 0.92 : 1 })}>
         {content}
       </Pressable>
     );
@@ -196,7 +196,7 @@ export function Badge({
       alignItems: "center",
       gap: 4,
     }}>
-      {icon ? <Feather name={icon} size={fs + 1} color={map.fg} /> : null}
+      {icon ? <Feather accessible={false} name={icon} size={fs + 1} color={map.fg} /> : null}
       <Text numberOfLines={truncate ? 1 : undefined} style={{ ...(truncate ? { minWidth: 0, flexShrink: 1 } : {}), color: map.fg, fontSize: fs, fontFamily: type.titleMd.fontFamily, fontWeight: "600", letterSpacing: 0.1 }}>
         {label}
       </Text>
@@ -242,7 +242,7 @@ export function Chip({
       style={({ pressed }) => ({
         minHeight: 44,
         paddingVertical: 8,
-        paddingHorizontal: 14,
+        paddingHorizontal: spacing.lg,
         borderRadius: radius.md,
         borderWidth: 1,
         borderColor: active ? ds.brassLine : colors.border,
@@ -255,7 +255,7 @@ export function Chip({
         opacity: pressed ? 0.85 : 1,
       })}
     >
-      {icon ? <Feather name={icon} size={13} color={active ? ds.brassDeep : colors.onSurfaceSecondary} /> : null}
+      {icon ? <Feather accessible={false} name={icon} size={iconSize.md} color={active ? ds.brassDeep : colors.onSurfaceSecondary} /> : null}
       <Text style={{
         color: active ? ds.brassDeep : colors.onSurface,
         fontSize: 13,
@@ -266,7 +266,7 @@ export function Chip({
       </Text>
       {typeof count === "number" ? (
         <View style={{
-          backgroundColor: active ? "rgba(0,102,204,0.10)" : colors.surfaceTertiary,
+          backgroundColor: active ? ds.sunkenDeep : colors.surfaceTertiary,
           paddingHorizontal: 6,
           paddingVertical: 1,
           borderRadius: radius.pill,
@@ -345,7 +345,7 @@ export function EmptyState({
         backgroundColor: chipBg,
         alignItems: "center", justifyContent: "center",
       }}>
-        <Feather name={icon} size={26} color={iconFg} />
+        <Feather accessible={false} name={icon} size={26} color={iconFg} />
       </View>
       <Text style={[type.titleMd, { textAlign: "center" }]}>{title}</Text>
       {subtitle ? <Text style={[type.bodyMuted, { textAlign: "center", maxWidth: 320 }]}>{subtitle}</Text> : null}
@@ -455,7 +455,7 @@ export function TextField({
   const descriptionId = useId();
   const showError = !!error;
   return (
-    <View style={[{ gap: 6 }, containerStyle]}>
+    <View style={[{ gap: spacing.sm }, containerStyle]}>
       {label ? <Text style={type.label}>{label}</Text> : null}
       <View {...(Platform.OS === "web" ? { dataSet: { fieldShell: "true" } } : {})} style={{
         flexDirection: "row", alignItems: "center",
@@ -463,20 +463,20 @@ export function TextField({
         borderWidth: 1,
         borderColor: showError ? colors.error : colors.border,
         borderRadius: radius.md,
-        paddingHorizontal: leftIcon ? 12 : 14,
+        paddingHorizontal: spacing.lg,
         minHeight: 48,
       }}>
-        {leftIcon ? <Feather name={leftIcon} size={16} color={colors.onSurfaceMuted} style={{ marginRight: 8 }} /> : null}
+        {leftIcon ? <Feather accessible={false} name={leftIcon} size={16} color={colors.onSurfaceMuted} style={{ marginRight: 8 }} /> : null}
         <TextInput
           {...rest}
           accessibilityLabel={rest.accessibilityLabel || label || rest.placeholder}
           accessibilityHint={rest.accessibilityHint || (showError ? error || undefined : helper)}
           aria-invalid={showError || undefined}
           aria-describedby={helper || error ? descriptionId : undefined}
-          placeholderTextColor={rest.placeholderTextColor || colors.onSurfaceSubtle}
+          placeholderTextColor={rest.placeholderTextColor || colors.onSurfaceMuted}
           style={[{
             flex: 1,
-            paddingVertical: Platform.OS === "ios" ? 12 : 8,
+            paddingVertical: spacing.md,
             fontSize: 16,
             minWidth: 0,
             fontFamily: type.body.fontFamily,
@@ -485,7 +485,7 @@ export function TextField({
         />
         {rightIcon ? (
           <Pressable accessibilityRole="button" accessibilityLabel={rightIcon?.startsWith("eye") ? "Toggle password visibility" : rightIcon?.replace(/-/g, " ")} onPress={onRightPress} hitSlop={layout.hitSlop} style={{ marginLeft: 8, minWidth: 44, minHeight: 44, alignItems: "center", justifyContent: "center" }}>
-            <Feather name={rightIcon} size={16} color={colors.onSurfaceMuted} />
+            <Feather accessible={false} name={rightIcon} size={16} color={colors.onSurfaceMuted} />
           </Pressable>
         ) : null}
       </View>
@@ -504,13 +504,13 @@ export function SearchField({ onClear, ...props }: TextInputProps & { onClear?: 
     <View {...(Platform.OS === "web" ? { dataSet: { fieldShell: "true" } } : {})} style={{
       flexDirection: "row", alignItems: "center",
       backgroundColor: colors.surfaceTertiary,
-        borderRadius: radius.xl,
+        borderRadius: radius.md,
         borderWidth: StyleSheet.hairlineWidth,
         borderColor: colors.border,
         paddingHorizontal: 12,
         minHeight: 44,
     }}>
-      <Feather name="search" size={15} color={colors.onSurfaceMuted} style={{ marginRight: 8 }} />
+      <Feather accessible={false} name="search" size={15} color={colors.onSurfaceMuted} style={{ marginRight: 8 }} />
       <TextInput
         {...props}
         accessibilityLabel={props.accessibilityLabel || props.placeholder || "Search"}
@@ -522,7 +522,7 @@ export function SearchField({ onClear, ...props }: TextInputProps & { onClear?: 
       />
       {hasValue && onClear ? (
         <Pressable accessibilityRole="button" accessibilityLabel="Clear search" onPress={onClear} hitSlop={layout.hitSlop} style={{ minWidth: 44, minHeight: 44, alignItems: "center", justifyContent: "center" }}>
-          <Feather name="x" size={14} color={colors.onSurfaceMuted} />
+          <Feather accessible={false} name="x" size={14} color={colors.onSurfaceMuted} />
         </Pressable>
       ) : null}
     </View>
@@ -607,7 +607,7 @@ export function KpiCard({
             backgroundColor: toneMap.iconBg,
             alignItems: "center", justifyContent: "center",
           }}>
-            <Feather name={icon} size={iconSize.md} color={toneMap.iconFg} />
+            <Feather accessible={false} name={icon} size={iconSize.md} color={toneMap.iconFg} />
           </View>
         ) : null}
       </View>
@@ -832,7 +832,7 @@ export function BrandMark({ size = 32, inverse }: { size?: number; inverse?: boo
       borderColor: inverse ? "rgba(255,255,255,0.24)" : "transparent",
       alignItems: "center", justifyContent: "center",
     }}>
-      <Feather name="home" size={size * 0.48} color={inverse ? colors.onSurfaceInverse : colors.onBrand} />
+      <Feather accessible={false} name="home" size={size * 0.48} color={inverse ? colors.onSurfaceInverse : colors.onBrand} />
     </View>
   );
 }
@@ -867,7 +867,7 @@ export function Alert({
       gap: spacing.md,
       alignItems: "flex-start",
     }}>
-      <Feather name={map.icon} size={16} color={map.fg} style={{ marginTop: 2 }} />
+      <Feather accessible={false} name={map.icon} size={16} color={map.fg} style={{ marginTop: 2 }} />
       <View style={{ flex: 1, gap: 2 }}>
         <Text style={{ fontSize: 13, fontFamily: type.titleMd.fontFamily, fontWeight: "600", color: map.fg }}>{title}</Text>
         {description ? <Text style={{ fontSize: 13, fontFamily: type.body.fontFamily, color: map.fg, opacity: 0.9, lineHeight: 18 }}>{description}</Text> : null}
@@ -917,7 +917,7 @@ export function Icon({
   color?: string;
   style?: any;
 }) {
-  return <Feather name={name} size={iconSize[size]} color={color || colors.onSurface} style={style} />;
+  return <Feather accessible={false} name={name} size={iconSize[size]} color={color || colors.onSurface} style={style} />;
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -974,7 +974,7 @@ export function HeroBanner({
           alignItems: "center", justifyContent: "center",
           ...elevation.hairline,
         }}>
-          <Feather name={iconName} size={iconSize.xl} color={colors.brand} />
+          <Feather accessible={false} name={iconName} size={iconSize.xl} color={colors.brand} />
         </View>
       ) : null}
       <View style={{ flex: 1, minWidth: 0 }}>
@@ -1045,7 +1045,7 @@ export function StatTile({
             alignItems: "center", justifyContent: "center",
             flexShrink: 0,
           }}>
-            <Feather name={icon} size={dense ? iconSize.sm : iconSize.md} color={map.iconFg} />
+            <Feather accessible={false} name={icon} size={dense ? iconSize.sm : iconSize.md} color={map.iconFg} />
           </View>
         ) : null}
       </View>
@@ -1361,7 +1361,7 @@ export function PillTabs<T extends string>({
               opacity: pressed ? 0.85 : 1,
             })}
           >
-            {o.icon ? <Feather name={o.icon} size={iconSize.sm} color={on ? colors.brand : colors.onSurfaceMuted} /> : null}
+            {o.icon ? <Feather accessible={false} name={o.icon} size={iconSize.sm} color={on ? colors.brand : colors.onSurfaceMuted} /> : null}
             <Text style={{
               fontSize: 13,
               fontFamily: type.titleMd.fontFamily,

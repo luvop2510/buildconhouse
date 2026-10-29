@@ -154,7 +154,7 @@ const styles = {
     fontWeight: "700" as const,
     letterSpacing: 1.5,
     color: colors.onSurface,
-    fontFamily: "Inter-Regular",
+    fontFamily: type.body.fontFamily,
   },
   expiryRow: {
     backgroundColor: colors.surfaceSecondary,
