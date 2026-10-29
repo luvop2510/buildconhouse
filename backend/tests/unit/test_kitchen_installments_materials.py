@@ -25,7 +25,7 @@ async def test_installments_are_dated_append_only_replay_safe_and_cannot_overpay
     database, service, owner, project = await confirmed(setup)
     order_id = project["orders"][-1]["id"]
     approval = project["orders"][-1]["approval_identity"]
-    for index, amount in enumerate(["300000", "200000", "500000"]):
+    for index, amount in enumerate(["300000", "200000", "100000", "100000", "300000"]):
         request = cmd(project["version"], "order_installment", {"order_id": order_id, "amount": amount, "date": "2026-10-26"}, f"installment-{index}")
         project = await service.command(owner, project["id"], request)
         replay = await service.command(owner, project["id"], request)
@@ -36,10 +36,10 @@ async def test_installments_are_dated_append_only_replay_safe_and_cannot_overpay
     assert all(row["date"] == "2026-10-26" and row["actor_id"] == owner.id for row in order["installments"])
     with pytest.raises(HTTPException, match="remaining"):
         await service.command(owner, project["id"], cmd(project["version"], "order_installment", {"order_id": order_id, "amount": "0.01", "date": "2026-10-26"}))
-    assert len(database.kitchen_projects.rows[0]["orders"][-1]["installments"]) == 3
+    assert len(database.kitchen_projects.rows[0]["orders"][-1]["installments"]) == 5
     normalized = normalize("kitchen", {"id": project["id"], "floor_id": "second-floor", "_order": order}, {}, {}, [])
     assert normalized["collected"] == 1000000 and normalized["outstanding"] == 0
-    assert len(normalized["payments"]) == 3
+    assert len(normalized["payments"]) == 5
 
 
 @pytest.mark.asyncio
@@ -106,3 +106,19 @@ async def test_completed_order_can_receive_final_installment_without_reopening(s
     project = await service.command(owner, project["id"], cmd(project["version"], "order_installment", {"order_id":project["orders"][-1]["id"],"amount":"500000","date":"2026-10-26"}))
     assert project["stage"] == "completed" and project["completion_date"] == "2026-10-26"
     assert workflow.order_paid(project["orders"][-1]) == Decimal("500000.00")
+
+
+@pytest.mark.asyncio
+async def test_no_fixed_installment_or_material_photo_count_cap(setup):
+    database, service, owner, project = await confirmed(setup)
+    stored = database.kitchen_projects.rows[0]
+    order = stored["orders"][-1]
+    order["installments"] = [{"id":f"paid-{i}","amount":"0.01","date":"2026-10-26"} for i in range(1000)]
+    project = await service.command(owner, project["id"], cmd(project["version"], "order_installment", {"order_id":order["id"],"amount":"1","date":"2026-10-26"}))
+    assert len(project["orders"][-1]["installments"]) == 1001
+    stored = database.kitchen_projects.rows[0]
+    stored["stage"] = "installation"
+    photos = [{"id":f"material-{i}","content_type":"image/png"} for i in range(101)]
+    stored["attachments"] += photos
+    project = await service.command(owner, project["id"], cmd(project["version"], "installation_material_photos", {"attachment_ids":[p["id"] for p in photos]}))
+    assert len(project["installation"]["material_photo_ids"]) == 101

@@ -51,6 +51,7 @@ export function KitchenPdfFiles({ project, attachmentIds, finalId, onAdd, onSele
   const photo = fileKind === "photo";
   const noun = photo ? "photo" : "PDF";
   const [picked, setPicked] = useKitchenDraft<DocumentPicker.DocumentPickerAsset | null>(`${draftKey}.picked`, null);
+  const [photoQueue, setPhotoQueue] = useKitchenDraft<DocumentPicker.DocumentPickerAsset[]>(`${draftKey}.photoQueue`, []);
   const [uploadedFile, setUploadedFile] = useKitchenDraft<{ id: string; fingerprint: string } | null>(`${draftKey}.uploaded`, null);
   const [progress, setProgress] = useState(0);
   const scopeKey = `${project.id}:${draftKey}`;
@@ -86,8 +87,8 @@ export function KitchenPdfFiles({ project, attachmentIds, finalId, onAdd, onSele
     if (pending.current || submission.busy || disabled) return;
     const currentScope = scope.current;
     try {
-      const result = await DocumentPicker.getDocumentAsync({ type: photo ? ["image/jpeg", "image/png"] : "application/pdf", copyToCacheDirectory: true, multiple: false });
-      if (!result.canceled && currentScope.live && scope.current === currentScope) { submission.clearFeedback(); setPicked(result.assets[0]); setUploadedFile(null); }
+      const result = await DocumentPicker.getDocumentAsync({ type: photo ? ["image/jpeg", "image/png"] : "application/pdf", copyToCacheDirectory: true, multiple: photo });
+      if (!result.canceled && currentScope.live && scope.current === currentScope) { submission.clearFeedback(); setPicked(result.assets[0]); setPhotoQueue(photo ? result.assets.slice(1) : []); setUploadedFile(null); }
     } catch { if (currentScope.live && scope.current === currentScope) submission.setError(`The ${noun} picker could not open. Try again.`); }
   };
   const upload = async () => {
@@ -125,7 +126,7 @@ export function KitchenPdfFiles({ project, attachmentIds, finalId, onAdd, onSele
         submission.setError(`The ${noun} uploaded. Its stage entry is waiting to be saved. Retry to finish; the saved file will be reused.`);
         return;
       }
-      setPicked(null); setUploadedFile(null); setProgress(0);
+      setPicked(photo ? photoQueue[0] || null : null); setPhotoQueue(photoQueue.slice(1)); setUploadedFile(null); setProgress(0);
     } catch (failure) {
       if (active()) submission.setError(`${failure instanceof Error ? failure.message : `The ${noun} entry could not be saved.`} Your file selection has been kept.`);
     } finally { pending.current = false; if (active()) setOperation(null); }
@@ -146,11 +147,11 @@ export function KitchenPdfFiles({ project, attachmentIds, finalId, onAdd, onSele
   const progressLabel = discarding ? `Discarding unfinished ${noun} upload…` : progress === 0 ? `Preparing ${noun}…` : progress < 95 ? `Uploading ${noun} · ${progress}%` : progress < 100 ? `Verifying and saving ${noun}…` : `Saving ${noun} entry…`;
   return <View style={{ gap: spacing.md }} testID={testID}>
     {label ? <Text style={type.bodyStrong}>{label}</Text> : null}
-    {!disabled ? <Text style={type.caption}>{photo ? "JPG or PNG · Up to 25 MB per photo. Add more photos after each upload." : "PDF · Up to 10 MB (10,000,000 bytes) per file."}</Text> : null}
+    {!disabled ? <Text style={type.caption}>{photo ? "JPG or PNG · Up to 25 MB per photo. Select multiple photos or add more at any time." : "PDF · Up to 10 MB (10,000,000 bytes) per file."}</Text> : null}
     {included.map(file => <KitchenPdfFile key={file.id} project={project} file={file} photo={photo} selected={!photo && file.id === finalId} onSelect={photo ? undefined : () => onSelect(file.id)} disabled={disabled || selectionDisabled || busy} testID={`${testID}-${file.id}`} />)}
     {!disabled ? <>
       <Button label={photo ? "Choose photo" : label ? `Choose ${label} PDF` : "Choose PDF"} variant="secondary" disabled={busy || !policy?.files} onPress={pick} testID={`${testID}-pick`} />
-      {picked ? <><Text style={type.body}>{picked.name}</Text><Button label={uploading ? progressLabel : uploadedFile ? `Retry saving ${noun} entry` : photo ? "Upload photo" : "Upload PDF"} disabled={busy || !policy?.files} loading={uploading} onPress={upload} testID={`${testID}-upload`} /></> : null}
+      {picked ? <><Text style={type.body}>{picked.name}{photo && photoQueue.length ? ` · ${photoQueue.length} more selected` : ""}</Text><Button label={uploading ? progressLabel : uploadedFile ? `Retry saving ${noun} entry` : photo ? "Upload photo" : "Upload PDF"} disabled={busy || !policy?.files} loading={uploading} onPress={upload} testID={`${testID}-upload`} /></> : null}
       {!policy?.files ? <Text style={type.bodyMuted}>{photo ? "Photo" : "PDF"} upload settings are unavailable. Reload Kitchen setup before uploading.</Text> : null}
       {unfinished && (!submission.busy || discarding) ? <>
         <Text style={type.caption}>{unfinished.project_id !== project.id ? "An unfinished upload belongs to another project." : `An unfinished ${noun} upload is waiting.`}{unfinished.filename ? ` ${unfinished.filename}` : ""}</Text>

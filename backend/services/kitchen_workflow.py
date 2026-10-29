@@ -608,8 +608,6 @@ def apply(project, command, payload, policy, user, now, validate):
                 reject("Record a positive installment amount and payment date")
             if body.date < row["order_date"] or body.date > recorded_day(now):
                 reject("Payment date must be between order confirmation and today")
-            if len(row.get("installments", [])) >= 1000:
-                reject("This order has reached the supported installment limit")
             if order_paid(row) + Decimal(body.amount) > Decimal(row["final_amount"]):
                 reject("Installment exceeds the remaining order balance")
             row.setdefault("installments", []).append(record(body.model_dump(exclude={"order_id"})))
@@ -620,8 +618,6 @@ def apply(project, command, payload, policy, user, now, validate):
         body = validate(MaterialPhotos, payload)
         photos = project.get("installation", {}).get("material_photo_ids", [])
         combined = list(dict.fromkeys([*photos, *body.attachment_ids]))
-        if len(combined) > 100:
-            reject("Attach at most 100 material-list photos")
         attachments = {row["id"]: row for row in project.get("attachments", [])}
         if any(identity not in attachments or attachments[identity].get("content_type") not in {"image/jpeg", "image/png"} for identity in body.attachment_ids):
             reject("Choose uploaded JPG or PNG photos belonging to this project")

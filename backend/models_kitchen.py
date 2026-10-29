@@ -399,7 +399,7 @@ class MaterialArrival(StrictModel):
 
 
 class MaterialPhotos(StrictModel):
-    attachment_ids: list[Identifier] = Field(min_length=1, max_length=100)
+    attachment_ids: list[Identifier] = Field(min_length=1)
 
 
 class OrderAmendment(StrictModel):

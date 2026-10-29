@@ -11,7 +11,7 @@ advance corrections cannot reduce terms below recorded receipts or overpay.
 Sales analytics and reference balances include the same installment receipts.
 Material arrived is an explicit saved Yes/No choice in the installment section.
 
-Installation can attach multiple JPG/PNG photos to its material list using the
+There is no fixed installment or material-photo count cap. Installation can attach multiple JPG/PNG photos to its material list using the
 existing private, verified upload/download pipeline. Attachment IDs must belong
 to this project and have image MIME types. List append deduplicates IDs; work
 status saves retain photos. Uploaded files and earlier work cycles remain intact.
