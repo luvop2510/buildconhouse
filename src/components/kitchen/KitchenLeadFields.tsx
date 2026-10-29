@@ -11,7 +11,6 @@ const leadStatuses = ["New", "Contacted", "Qualified", "Lost"] as const;
 export function LeadFields({ value, onChange, disabled, prefix = "kitchen-lead" }: { value: KitchenLead; onChange: (lead: KitchenLead) => void; disabled?: boolean; prefix?: string }) {
   const [showDetails, setShowDetails] = useState(Boolean(value.kitchen_type || value.notes));
   return <View style={{ gap: 24 }}>
-    <TextField label="Site location (required)" value={value.site_location || ""} onChangeText={site_location => onChange({ ...value, site_location })} editable={!disabled} testID={`${prefix}-site_location`} />
     <KitchenDateField label="Lead date" value={value.lead_date || ""} onChange={lead_date => onChange({ ...value, lead_date: lead_date || null })} disabled={disabled} testID={`${prefix}-date`} />
     <ReferrerField label="Architect / Interior designer" floorId={KITCHEN_FLOOR_ID} disabled={disabled} allowCreate={!disabled} value={value.referrer_id && value.referrer_type ? { id: value.referrer_id, name: value.referrer_name || "", type: value.referrer_type, company: value.referrer_company } : null} onChange={referrer => onChange({ ...value, referrer_id: referrer?.id || null, referrer_name: referrer?.name || null, referrer_type: referrer?.type || null, referrer_company: referrer?.company || null })} />
     <Choice label="Lead status" value={value.status} values={leadStatuses} onChange={status => onChange({ ...value, status })} disabled={disabled} testID={`${prefix}-status`} />

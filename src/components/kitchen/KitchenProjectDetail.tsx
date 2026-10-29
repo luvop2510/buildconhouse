@@ -179,7 +179,7 @@ function EarlyStage({ project, stage, disabled }: { project: KitchenProject; sta
   const value = stage === "lead" ? lead : stage === "visit" ? visit : { ...cad, progress: Number(progress), status: cadStatus };
   const stale = isDraftStale(draftKey) || stage === "cad" && isDraftStale("cad.progress");
   const autosave = useKitchenAutosave({ draftKey, value, saved: project[stage === "lead" ? "lead" : stage === "visit" ? "visit" : "cad"],
-    enabled: !locked && !stale && (stage === "lead" ? leadDecisionsUnchanged && Boolean(lead.site_location?.trim()) : stage === "visit" ? visitDecisionUnchanged : stage === "cad" && cadDecisionsUnchanged),
+    enabled: !locked && !stale && (stage === "lead" ? leadDecisionsUnchanged : stage === "visit" ? visitDecisionUnchanged : stage === "cad" && cadDecisionsUnchanged),
     save: () => command(stage === "lead" ? "edit_lead" : stage === "visit" ? "save_visit" : "save_cad", stage === "visit" ? { status: visit.status, visit_date: visit.visit_date, display_model: visit.display_model, notes: visit.notes } : value, true),
   });
   if (!["lead", "visit", "cad"].includes(stage)) return null;

@@ -114,7 +114,8 @@ test('Kitchen stages use one editable or saved source without repeated summary b
     const repeatedTitle = ({ lead: 'Lead details', visit: 'Showroom visit', cad: 'CAD progress', design: 'Design', quotation: 'Quotation', order: 'Order', production: 'Production', installation: 'Installation', completed: 'Completed project' } as Record<string, string>)[stage];
     await expect(task.getByRole('heading', { name: repeatedTitle, exact: true })).toHaveCount(0);
     if (stage === 'lead') {
-      await expect(page.getByTestId('kitchen-lead-site_location')).toBeVisible();
+      await expect(page.getByTestId('kitchen-lead-site_location')).toHaveCount(0);
+      await expect(page.getByTestId('kitchen-lead-date')).toBeVisible();
       await expect(page.getByTestId('kitchen-lead-details')).toHaveCount(0);
     } else if (stage === 'design' || stage === 'quotation') {
       if (stage === 'design') {
@@ -289,7 +290,7 @@ test('Kitchen lead intake retains entries, fits its panel and creates without as
   expect(focusedInput!.height).toBeCloseTo(restingInput!.height, 0);
   await page.getByTestId('kitchen-customer-phone').fill(phone);
   await page.getByTestId('kitchen-customer-address').fill('Synthetic lead review address');
-  await page.getByTestId('kitchen-create-lead-site_location').fill('A long site location that should wrap without changing any other controls');
+  await expect(page.getByTestId('kitchen-create-lead-site_location')).toHaveCount(0);
   const before = await page.getByTestId('kitchen-customer-name').inputValue();
   const viewport = page.viewportSize()!;
   await page.setViewportSize({ width: viewport.width, height: Math.max(550, viewport.height - 180) });
@@ -308,7 +309,7 @@ test('Kitchen lead intake retains entries, fits its panel and creates without as
   expect(response.request().postDataJSON()).not.toHaveProperty('assigned_to');
   const project = await response.json();
   const independent = await context.request.get(`/api/kitchen-projects/${project.id}`, { headers });
-  expect(await independent.json()).toMatchObject({ customer: { name: customer, phone }, lead: { site_location: 'A long site location that should wrap without changing any other controls' } });
+  expect(await independent.json()).toMatchObject({ customer: { name: customer, phone, address: 'Synthetic lead review address' } });
   await expect(page.getByTestId('kitchen-current-task-region')).toBeVisible();
   await page.screenshot({ path: info.outputPath('kitchen-project-review.png'), fullPage: true });
   await health.assertHealthy();

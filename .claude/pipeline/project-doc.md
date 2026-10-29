@@ -3,7 +3,8 @@
 ## Kitchen intake, Today and blue accents — 29 October 2026
 
 Native fallback delta scan: Kitchen intake reuses its existing form and service,
-with required name/phone/address and one Site location. Existing customer history
+with required name/phone/address; Site location is removed under the user's
+latest correction, including old required-policy and draft-save gates. Customer history
 and successful command replays remain. Shared Today now scopes Kitchen employee
 tasks to current assignment and is reachable from Kitchen phone/sidebar navigation.
 Canonical action/focus/selection roles restore the original blue palette with

@@ -5,10 +5,10 @@ import ts from 'typescript';
 const stages = ['lead', 'visit', 'cad', 'design', 'quotation', 'order', 'production', 'installation', 'completed'];
 const labels = Object.fromEntries(stages.map(stage => [stage, stage[0].toUpperCase() + stage.slice(1)]));
 const calls = [];
-let stateValues = [], cursor = 0, effects = [], params = {}, editable = true;
+let stateValues = [], cursor = 0, effects = [], params = {}, editable = true, autosaveOptions;
 const project = { id: 'project', customer_id: 'customer', reference: 'K-101', stage: 'cad', updated_at: '2026-10-27T01:00:00Z', customer: { name: 'Customer QA', phone: '9001112223', alternate_phone: 'removed-alt', email: 'removed-email', company: 'removed-company', property_name: 'removed-property', address: 'removed-address', city: 'removed-city', state: 'removed-state', pincode: 'removed-pin', gstin: 'removed-gst', notes: 'removed-notes', referrer_name: 'removed-reference' }, permissions: { can_update: true }, lead: {}, visit: {}, cad: {} };
 const element = (type, props) => ({ type, props: props || {} });
-const kitchenState = () => ({ id: project.id, project: { ...project, permissions: { can_update: editable } }, policy: {}, returnTo: '/kitchen', submission: { busy: false }, documentSubmission: { busy: false }, command: (...args) => calls.push(args) });
+const kitchenState = () => ({ id: project.id, project: { ...project, permissions: { can_update: editable } }, policy: {}, returnTo: '/kitchen', submission: { busy: false }, isDraftStale: () => false, resetDraftValue: () => {}, documentSubmission: { busy: false }, command: (...args) => calls.push(args) });
 const router = { setParams: patch => calls.push(['params', patch]), push: href => calls.push(['navigate', href]), canGoBack: () => false };
 const modules = {
   react: { createContext: () => ({}), useState: initial => { const index = cursor++; if (!(index in stateValues)) stateValues[index] = typeof initial === 'function' ? initial() : initial; return [stateValues[index], value => { stateValues[index] = typeof value === 'function' ? value(stateValues[index]) : value; }]; }, useRef: initial => ({ current: initial }), useEffect: effect => effects.push(effect), useCallback: fn => fn },
@@ -25,7 +25,9 @@ const modules = {
   '@/src/api/kitchenProjects': { KITCHEN_STAGES: stages, STAGE_LABELS: labels, kitchenProjectsApi: { configuration: async () => ({}), assignees: async () => ({ rows: [] }), list: async query => { calls.push(['list', query]); return { rows: [], total: 0 }; } } },
   './shared': { KitchenFloor: 'floor', KitchenPage: 'page', KitchenPanel: 'panel', displayDate: value => value, errorText: String, useKitchenSubmission: () => ({}) },
   './KitchenPrimitives': { KitchenButton: 'button', KitchenTextField: 'field', kitchenColors: {}, kitchenType: {} },
-  './KitchenProjectState': { useKitchenProject: kitchenState, kitchenStage: stage => stages.includes(stage) ? stage : null, kitchenProjectPath: (id, suffix) => `/kitchen/${id}${suffix}` },
+  './KitchenDates': { kitchenToday: () => '2026-10-29' },
+  './KitchenAutosave': { useKitchenAutosave: options => { autosaveOptions = options; return { status: 'pending' }; } },
+  './KitchenProjectState': { useKitchenDraft: (key, initial) => [key === 'lead.value' ? { ...initial, notes: 'New note without a site', lead_date: '2026-10-29' } : initial, () => {}], useKitchenProject: kitchenState, kitchenStage: stage => stages.includes(stage) ? stage : null, kitchenProjectPath: (id, suffix) => `/kitchen/${id}${suffix}` },
   './KitchenCustomerSearch': { KitchenCustomerSearch: 'customer-search' },
 };
 const versionModule = {};
@@ -41,7 +43,7 @@ function render(component, props, values = []) { stateValues = values; cursor = 
 function nodes(tree) { if (tree == null || typeof tree === 'boolean') return []; if (Array.isArray(tree)) return tree.flatMap(nodes); if (typeof tree !== 'object') return [String(tree)]; return [tree, ...nodes(tree.props?.children), ...nodes(tree.props?.right)]; }
 const find = (tree, id) => nodes(tree).find(node => node.props?.testID === id);
 const text = tree => nodes(tree).filter(node => typeof node === 'string').join(' ');
-const detail = load('KitchenProjectDetail', '\nexports.StageNavigation = StageNavigation;');
+const detail = load('KitchenProjectDetail', '\nexports.StageNavigation = StageNavigation; exports.EarlyStage = EarlyStage;');
 for (const expanded of [false, true]) {
   params = { stage: 'cad', details: expanded ? '1' : '' };
   const tree = render(detail.KitchenProjectDetail, {});
@@ -102,3 +104,13 @@ assert.equal(find(notSelected,'kitchen-advance-quotation').props.disabled,true,'
 const newerPending={id:'d2',number:2,response:'Pending',handoff_status:'No',attachment_ids:['new-pdf'],final_attachment_id:'new-pdf'};
 const chosenEarlier=render(detail.StageNavigation,{project:{...project,stage:'design',final_design_version_id:'d1',design_versions:[finalDesign,newerPending]},disabled:false});
 assert.equal(find(chosenEarlier,'kitchen-advance-quotation').props.disabled,false,'A newer PDF does not replace the finalized earlier design');
+
+const leadFields = load('KitchenLeadFields');
+const leadTree = render(leadFields.LeadFields, { value: { status: 'New', site_location: 'Historical retained site' }, onChange: () => {} });
+assert.equal(find(leadTree, 'kitchen-lead-site_location'), undefined, 'Site location is absent even for historical leads');
+assert.ok(find(leadTree, 'kitchen-lead-date'), 'Lead date remains editable');
+render(detail.EarlyStage, { project: { ...project, stage: 'lead', lead: { status: 'New' } }, stage: 'lead', disabled: false });
+assert.equal(autosaveOptions.enabled, true, 'Routine lead notes and date autosave without a site');
+autosaveOptions.save();
+assert.deepEqual(calls.at(-1), ['edit_lead', { status: 'New', notes: 'New note without a site', lead_date: '2026-10-29' }, true]);
+console.log('Kitchen lead forms omit site location and autosave notes/date without a site.');

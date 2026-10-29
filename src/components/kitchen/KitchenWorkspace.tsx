@@ -125,7 +125,7 @@ function ProjectCard({ project, href }: { project: KitchenProject; href: string 
       <Feather name="chevron-right" size={20} color={colors.brand} />
     </View>
     <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: spacing.sm }}><Text style={type.bodyStrong}>{STAGE_LABELS[project.stage]}</Text><Text style={type.bodyMuted}>{projectStatus(project) !== STAGE_LABELS[project.stage] ? projectStatus(project) : ""}</Text></View>
-    {project.stage !== "lead" ? <Text style={type.body}>{project.customer.phone || "Phone not recorded"}{project.lead.site_location ? ` · ${project.lead.site_location}` : ""}</Text> : null}
+    {project.stage !== "lead" ? <Text style={type.body}>{project.customer.phone || "Phone not recorded"}</Text> : null}
     {project.duplicate_review?.status === "pending" ? <Text style={[type.bodyStrong, { color: colors.warning }]}>Owner duplicate review pending</Text> : null}
     <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.lg, borderTopWidth: 1, borderColor: colors.border, paddingTop: spacing.md }}>
       {stageColumns(project.stage).map(column => <View key={column.label} style={{ flexGrow: 1, flexBasis: 150, minWidth: 0, gap: spacing.xs }}><Text style={type.caption}>{column.label}</Text><Text style={type.body}>{column.value(project)}</Text></View>)}
@@ -148,7 +148,7 @@ function stageColumns(stage?: KitchenStage): StageColumn[] {
   const date = (value?: string | null) => displayDate(value);
   const yes = (value?: boolean | null) => value == null ? "Not recorded" : value ? "Yes" : "No";
   switch (stage) {
-    case "lead": return [{ label: "Phone", value: p => p.customer.phone || "—" }, { label: "Site location", value: p => p.lead.site_location || "—" }, { label: "Architect / Interior", value: p => referrerLabel(p.lead) || "—" }, { label: "Kitchen type", value: p => p.lead.kitchen_type || "—" }, { label: "Lead date", value: p => date(p.lead.lead_date) }];
+    case "lead": return [{ label: "Phone", value: p => p.customer.phone || "—" }, { label: "Architect / Interior", value: p => referrerLabel(p.lead) || "—" }, { label: "Kitchen type", value: p => p.lead.kitchen_type || "—" }, { label: "Lead date", value: p => date(p.lead.lead_date) }];
     case "visit": return [{ label: "Visit date", value: p => date(p.visit.visit_date) }, { label: "Display / model", value: p => p.visit.display_model || "—" }];
     case "cad": return [{ label: "CAD file received", value: p => yes(p.cad.received) }, { label: "Design progress", value: p => `${p.cad.progress}%` }, { label: "Design status", value: p => p.cad.status }];
     case "design": return [{ label: "Customer approval", value: p => currentDesign(p)?.response || "Pending" }, { label: "Design revisions", value: p => historicalCount(p.design_revision_count, p.known_design_revision_count) }, { label: "Sent to company", value: p => currentDesign(p)?.handoff_status || (currentDesign(p)?.handoff_date ? "Yes" : "Not recorded") }, { label: "Date sent", value: p => date(currentDesign(p)?.handoff_date) }];
@@ -214,7 +214,6 @@ function CreateLead({ onClose, onRegisterClose, onCreated }: { onClose: () => vo
   const save = () => {
     if (existingMode && !customer) { submission.setError("Select an existing customer or choose New customer."); return; }
     if (!name.trim() || !phone.trim() || !address.trim()) { submission.setError("Customer name, phone number and address are required."); return; }
-    if (!lead.site_location?.trim()) { submission.setError("Enter the site location before creating the lead."); return; }
     const body = { ...(assignee ? { assigned_to: assignee } : {}), ...(customer ? { customer_id: customer.id } : { customer: { name: name.trim(), phone: phone.trim(), address: address.trim() } }), lead };
     void submission.submit(body, key => kitchenProjectsApi.create({ ...body, idempotency_key: key }), project => { allowLeave(); reset(); onCreated(project); });
   };
@@ -234,11 +233,11 @@ function CreateLead({ onClose, onRegisterClose, onCreated }: { onClose: () => vo
       {duplicateError ? <Alert tone="warning" title="Matching projects could not be checked" description="The server will check for possible duplicates when the lead is created. Any matches require owner review before conversion." /> : null}
       {customer && (!customer.name.trim() || !customer.phone?.trim() || !customer.address?.trim()) ? <Alert tone="warning" title="Customer name, phone number and address required" description="Update the existing customer in the customer directory, then select it again. This form does not overwrite shared customer details." /> : null}
       <>
-      <View style={{ paddingTop: 24, borderTopWidth: 1, borderColor: colors.divider, gap: 6 }}><Text style={type.titleMd}>Project enquiry</Text><Text style={type.caption}>Record the site and the customer’s kitchen requirements.</Text></View>
+      <View style={{ paddingTop: 24, borderTopWidth: 1, borderColor: colors.divider, gap: 6 }}><Text style={type.titleMd}>Project enquiry</Text><Text style={type.caption}>Record the customer’s kitchen enquiry.</Text></View>
       {staff?.role === "owner" ? <AssigneeChoice value={assignee} onChange={setAssignee} disabled={submission.busy} testID="kitchen-create-assignee" /> : null}
       <LeadFields value={lead} onChange={setLead} disabled={submission.busy} prefix="kitchen-create-lead" />
       <ErrorNotice error={submission.error} />
-      <Button label="Create lead" onPress={save} loading={submission.busy} disabled={!name.trim() || !phone.trim() || !address.trim() || (existingMode && !customer) || !lead.site_location?.trim() || submission.busy} testID="kitchen-create-submit" />
+      <Button label="Create lead" onPress={save} loading={submission.busy} disabled={!name.trim() || !phone.trim() || !address.trim() || (existingMode && !customer) || submission.busy} testID="kitchen-create-submit" />
       </>
       <Button label="Cancel" variant="secondary" disabled={submission.busy} onPress={close} />
     </View>

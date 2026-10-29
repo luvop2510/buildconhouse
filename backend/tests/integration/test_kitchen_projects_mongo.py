@@ -279,7 +279,7 @@ def test_inline_lead_intake_uses_one_floor_local_contact_and_retries_without_dup
         async with environment() as env:
             path = "/api/kitchen-projects"
             body = {"customer": {"name": "New inline enquiry", "phone": "+91 98888 00123", "address": "Inline site"},
-                    "lead": {"site_location": "Inline site", "status": "New"}, "idempotency_key": str(uuid4())}
+                    "lead": {"status": "New"}, "idempotency_key": str(uuid4())}
             for address in (None, "", "  "):
                 missing = await env["api"].post(path, json={**body, "customer": {**body["customer"], "address": address}}, headers=headers(env))
                 assert missing.status_code == 422 and "address" in missing.json()["detail"]
@@ -1073,24 +1073,24 @@ def test_resolved_d04_d08_mandatory_fields_duplicate_owner_review_and_delegation
             await configure(env)
             # Canonical contact is required, never silently written or repaired.
             original = await env["db"].customers.find_one({"id": env["ids"]["customer"]})
-            for field, invalid_value in (("name", "  "), ("phone", " -- ")):
+            for field, invalid_value in (("name", "  "), ("phone", " -- "), ("address", "  ")):
                 await env["db"].customers.update_one({"id": env["ids"]["customer"]}, {"$set": {field: invalid_value}})
                 invalid = await env["api"].post("/api/kitchen-projects", headers=headers(env), json={
                     "customer_id": env["ids"]["customer"], "idempotency_key": str(uuid4()), "lead": {"site_location": "Synthetic"}})
                 assert invalid.status_code == 422
                 assert await env["db"].kitchen_projects.count_documents({}) == 0
                 await env["db"].customers.replace_one({"id": env["ids"]["customer"]}, original)
-            for location in (None, "", "  "):
-                invalid = await env["api"].post("/api/kitchen-projects", headers=headers(env), json={
-                    "customer_id": env["ids"]["customer"], "idempotency_key": str(uuid4()), "lead": {"site_location": location}})
-                assert invalid.status_code == 422
-            first, _ = await create_project(env)
+            first, _ = await create_project(env, lead={"status": "New"})
+            assert first["lead"]["site_location"] is None
+            first = await accepted(env, first, "edit_lead", {"notes": "Lead without location", "lead_date": "2026-10-29"})
+            first = await accepted(env, first, "convert")
+            assert first["stage"] == "visit" and first["lead"]["notes"] == "Lead without location"
             assert first["project_reference"] == first["reference"]
             # A different canonical customer with the same normalized phone is
             # still a possible duplicate, never silently merged.
             second_customer = str(uuid4())
             await env["db"].customers.insert_one({"id": second_customer, "name": "Second canonical customer",
-                "phone": "+91 99000 00031", "floor_id": "second-floor"})
+                "phone": "+91 99000 00031", "address": "Second canonical address", "floor_id": "second-floor"})
             second, _ = await create_project(env, customer_id=second_customer, lead={"site_location": "Another site"})
             assert second["customer_id"] == second_customer and second["duplicate_review"]["status"] == "pending"
             assert first["id"] in second["duplicate_review"]["candidate_ids"]

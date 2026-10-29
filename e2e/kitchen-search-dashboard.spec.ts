@@ -111,7 +111,8 @@ test('Mobile stage hub and customer fields remain usable at narrow widths, rotat
     await page.getByTestId(`kitchen-project-${project.id}`).click();
     await expect(page.getByTestId('kitchen-project-details')).toContainText(project.customer.name);
     await expect(page.getByTestId('kitchen-project-details')).not.toContainText(project.customer.email);
-    await expect(page.getByTestId('kitchen-lead-site_location')).toBeVisible();
+    await expect(page.getByTestId('kitchen-lead-site_location')).toHaveCount(0);
+    await expect(page.getByTestId('kitchen-lead-date')).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
   }
   await page.setViewportSize({ width: 320, height: 720 });

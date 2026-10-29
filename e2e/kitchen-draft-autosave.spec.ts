@@ -43,25 +43,26 @@ test('Routine lead details autosave, remain focusable and reload without submitt
 });
 test('Reloading newer lead data retains the local draft and stops autosave until review', async ({ page, context }) => {
   const created = await context.request.post('/api/kitchen-projects', { headers, data: {
-    customer_id: process.env.KITCHEN_E2E_CUSTOMER_ID, idempotency_key: randomUUID(), lead: { site_location: 'Original saved location' },
+    customer_id: process.env.KITCHEN_E2E_CUSTOMER_ID, idempotency_key: randomUUID(), lead: { site_location: 'Historical saved location', notes: 'Original saved note' },
   } });
   const project = await created.json();
   await open(page, project.id);
-  await page.getByTestId('kitchen-lead-site_location').fill(''); // Invalid local draft must not autosave.
+  await page.getByTestId('kitchen-lead-status-lost').click(); // An incomplete Lost decision must not autosave.
+  await page.getByTestId('kitchen-lead-notes').fill('Retained local note');
   const changed = await context.request.post(`/api/kitchen-projects/${project.id}/commands`, { headers, data: {
-    expected_version: project.version, idempotency_key: randomUUID(), command: 'edit_lead', payload: { site_location: 'Newer server location' },
+    expected_version: project.version, idempotency_key: randomUUID(), command: 'edit_lead', payload: { notes: 'Newer server note' },
   } });
   expect(changed.ok(), await changed.text()).toBe(true);
   await (await projectControl(page, 'kitchen-project-actions')).click();
   await page.getByRole('menuitem', { name: 'Reload saved project', exact: true }).click();
   await expect(page.getByTestId('kitchen-lead-draft-reload')).toBeVisible();
-  await expect(page.getByTestId('kitchen-lead-site_location')).toHaveValue('');
-  await page.getByTestId('kitchen-lead-site_location').fill('Retained entry for review');
+  await expect(page.getByTestId('kitchen-lead-notes')).toHaveValue('Retained local note');
+  await page.getByTestId('kitchen-lead-notes').fill('Retained entry for review');
   await page.waitForTimeout(900);
   const persisted = await context.request.get(`/api/kitchen-projects/${project.id}`, { headers });
-  expect((await persisted.json()).lead.site_location).toBe('Newer server location');
+  expect((await persisted.json()).lead.notes).toBe('Newer server note');
   await page.getByTestId('kitchen-lead-draft-reload').click();
-  await expect(page.getByTestId('kitchen-lead-site_location')).toHaveValue('Newer server location');
-  await page.getByTestId('kitchen-lead-site_location').fill('Reviewed new entry');
+  await expect(page.getByTestId('kitchen-lead-notes')).toHaveValue('Newer server note');
+  await page.getByTestId('kitchen-lead-notes').fill('Reviewed new entry');
   await expect(page.getByTestId('kitchen-lead-autosave')).toHaveText('Details saved');
 });

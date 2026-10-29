@@ -57,7 +57,7 @@ test('Kitchen panels keep padded fields and every stage reachable in a short vie
 
 test('Kitchen customer details remain editable and persist after reopening the full customer editor', async ({ page, context }) => {
   const phone = `9${String(Date.now() + Math.floor(Math.random() * 1000000)).slice(-9)}`;
-  const created = await context.request.post('/api/kitchen-projects', { headers, data: { customer: { name: 'Kitchen editable customer', phone }, idempotency_key: `editable-customer-${Date.now()}-${Math.random()}`, lead: { site_location: 'Customer editor acceptance site' } } });
+  const created = await context.request.post('/api/kitchen-projects', { headers, data: { customer: { name: 'Kitchen editable customer', phone, address: 'Synthetic customer editor address' }, idempotency_key: `editable-customer-${Date.now()}-${Math.random()}`, lead: { site_location: 'Customer editor acceptance site' } } });
   expect(created.ok(), await created.text()).toBe(true);
   const project = await created.json();
   await seedBrowser(page);
@@ -90,8 +90,7 @@ test('Lead records a new customer inline, carries identity forward and reuses th
   await page.getByTestId('kitchen-customer-name').fill(name);
   await page.getByTestId('kitchen-customer-phone').fill(phone);
   for (const key of ['property_name', 'city', 'state', 'pincode', 'email', 'alternate_phone', 'company', 'gstin', 'notes']) await expect(page.getByTestId(`kitchen-customer-${key}`)).toHaveCount(0);
-  await expect(page.getByTestId('kitchen-create-lead-site_location')).toHaveCount(1);
-  await page.getByTestId('kitchen-create-lead-site_location').fill('Synthetic inline intake site');
+  await expect(page.getByTestId('kitchen-create-lead-site_location')).toHaveCount(0);
   await expect(page.getByTestId('kitchen-create-submit')).toBeDisabled();
   await page.getByTestId('kitchen-customer-address').fill('  ');
   await expect(page.getByTestId('kitchen-create-submit')).toBeDisabled();
@@ -138,7 +137,8 @@ test('retired view bookmarks use the compact list through width changes', async 
   const list = page.getByTestId('kitchen-compact-list');
   await expect(list).toBeVisible();
   await expect(page.getByTestId('kitchen-table')).toHaveCount(0);
-  for (const label of ['Phone', 'Site location', 'Architect / Interior']) await expect(list).toContainText(label);
+  for (const label of ['Phone', 'Architect / Interior']) await expect(list).toContainText(label);
+  await expect(list).not.toContainText('Site location');
   await expect(list).not.toContainText('Budget');
   await expect(list).not.toContainText('Lead source');
   await health.assertHealthy();
@@ -253,7 +253,7 @@ test('historical choices expose disabled state and cannot take keyboard focus', 
 test('a delayed reload cannot replace a newer committed Kitchen save', async ({ page, context }) => {
   const health = captureRuntimeHealth(page);
   const created = await context.request.post('/api/kitchen-projects', { headers, data: {
-    customer: { name: 'Kitchen reload version test', phone: `9${String(Date.now() + Math.floor(Math.random() * 1000000)).slice(-9)}` },
+    customer: { name: 'Kitchen reload version test', phone: `9${String(Date.now() + Math.floor(Math.random() * 1000000)).slice(-9)}`, address: 'Synthetic reload customer address' },
     lead: { site_location: 'Synthetic reload version site', notes: 'Original saved note' },
     idempotency_key: `reload-version-${Date.now()}-${Math.random()}`,
   } });
@@ -306,14 +306,14 @@ test('Kitchen mobile input and blur taps preserve the form viewport and select t
   const created = await context.request.post('/api/kitchen-projects', { headers, data: {
     customer_id: process.env.KITCHEN_E2E_CUSTOMER_ID,
     idempotency_key: `mobile-blur-geometry-${Date.now()}-${Math.random()}`,
-    lead: { site_location: 'Mobile form position check' },
+    lead: { site_location: 'Historical mobile form location', notes: 'Mobile form position check' },
   } });
   expect(created.ok(), await created.text()).toBe(true);
   const project = await created.json();
   await seedBrowser(page);
   await page.goto(`/kitchen/${project.id}/stages/lead`);
   await expect(page.getByTestId('kitchen-project-ready')).toHaveCount(1);
-  const field = page.getByTestId('kitchen-lead-site_location');
+  const field = page.getByTestId('kitchen-lead-notes');
   await field.scrollIntoViewIfNeeded();
   const scroll = page.getByTestId('kitchen-page-scroll');
   const before = await scroll.boundingBox();
@@ -326,7 +326,7 @@ test('Kitchen mobile input and blur taps preserve the form viewport and select t
   expect(editingViewport!.height, 'Hidden navigation gives its space to the form').toBeGreaterThan(before!.height);
   const inputBeforeBlur = await field.boundingBox();
   expect(Math.abs(inputBeforeBlur!.y - restingField!.y), 'Typing the first dirty value must not move the field').toBeLessThan(2);
-  await page.getByText('Site location (required)', { exact: true }).click();
+  await page.getByText('Lead notes', { exact: true }).click();
   await expect(page.getByTestId('mobile-workspace-header')).toBeVisible();
   await expect(page.getByRole('navigation', { name: 'Primary', exact: true })).toBeVisible();
   await expect.poll(() => scroll.boundingBox(), { message: 'Dismissal restores the resting viewport after the tap settles' }).toEqual(before);
@@ -353,5 +353,5 @@ test('Kitchen mobile input and blur taps preserve the form viewport and select t
   await page.getByTestId('kitchen-lead-save').click();
   const response = await saved;
   expect(response.ok(), await response.text()).toBe(true);
-  expect((await response.json()).lead).toMatchObject({ site_location: 'Value immediately before the status tap', status: 'Contacted' });
+  expect((await response.json()).lead).toMatchObject({ notes: 'Value immediately before the status tap', status: 'Contacted' });
 });

@@ -273,8 +273,8 @@ for (const confirm of [false, true]) for (const background of [false, true]) for
 }
 console.log('Actual Kitchen provider and API: manual/autosave lost Visit acknowledgements confirm once, retain newer typing and let Next CAD use the current version.');
 
-for (const [stage, field, changed] of [['lead', 'lead', { site_location: 'Immediate next location' }], ['visit', 'visit', { notes: 'Immediate next visit' }], ['cad', 'cad', { notes: 'Immediate next CAD' }]]) {
-  const original = { ...initial, stage, lead: { status: 'New', site_location: 'Original' }, visit: { status: 'Scheduled', notes: 'Original' }, cad: { received: false, progress: 0, status: 'Not Started', ready: false, notes: 'Original' } };
+for (const [stage, field, changed] of [['lead', 'lead', { notes: 'Immediate lead notes', lead_date: '2026-10-29' }], ['visit', 'visit', { notes: 'Immediate next visit' }], ['cad', 'cad', { notes: 'Immediate next CAD' }]]) {
+  const original = { ...initial, stage, lead: { status: 'New' }, visit: { status: 'Scheduled', notes: 'Original' }, cad: { received: false, progress: 0, status: 'Not Started', ready: false, notes: 'Original' } };
   let persisted = structuredClone(original);
   const view = await harness(source, original, async (_id, version, _key, name, payload) => {
     assert.equal(version, persisted.version);
@@ -290,7 +290,7 @@ for (const [stage, field, changed] of [['lead', 'lead', { site_location: 'Immedi
   assert.equal(view.render().dirty, false);
 }
 for (const [stage, changed, progress] of [['lead', { status: 'Lost', lost_reason: 'Needs explicit save' }], ['visit', { status: 'Visited' }], ['cad', { received: true }], ['cad', { notes: 'Changed note' }, '20']]) {
-  const original = { ...initial, stage, lead: { status: 'New', site_location: 'Original' }, visit: { status: 'Scheduled' }, cad: { received: false, progress: 0 } };
+  const original = { ...initial, stage, lead: { status: 'New' }, visit: { status: 'Scheduled' }, cad: { received: false, progress: 0 } };
   const view = await harness(source, original, async (_id, _version, _key, _name, payload) => ({ ...original, version: 8, stage: payload.target_stage }));
   view.state.setDraftValue(`${stage}.value`, original[stage], { ...original[stage], ...changed });
   if (progress) view.state.setDraftValue('cad.progress', '0', progress);

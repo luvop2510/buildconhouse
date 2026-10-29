@@ -141,7 +141,7 @@ export function KitchenProjectProvider({ id, returnTo, children }: { id: string;
         const decisionsUnchanged = decisionFields.every(field => (draft[field] ?? "") === (savedFields[field] ?? ""));
         const progressUnchanged = stage !== "cad" || !isDraftStale("cad.progress")
           && (liveDrafts.current["cad.progress"] ?? String(current.cad.progress)) === String(current.cad.progress);
-        if (decisionsUnchanged && progressUnchanged && (stage !== "lead" || String(draft.site_location || "").trim())) {
+        if (decisionsUnchanged && progressUnchanged) {
           const fields = stage === "visit" ? Object.fromEntries(["status", "visit_date", "display_model", "notes"].filter(field => draft[field] !== undefined).map(field => [field, draft[field]])) : draft;
           return command(stage === "lead" ? "edit_lead" : stage === "visit" ? "save_visit" : "save_cad", fields)
             .then(accepted => accepted ? command(name, payload) : false);

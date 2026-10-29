@@ -1,4 +1,4 @@
-import { prepareKitchenFixtureCommand, prepareKitchenFixtureTransition, kitchenIndiaToday, uploadKitchenPdfInForm, uploadKitchenFixturePdf } from './kitchen-pdf-fixtures';
+import { prepareKitchenFixtureCommand, prepareKitchenFixtureTransition, kitchenIndiaToday, uploadKitchenPdfInForm } from './kitchen-pdf-fixtures';
 import { projectControl, expandProjectDetails, openProjectTool } from './kitchen-controls';
 import { expect, test, type Page, type APIRequestContext } from '@playwright/test';
 import { captureRuntimeHealth } from './runtime-health';
@@ -63,9 +63,11 @@ async function openStageRecord(page: Page, stage: string) {
 async function reviewDistinctIfNeeded(page: Page) {
   await projectReady(page);
   if (await page.getByTestId('kitchen-open-current-stage').isVisible()) await openCurrentTask(page);
-  await expect(page.getByTestId('kitchen-lead-site_location')).toBeVisible();
+  await expect(page.getByTestId('kitchen-lead-site_location')).toHaveCount(0);
+  await expect(page.getByTestId('kitchen-lead-date')).toBeVisible();
   await projectReady(page);
-  await expect(page.getByTestId('kitchen-lead-site_location')).toBeVisible();
+  await expect(page.getByTestId('kitchen-lead-site_location')).toHaveCount(0);
+  await expect(page.getByTestId('kitchen-lead-date')).toBeVisible();
   if (!await page.getByTestId('kitchen-duplicate-distinct').isVisible()) return;
   await expect((await projectControl(page, 'kitchen-convert'))).toBeEnabled();
   await page.getByTestId('kitchen-duplicate-reason').fill('Owner verified a separate synthetic site');
@@ -121,8 +123,8 @@ test('Q01 Q02 Q03 Q12 Q13: real lead/visit persistence, automatic editable dates
   await page.getByTestId('kitchen-existing-customer').click();
   await page.getByTestId('kitchen-customer').fill('Kitchen acceptance customer');
   await page.getByTestId(`kitchen-customer-${customerId}`).click();
-  await expect(page.getByTestId('kitchen-create-submit')).toBeDisabled();
-  await page.getByTestId('kitchen-create-lead-site_location').fill('Browser synthetic site');
+  await expect(page.getByTestId('kitchen-create-submit')).toBeEnabled();
+  await expect(page.getByTestId('kitchen-create-lead-site_location')).toHaveCount(0);
   await page.getByTestId('kitchen-create-lead-details-toggle').click();
   await page.getByTestId('kitchen-create-lead-notes').fill('Preserve these customer requirements');
   const createdResponse = page.waitForResponse(response => response.url().endsWith('/api/kitchen-projects') && response.request().method() === 'POST');
@@ -207,7 +209,7 @@ test('Q04 to Q09: all nine stages preserve versions, exact counters and late man
   await page.getByTestId('kitchen-existing-customer').click();
   await page.getByTestId('kitchen-customer').fill('Kitchen acceptance customer');
   await page.getByTestId(`kitchen-customer-${process.env.KITCHEN_E2E_CUSTOMER_ID}`).click();
-  await page.getByTestId('kitchen-create-lead-site_location').fill('Full lifecycle synthetic site');
+  await expect(page.getByTestId('kitchen-create-lead-site_location')).toHaveCount(0);
   const creation = page.waitForResponse(response => response.url().endsWith('/api/kitchen-projects') && response.request().method() === 'POST');
   await page.getByTestId('kitchen-create-submit').click();
   const project = await (await creation).json();
@@ -892,19 +894,19 @@ test('Q18: New Lead cancellation protects entered fields and explicit discard do
   await page.getByTestId('kitchen-create').click();
   await page.getByTestId('kitchen-customer-name').fill('New enquiry');
   await page.getByTestId('kitchen-customer-phone').fill('9000000011');
-  await page.getByTestId('kitchen-create-lead-site_location').fill('Unsaved new lead draft');
+  await page.getByTestId('kitchen-customer-address').fill('Unsaved new lead address');
   const original = page.url();
   const dismissed = page.waitForEvent('dialog').then(async dialog => { expect(dialog.type()).toBe('confirm'); await dialog.dismiss(); });
   await page.getByTestId('kitchen-create-sheet').getByRole('button', { name: 'Close', exact: true }).click(); await dismissed;
   await expect(page).toHaveURL(original);
-  await expect(page.getByTestId('kitchen-create-lead-site_location')).toHaveValue('Unsaved new lead draft');
+  await expect(page.getByTestId('kitchen-customer-address')).toHaveValue('Unsaved new lead address');
   const accepted = page.waitForEvent('dialog').then(async dialog => { expect(dialog.type()).toBe('confirm'); await dialog.accept(); });
   await page.getByTestId('kitchen-create-sheet').getByRole('button', { name: 'Close', exact: true }).click(); await accepted;
   await expect(page.getByTestId('kitchen-create-sheet')).not.toBeVisible();
   await page.getByTestId('kitchen-create').click();
   await expect(page.getByTestId('kitchen-customer-name')).toHaveValue('');
   await expect(page.getByTestId('kitchen-customer-phone')).toHaveValue('');
-  await expect(page.getByTestId('kitchen-create-lead-site_location')).toHaveValue('');
+  await expect(page.getByTestId('kitchen-customer-address')).toHaveValue('');
   await health.assertHealthy();
   await page.screenshot({ path: info.outputPath('new-lead-discarded.png') });
 });
@@ -1053,7 +1055,7 @@ test('Kitchen lead references create a directory entry and retain required custo
   await page.getByTestId('kitchen-customer-name').fill('Reference acceptance customer');
   await page.getByTestId('kitchen-customer-phone').fill(`990${String(Date.now()).slice(-7)}`);
   await page.getByTestId('kitchen-customer-address').fill('Synthetic complete street address');
-  await page.getByTestId('kitchen-create-lead-site_location').fill('Synthetic site');
+  await expect(page.getByTestId('kitchen-create-lead-site_location')).toHaveCount(0);
   await page.getByRole('button', { name: 'Architect / Interior designer', exact: true }).click();
   const name = `Kitchen architect ${info.project.name} ${Date.now()}`;
   await page.getByTestId('customer-referrer-sheet').getByRole('button', { name: 'Architect', exact: true }).click();
@@ -1100,7 +1102,7 @@ for (const referenceType of ['architect', 'interior_designer'] as const) {
     await page.getByTestId('kitchen-customer-name').fill(customerName);
     await page.getByTestId('kitchen-customer-phone').fill(phone);
     await page.getByTestId('kitchen-customer-address').fill('Synthetic reference selection address');
-    await page.getByTestId('kitchen-create-lead-site_location').fill(`Existing ${referenceType} selection site`);
+    await expect(page.getByTestId('kitchen-create-lead-site_location')).toHaveCount(0);
     const directoryRead = page.waitForResponse(response => new URL(response.url()).pathname === '/api/referrers' && response.request().method() === 'GET');
     await page.getByRole('button', { name: 'Architect / Interior designer', exact: true }).click();
     const loaded = await directoryRead;
@@ -1137,7 +1139,7 @@ for (const referenceType of ['architect', 'interior_designer'] as const) {
 test('Kitchen moves through all nine stages after acknowledging routine drafts and mandatory PDF prerequisites', async ({ page, context }) => {
   await seedBrowser(page);
   const headers = { 'X-Floor-Id': 'second-floor' };
-  const response = await context.request.post('/api/kitchen-projects', { headers, data: { customer_id: process.env.KITCHEN_E2E_CUSTOMER_ID, idempotency_key: `manual-navigation-${Date.now()}-${Math.random()}`, lead: { site_location: 'Manual movement synthetic site' } } });
+  const response = await context.request.post('/api/kitchen-projects', { headers, data: { customer_id: process.env.KITCHEN_E2E_CUSTOMER_ID, idempotency_key: `manual-navigation-${Date.now()}-${Math.random()}`, lead: { site_location: 'Historical manual movement site', notes: 'Manual movement baseline' } } });
   expect(response.ok(), await response.text()).toBeTruthy();
   const project = await response.json();
   await page.goto(`/kitchen/${project.id}/stages/lead`);
@@ -1149,7 +1151,7 @@ test('Kitchen moves through all nine stages after acknowledging routine drafts a
   page.on('response', response => {
     if (response.url().endsWith(`/api/kitchen-projects/${project.id}/commands`)) writes.push(`response:${response.request().postDataJSON()?.command}`);
   });
-  await page.getByTestId('kitchen-lead-site_location').fill('Unsaved draft remains available');
+  await page.getByTestId('kitchen-lead-notes').fill('Unsaved draft remains available');
   const stages = ['lead', 'visit', 'cad', 'design', 'quotation', 'order', 'production', 'installation', 'completed'];
   const health = captureRuntimeHealth(page);
   for (let index = 1; index < stages.length; index++) {
@@ -1168,7 +1170,7 @@ test('Kitchen moves through all nine stages after acknowledging routine drafts a
     const body = await moved.json();
     expect(body.stage).toBe(target);
     if (index === 1) {
-      expect(body.lead.site_location).toBe('Unsaved draft remains available');
+      expect(body.lead.notes).toBe('Unsaved draft remains available');
       const leadAcknowledgement = writes.indexOf('response:edit_lead');
       expect(leadAcknowledgement).toBeGreaterThanOrEqual(0);
       expect(leadAcknowledgement).toBeLessThan(writes.indexOf('request:move_stage'));
@@ -1188,10 +1190,10 @@ test('Kitchen moves through all nine stages after acknowledging routine drafts a
     await expect(page).toHaveURL(new RegExp(`/stages/${stages[index]}(?:\\?.*)?$`));
     await projectReady(page);
   }
-  await expect(page.getByTestId('kitchen-lead-site_location')).toHaveValue('Unsaved draft remains available');
+  await expect(page.getByTestId('kitchen-lead-notes')).toHaveValue('Unsaved draft remains available');
   await expect((await projectControl(page, 'kitchen-previous-stage'))).toHaveCount(0);
   const final = await (await context.request.get(`/api/kitchen-projects/${project.id}`, { headers })).json();
-  expect(final.lead.site_location).toBe('Unsaved draft remains available');
+  expect(final.lead.notes).toBe('Unsaved draft remains available');
   expect(final.lead.status).toBe(project.lead.status);
   expect(final.installation?.completion_date ?? null).toBeNull();
   expect(final.activity.filter((event: any) => event.type === 'move_stage')).toHaveLength(16);
@@ -1207,7 +1209,7 @@ test('Kitchen owner selects PDF assignments without adding the excluded Visit fi
   await page.getByTestId('kitchen-existing-customer').click();
   await page.getByTestId('kitchen-customer').fill('Kitchen acceptance customer');
   await page.getByTestId(`kitchen-customer-${process.env.KITCHEN_E2E_CUSTOMER_ID}`).click();
-  await page.getByTestId('kitchen-create-lead-site_location').fill('Owner-selected assignment test site');
+  await expect(page.getByTestId('kitchen-create-lead-site_location')).toHaveCount(0);
   const worker = process.env.KITCHEN_E2E_WORKER_ID!;
   await page.getByTestId('kitchen-create-assignee').click();
   await page.getByTestId(`kitchen-create-assignee-${worker}`).click();

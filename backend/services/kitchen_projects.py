@@ -138,8 +138,8 @@ def duplicate_selector(customer_id, phone, name, exclude=None):
 
 def lead_error(project):
     customer = project.get("customer", {})
-    if not str(customer.get("name") or "").strip() or not re.sub(r"\D", "", str(customer.get("phone") or "")) or not str(project.get("lead", {}).get("site_location") or "").strip():
-        return "Customer Name, Phone Number and Site Location are required"
+    if not str(customer.get("name") or "").strip() or not re.sub(r"\D", "", str(customer.get("phone") or "")):
+        return "Customer Name and Phone Number are required"
     return None
 
 def timestamp():
@@ -194,7 +194,7 @@ def required_fields_error(project, stage, policy):
     """Configured fields apply to creation and leaving a stage, allowing drafts."""
     fields = (policy.get("required_fields") or {}).get(stage, [])
     # Retired visit/design controls must not keep legacy policies blocking progress.
-    retired = {"lead": {"lead_source", "budget"}, "visit": {"requirements", "budget_discussion", "interested"}, "design": {"requirements", "budget_discussion"}, "quotation": {"amount", "received_date"}}
+    retired = {"lead": {"site_location", "lead_source", "budget"}, "visit": {"requirements", "budget_discussion", "interested"}, "design": {"requirements", "budget_discussion"}, "quotation": {"amount", "received_date"}}
     fields = [name for name in fields if name not in retired.get(stage, set())]
     source = project.get(stage, {})
     key = {"design": "design_versions", "quotation": "quotation_versions", "order": "orders"}.get(stage)
@@ -605,8 +605,6 @@ class KitchenProjectService:
         lead = body.lead.model_dump()
         if lead["status"] == "Lost" and not lead.get("lost_reason"):
             raise HTTPException(422, "A lost reason is required")
-        if not str(lead.get("site_location") or "").strip():
-            raise HTTPException(422, "Customer Name, Phone Number and Site Location are required")
         if body.customer is not None and not str(body.customer.address or "").strip():
             raise HTTPException(422, "Customer address is required before creating a lead")
         reference_fields = await self.referrer_fields(lead.get("referrer_id"))

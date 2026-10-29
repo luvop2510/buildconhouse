@@ -17,7 +17,6 @@ from services.kitchen_projects import KitchenProjectService
 
 
 def create_request(**data):
-    data["lead"] = {"site_location": "Synthetic site", **data.get("lead", {})}
     return CreateProject(**data)
 
 
@@ -209,7 +208,7 @@ async def test_inline_intake_validates_before_writes_and_refuses_ambiguous_conta
     with pytest.raises(HTTPException):
         await service.create(staff, body)
     with pytest.raises(HTTPException):
-        await service.create(owner, body.model_copy(update={"lead": LeadFields()}))
+        await service.create(owner, body.model_copy(update={"lead": LeadFields(status="Lost")}))
     assert len(database.customers.rows) == 1 and not database.kitchen_projects.rows
     database.customers.rows.append({**database.customers.rows[0], "id": "existing-duplicate"})
     with pytest.raises(HTTPException) as ambiguous:
@@ -368,9 +367,6 @@ async def test_customer_tombstone_excludes_creation_and_success_pins_identity(se
 @pytest.mark.asyncio
 async def test_mandatory_lead_identity_fields_reject_before_customer_pin(setup):
     database, service, owner = setup
-    with pytest.raises(HTTPException) as missing:
-        await service.create(owner, CreateProject(customer_id="customer-a", idempotency_key="creation-a"))
-    assert missing.value.status_code == 422 and not database.customers.rows[0].get("kitchen_reference_reserved")
     for key, value in (("name", "  "), ("phone", "--")):
         original = database.customers.rows[0][key]
         database.customers.rows[0][key] = value
@@ -386,9 +382,27 @@ async def test_mandatory_lead_identity_fields_reject_before_customer_pin(setup):
     assert advanced["visit"]["visit_date"] is None  # optional/unknown date is not invented
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("site", [None, "", "  "])
+async def test_lead_without_site_creates_saves_and_converts_with_legacy_required_policy(setup, monkeypatch, site):
+    database, service, owner = setup
+    original_policy = service.policy
+    async def legacy_policy(**kwargs):
+        policy = await original_policy(**kwargs)
+        policy["required_fields"] = {"lead": ["site_location"]}
+        return policy
+    monkeypatch.setattr(service, "policy", legacy_policy)
+    created = await service.create(owner, create_request(customer_id="customer-a", idempotency_key="without-site", lead={"site_location": site}))
+    saved = await service.command(owner, created["id"], cmd(1, "edit_lead", {"notes": "Customer requirements", "lead_date": "2026-10-29"}))
+    assert saved["lead"]["notes"] == "Customer requirements" and saved["lead"]["lead_date"] == "2026-10-29"
+    assert saved["lead"]["site_location"] == (site.strip() if isinstance(site, str) else site)
+    converted = await service.command(owner, created["id"], cmd(2, "convert"))
+    assert converted["stage"] == "visit" and converted["lead"] == saved["lead"]
+
+
 def test_policy_files_and_required_fields_are_whitelisted():
     from models_kitchen import ConfigurePolicy
-    for patch in ({"required_fields": {"lead": ["made_up"]}}, {"required_fields": {"made_up": []}},
+    for patch in ({"required_fields": {"lead": ["made_up"]}}, {"required_fields": {"lead": ["site_location"]}}, {"required_fields": {"made_up": []}},
                   {"files": {"allowed_types": ["text/html"], "max_bytes": 100}},
                   {"files": {"allowed_types": ["application/pdf"], "max_bytes": True}},
                   {"files": {"allowed_types": ["application/pdf"], "max_bytes": 25_000_001}}):

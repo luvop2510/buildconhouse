@@ -206,7 +206,7 @@ class FilePolicy(StrictModel):
 
 
 REQUIRED_FIELDS = {
-    "lead": {"site_location", "lead_source", "kitchen_type", "budget", "notes", "lead_date"},
+    "lead": {"lead_source", "kitchen_type", "budget", "notes", "lead_date"},
     "visit": {"visit_date", "display_model", "notes"},
     "cad": {"received", "progress", "status", "notes", "ready"},
     "design": {"presentation_date", "requirements", "budget_discussion", "notes"},

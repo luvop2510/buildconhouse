@@ -44,7 +44,7 @@ export function KitchenPolicyEditor({ policy, workers, workerError, onSaved, onR
     <Button label={showRules ? "Hide approved operating rules" : "View approved operating rules"} variant="secondary" onPress={() => setShowRules(value => !value)} testID="kitchen-policy-rules-toggle" />
     {showRules ? <View style={{ gap: spacing.lg }}>
     <KitchenPanel title="Identity, customer and CAD rules">
-      <Text style={type.body}>A permanent Project ID is assigned when the lead is created and remains unchanged across all stages. Existing customer name, phone and site location are required. Possible duplicates need owner review before conversion; no automatic merge occurs.</Text>
+      <Text style={type.body}>A permanent Project ID is assigned when the lead is created and remains unchanged across all stages. Customer name, phone number and address are required to create a lead. Possible duplicates need owner review before conversion; no automatic merge occurs.</Text>
       <Text style={type.body}>CAD must be received, at 100% progress and Completed before Design. Readiness is calculated from these fields.</Text>
     </KitchenPanel>
     <KitchenPanel title="Production and completion rules">
