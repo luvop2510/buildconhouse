@@ -55,6 +55,7 @@ for (const floor of floors.filter(floor => floor.id !== 'second-floor')) {
     else await expect(page.getByTestId('walkin-salesperson-row')).toContainText(staff.full_name);
     await page.getByTestId('walkin-name').fill('Delegated visitor');
     await page.getByTestId('walkin-phone').fill('9876543210');
+    await page.getByTestId('walkin-address').fill('12 Showroom Road, Mumbai');
     if (['first-floor', 'ground-floor', 'third-floor'].includes(floor.id)) await page.getByTestId(`lead-assign-${floor.id}-${staff.id}`).click();
     await page.getByTestId('walkin-save-btn').click();
     await expect(page).toHaveURL(new RegExp(`/walkins/delegated-visitor\\?floor_id=${floor.id}`));

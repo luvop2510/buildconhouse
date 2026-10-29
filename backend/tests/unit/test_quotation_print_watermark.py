@@ -43,11 +43,12 @@ def _watermark_refs(page):
             and "/SMask" not in ref.get_object()]
 
 
-def test_every_summary_and_continuation_page_contains_printable_watermark(document):
+def test_cover_is_clean_and_every_detail_page_contains_printable_watermark(document):
     builder, quotation, customer = document
     reader = PdfReader(BytesIO(builder(quotation, customer)))
     assert len(reader.pages) >= 3
-    for page in reader.pages:
+    assert not _watermark_refs(reader.pages[0])
+    for page in reader.pages[1:]:
         refs = _watermark_refs(page)
         assert len(refs) == 1
         image = page["/Resources"]["/XObject"][refs[0]].get_object()
@@ -95,7 +96,9 @@ def test_diagonal_ink_remains_visible_in_rendered_summary_and_continuations(docu
                        check=True, capture_output=True)
         rendered[enabled] = sorted(tmp_path.glob(f"page-{enabled}-*.pgm"))
     assert len(rendered[True]) == len(rendered[False]) >= 3
-    for marked, plain in zip(rendered[True], rendered[False]):
+    with Image.open(rendered[True][0]) as marked, Image.open(rendered[False][0]) as plain:
+        assert ImageChops.difference(marked, plain).getbbox() is None
+    for marked, plain in zip(rendered[True][1:], rendered[False][1:]):
         with Image.open(marked) as actual, Image.open(plain) as baseline:
             diff = ImageChops.difference(actual, baseline)
             visible = diff.point(lambda level: 255 if level > 12 else 0)

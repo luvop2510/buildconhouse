@@ -74,6 +74,7 @@ test('critical walk-in duplicate resolution preserves the selected customer on r
   await page.goto('/walkins/new');
   await page.getByTestId('walkin-name').fill('Showroom customer');
   await page.getByTestId('walkin-phone').fill('9000000000');
+  await page.getByTestId('walkin-address').fill('12 Showroom Road, Mumbai');
   await page.getByTestId('lead-assign-first-floor-sanitary-worker').click();
   await page.getByTestId('walkin-review-matches').click();
   await page.getByTestId('walkin-use-existing-existing-customer').click();

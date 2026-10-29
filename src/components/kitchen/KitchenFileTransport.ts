@@ -2,7 +2,7 @@ import { Platform } from "react-native";
 import type { DocumentPickerAsset } from "expo-document-picker";
 import { kitchenProjectsApi, type KitchenAttachment, type KitchenFileTransfer, type KitchenProject } from "@/src/api/kitchenProjects";
 import { beginIdentityOperation } from "@/src/api/client";
-import { createPreparedNativeFile, savePreparedFile, sharePreparedNativeFile } from "@/src/utils/downloadFile";
+import { createPreparedNativeFile, removePreparedNativeFile, savePreparedFile, sharePreparedNativeFile } from "@/src/utils/downloadFile";
 import type { File as NativeFile, FileHandle } from "expo-file-system";
 
 export const KITCHEN_MAX_FILE_BYTES = 25_000_000;
@@ -70,7 +70,7 @@ export async function downloadKitchenFile(projectId: string, attachment: Kitchen
   const cancelPublication = () => {
     if (preview && !preview.closed) preview.close();
     handle?.close(); handle = undefined;
-    if (nativeFile?.exists) nativeFile.delete();
+    removePreparedNativeFile(nativeFile);
     parts.length = 0;
   };
   operation.signal.addEventListener("abort", cancelPublication, { once: true });
@@ -122,6 +122,6 @@ export async function downloadKitchenFile(projectId: string, attachment: Kitchen
     operation.signal.removeEventListener("abort", cancelPublication);
     operation.finish();
     handle?.close();
-    if (nativeFile?.exists) nativeFile.delete();
+    removePreparedNativeFile(nativeFile);
   }
 }

@@ -1,5 +1,6 @@
 """Customer CRUD (admin) + customer-portal self-serve endpoints."""
 import asyncio
+import re
 from uuid import UUID, NAMESPACE_URL, uuid5
 from pymongo.errors import DuplicateKeyError
 
@@ -56,15 +57,21 @@ async def list_customers(
     limit: int = Query(500, ge=1, le=2000),
     confirmed_only: bool = False,
     completion: str | None = Query(None, pattern="^(active|completed)$"),
+    search: str | None = None,
     user: UserPublic = Depends(get_current_user),
 ):
     query = floor_query(user)
+    if search and search.strip():
+        if len(search) > 200:
+            raise HTTPException(status_code=422, detail="Search must be 200 characters or fewer")
+        literal = re.escape(search.strip())
+        query = {"$and": [query, {"$or": [{field: {"$regex": literal, "$options": "i"}} for field in ("name", "phone", "company")]}]}
     eligible_ids, complete_ids = await asyncio.gather(
         confirmed_customer_ids(db, user) if confirmed_only else asyncio.sleep(0, result=None),
         completed_customer_ids(db, user) if completion in ("active", "completed") else asyncio.sleep(0, result=None),
     )
     if confirmed_only:
-        query = floor_query(user, {"id": {"$in": sorted(eligible_ids)}})
+        query = {"$and": [query, {"id": {"$in": sorted(eligible_ids)}}]}
     if complete_ids is not None:
         query = {"$and": [query, {"id": {"$in" if completion == "completed" else "$nin": sorted(complete_ids)}}]}
     docs = await db.customers.find(

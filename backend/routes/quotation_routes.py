@@ -1606,6 +1606,11 @@ async def _pdf_branding() -> dict:
     }
 
 
+def _pdf_content_disposition(filename: str) -> str:
+    # Starlette encodes headers as Latin-1; RFC 5987 retains Unicode names.
+    return f"attachment; filename=\"quotation.pdf\"; filename*=UTF-8''{quote(filename, safe='')}"
+
+
 # --- Official PDF command (staff) ---
 @router.get("/{quotation_id}/pptx")
 async def quotation_pptx(quotation_id: str, user: UserPublic = Depends(get_current_user)):
@@ -1648,7 +1653,7 @@ async def _build_quotation_file(doc: dict, customer: dict, include_dimensions: b
     else:
         pdf_doc = {**doc, "items": pdf_items, "include_dimensions": include_dimensions}
         pdf_bytes = await _render_pdf(build_quotation_pdf, pdf_doc, customer, branding)
-        filename = quotation_pdf_filename(doc.get("customer_name") or customer.get("name"))
+        filename = quotation_pdf_filename(doc.get("customer_name") or customer.get("name"), doc)
     return pdf_bytes, filename
 
 
@@ -1730,7 +1735,7 @@ async def quotation_pdf(quotation_id: str, include_dimensions: bool = False, use
     return StreamingResponse(
         iter([pdf_bytes]),
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={"Content-Disposition": _pdf_content_disposition(filename)},
     )
 
 
@@ -1742,8 +1747,8 @@ async def portal_pdf(quotation_id: str, cust: CustomerPublic = Depends(get_curre
         raise HTTPException(status_code=404, detail="Quotation not found")
     pdf_doc = {**doc, "items": await _pdf_items(doc)}
     pdf_bytes = await _render_pdf(build_quotation_pdf, pdf_doc, cust.model_dump(), await _pdf_branding())
-    filename = quotation_pdf_filename(doc.get("customer_name") or cust.name)
-    return StreamingResponse(iter([pdf_bytes]), media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+    filename = quotation_pdf_filename(doc.get("customer_name") or cust.name, doc)
+    return StreamingResponse(iter([pdf_bytes]), media_type="application/pdf", headers={"Content-Disposition": _pdf_content_disposition(filename)})
 
 
 # --- PDF of a previous revision snapshot (customer portal; read-only) ---
@@ -1773,8 +1778,8 @@ async def portal_pdf_revision(
     )
     pdf_doc = {**merged, **totals, "items": await _pdf_items(merged)}
     pdf_bytes = await _render_pdf(build_quotation_pdf, pdf_doc, cust.model_dump(), await _pdf_branding())
-    filename = quotation_pdf_filename(doc.get("customer_name") or cust.name)
-    return StreamingResponse(iter([pdf_bytes]), media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+    filename = quotation_pdf_filename(doc.get("customer_name") or cust.name, doc)
+    return StreamingResponse(iter([pdf_bytes]), media_type="application/pdf", headers={"Content-Disposition": _pdf_content_disposition(filename)})
 
 
 # --- Brand-filtered PDF (customer portal; read-only) ---
@@ -1812,8 +1817,8 @@ async def portal_pdf_brand(
     filtered_doc = {**doc, "items": filtered}
     pdf_doc = {**filtered_doc, **totals, "items": await _pdf_items(filtered_doc)}
     pdf_bytes = await _render_pdf(build_quotation_pdf, pdf_doc, cust.model_dump(), await _pdf_branding())
-    filename = quotation_pdf_filename(doc.get("customer_name") or cust.name)
-    return StreamingResponse(iter([pdf_bytes]), media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+    filename = quotation_pdf_filename(doc.get("customer_name") or cust.name, doc)
+    return StreamingResponse(iter([pdf_bytes]), media_type="application/pdf", headers={"Content-Disposition": _pdf_content_disposition(filename)})
 
 
 # =============================================================================
@@ -2087,7 +2092,7 @@ async def quotation_whatsapp_draft(quotation_id: str, include_dimensions: bool =
     doc, customer, phone = await _quotation_recipient(doc)
     # Sharing a local PDF remains available when a contact number/provider is absent.
     filename = (tiles_pdf_filename(doc) if doc.get("doc_type") in TILES_DOC_TYPES
-                else quotation_pdf_filename(doc.get("customer_name") or customer.get("name")))
+                else quotation_pdf_filename(doc.get("customer_name") or customer.get("name"), doc))
     return {"id": doc["id"], "floor_id": doc.get("floor_id"), "phone": phone,
             "customer_name": customer.get("name") or doc.get("customer_name") or "Customer",
             "filename": filename, "expected_updated_at": doc.get("updated_at", ""),
@@ -2118,7 +2123,7 @@ async def shared_quotation_pdf(token: str):
     from services.quotation_shares import read_share
     pdf_bytes, filename = await read_share(token)
     return StreamingResponse(iter([pdf_bytes]), media_type="application/pdf", headers={
-        "Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}",
+        "Content-Disposition": _pdf_content_disposition(filename),
         "Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "X-Content-Type-Options": "nosniff",
     })
 

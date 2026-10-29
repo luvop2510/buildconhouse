@@ -74,7 +74,7 @@ test('old lifecycle/floor callbacks cannot overwrite new documents or start reta
 });
 
 const builderSource = readFileSync(new URL('../src/components/tiles/TilesDocBuilder.tsx', import.meta.url), 'utf8');
-const builderCompiled = ts.transpileModule(builderSource.replace('function useTilesDoc(', 'export function useTilesDoc('), {
+const builderCompiled = ts.transpileModule(builderSource.replace('function useTilesDoc(', 'export function useTilesDoc(').replace('function CustomerNameField(', 'export function CustomerNameField('), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
 }).outputText;
 function builder({ drafts = new Map(), accountId = 'owner', docType = 'tiles_quotation', initialParams = {} } = {}) {
@@ -575,4 +575,72 @@ test('lost customer-create response preserves corrected customer fields before c
   correction.resolve({}); await fixture.settle();
   assert.equal(fixture.requests[3].url, '/quotations');
   assert.equal(fixture.requests[3].payload.customer_id, 'created-customer');
+});
+
+for (const docType of ['tiles_selection', 'tiles_quotation']) test(`${docType}: explicit customer choice fills saved walk-in contact/address and replaces stale identity`, async () => {
+  const fixture = builder({docType}); fixture.render(); await fixture.settle();
+  fixture.state.setHeaderField('address', 'Other customer address');
+  fixture.state.setHeaderField('phone', '111'); await fixture.settle();
+  fixture.state.pickCustomer({id:'walkin-person', name:'Walkin Customer', phone:'9876543210', address:'12 Saved Walkin Road'}); await fixture.settle();
+  assert.equal(fixture.state.header.address, '12 Saved Walkin Road');
+  assert.equal(fixture.state.header.phone, '9876543210');
+  assert.equal(fixture.state.customerId, 'walkin-person');
+  fixture.state.pickCustomer({id:'empty-person', name:'No Contact'}); await fixture.settle();
+  assert.equal(fixture.state.header.address, ''); assert.equal(fixture.state.header.phone, '');
+  assert.equal(fixture.state.customerId, 'empty-person');
+});
+
+test('typing a name for customer lookup holds remote creation until explicit choice or field exit', async () => {
+  const fixture = builder(); fixture.render(); await fixture.settle();
+  const owner = {}; fixture.state.setCustomerLookupActive(true, owner); fixture.state.setHeaderField('customerName', 'Existing visitor'); await fixture.settle();
+  fixture.fireAutosave(); await fixture.settle();
+  assert.equal(fixture.requests.filter(r => r.method === 'POST').length, 0);
+  fixture.state.pickCustomer({id:'visitor', name:'Existing visitor', phone:'123', address:'Saved address'});
+  fixture.state.setCustomerLookupActive(false, owner); await fixture.settle(); fixture.fireAutosave(); await fixture.settle();
+  assert.equal(fixture.requests.find(r => r.method === 'POST').payload.customer_id, 'visitor');
+});
+
+test('an obsolete name field cannot release a replacement field’s autosave gate', async () => {
+  const fixture = builder(); fixture.render(); await fixture.settle();
+  const oldOwner = {}, newOwner = {};
+  fixture.state.setHeaderField('customerName', 'Existing visitor');
+  fixture.state.setCustomerLookupActive(true, oldOwner);
+  fixture.state.setCustomerLookupActive(true, newOwner);
+  fixture.state.setCustomerLookupActive(false, oldOwner); await fixture.settle();
+  fixture.fireAutosave(); await fixture.settle();
+  assert.equal(fixture.requests.filter(r => r.method === 'POST').length, 0);
+  fixture.state.setCustomerLookupActive(false, newOwner); await fixture.settle();
+  fixture.fireAutosave(); await fixture.settle();
+  assert.equal(fixture.requests.filter(r => r.method === 'POST').length, 1);
+});
+
+test('name field unmount releases autosave and refocus cancels the obsolete delayed blur', () => {
+  const hooks=[], effects=[], timers=new Map(), changes=[]; let cursor=0, next=0;
+  const equal=(a,b)=>a&&b&&a.length===b.length&&a.every((v,i)=>Object.is(v,b[i]));
+  const react={
+    useState(initial){const i=cursor++; hooks[i]||={value:initial}; return [hooks[i].value,v=>{hooks[i].value=typeof v==='function'?v(hooks[i].value):v;}];},
+    useRef(initial){return hooks[cursor++]||={current:initial};},
+    useCallback(fn,deps){const i=cursor++;if(!equal(hooks[i]?.deps,deps))hooks[i]={value:fn,deps};return hooks[i].value;},
+    useEffect(fn,deps){const i=cursor++;if(!equal(hooks[i]?.deps,deps)){const cleanup=hooks[i]?.cleanup;hooks[i]={deps};effects.push(()=>{cleanup?.();hooks[i].cleanup=fn();});}},
+  };
+  const start=builderSource.indexOf('function CustomerNameField(');
+  const end=builderSource.indexOf('\nconst suggestStyles',start);
+  const compiled=ts.transpileModule('export '+builderSource.slice(start,end),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText;
+  const exports={};
+  vm.runInNewContext(compiled,{...react,exports,require:()=>({jsx:(type,props)=>({type,props}),jsxs:(type,props)=>({type,props})}),
+    AbortController,useAuth:()=>({staff:{id:'owner'}}),api:{get:()=>new Promise(()=>{})},TILES_FLOOR_ID:'ground-floor',
+    View:'View',TextInput:'TextInput',ScrollView:'ScrollView',Text:'Text',Button:'Button',cellStyles:{input:{}},suggestStyles:{},colors:{},
+    setTimeout:(fn,delay)=>{const id=++next;timers.set(id,{fn,delay});return id;},clearTimeout:id=>timers.delete(id),
+  });
+  const props={value:'Existing visitor',customerId:null,onChangeText(){},onPickCustomer(){},onLookupActive:(active,owner)=>changes.push({active,owner})};
+  const render=()=>{cursor=0;const tree=exports.CustomerNameField(props);while(effects.length)effects.shift()();return tree.props.children[0].props;};
+  let input=render();input.onFocus();input=render();input.onBlur();
+  assert([...timers.values()].some(t=>t.delay===180));
+  input.onFocus();assert(![...timers.values()].some(t=>t.delay===180));
+  assert.equal(changes.at(-1).active,true);
+  input=render();input.onBlur();
+  for(const hook of hooks)hook.cleanup?.();
+  assert.equal(changes.at(-1).active,false);
+  assert.equal(changes.at(-1).owner,changes[0].owner);
+  assert(![...timers.values()].some(t=>t.delay===180));
 });

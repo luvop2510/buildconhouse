@@ -160,7 +160,7 @@ def test_draft_endpoint_uses_current_contact_and_never_marks_sent(monkeypatch):
     assert result["phone"] == "919909906652"
     assert doc["status"] == "draft"
     customers.find_one.assert_awaited_once_with({"id": "c1", "floor_id": "ground-floor"}, {"_id": 0, "password_hash": 0})
-    assert result["filename"] == "Customer.pdf"
+    assert result["filename"] == quotation_routes.quotation_pdf_filename("Customer", doc)
     assert result["expected_updated_at"] == doc["updated_at"]
     assert result["include_dimensions"] is True
     assert "pdf_path" not in result
@@ -262,7 +262,7 @@ def test_pdf_file_sharing_remains_available_without_valid_phone(monkeypatch, pho
     result = asyncio.run(quotation_routes.quotation_whatsapp_draft("q1", user=SimpleNamespace(id="u1")))
     assert result["phone"] is None
     assert result["floor_id"] == "second-floor"
-    assert result["filename"] == "Customer.pdf"
+    assert result["filename"] == quotation_routes.quotation_pdf_filename("Customer", doc)
     assert "pdf_path" not in result
 
 

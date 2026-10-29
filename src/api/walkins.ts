@@ -52,7 +52,7 @@ export const walkinsApi = {
   list: (params?: {
     status?: string; priority?: string; salesperson_id?: string; source?: string; floor_id?: string; floor_ids?: string;
     date_from?: string; date_to?: string; search?: string;
-  }, options?: { floorId?: string }) => api.get<WalkIn[]>(`/walkins${toQuery(params)}`, options),
+  }, options?: { floorId?: string; signal?: AbortSignal }) => api.get<WalkIn[]>(`/walkins${toQuery(params)}`, options),
 
   get: (id: string, options?: { floorId?: string }) => api.get<WalkIn>(`/walkins/${id}`, options),
 
@@ -97,7 +97,7 @@ export const walkinsApi = {
       name: params.name, city: params.city, address: params.address,
     })}`, params.floorId ? { floorId: params.floorId } : undefined),
 
-  dashboard: (options?: { floorId?: string }, floorIds?: string) => api.get<WalkInsDashboard>(`/walkins/dashboard${toQuery({ floor_ids: floorIds })}`, options),
+  dashboard: (options?: { floorId?: string; signal?: AbortSignal }, floorIds?: string) => api.get<WalkInsDashboard>(`/walkins/dashboard${toQuery({ floor_ids: floorIds })}`, options),
   analytics: () => api.get<WalkInsAnalytics>("/walkins/analytics"),
 
   listSources: () => api.get<{ sources: string[] }>("/walkins/config/sources"),

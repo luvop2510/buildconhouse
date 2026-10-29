@@ -50,3 +50,37 @@ test('critical failed saved tile quotation offers retry and never exposes a blan
   expect(floors.every(floor => floor === 'ground-floor')).toBe(true);
   await page.screenshot({ path: info.outputPath('recovered-tile-editor.png'), animations: 'disabled' });
 });
+
+for (const kind of ['selection', 'quotation']) test(`critical Ground ${kind} reuses exact walk-in contact and address from name search`, async ({page}, info) => {
+  await mockSession(page, `/tiles/${kind}`, false);
+  const searched: string[] = [];
+  const writes: any[] = [];
+  await page.route('**/api/customers?**', route => {
+    const url = new URL(route.request().url());
+    expect(route.request().headers()['x-floor-id']).toBe('ground-floor');
+    expect(url.searchParams.get('limit')).toBe('20');
+    searched.push(url.searchParams.get('search') || '');
+    return route.fulfill({json:[
+      {id:'wrong-same-name', name:'Walkin Fixture', phone:'9000000001', address:'Other saved address'},
+      {id:'exact-walkin', name:'Walkin Fixture', phone:'9000000002', address:'12 Exact Walk-in Road'},
+    ]});
+  });
+  await page.route('**/api/quotations', route => {
+    if(route.request().method()==='POST') {
+      writes.push(route.request().postDataJSON());
+      return route.fulfill({json:{...writes.at(-1), id:'created-walkin-document',number:'QA-LOOKUP',updated_at:'2026-10-29T00:00:00Z'}});
+    }
+    return route.fulfill({json:[]});
+  });
+  await page.route('**/api/quotations/created-walkin-document', route=>route.fulfill({json:{updated_at:'2026-10-29T00:00:01Z'}}));
+  await page.goto(`/tiles/${kind}`);
+  const input=page.locator('[data-testid="tiles-customer-name"], [data-testid="mobile-customer-name"]');
+  await input.fill('Walkin');
+  await expect(page.getByTestId('tiles-customer-option-exact-walkin')).toContainText('12 Exact Walk-in Road');
+  await page.getByTestId('tiles-customer-option-exact-walkin').click();
+  await expect(input).toHaveValue('Walkin Fixture');
+  await expect.poll(()=>writes.length).toBeGreaterThan(0);
+  expect(writes[0]).toMatchObject({customer_id:'exact-walkin',phone_snapshot:'9000000002',address_snapshot:'12 Exact Walk-in Road'});
+  expect(searched).toContain('Walkin');
+  await page.screenshot({path:info.outputPath(`walkin-${kind}.png`),animations:'disabled'});
+});

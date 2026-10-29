@@ -52,12 +52,21 @@ def test_contain_box_centers_a_horizontal_product_image():
     assert y == 6
 
 
-def test_sanitary_pdf_filename_uses_the_customer_name():
-    assert pdf_generator.quotation_pdf_filename("myrubai") == "myrubai.pdf"
-    assert pdf_generator.quotation_pdf_filename('  Myruba / Sons  ') == "Myruba Sons.pdf"
+def test_sanitary_pdf_filename_uses_customer_date_and_document_kind():
+    doc = {"doc_date": "29-10-2026"}
+    assert pdf_generator.quotation_pdf_filename("myrubai", doc) == "myrubai 29-10-2026 quotation PDF.pdf"
+    assert pdf_generator.quotation_pdf_filename('  Myruba / Sons  ', doc) == "Myruba Sons 29-10-2026 quotation PDF.pdf"
 
 
-def test_cover_uses_supplied_logos_and_a_shorter_first_page():
+def test_pdf_filenames_use_india_creation_date_and_keep_selection_distinct():
+    doc = {"customer_name": "Client", "created_at": "2026-10-28T20:00:00Z", "doc_type": "tiles_selection"}
+    assert pdf_tiles.tiles_pdf_filename(doc) == "Client 29-10-2026 selection PDF.pdf"
+    assert pdf_tiles.tiles_pdf_filename({**doc, "doc_type": "tiles_quotation"}) == "Client 29-10-2026 quotation PDF.pdf"
+    assert pdf_generator.quotation_pdf_filename('  /  ', doc) == "Customer 29-10-2026 quotation PDF.pdf"
+
+
+
+def test_cover_uses_supplied_logos_on_a4():
     quotation = {
         "number": "LOGO-1", "items": [{"room": "Bath", "sku": "WC-1", "name": "WC", "qty": 1, "unit_price": 1000}],
         "subtotal": 1000, "grand_total": 1000,
@@ -65,8 +74,9 @@ def test_cover_uses_supplied_logos_and_a_shorter_first_page():
     pages = PdfReader(BytesIO(pdf_generator.build_quotation_pdf(quotation, {"name": "Logo QA"}))).pages
     cover = pages[0]
     assert len(pages) == 2
-    assert float(cover.mediabox.height) < float(pages[1].mediabox.height)
-    assert len(cover.images) >= 9  # House mark plus the eight supplied partner marks.
+    assert float(cover.mediabox.height) == float(pages[1].mediabox.height)
+    assert len(cover.images) >= 11  # House mark plus all ten partner marks.
+    assert pdf_generator.BRAND_PARTNERS[0][-2:] == ("vitra", "verantes_living")
     text = cover.extract_text() or ""
     assert "OUR BRAND PARTNERS" in text
     assert all(name not in text for name in ("GROHE", "hansgrohe", "GEBERIT", "QUTONE", "IMPORTED FURNITURE"))
@@ -380,7 +390,7 @@ def test_watermark_geometry_fills_the_diagonal_without_clipping(page_width, page
     assert pdf_generator.watermark_angle(page_width, page_height) == pytest.approx(angle * 180 / 3.141592653589793)
 
 
-def test_watermark_is_drawn_on_the_first_and_detail_pages():
+def test_cover_and_detail_pages_retain_logo_artwork():
     quotation = {
         "customer_name": "Watermark contract",
         "items": [{"sku": "WM-1", "name": "Mixer", "room": "Bath", "qty": 1, "unit_price": 1000}],
@@ -596,11 +606,12 @@ def test_exif_orientation_eight_is_honored_once():
         assert image.size == (120, 60)
 
 
-def test_all_quotation_pdfs_use_forced_landscape_image_frames(monkeypatch):
-    """All document types share the required horizontal product-image policy."""
+def test_all_quotation_pdfs_use_landscape_product_presentation(monkeypatch):
+    """All document types contain the full source without turning it sideways."""
     monkeypatch.setattr(pdf_generator, "_remote_image_bytes", lambda _url: _png_bytes(60, 120))
     original_img = pdf_generator._img
     rendered_sizes: list[tuple[float, float]] = []
+    source_sizes: list[tuple[int, int]] = []
     requested_boxes: list[tuple[float, float]] = []
     cover_values: list[bool] = []
 
@@ -612,6 +623,7 @@ def test_all_quotation_pdfs_use_forced_landscape_image_frames(monkeypatch):
         cover_values.append(bool(kwargs.get("cover", False)))
         image = original_img(*args, **kwargs)
         rendered_sizes.append((image.drawWidth, image.drawHeight))
+        source_sizes.append((image.source_width, image.source_height))
         return image
 
     monkeypatch.setattr(pdf_generator, "_img", capture_img)
@@ -629,6 +641,8 @@ def test_all_quotation_pdfs_use_forced_landscape_image_frames(monkeypatch):
     assert pdf_tiles.build_tiles_selection_pdf(tiles, {"name": "PDF Test"}).startswith(b"%PDF-")
     assert pdf_tiles.build_tiles_quotation_pdf(tiles, {"name": "PDF Test"}).startswith(b"%PDF-")
     assert len(rendered_sizes) == 3
+    assert all(width > height for width, height in source_sizes)
+    assert all(width > height for width, height in requested_boxes[1:])
     assert requested_boxes == [
         (pdf_generator._pw(pdf_generator.DETAIL_MEDIA_FRAME_WIDTH_MM), pdf_generator._pw(pdf_generator.DETAIL_MEDIA_FRAME_HEIGHT_MM)),
         (pdf_tiles.SELECTION_PRODUCT_IMAGE_WIDTH_MM, pdf_tiles.SELECTION_PRODUCT_IMAGE_HEIGHT_MM),
@@ -720,3 +734,16 @@ def test_product_images_are_prefetched_concurrently(monkeypatch):
     )
 
     assert peak == 4
+
+
+@pytest.mark.parametrize("builder", [pdf_generator.build_quotation_pdf, pdf_tiles.build_tiles_selection_pdf, pdf_tiles.build_tiles_quotation_pdf])
+def test_customer_metadata_prints_at_readable_size_and_wraps_without_overlap(builder):
+    name = "Sample Customer With a Longer Family Name"
+    doc = {"customer_name": name, "phone_snapshot": "+91 90000 00000", "address_snapshot": "Sample Site, Building 12, Showroom Road, Rajkot 360005", "reference_source": "Architect", "referrer_name": "Sample Architecture and Interior Design Studio", "items": [{"name": "Product", "qty": 1, "unit_price": 100}], "subtotal": 100, "grand_total": 100}
+    page = PdfReader(BytesIO(builder(doc, {"name": name}))).pages[0]
+    spans = []
+    page.extract_text(visitor_text=lambda text, _cm, _tm, _font, size: spans.append((text, size)))
+    assert any("Sample Customer" in text and size >= 11 for text, size in spans)
+    assert any("90000" in text and size >= 11 for text, size in spans)
+    assert any("Architecture" in text and size >= 11 for text, size in spans)
+    assert "CUSTOMER SIGNATURE" in (page.extract_text() or "")

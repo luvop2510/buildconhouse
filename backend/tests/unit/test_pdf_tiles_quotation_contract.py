@@ -38,6 +38,7 @@ def test_tiles_pdf_uses_rate_per_sqft_offer_rate_and_quantity_unit():
         "grand_total": 4440,
     })
 
+    assert "RATE/ SQ.FT OFFER RATE RATE/ UNIT QUANTITY UNIT" in text
     assert "70 ₹ 70.00" in text
     assert "QUANTITY UNIT" in text
     assert "PIECES/ BOX" not in text
@@ -142,7 +143,7 @@ def test_tiles_quotation_detail_rows_separate_numeric_quantity_from_unit():
     assert "15 piece ₹ 1,500.00" in text
 
 
-def test_tiles_quotation_portrait_media_uses_a_landscape_image_canvas(monkeypatch):
+def test_tiles_quotation_portrait_media_uses_landscape(monkeypatch):
     portrait = BytesIO()
     Image.new("RGB", (60, 120), "#306090").save(portrait, format="PNG")
     monkeypatch.setattr(pdf_generator, "_remote_image_bytes", lambda _url: portrait.getvalue())
@@ -162,18 +163,18 @@ def test_tiles_quotation_portrait_media_uses_a_landscape_image_canvas(monkeypatc
     }, {"name": "Portrait Tile Contract"})
 
     assert pdf.startswith(b"%PDF-")
-    assert rendered_sources == [(120, 60)]
+    assert rendered_sources[0][0] > rendered_sources[0][1]
 
 
-def test_tiles_quotation_rotates_portrait_media_inside_an_old_white_canvas():
+def test_tiles_quotation_recovers_portrait_media_inside_an_old_white_canvas():
     padded = Image.new("RGB", (192, 120), "white")
     padded.paste(Image.new("RGB", (60, 120), "#306090"), (66, 0))
     source = BytesIO()
     padded.save(source, format="PNG")
 
-    with Image.open(BytesIO(pdf_generator._rotate_portrait_for_tiles_pdf(source.getvalue()))) as rendered:
-        assert rendered.width > rendered.height
-        assert rendered.width / rendered.height > 1.5
+    with Image.open(BytesIO(pdf_generator._trim_product_whitespace(source.getvalue()))) as rendered:
+        assert rendered.width < rendered.height
+        assert rendered.height / rendered.width > 1.5
         assert rendered.getpixel((rendered.width // 2, rendered.height // 2)) == (48, 96, 144)
 
 
@@ -201,8 +202,8 @@ def test_tiles_quotation_keeps_the_cover_on_page_one_and_starts_details_on_page_
     assert len(pages) == 2
     assert "CUSTOMER SIGNATURE" in (pages[0].extract_text() or "")
     assert "PRODUCT DETAILS" in (pages[1].extract_text() or "")
-    assert sum(width / pdf_tiles.mm for width in pdf_tiles._QUO_COLS) == 281
-    assert pdf_tiles.QUOTATION_PRODUCT_IMAGE_WIDTH_MM == 46
+    assert sum(width / pdf_tiles.mm for width in pdf_tiles._QUO_COLS) == 194
+    assert pdf_tiles.QUOTATION_PRODUCT_IMAGE_WIDTH_MM == 28
 
 
 def test_tiles_quotation_does_not_repeat_detail_columns_before_an_overflow_total():
@@ -232,11 +233,12 @@ def test_tiles_quotation_does_not_repeat_detail_columns_before_an_overflow_total
 
     final_page = pages[-1].extract_text() or ""
     assert "TOTAL" in final_page
-    assert "PRODUCT IMAGE" not in final_page
+    if not any(item["name"] in final_page for item in items):
+        assert "PRODUCT IMAGE" not in final_page
 
 
 def test_both_tile_documents_paginate_many_products_on_a4_without_stretching(monkeypatch):
-    from reportlab.lib.pagesizes import landscape, A4
+    from reportlab.lib.pagesizes import A4
     monkeypatch.setattr(pdf_tiles, "prefetch_product_images", lambda _items: None)
     for builder in (pdf_tiles.build_tiles_selection_pdf, pdf_tiles.build_tiles_quotation_pdf):
         document = {"customer_name": "Pagination Customer", "address_snapshot": "Site address",
@@ -244,8 +246,8 @@ def test_both_tile_documents_paginate_many_products_on_a4_without_stretching(mon
         pages = PdfReader(BytesIO(builder(document, {"name": "Pagination Customer"}))).pages
         assert len(pages) > 3
         for page in pages:
-            assert abs(float(page.mediabox.width) - landscape(A4)[0]) < 0.01
-            assert abs(float(page.mediabox.height) - landscape(A4)[1]) < 0.01
+            assert abs(float(page.mediabox.width) - A4[0]) < 0.01
+            assert abs(float(page.mediabox.height) - A4[1]) < 0.01
         text = " ".join(page.extract_text() or "" for page in pages)
         assert "Tile 1" in text and "Tile 40" in text
 
@@ -257,8 +259,8 @@ def test_tile_customer_and_reference_cells_grow_to_fit_wrapped_values():
     long = pdf_tiles._meta_grid({"customer_name": "Long customer name " * 12,
                                  "address_snapshot": "Long site address " * 12,
                                  "reference_source": "Architect and interior studio reference " * 12}, {}, styles)
-    short.wrap(281 * mm, 300 * mm)
-    long.wrap(281 * mm, 300 * mm)
+    short.wrap(194 * mm, 300 * mm)
+    long.wrap(194 * mm, 300 * mm)
     assert long._rowHeights[1] > short._rowHeights[1]
     assert long._rowHeights[3] > short._rowHeights[3]
     assert all(height >= 7 * mm for height in (long._rowHeights[1], long._rowHeights[3]))

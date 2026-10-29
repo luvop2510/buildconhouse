@@ -51,6 +51,11 @@ export default function WalkInsScreen({
   const canCreate = !staff?.custom_access || hasGrantAccess(staff.access_grants, fixedFloorId || selectedFloorId, "walkins", "create");
   const canUpdate = (record: WalkIn) => !staff?.custom_access || hasGrantAccess(staff.access_grants, record.floor_id, "walkins", "update");
   const [summaryError, setSummaryError] = useState(false);
+  const [summaryRevision, setSummaryRevision] = useState(0);
+  const [savingSelections, setSavingSelections] = useState<string[]>([]);
+  const selectionWrites = useRef(new Map<string, { scope: object; previousStatus: WalkIn["status"] }>());
+  const refreshList = useRef<((signal?: AbortSignal, background?: boolean) => Promise<void>) | null>(null);
+  const mounted = useRef(true);
   const [dashboard, setDashboard] = useState<WalkInsDashboard | null>(null);
   const [items, setItems] = useState<WalkIn[]>([]);
   const [status, setStatus] = useState("");
@@ -58,6 +63,7 @@ export default function WalkInsScreen({
   const [sources, setSources] = useState<string[]>([]);
   const [sourceFilter, setSourceFilter] = useState("");
   const [search, setSearch] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
   const [visibleCount, setVisibleCount] = useState(WALKIN_RENDER_BATCH);
   const [floorId, setFloorId] = useState(fixedFloorId || selectedFloorId);
   const [floorFilterReady, setFloorFilterReady] = useState(Boolean(fixedFloorId || selectedFloorId));
@@ -67,7 +73,23 @@ export default function WalkInsScreen({
   const [loading, setLoading] = useState(true);
 
   const accessibleFloorIds = floors.map(floor => floor.id).join(",");
-  const filterFloorIds = fixedFloorId || floorId || (floorFilterReady ? accessibleFloorIds : "");
+  const followingFloorId = !fixedFloorId && selectedFloorId && selectedFloorId !== previousActiveFloor.current && (!floorId || floorId === previousActiveFloor.current) ? selectedFloorId : floorId;
+  const filterFloorIds = fixedFloorId || followingFloorId || (floorFilterReady ? accessibleFloorIds : "");
+
+  // Reject old callbacks before passive effects clean up a previous floor/query.
+  const scopeKey = JSON.stringify([staff?.id, fixedFloorId, selectedFloorId, filterFloorIds]);
+  const scopeRef = useRef({ key: scopeKey });
+  if (scopeRef.current.key !== scopeKey) scopeRef.current = { key: scopeKey };
+  const activeScope = scopeRef.current;
+  const queryKey = JSON.stringify([scopeKey, quotationFollowup, status, summaryView, sourceFilter, searchQuery]);
+  const queryRef = useRef({ key: queryKey });
+  if (queryRef.current.key !== queryKey) queryRef.current = { key: queryKey };
+  const activeQuery = queryRef.current;
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; requestId.current += 1; };
+  }, []);
 
   useEffect(() => {
     if (fixedFloorId) {
@@ -82,33 +104,57 @@ export default function WalkInsScreen({
     setFloorFilterReady(true);
   }, [fixedFloorId, floorId, selectedFloorId]);
 
-  const load = useCallback(async () => {
-    if (!filterFloorIds) return;
+  useEffect(() => {
+    const timer = setTimeout(() => setSearchQuery(search.trim()), 250);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  const loadSummary = useCallback(async (signal?: AbortSignal) => {
+    if (!filterFloorIds || !mounted.current || scopeRef.current !== activeScope) return;
+    setSummaryError(false);
+    setDashboard(null);
+    try {
+      const dash = await walkinsApi.dashboard({ floorId: fixedFloorId || undefined, signal }, filterFloorIds);
+      if (!signal?.aborted && mounted.current && scopeRef.current === activeScope) setDashboard(dash);
+    } catch {
+      if (!signal?.aborted && mounted.current && scopeRef.current === activeScope) setSummaryError(true);
+    }
+  }, [fixedFloorId, filterFloorIds, activeScope]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void loadSummary(controller.signal);
+    return () => controller.abort();
+  }, [loadSummary, summaryRevision]);
+
+  const load = useCallback(async (signal?: AbortSignal, background = false) => {
+    if (!filterFloorIds || !mounted.current || queryRef.current !== activeQuery) return;
     const request = ++requestId.current;
     setLoadError(null);
-    setLoading(true);
-    setSummaryError(false);
-    void walkinsApi.dashboard(fixedFloorId ? { floorId: fixedFloorId } : undefined, filterFloorIds).then(dash => {
-      if (request !== requestId.current) return;
-      setDashboard(dash);
-    }).catch(() => {
-      if (request !== requestId.current) return;
-      setSummaryError(true);
-      setDashboard(null);
-    });
+    if (!background) setLoading(true);
     try {
-      const list = await walkinsApi.list({ status: summaryView ? undefined : quotationFollowup ? "converted" : status || undefined, ...walkinSummaryFilters(summaryView), floor_ids: filterFloorIds, source: sourceFilter || undefined, search: search || undefined }, fixedFloorId ? { floorId: fixedFloorId } : undefined);
-      if (request !== requestId.current) return;
-      setItems(list);
+      const list = await walkinsApi.list({ status: summaryView ? undefined : quotationFollowup ? "converted" : status || undefined, ...walkinSummaryFilters(summaryView), floor_ids: filterFloorIds, source: sourceFilter || undefined, search: searchQuery || undefined }, { floorId: fixedFloorId || undefined, signal });
+      if (signal?.aborted || !mounted.current || queryRef.current !== activeQuery || request !== requestId.current) return;
+      setItems(list.map(item => {
+        const pending = selectionWrites.current.get(item.id);
+        if (pending?.scope !== activeScope) return item;
+        pending.previousStatus = item.status;
+        return { ...item, status: "selection_scheduled" as const };
+      }));
     } catch (e: any) {
-      if (request === requestId.current) setLoadError(e?.detail || "Could not load walk-ins");
+      if (!signal?.aborted && mounted.current && queryRef.current === activeQuery && request === requestId.current) setLoadError(e?.detail || "Could not load walk-ins");
     } finally {
-      if (request === requestId.current) setLoading(false);
+      if (!signal?.aborted && mounted.current && queryRef.current === activeQuery && request === requestId.current) setLoading(false);
     }
-  }, [fixedFloorId, quotationFollowup, status, summaryView, filterFloorIds, sourceFilter, search]);
+  }, [fixedFloorId, quotationFollowup, status, summaryView, filterFloorIds, sourceFilter, searchQuery, activeQuery, activeScope]);
+  refreshList.current = load;
 
   useEffect(() => { walkinsApi.listSources().then(result => setSources(result.sources)).catch(() => {}); }, []);
-  useEffect(() => { load(); return () => { requestId.current += 1; }; }, [load]);
+  useEffect(() => {
+    const controller = new AbortController();
+    void load(controller.signal);
+    return () => { requestId.current += 1; controller.abort(); };
+  }, [load]);
   useEffect(() => { setVisibleCount(WALKIN_RENDER_BATCH); }, [status, summaryView, search, floorId, sourceFilter, quotationFollowup]);
 
   const openSummary = (view: WalkinSummary) => {
@@ -132,13 +178,27 @@ export default function WalkInsScreen({
     }
   };
   const scheduleSelection = async (w: WalkIn) => {
-    if (w.floor_id !== "ground-floor") return;
+    if (w.floor_id !== "ground-floor" || !mounted.current || scopeRef.current !== activeScope || selectionWrites.current.has(w.id)) return;
+    const pending = { scope: activeScope, previousStatus: w.status };
+    selectionWrites.current.set(w.id, pending);
+    setSavingSelections(current => [...current, w.id]);
+    const optimistic = { ...w, status: "selection_scheduled" as const };
+    setItems(current => current.map(item => item.id === w.id ? optimistic : item));
     try {
-      await walkinsApi.update(w.id, { status: "selection_scheduled" }, { floorId: w.floor_id });
+      const saved = await walkinsApi.update(w.id, { status: "selection_scheduled" }, { floorId: w.floor_id });
+      if (!mounted.current || scopeRef.current !== activeScope) return;
+      setItems(current => current.map(item => item.id === w.id ? saved : item));
+      // Supersede pre-write reads; the new response applies current server filters.
+      void refreshList.current?.(undefined, true);
+      setSummaryRevision(current => current + 1);
       toast.success("Marked as Selection Scheduled");
-      load();
     } catch (e: any) {
-      toast.error(e?.detail || "Could not update status");
+      if (!mounted.current || scopeRef.current !== activeScope) return;
+      setItems(current => current.map(item => item.id === w.id && item.status === "selection_scheduled" ? { ...item, status: pending.previousStatus } : item));
+      toast.error(e?.detail || "Could not save selection schedule. Previous status restored.");
+    } finally {
+      selectionWrites.current.delete(w.id);
+      if (mounted.current) setSavingSelections(current => current.filter(id => id !== w.id));
     }
   };
   const visitShowroom = async (w: WalkIn) => {
@@ -229,6 +289,7 @@ export default function WalkInsScreen({
         <MultiSelectFilterBar label="LEAD SOURCE" values={filterValues(sourceFilter, "")} onChange={next => setSourceFilter(next.join(","))} options={[{ value: "all", label: "All sources" }, ...sources.map(source => ({ value: source, label: source }))]} testID="walkins-source-filters" />
         </MobileFilterSection>
 
+        {savingSelections.some(id => selectionWrites.current.get(id)?.scope === activeScope) ? <Text role="status" style={type.bodyMuted}>Saving selection schedule…</Text> : null}
         {loadError ? <ErrorState title="Could not load walk-ins" subtitle={loadError} onRetry={() => void load()} /> : loading ? <LoadingState label="Loading walk-ins…" /> : items.length === 0 ? (
           <EmptyState icon="user-plus" title="No walk-ins yet" subtitle="Log your first walk-in to start the pipeline." />
         ) : (

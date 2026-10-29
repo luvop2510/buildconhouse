@@ -525,3 +525,15 @@ async def test_custom_product_uses_exact_create_grant_on_workflow_floor(monkeypa
         with pytest.raises(HTTPException) as rejected:
             await auth.get_current_user(**kwargs)
         assert rejected.value.status_code == 403
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("floor", ["ground-floor", "first-floor", "third-floor"])
+async def test_tiles_customer_lookup_is_read_only_and_ground_scoped(monkeypatch, floor):
+    mock_staff(monkeypatch, [grant(resource="tiles", actions=["view"], floor="ground-floor")])
+    kwargs = dict(request=request("/api/customers", floor=floor), authorization="Bearer test", x_floor_id=floor, dl=None)
+    if floor == "ground-floor":
+        assert auth.accessible_floor_ids(await auth.get_current_user(**kwargs)) == ["ground-floor"]
+    else:
+        with pytest.raises(HTTPException): await auth.get_current_user(**kwargs)
+    with pytest.raises(HTTPException):
+        await auth.get_current_user(request=request("/api/customers/customer-1", "PATCH", floor="ground-floor"), authorization="Bearer test", x_floor_id="ground-floor", dl=None)

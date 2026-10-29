@@ -17,7 +17,7 @@ let sharingAvailabilityWork;
 const preparedBlobs = [];
 const blobTimers = [];
 class NativeFile {
-  constructor(...paths) { this.uri = paths.join('/'); }
+  constructor(...paths) { this.uri = paths.map(p => p.uri || p).join('/'); }
   get exists() { return files.has(this.uri); }
   create() { assert.equal(this.exists, false); files.set(this.uri, Buffer.alloc(0)); }
   delete() { assert(this.exists); files.delete(this.uri); }
@@ -33,13 +33,20 @@ class NativeFile {
     };
   }
 }
+const directories = new Set();
+class NativeDirectory {
+  constructor(...paths) { this.uri = paths.map(p => p.uri || p).join('/'); }
+  get exists() { return directories.has(this.uri); }
+  create() { assert(!this.exists); directories.add(this.uri); }
+  delete() { for (const path of files.keys()) if (path.startsWith(this.uri + '/')) files.delete(path); directories.delete(this.uri); }
+}
 const stableIdentity = () => {
   const controller = new AbortController();
   return { signal: controller.signal, isCurrent: () => !controller.signal.aborted, finish() {} };
 };
 const modules = {
   'react-native': { Platform: { OS: 'ios' }, Linking: {} },
-  'expo-file-system': { File: NativeFile, Paths: { cache: 'file:///cache' } },
+  'expo-file-system': { Directory: NativeDirectory, File: NativeFile, Paths: { cache: 'file:///cache' } },
   'expo-crypto': { CryptoDigestAlgorithm: { SHA256: 'SHA-256' }, digest: (algorithm, bytes) => webcrypto.subtle.digest(algorithm, bytes) },
   'expo-sharing': { isAvailableAsync: async () => sharingAvailabilityWork ? sharingAvailabilityWork() : sharingAvailable, shareAsync: async (uri, options) => { assert(files.has(uri)); shares.push({ uri, options, bytes: Buffer.from(files.get(uri)) }); } },
   '@/src/components/Toast': { toast: { show: value => errors.push(value) } },
@@ -65,6 +72,8 @@ modules['@/src/utils/downloadFile'] = saving;
 assert.equal(await saving.downloadApiFile('/synthetic.pdf', 'Customer.pdf', 'PDF', 'second-floor'), true);
 assert.equal(shares[0].bytes.toString(), '%PDF native bytes');
 assert.equal(shares[0].options.mimeType, 'application/pdf');
+assert.ok(shares[0].uri.endsWith('/Customer.pdf'), 'native shared file keeps the exact requested basename');
+assert.equal(directories.size, 0, 'native preparation directory is removed');
 assert.equal(files.size, 1, 'small native download removes its private cache copy after sharing');
 
 let selected = source;

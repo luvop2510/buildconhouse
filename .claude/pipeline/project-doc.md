@@ -183,3 +183,8 @@ photos reuse private project attachments and verified transport. Production's
 existing completion date derives from its start plus two calendar months on UI
 and server, with explicit work status. No dependency, migration or architectural
 layer is introduced. See docs/audits/2026-10-29-kitchen-installments-materials.md.
+
+## Android intake and portrait PDF delta — 29 October 2026
+
+Native fallback scan of the requested changes retains Expo/React Native/FastAPI/Mongo and the shared control/transport boundaries. Android inputs prevent fullscreen IME extraction; native hidden navigation releases height and browser keyboard viewports resize. Walk-in intake has name, phone and required address with existing duplicate/floor assignment controls. Register search coalesces reads and its optional summary is independent. PDFs use portrait A4, readable cover metadata, existing logos plus supplied Verantes Living beside Vitra, product-page-only watermark and dated customer filenames. No framework, architectural directory, dependency, authentication change or migration is introduced; AGENTS.md requires no architectural update. See docs/audits/2026-10-29-android-walkins-pdfs.md for final verification and publication evidence.
+Last scanned: 2026-10-29.

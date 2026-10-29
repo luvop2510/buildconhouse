@@ -259,6 +259,11 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
   const customerIdRef = useRef<string | null>(null);
   const [customerSnapshot, setCustomerSnapshot] = useState<{ name: string; phone: string }>({ name: "", phone: "" });
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [customerLookupOwner, setCustomerLookupOwner] = useState<object | null>(null);
+  const customerLookupActive = customerLookupOwner !== null;
+  const setCustomerLookupActive = useCallback((active: boolean, owner: object) => {
+    setCustomerLookupOwner(current => active ? owner : current === owner ? null : current);
+  }, []);
   const [partner, setPartner] = useState<ReferrerValue>(null);
   const [legacyPartnerLabel, setLegacyPartnerLabel] = useState("");
   const [partnerEditVersion, setPartnerEditVersion] = useState(0);
@@ -312,9 +317,6 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
     if (!routeId && restoredId) { createdDocumentRef.current = { id: restoredId, docType }; router.setParams({ id: restoredId }); }
   }, [routeId, router, docType]);
 
-  useEffect(() => {
-    api.get<Customer[]>("/customers", { floorId: TILES_FLOOR_ID }).then(setCustomers).catch(() => {});
-  }, []);
 
   // Restore a saved document.
   useEffect(() => {
@@ -812,10 +814,10 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
   // explicit workflow/PDF action before it acquired an id, which made the
   // Save-free editor lose a first draft if the tab was closed early.
   useEffect(() => {
-    if (loading || !localReady || recoveryDraft || restoreError || (routeId && docId !== routeId) || !dirtyRef.current || !header.customerName.trim()) return;
+    if (customerLookupActive || loading || !localReady || recoveryDraft || restoreError || (routeId && docId !== routeId) || !dirtyRef.current || !header.customerName.trim()) return;
     const timer = setTimeout(() => { void persistRef.current(); }, 400);
     return () => clearTimeout(timer);
-  }, [header, partner, partnerEditVersion, rows, docId, loading, localReady, recoveryDraft, restoreError, routeId]);
+  }, [header, partner, partnerEditVersion, rows, docId, loading, localReady, recoveryDraft, restoreError, routeId, customerLookupActive]);
 
   const generatePdf = useCallback(async () => {
     if (rows.some((row) => row.productId && !row.image?.trim())) {
@@ -950,7 +952,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
     setCustomerSnapshot({ name: customer.name, phone: customer.phone || "" });
     setLegacyPartnerLabel(referrerLabel(customer));
     setPartner(customer.referrer_id && customer.referrer_type ? { id: customer.referrer_id, type: customer.referrer_type, name: customer.referrer_name || "", company: customer.referrer_company } : null);
-    setHeader((cur) => ({ ...cur, customerName: customer.name, phone: customer.phone || cur.phone }));
+    setHeader((cur) => ({ ...cur, customerName: customer.name, phone: customer.phone || "", address: customer.address || "", reference: referrerLabel(customer) }));
     markDirty();
   }, [markDirty]);
 
@@ -958,7 +960,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
     docId, docNumberServer, loading, restoreError, retryRestore: () => setRestoreAttempt((value) => value + 1), header, setHeaderField, rows,
     hasDraft: Boolean(docId || header.customerName || header.address || header.phone || rows.some(row => row.productId)),
     updateRow, addRow, removeRow, applyProduct, selectRowSize, loadRowSizes,
-    customers, customerId, pickCustomer, setCustomerId, partner, legacyPartnerLabel, referenceScope: documentScope,
+    customers, customerId, pickCustomer, setCustomerId, setCustomerLookupActive, partner, legacyPartnerLabel, referenceScope: documentScope,
     pickPartner: (value: ReferrerValue) => { setPartner(value); setLegacyPartnerLabel(""); setPartnerEditVersion(version => version + 1); markDirty(); },
     saveState, retrySave: () => persist({ silent: true }), busy, generatePdf, placeOrder, serverTotals, previewTotals,
     recoveryDraft, recoverDraft,
@@ -1088,52 +1090,92 @@ const cellStyles = StyleSheet.create({
 });
 
 function CustomerNameField({
-  value, onChangeText, customers, customerId, onPickCustomer, inputStyle, testID,
+  value, onChangeText, customerId, onPickCustomer, onLookupActive, inputStyle, testID,
 }: {
   value: string; onChangeText: (t: string) => void;
   customers: Customer[]; customerId: string | null;
   onPickCustomer: (c: Customer) => void;
+  onLookupActive: (active: boolean, owner: object) => void;
   inputStyle?: any; testID?: string;
 }) {
   const [focused, setFocused] = useState(false);
-  const matches = useMemo(() => {
-    const q = value.trim().toLowerCase();
-    if (!q || q.length < 2) return [];
-    return customers
-      .filter((c) => c.name.toLowerCase().includes(q) || (c.phone || "").includes(q))
-      .slice(0, 5);
-  }, [value, customers]);
+  const lookupOwner = useRef<object>({}).current;
+  const blurTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelBlur = useCallback(() => {
+    if (blurTimer.current !== null) clearTimeout(blurTimer.current);
+    blurTimer.current = null;
+  }, []);
+  useEffect(() => () => {
+    cancelBlur();
+    onLookupActive(false, lookupOwner);
+  }, [cancelBlur, lookupOwner, onLookupActive]);
+  const { staff } = useAuth();
+  const [results, setResults] = useState<{ scope: object; rows: Customer[] } | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [lookupError, setLookupError] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  const query = value.trim();
+  const lookupKey = JSON.stringify([staff?.id, query, focused]);
+  const lookupRef = useRef({ key: lookupKey });
+  if (lookupRef.current.key !== lookupKey) lookupRef.current = { key: lookupKey };
+  const generation = lookupRef.current;
+  useEffect(() => {
+    setResults(null); setLookupError(false); setSearching(false);
+    if (!focused || query.length < 2) return;
+    const controller = new AbortController();
+    setSearching(true);
+    const timer = setTimeout(() => {
+      void api.get<Customer[]>(`/customers?search=${encodeURIComponent(query)}&limit=20`, { floorId: TILES_FLOOR_ID, signal: controller.signal }).then(rows => {
+        if (!controller.signal.aborted && lookupRef.current === generation) setResults({ scope: generation, rows });
+      }).catch(() => {
+        if (!controller.signal.aborted && lookupRef.current === generation) setLookupError(true);
+      }).finally(() => {
+        if (!controller.signal.aborted && lookupRef.current === generation) setSearching(false);
+      });
+    }, 250);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [query, focused, generation, attempt]);
+  const matches = query.length >= 2 && results?.scope === generation ? results.rows : [];
   const exactPicked = customerId && matches.length === 1 && matches[0].id === customerId;
-  const show = focused && matches.length > 0 && !exactPicked;
+  const show = focused && query.length >= 2 && !exactPicked;
   return (
     <View style={{ flex: 1, zIndex: 400 }}>
       <TextInput
         value={value}
         onChangeText={onChangeText}
-        onFocus={() => setFocused(true)}
-        onBlur={() => setTimeout(() => setFocused(false), 180)}
-        placeholder="Customer name"
+        onFocus={() => { cancelBlur(); setFocused(true); onLookupActive(true, lookupOwner); }}
+        onBlur={() => { cancelBlur(); blurTimer.current = setTimeout(() => { blurTimer.current = null; setFocused(false); onLookupActive(false, lookupOwner); }, 180); }}
+        accessibilityLabel="Customer name"
+        placeholder="Search customer name or phone"
         placeholderTextColor="#999"
         testID={testID}
         style={[cellStyles.input, { textAlign: "left" }, inputStyle]}
       />
       {show ? (
         <View style={suggestStyles.panel}>
+          {searching ? <Text role="status" style={suggestStyles.hint}>Finding customers…</Text> : null}
+          {lookupError ? <Button label="Retry customer search" variant="secondary" onPress={() => setAttempt(n => n + 1)} /> : null}
+          <ScrollView keyboardShouldPersistTaps="handled" style={{ maxHeight: 240 }}>
           {matches.map((c) => (
             <Pressable
               key={c.id}
+              accessibilityRole="button"
+              accessibilityLabel={`Use ${c.name}, ${c.phone || "no phone"}, ${c.address || "no address"}`}
+              testID={`tiles-customer-option-${c.id}`}
               // Both handlers on purpose: onPressIn beats the TextInput's
               // delayed blur-hide for real pointers, while web click events
               // (keyboard, assistive tech, automation) arrive as onPress.
               // Picking twice is idempotent.
-              onPressIn={() => { onPickCustomer(c); setFocused(false); }}
-              onPress={() => { onPickCustomer(c); setFocused(false); }}
+              onPressIn={() => { cancelBlur(); onPickCustomer(c); setFocused(false); onLookupActive(false, lookupOwner); }}
+              onPress={() => { cancelBlur(); onPickCustomer(c); setFocused(false); onLookupActive(false, lookupOwner); }}
               style={({ hovered }: any) => [suggestStyles.row, hovered && { backgroundColor: colors.brandTint }]}
             >
-              <Text style={suggestStyles.name} numberOfLines={1}>{c.name}</Text>
-              {c.phone ? <Text style={suggestStyles.phone}>{c.phone}</Text> : null}
+              <Text style={suggestStyles.name}>{c.name}</Text>
+              <Text style={suggestStyles.phone}>{[c.phone, c.address].filter(Boolean).join(" · ") || "No contact details saved"}</Text>
             </Pressable>
           ))}
+          </ScrollView>
+          {!searching && !lookupError && !matches.length ? <Text style={suggestStyles.hint}>No matching customers. Keep typing to create a new customer.</Text> : null}
           <Text style={suggestStyles.hint}>Pick to reuse an existing customer — or keep typing; changes save automatically.</Text>
         </View>
       ) : null}
@@ -1143,15 +1185,15 @@ function CustomerNameField({
 
 const suggestStyles = StyleSheet.create({
   panel: {
-    position: "absolute", top: "100%", left: 0, right: 0, marginTop: 3,
+    marginTop: 8,
     backgroundColor: colors.surface, borderRadius: radius.md,
     borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
     zIndex: 100, overflow: "hidden",
     ...(Platform.OS === "web" ? { boxShadow: "0 10px 28px rgba(0,0,0,0.18)" } as any : {}),
   },
-  row: { paddingHorizontal: 10, paddingVertical: 7, flexDirection: "row", justifyContent: "space-between", gap: 8 },
-  name: { fontSize: 12.5, fontWeight: "600", color: colors.onSurface, flexShrink: 1 },
-  phone: { fontSize: 11.5, color: colors.onSurfaceSecondary, fontVariant: ["tabular-nums"] },
+  row: { minHeight: 48, paddingHorizontal: 12, paddingVertical: 10, gap: 4 },
+  name: { fontSize: 16, fontWeight: "600", color: colors.onSurface, flexShrink: 1 },
+  phone: { fontSize: 14, color: colors.onSurfaceSecondary, fontVariant: ["tabular-nums"] },
   hint: {
     fontSize: 10, color: colors.onSurfaceMuted, paddingHorizontal: 10, paddingVertical: 5,
     borderTopWidth: StyleSheet.hairlineWidth, borderColor: colors.divider,
@@ -1314,6 +1356,7 @@ function MetaGrid({ doc }: { doc: ReturnType<typeof useTilesDoc> }) {
             customers={doc.customers}
             customerId={doc.customerId}
             onPickCustomer={doc.pickCustomer}
+            onLookupActive={doc.setCustomerLookupActive}
             inputStyle={metaStyles.value}
             testID="tiles-customer-name"
           />
@@ -2069,41 +2112,13 @@ function MobileTilesEditor({
 // behavior as the paper's CustomerNameField, styled for a full-width mobile
 // TextField instead of an underlined paper cell.
 function FormFieldCustomerName({ doc }: { doc: ReturnType<typeof useTilesDoc> }) {
-  const [focused, setFocused] = useState(false);
-  const matches = useMemo(() => {
-    const q = doc.header.customerName.trim().toLowerCase();
-    if (!q || q.length < 2) return [];
-    return doc.customers.filter((c) => c.name.toLowerCase().includes(q) || (c.phone || "").includes(q)).slice(0, 5);
-  }, [doc.header.customerName, doc.customers]);
-  const exactPicked = doc.customerId && matches.length === 1 && matches[0].id === doc.customerId;
-  const show = focused && matches.length > 0 && !exactPicked;
-  return (
-    <View style={{ zIndex: 200 }}>
-      <TextField
-        label="Customer name"
-        value={doc.header.customerName}
-        onChangeText={(t: string) => doc.setHeaderField("customerName", t)}
-        onFocus={() => setFocused(true)}
-        onBlur={() => setTimeout(() => setFocused(false), 180)}
-        testID="mobile-customer-name"
-      />
-      {show ? (
-        <View style={mobileStyles.suggestPanel}>
-          {matches.map((c) => (
-            <Pressable
-              key={c.id}
-              onPress={() => { doc.pickCustomer(c); setFocused(false); }}
-              style={mobileStyles.suggestRow}
-              testID={`mobile-customer-suggest-${c.id}`}
-            >
-              <Text style={mobileStyles.suggestName} numberOfLines={1}>{c.name}</Text>
-              {c.phone ? <Text style={mobileStyles.suggestPhone}>{c.phone}</Text> : null}
-            </Pressable>
-          ))}
-        </View>
-      ) : null}
-    </View>
-  );
+  return <View style={{ zIndex: 200, gap: spacing.sm }}>
+    <Text style={type.bodyStrong}>Customer name</Text>
+    <CustomerNameField value={doc.header.customerName} onChangeText={value => doc.setHeaderField("customerName", value)}
+      customers={doc.customers} customerId={doc.customerId} onPickCustomer={doc.pickCustomer} onLookupActive={doc.setCustomerLookupActive}
+      inputStyle={{ minHeight: 48, fontSize: 16, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, paddingHorizontal: spacing.md }}
+      testID="mobile-customer-name" />
+  </View>;
 }
 
 const mobileStyles = StyleSheet.create({
@@ -2170,7 +2185,7 @@ const mobileStyles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
   },
   suggestPanel: {
-    position: "absolute", top: "100%", left: 0, right: 0, marginTop: 3, zIndex: 300,
+    marginTop: 8, zIndex: 300,
     backgroundColor: colors.surface, borderRadius: radius.md,
     borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, overflow: "hidden",
     ...(Platform.OS === "web" ? { boxShadow: "0 10px 28px rgba(0,0,0,0.18)" } as any : {}),

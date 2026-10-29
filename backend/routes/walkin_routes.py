@@ -272,8 +272,20 @@ async def create_walkin(body: WalkInCreate, user: UserPublic = Depends(require_m
     if body.interested_floor_ids or body.assignments is not None:
         await _walkin_scope(walkin.model_dump(), user, floors=body.interested_floor_ids or [body.floor_id], assignments=body.assignments, metadata={'reference_source': body.reference_source or body.source, **referrer}, dry_run=True)
     await db.walkins.insert_one(walkin.model_dump())
-    if referrer:
-        await db.customers.update_one({'id': customer['id'], 'floor_id': body.floor_id}, {'$set': referrer})
+    profile_update = dict(referrer)
+    address = (body.address or "").strip()
+    address_changed = bool(address and address != customer.get("address"))
+    if address_changed:
+        profile_update.update(address=address, updated_at=now_iso())
+    if profile_update:
+        await db.customers.update_one({'id': customer['id'], 'floor_id': body.floor_id}, {'$set': profile_update})
+    if address_changed:
+        await log_event(
+            event_type="customer.updated", entity_type="customer", entity_id=customer["id"],
+            customer_id=customer["id"], actor=user, floor_id=body.floor_id,
+            summary="Customer address updated from walk-in",
+            payload={"before": {"address": customer.get("address")}, "after": {"address": address}, "walkin_id": walkin.id},
+        )
     if body.interested_floor_ids or body.assignments is not None:
         scoped = await _walkin_scope(walkin.model_dump(), user, floors=body.interested_floor_ids or [body.floor_id], assignments=body.assignments, metadata={'reference_source': body.reference_source or body.source, **referrer})
         walkin.scope_followup_id = scoped['id']

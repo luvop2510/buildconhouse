@@ -37,8 +37,8 @@ export function AppScaffold({
         accessibilityElementsHidden={bottomNavigationHidden}
         importantForAccessibility={bottomNavigationHidden ? "no-hide-descendants" : "auto"}
         aria-hidden={bottomNavigationHidden}
-        // Keep its DOM mounted, but let web forms use the space above the keyboard.
-        style={[{ backgroundColor: color.canvas, borderTopWidth: layout.hairline, borderTopColor: color.line }, bottomNavigationHidden ? { opacity: 0, ...(Platform.OS === "web" ? { visibility: "hidden", position: "absolute", top: "100%", left: 0, right: 0 } : {}) } as ViewStyle : null]}
+        // Keep navigation mounted without reserving an invisible band above the keyboard.
+        style={[{ backgroundColor: color.canvas, borderTopWidth: layout.hairline, borderTopColor: color.line }, bottomNavigationHidden ? { opacity: 0, position: "absolute", top: "100%", left: 0, right: 0, ...(Platform.OS === "web" ? { visibility: "hidden" } : {}) } as ViewStyle : null]}
       >
         {bottomNavigation}
       </SafeAreaView> : null}

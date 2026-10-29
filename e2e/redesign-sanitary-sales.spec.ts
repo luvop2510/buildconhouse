@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { mockSession } from './audit-fixtures';
 
-for (const floorId of ['first-floor', 'ground-floor']) test(`critical ${floorId} intake uses the selected worker instead of the owner`, async ({ page }) => {
+for (const floorId of ['first-floor', 'ground-floor', 'third-floor']) test(`critical ${floorId} intake uses the selected worker instead of the owner`, async ({ page }) => {
   await mockSession(page, '/walkins/new', false, { floorId });
   const worker = { id: 'sales-worker', full_name: 'Assigned Worker', role: 'worker', floor_ids: [floorId] };
   await page.route('**/api/walkins/config/sources', r => r.fulfill({ json: { sources: ['Walk-in'] } }));
@@ -17,6 +17,15 @@ for (const floorId of ['first-floor', 'ground-floor']) test(`critical ${floorId}
   await expect(page.getByTestId('walkin-salesperson-row')).toHaveCount(0);
   await page.getByTestId('walkin-name').fill('Sanitary visitor');
   await page.getByTestId('walkin-phone').fill('9000000000');
+  await expect(page.getByTestId('walkin-address')).toBeVisible();
+  for (const id of ['walkin-alt-phone', 'walkin-email', 'walkin-city', 'walkin-state', 'walkin-pincode', 'walkin-reference', 'walkin-architect', 'walkin-builder', 'walkin-products', 'walkin-budget']) {
+    await expect(page.getByTestId(id)).toHaveCount(0);
+  }
+  await expect(page.getByRole('button', { name: 'Referral and project details', exact: true })).toHaveCount(0);
+  await page.getByTestId('walkin-save-btn').click();
+  await expect(page.getByTestId('walkin-submit-error')).toContainText('Address is required');
+  expect(writes).toEqual([]);
+  await page.getByTestId('walkin-address').fill('12 Showroom Road, Mumbai');
   await page.getByTestId('walkin-save-btn').click();
   await expect(page.getByTestId('walkin-submit-error')).toContainText('Salesperson is required');
   expect(writes).toEqual([]);
@@ -24,7 +33,7 @@ for (const floorId of ['first-floor', 'ground-floor']) test(`critical ${floorId}
   await page.getByTestId('walkin-save-btn').click();
   await expect(page.getByTestId('walkin-submit-error')).toContainText('Retry with your selected worker');
   expect(writes).toHaveLength(1);
-  expect(writes[0]).toMatchObject({ salesperson_id: worker.id, assignments: [{ floor_id: floorId, user_id: worker.id }] });
+  expect(writes[0]).toMatchObject({ address: '12 Showroom Road, Mumbai', salesperson_id: worker.id, assignments: [{ floor_id: floorId, user_id: worker.id }] });
   await expect(page.getByTestId(`lead-assign-${floorId}-sales-worker`)).toHaveAttribute('aria-pressed', 'true');
 });
 

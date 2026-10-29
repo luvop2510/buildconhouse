@@ -1,13 +1,7 @@
-import { LeadScopeFields, type LeadPartner } from "@/src/components/leads/LeadScopeFields";
+import { LeadScopeFields } from "@/src/components/leads/LeadScopeFields";
 import type { LeadScope } from "@/src/api/leads";
 import { Disclosure } from "@/src/design/Disclosure";
-// Log Walk-in — Phase 4 (2026-07-30), extended for the CRM Foundation spec
-// (2026-08): full Customer capture (address/city/state/pincode), explicit
-// Salesperson assignment (never silent), separate Reference/Architect/
-// Builder fields (distinct from Lead Source), and confidence-tiered
-// duplicate detection (high = auto-link, medium = staff must resolve via a
-// picker sheet, low = soft non-blocking hint). Matches customers/new.tsx
-// pattern for the Customer-level fields.
+// Keep intake short; existing customer matching and explicit floor assignments remain shared.
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from "react-native";
@@ -40,23 +34,12 @@ export default function NewWalkIn() {
 
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
-  const [altPhone, setAltPhone] = useState("");
-  const [email, setEmail] = useState("");
   const [address, setAddress] = useState("");
-  const [city, setCity] = useState("");
-  const [state, setState] = useState("");
-  const [pincode, setPincode] = useState("");
 
-  const [budget, setBudget] = useState("");
-  const [products, setProducts] = useState("");
   const [source, setSource] = useState("Walk-in");
   const [sources, setSources] = useState<string[]>(["Walk-in", "Reference", "Architect", "Builder", "Social Media", "Existing Customer", "Other"]);
-  const [referenceContact, setReferenceContact] = useState("");
-  const [architect, setArchitect] = useState("");
-  const [builder, setBuilder] = useState("");
   const [floorId, setFloorId] = useState(routeFloorId || selectedFloorId || floors[0]?.id || "");
   const [scope, setScope] = useState<LeadScope>({ interested_floor_ids: [routeFloorId || selectedFloorId || floors[0]?.id || ""].filter(Boolean), assignments: [] });
-  const [partner, setPartner] = useState<LeadPartner>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Catalog floors use the selected floor team as their assignment source.
@@ -107,20 +90,20 @@ export default function NewWalkIn() {
 
   useEffect(() => {
     const digits = phone.replace(/\D/g, "");
-    const hasSignal = digits.length >= 10 || email.trim().length >= 5 || name.trim().length >= 3;
+    const hasSignal = digits.length >= 10 || name.trim().length >= 3;
     setResolvedCustomerId(null);
     setForceNew(false);
     if (!hasSignal) { setMatches({ high: [], medium: [], low: [] }); return; }
     let active = true;
     const t = setTimeout(() => {
-      walkinsApi.checkDuplicate({ phone, alternatePhone: altPhone, email, name, city, address, floorId })
+      walkinsApi.checkDuplicate({ phone, name, address, floorId })
         .then((r) => {
           if (active) setMatches(r);
         })
         .catch(() => {});
     }, 450);
     return () => { active = false; clearTimeout(t); };
-  }, [phone, altPhone, email, name, city, address, floorId]);
+  }, [phone, name, address, floorId]);
 
   const resolvedHigh = matches.high[0] || null;
 
@@ -153,15 +136,9 @@ export default function NewWalkIn() {
     try {
       const created = await walkinsApi.create({
         customer_name: name.trim(), customer_phone: phone.trim(),
-        alternate_phone: altPhone.trim() || undefined, email: email.trim() || undefined,
-        address: address.trim() || undefined, city: city.trim() || undefined,
-        state: state.trim() || undefined, pincode: pincode.trim() || undefined,
-        source, reference_contact: referenceContact.trim() || undefined,
-        architect: architect.trim() || undefined, builder: builder.trim() || undefined,
+        address: address.trim(), source,
         salesperson_id: ["first-floor", "ground-floor", "third-floor"].includes(floorId) ? scope.assignments.find(a => a.floor_id === floorId)?.user_id : salespersonId, floor_id: floorId,
-        ...scope, referrer_id: partner?.id || null,
-        interested_products: products.split(",").map((p) => p.trim()).filter(Boolean),
-        budget: budget ? Number(budget) : undefined,
+        ...scope,
         use_existing_customer_id: useExistingId, force_new_customer: force,
       });
       toast.success("Walk-in logged");
@@ -184,6 +161,7 @@ export default function NewWalkIn() {
   const save = async () => {
     if (!name.trim()) { setError("Name is required"); toast.error("Enter the customer's name"); return; }
     if (!phone.trim()) { setError("Phone is required"); toast.error("Enter a phone number"); return; }
+    if (!address.trim()) { setError("Address is required"); toast.error("Enter the customer's address"); return; }
     if (!scope.interested_floor_ids.length) { setError("Select at least one interested floor"); return; }
     if (!floorId) { setError("Department is required"); toast.error("Select an interested department"); return; }
     if (["first-floor", "ground-floor", "third-floor"].includes(floorId) ? !scope.assignments.some(a => a.floor_id === floorId) : !salespersonId) { setError("Salesperson is required"); toast.error("Assign a salesperson for this floor"); return; }
@@ -198,11 +176,13 @@ export default function NewWalkIn() {
   return (
     <SafeAreaView style={{ flex: 1 }} edges={isPhone ? [] : ["top"]}>
       <KeyboardAvoidingView enabled={Platform.OS !== "web"} style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
-        <ScrollView contentContainerStyle={{ padding: isPhone ? spacing.lg : spacing.xl, paddingBottom: isPhone ? 132 : spacing.xxl, gap: spacing.md }} keyboardShouldPersistTaps="handled">
-          <PageHeader title="Log Walk-in" overline="CRM" back={() => router.back()} embedded />
-          <Text style={type.overline}>Customer</Text>
-          <TextField label="Customer Name *" value={name} onChangeText={setName} placeholder="Full name" testID="walkin-name" />
-          <TextField label="Phone *" value={phone} onChangeText={setPhone} keyboardType="phone-pad" placeholder="10-digit mobile" testID="walkin-phone" />
+        <ScrollView style={styles.scroll} contentContainerStyle={[styles.form, { padding: isPhone ? spacing.lg : spacing.xl }]} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
+          <PageHeader title="Log Walk-in" back={() => router.back()} embedded />
+          <Text accessibilityRole="header" style={type.bodyStrong}>Customer details</Text>
+          <TextField label="Customer name *" error={error === "Name is required" ? error : undefined} autoComplete="name" value={name} onChangeText={setName} placeholder="Full name" testID="walkin-name" />
+          <TextField label="Phone *" error={error === "Phone is required" ? error : undefined} autoComplete="tel" value={phone} onChangeText={setPhone} keyboardType="phone-pad" placeholder="10-digit mobile" testID="walkin-phone" />
+
+          <TextField label="Address *" error={error === "Address is required" ? error : undefined} value={address} onChangeText={setAddress} placeholder="Street, area and city" autoComplete="street-address" multiline numberOfLines={2} testID="walkin-address" />
 
           {resolvedHigh ? (
             <Card variant="outlined" style={{ backgroundColor: colors.brandTint, gap: 2 }}>
@@ -224,18 +204,8 @@ export default function NewWalkIn() {
             <Text style={type.caption}>Similar name on file: {matches.low.map((m) => m.name).join(", ")} — not blocking, review if unsure.</Text>
           ) : null}
 
-          <TextField label="Alternate Phone" value={altPhone} onChangeText={setAltPhone} keyboardType="phone-pad" placeholder="Optional" testID="walkin-alt-phone" />
-          <Disclosure title="Address and additional contact details"><TextField label="Email" value={email} onChangeText={setEmail} keyboardType="email-address" placeholder="Optional" testID="walkin-email" />
-          <TextField label="Address" value={address} onChangeText={setAddress} placeholder="Optional" multiline numberOfLines={2} testID="walkin-address" />
-          <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <TextField label="City" value={city} onChangeText={setCity} placeholder="Optional" containerStyle={{ flex: 1 }} testID="walkin-city" />
-            <TextField label="State" value={state} onChangeText={setState} placeholder="Optional" containerStyle={{ flex: 1 }} testID="walkin-state" />
-          </View>
-          <TextField label="Pincode" value={pincode} onChangeText={setPincode} keyboardType="number-pad" placeholder="Optional" testID="walkin-pincode" />
-
-          </Disclosure>
           {optionsError ? <Alert tone="error" title="Some intake options are unavailable" description="Retry to load the configured lead sources and salespeople." action={<Button label="Try again" variant="secondary" onPress={() => setOptionsRetry(value => value + 1)} />} /> : null}
-          <Text accessibilityRole="header" style={[type.overline, { marginTop: spacing.sm }]}>Walk-in Details</Text>
+          <Text accessibilityRole="header" style={[type.overline, { marginTop: spacing.sm }]}>Visit details</Text>
 
           {!["first-floor", "ground-floor", "third-floor"].includes(floorId) ? <><Text style={type.bodyStrong}>Salesperson *</Text>
           <ListRow
@@ -248,24 +218,15 @@ export default function NewWalkIn() {
             testID="walkin-salesperson-row"
           /></> : null}
 
-          <LeadScopeFields assignmentsRequired={["first-floor", "ground-floor", "third-floor"].includes(floorId)} customerPhone={phone} sourceFloorId={floorId} value={scope} onChange={value => { setScope(value); if (value.interested_floor_ids.length && !value.interested_floor_ids.includes(floorId)) setFloorId(value.interested_floor_ids[0]); }} partner={partner} onPartnerChange={setPartner} reference={false} />
+          <LeadScopeFields assignmentsRequired={["first-floor", "ground-floor", "third-floor"].includes(floorId)} customerPhone={phone} sourceFloorId={floorId} value={scope} onChange={value => { setScope(value); if (value.interested_floor_ids.length && !value.interested_floor_ids.includes(floorId)) setFloorId(value.interested_floor_ids[0]); }} reference={false} />
 
-          <Text style={type.bodyStrong}>Lead Source</Text>
-          <View style={{ flexDirection: "row", gap: spacing.xs, flexWrap: "wrap" }}>
+          <Disclosure title="Lead source" summary={source}>
+          <View style={{ flexDirection: "row", gap: spacing.sm, flexWrap: "wrap" }}>
             {sources.map((s) => (
               <Chip key={s} label={s} active={source === s} onPress={() => setSource(s)} testID={`walkin-source-${s}`} />
             ))}
           </View>
-
-          <Disclosure title="Referral and project details">
-          <TextField label="Reference Contact" value={referenceContact} onChangeText={setReferenceContact} placeholder="Who referred this customer?" testID="walkin-reference" />
-          <TextField label="Architect" value={architect} onChangeText={setArchitect} placeholder="Project architect" testID="walkin-architect" />
-          <TextField label="Builder" value={builder} onChangeText={setBuilder} placeholder="Project builder" testID="walkin-builder" />
-
-          <TextField label="Interested Products" value={products} onChangeText={setProducts} placeholder="Comma-separated, e.g. Vitrified Tiles, Granite" testID="walkin-products" />
-          <TextField label="Budget (₹)" value={budget} onChangeText={setBudget} keyboardType="numeric" placeholder="Optional" testID="walkin-budget" />
           </Disclosure>
-
         </ScrollView>
         <View style={styles.submitFooter}>
           {error ? <Text accessibilityRole="alert" testID="walkin-submit-error" style={[type.bodySm, { color: colors.error }]}>{error}</Text> : null}
@@ -322,6 +283,8 @@ export default function NewWalkIn() {
 }
 
 const styles = StyleSheet.create({
+  scroll: { flex: 1, minHeight: 0 },
+  form: { width: "100%", maxWidth: 720, alignSelf: "center", gap: spacing.md, paddingBottom: spacing.xl },
   submitFooter: {
     backgroundColor: colors.surface,
     borderTopWidth: StyleSheet.hairlineWidth,

@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { Platform } from 'react-native';
 
-/** Safari keeps the layout viewport tall when its software keyboard opens.
+/** Mobile browsers can keep the layout viewport tall when their keyboard opens.
  * Size the app and modal portals to the visible area, without rerendering pages.
  */
 export function useKeyboardViewport() {
@@ -22,19 +22,20 @@ export function useKeyboardViewport() {
       if (!(input instanceof HTMLElement) || !input.matches('input,textarea,[contenteditable="true"]')) return;
       // Browser focus scrolling happens before the keyboard has finished
       // resizing. Repeat only when a visible-area change clips the input.
-      const clips: HTMLElement[] = [];
+      const clips: { element: HTMLElement; scrollable: boolean }[] = [];
       for (let parent = input.parentElement; parent; parent = parent.parentElement) {
-        if (/auto|scroll|hidden|clip/.test(window.getComputedStyle(parent).overflowY)) clips.push(parent);
+        const overflow = window.getComputedStyle(parent).overflowY;
+        if (/auto|scroll|hidden|clip/.test(overflow)) clips.push({ element: parent, scrollable: /auto|scroll/.test(overflow) });
       }
       // Scroll the form, never the document: scrollIntoView can pan Safari's
       // entire fixed application. A second pass handles a previously clipped inner panel.
-      for (let pass = 0; pass < 2; pass++) for (const parent of clips) {
+      for (let pass = 0; pass < 2; pass++) for (const { element: parent, scrollable } of clips) {
         if (parent === document.body || parent === document.documentElement || parent.id === 'root'
-          || !/auto|scroll/.test(window.getComputedStyle(parent).overflowY)
+          || !scrollable
           || parent.scrollHeight <= parent.clientHeight) continue;
         let top = viewport.offsetTop + 8;
         let bottom = viewport.offsetTop + viewport.height - 8;
-        for (const clip of clips) {
+        for (const { element: clip } of clips) {
           const bounds = clip.getBoundingClientRect();
           top = Math.max(top, bounds.top + clip.clientTop + 8);
           bottom = Math.min(bottom, bounds.top + clip.clientTop + clip.clientHeight - 8);
@@ -42,7 +43,10 @@ export function useKeyboardViewport() {
         if (bottom <= top) continue;
         const box = input.getBoundingClientRect();
         const delta = box.height > bottom - top || box.top < top ? box.top - top : Math.max(0, box.bottom - bottom);
-        parent.scrollTop += Math.max(-parent.scrollTop, Math.min(delta, parent.scrollHeight - parent.clientHeight - parent.scrollTop));
+        // Most keystrokes need no correction; avoid repeated layout reads and scroll writes.
+        if (delta === 0) return;
+        const change = Math.max(-parent.scrollTop, Math.min(delta, parent.scrollHeight - parent.clientHeight - parent.scrollTop));
+        if (change !== 0) parent.scrollTop += change;
       }
     };
     const update = () => {

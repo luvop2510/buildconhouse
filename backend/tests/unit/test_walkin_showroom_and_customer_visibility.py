@@ -326,3 +326,34 @@ def test_showroom_promotion_rechecks_identity_after_validation_race(monkeypatch)
     assert followups.rows[0]["origin"] == "walkin"
     assert "showroom_followup_id" not in walkins.rows[0]
     assert events == []
+
+
+def test_customer_search_finds_old_walkin_by_literal_name_and_phone_with_floor_isolation(monkeypatch):
+    import re
+    rows = [{"id": str(i), "name": f"Recent customer {i}", "floor_id": "ground-floor"} for i in range(520)]
+    rows.extend([
+        {"id": "old-walkin", "name": "A.* Shah", "phone": "9876543210", "address": "12 Saved Walk-in Road", "floor_id": "ground-floor"},
+        {"id": "foreign", "name": "A.* Shah", "phone": "9876543210", "address": "Foreign floor", "floor_id": "first-floor"},
+        {"id": "regex-lookalike", "name": "Anything Shah", "floor_id": "ground-floor"},
+    ])
+    def accepts(row, query):
+        for key, value in query.items():
+            if key == "$and" and not all(accepts(row, child) for child in value): return False
+            if key == "$or" and not any(accepts(row, child) for child in value): return False
+            if key.startswith("$"): continue
+            if isinstance(value, dict) and "$regex" in value:
+                if not re.search(value["$regex"], str(row.get(key, "")), re.I): return False
+            elif isinstance(value, dict):
+                if "$in" in value and row.get(key) not in value["$in"]: return False
+                if "$ne" in value and row.get(key) == value["$ne"]: return False
+            elif row.get(key) != value: return False
+        return True
+    class SearchStore(Store):
+        def find(self, query, projection): return Cursor([row for row in self.rows if accepts(row, query)])
+    monkeypatch.setattr(customer_routes, "db", SimpleNamespace(customers=SearchStore(rows)))
+    for term in ("A.*", "9876543210"):
+        response = Response()
+        result = asyncio.run(customer_routes.list_customers(response, skip=0, limit=20, confirmed_only=False, search=term, user=user(("ground-floor",))))
+        assert [record.id for record in result] == ["old-walkin"]
+        assert result[0].address == "12 Saved Walk-in Road"
+        assert response.headers["X-Has-More"] == "false"

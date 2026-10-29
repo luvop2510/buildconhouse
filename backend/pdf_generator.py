@@ -4,6 +4,7 @@ from services.referrer_identity import referrer_label
 
 from collections import defaultdict
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from services.money import format_indian_money
 import functools
 from io import BytesIO
@@ -84,29 +85,32 @@ RUPEE_FONT = _register_rupee_font()
 
 BRAND_LOGO_DIR = PDF_DIR / "brand_logos"
 BRAND_PARTNERS = (
-    ("grohe", "hansgrohe", "geberit", "vitra"),
+    ("grohe", "hansgrohe", "geberit", "vitra", "verantes_living"),
     ("oyster", "qutone", "nexion", "dimore", "ncl_ittimi"),
 )
 
 
 def brand_partners_table(_base_cell_style: ParagraphStyle, col_width_mm: float | None = None, grid_color=None, row_height_mm: float = 15) -> Table:
     """Place only the supplied partner artwork in the two-row cover strip."""
-    # The tiles document shares this strip at landscape width. Its legacy
-    # argument describes one of six old cells, so retain the overall width.
+    # The legacy width argument describes one of six former cells; retain
+    # the supplied total width while keeping every partner logo.
     columns = max(map(len, BRAND_PARTNERS))
     cell_width = ((col_width_mm * 6 / columns) if col_width_mm else _pw(267 / columns)) * mm
-    logo_height = min(11, row_height_mm - 2) * mm
     rows = []
+    row_heights = []
     for names in BRAND_PARTNERS:
         row = []
+        row_height = max(row_height_mm, 34 if "verantes_living" in names else row_height_mm)
+        row_heights.append(row_height * mm)
         for name in names:
             path = BRAND_LOGO_DIR / f"{name}.png"
             reader = ImageReader(str(path))
             source_width, source_height = reader.getSize()
-            scale = min((cell_width - 8 * mm) / source_width, logo_height / source_height)
+            logo_height = (30 if name == "verantes_living" else min(11, row_height - 2)) * mm
+            scale = min((cell_width - 4 * mm) / source_width, logo_height / source_height)
             row.append(Image(str(path), width=source_width * scale, height=source_height * scale))
         rows.append(row)
-    table = Table(rows, colWidths=[cell_width] * columns, rowHeights=[row_height_mm * mm] * len(rows))
+    table = Table(rows, colWidths=[cell_width] * columns, rowHeights=row_heights)
     table.setStyle(TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("ALIGN", (0, 0), (-1, -1), "CENTER"),
@@ -254,17 +258,30 @@ def _ellipsize(value: object, limit: int) -> str:
     return _escape(text)
 
 
-def quotation_pdf_filename(customer_name: object) -> str:
-    """Return the sanitary quotation download name, based on the customer.
+def pdf_document_date(document: dict | None = None) -> str:
+    """Use the printed document date, with an India-calendar creation fallback."""
+    doc = document or {}
+    raw = str(doc.get("doc_date") or "").strip()
+    for fmt in ("%d-%m-%Y", "%d/%m/%Y", "%d-%b-%y", "%d-%b-%Y", "%d %b %Y", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(raw, fmt).strftime("%d-%m-%Y")
+        except ValueError:
+            continue
+    try:
+        created = datetime.fromisoformat(str(doc.get("created_at") or "").replace("Z", "+00:00"))
+        if created.tzinfo:
+            created = created.astimezone(ZoneInfo("Asia/Kolkata"))
+        return created.strftime("%d-%m-%Y")
+    except ValueError:
+        return datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%d-%m-%Y")
 
-    Keep this deliberately separate from the document number: customers use
-    the PDF as a shareable selection sheet, so its filename should identify
-    the customer in the same way the Ground Floor documents do.  Strip only
-    characters that are invalid or unsafe in a cross-platform filename.
-    """
+
+def quotation_pdf_filename(customer_name: object, document: dict | None = None, *, selection: bool = False) -> str:
+    """A customer-readable, portable name shared by downloads and file sharing."""
     name = " ".join(str(customer_name or "Customer").split())
-    safe = " ".join("".join(ch for ch in name if ch not in '\\\\/:*?\"<>|').split()).strip(".")
-    return f"{safe or 'Customer'}.pdf"
+    safe = " ".join("".join(ch for ch in name if ch not in '\\/:*?"<>|' and ord(ch) >= 32).split()).strip(".")
+    kind = "selection" if selection else "quotation"
+    return f"{safe or 'Customer'} {pdf_document_date(document)} {kind} PDF.pdf"
 
 
 # Kept as a local alias so quotation/PDF callers and existing tests can
@@ -273,11 +290,7 @@ _remote_image_bytes = remote_image_bytes
 
 
 def _prepare_image_bytes(data: bytes, *, force_landscape: bool = False) -> bytes:
-    """Apply the persisted landscape product-image contract to PDF inputs.
-
-    Quotation snapshots can reference media created before upload
-    normalization, so PDFs repeat the shared transform defensively.
-    """
+    """Honor source/EXIF orientation for legacy and current product media."""
     from PIL import Image as PILImage
     from services.product_image_normalizer import normalize_product_image
 
@@ -292,23 +305,6 @@ def _prepare_image_bytes(data: bytes, *, force_landscape: bool = False) -> bytes
     except Exception:
         return data
 
-
-def _rotate_portrait_for_tiles_pdf(data: bytes) -> bytes:
-    """Show portrait tile surfaces horizontally in the quotation PDF only.
-
-    Older tile media may already sit inside a white landscape canvas. Remove
-    that canvas before deciding whether the visible product needs rotation.
-    The stored image and all other document types retain their orientation.
-    """
-    from PIL import Image as PILImage
-
-    trimmed = _trim_product_whitespace(data)
-    with PILImage.open(BytesIO(trimmed)) as image:
-        if image.height <= image.width:
-            return trimmed
-        output = BytesIO()
-        image.rotate(90, expand=True).save(output, format="PNG")
-        return output.getvalue()
 
 
 def prefetch_product_images(items: Iterable[dict], *, workers: int = 6, timeout: float = 8.0) -> None:
@@ -365,12 +361,11 @@ def contain_box(
 
 
 class _ProductImageFrame(Flowable):
-    """A fixed, landscape product-image frame with a centred ``contain`` fit.
+    """A fixed product-image frame with a centred ``contain`` fit.
 
     Giving ReportLab a frame (rather than a differently-sized ``Image`` for
     every source) makes image placement deterministic inside table cells.  A
-    source is fitted without stretching. Tile quotations may first rotate a
-    portrait tile surface to meet their landscape product-image layout.
+    source is fitted without stretching or changing its intended orientation.
     """
 
     def __init__(self, data: bytes, width_mm: float, height_mm: float, *, trim_whitespace: bool = True):
@@ -474,11 +469,10 @@ def _img(
     force_landscape: bool = False,
     cover: bool = False,
     trim_whitespace: bool = True,
-    rotate_portrait: bool = False,
 ) -> Flowable:
     """Render the supplied product image inside the quotation image cell.
 
-    Every successful image receives a fixed landscape frame.  This removes
+    Every successful image receives a fixed frame.  This removes
     table-cell alignment ambiguity and lets portrait and landscape products
     use the largest non-distorted fit without losing product detail.
     """
@@ -486,12 +480,19 @@ def _img(
         data = _remote_image_bytes(str(url))
         if data:
             try:
-                prepared = _prepare_image_bytes(data, force_landscape=force_landscape and not rotate_portrait)
-                if rotate_portrait:
-                    prepared = _rotate_portrait_for_tiles_pdf(prepared)
+                prepared = _prepare_image_bytes(data)
+                if force_landscape:
+                    # PDF product photos use the landscape presentation requested by the showroom.
+                    from PIL import Image as PILImage
+                    prepared = _trim_product_whitespace(prepared)
+                    with PILImage.open(BytesIO(prepared)) as source:
+                        if source.width < source.height:
+                            output = BytesIO()
+                            source.transpose(PILImage.Transpose.ROTATE_90).save(output, format="PNG")
+                            prepared = output.getvalue()
                 return _ProductImageFrame(
                     prepared, width_mm, height_mm,
-                    trim_whitespace=trim_whitespace and not rotate_portrait,
+                    trim_whitespace=trim_whitespace,
                 )
             except Exception:
                 pass
@@ -619,7 +620,8 @@ def _draw_room_watermark(cv, doc, branding: dict | None = None) -> None:
 
 def _draw_quotation_page_chrome(cv, doc, branding: dict | None = None) -> None:
     """Shared footer/watermark chrome for the summary and area pages."""
-    _draw_room_watermark(cv, doc, branding)
+    if doc.page > 1:
+        _draw_room_watermark(cv, doc, branding)
     _draw_footer(cv, doc, branding)
 
 
@@ -776,12 +778,7 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
         ]
         prefetch_urls(media_urls, _remote_image_bytes)
     buf = BytesIO()
-    estimated_rooms = len(set(quotation.get("rooms") or [
-        item.get("room") or "General" for item in quotation.get("items") or []
-    ]))
-    cover_height_mm = min(PAGE_H_MM, 215 + max(0, estimated_rooms - 1) * 6
-                          + (10 if b.get("terms_text") else 0)
-                          + (4 if b.get("signature_name") else 0))
+    cover_height_mm = PAGE_H_MM
     doc = BaseDocTemplate(
         buf, pagesize=PORTRAIT_A4, leftMargin=10 * mm, rightMargin=10 * mm,
         topMargin=TOP_MARGIN_MM * mm, bottomMargin=BOTTOM_MARGIN_MM * mm,
@@ -812,8 +809,8 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
         "brandFallback": ParagraphStyle("brandFallback", parent=base["Normal"], fontName="Helvetica-Bold", fontSize=14, leading=15, textColor=INK),
         "titleRight": ParagraphStyle("titleRight", parent=base["Normal"], fontName="Helvetica-Bold", fontSize=14, leading=16, textColor=INK, alignment=2),
         "areaTitle": ParagraphStyle("areaTitle", parent=base["Normal"], fontName="Helvetica-Bold", fontSize=15.5, leading=17.5, textColor=INK, alignment=2),
-        "label": ParagraphStyle("label", parent=base["Normal"], fontName="Helvetica-Bold", fontSize=7.4, leading=8.6, textColor=INK),
-        "body": ParagraphStyle("body", parent=base["Normal"], fontName="Helvetica", fontSize=9.2, leading=11.5, textColor=INK),
+        "label": ParagraphStyle("label", parent=base["Normal"], fontName="Helvetica-Bold", fontSize=9.5, leading=11.5, textColor=INK),
+        "body": ParagraphStyle("body", parent=base["Normal"], fontName="Helvetica", fontSize=11.5, leading=14, textColor=INK),
         "small": ParagraphStyle("small", parent=base["Normal"], fontName="Helvetica", fontSize=7.5, leading=9, textColor=INK),
         "terms": ParagraphStyle("terms", parent=base["Normal"], fontName="Helvetica", fontSize=7.0, leading=8.1, textColor=INK),
         "tiny": ParagraphStyle("tiny", parent=base["Normal"], fontName="Helvetica", fontSize=7.5, leading=9, textColor=INK, alignment=1),
@@ -839,7 +836,7 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
         float(item.get("discount_pct") or 0) > 0 for item in quotation.get("items", [])
     )
     story: list[Flowable] = []
-    created = _format_pdf_date(quotation.get("created_at"))
+    created = datetime.strptime(pdf_document_date(quotation), "%d-%m-%Y").strftime("%d %b %Y")
     room_order = list(quotation.get("rooms") or [])
     grouped_with_position: dict[str, list[tuple[int, dict]]] = defaultdict(list)
     for source_position, item in enumerate(quotation.get("items", [])):
@@ -877,9 +874,9 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
         [Paragraph("CUSTOMER NAME", styles["label"]), Paragraph("CONTACT NO.", styles["label"]), Paragraph("SELECTION / QUOTATION DATE", styles["label"]), Paragraph("QUOTATION NO.", styles["label"])],
         [Paragraph(_escape(customer.get("company") or customer.get("name") or quotation.get("customer_name")), styles["body"]), Paragraph(_escape(quotation.get("phone_snapshot") or customer.get("phone") or ""), styles["body"]), Paragraph(created, styles["body"]), Paragraph(_escape(quotation.get("number")), styles["body"])],
         [Paragraph("REFERENCE", styles["label"]), Paragraph("ATTENDED BY", styles["label"]), Paragraph("PREPARED BY", styles["label"]), Paragraph("ADDRESS", styles["label"])],
-        [Paragraph(_escape(" · ".join(filter(None, [quotation.get("reference_source"), referrer_label(quotation)]))), styles["body"]), Paragraph(_escape(quotation.get("referrer_name") or ""), styles["body"]), Paragraph(_escape(b.get("footer_company_name") or "Buildcon House"), styles["body"]), Paragraph(_escape(quotation.get("address_snapshot") or customer.get("address") or ""), styles["body"])],
+        [Paragraph(_escape(" · ".join(filter(None, [quotation.get("reference_source"), referrer_label(quotation)]))), styles["body"]), Paragraph(_escape(quotation.get("attended_by") or ""), styles["body"]), Paragraph(_escape(quotation.get("prepared_by") or b.get("footer_company_name") or "Buildcon House"), styles["body"]), Paragraph(_escape(quotation.get("address_snapshot") or customer.get("address") or ""), styles["body"])],
     ]
-    meta_row_heights = [5 * mm, 5 * mm, 5 * mm, None if referrer_label(quotation) else 6 * mm]
+    meta_row_heights = [None] * 4
     meta_style = [
         ("LINEBELOW", (0, 1), (-1, 1), 0.4, LINE),
         ("LINEBELOW", (0, 3), (-1, 3), 0.4, LINE),
@@ -887,7 +884,7 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
         ("LEFTPADDING", (0, 0), (-1, -1), 3), ("RIGHTPADDING", (0, 0), (-1, -1), 3),
         ("TOPPADDING", (0, 0), (-1, -1), 1), ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
     ]
-    meta_table = Table(meta, colWidths=[_pw(66.75) * mm] * 4, rowHeights=meta_row_heights)
+    meta_table = Table(meta, colWidths=[_pw(66.75) * mm] * 4, rowHeights=meta_row_heights, minRowHeights=[7 * mm, 8 * mm, 7 * mm, 8 * mm])
     meta_table.setStyle(TableStyle(meta_style))
     story.extend([meta_table, Spacer(1, 2 * mm)])
     story.append(Paragraph("Dear Sir/Madam, thank you for your interest in our products. We are pleased to offer our most competitive rates for premium tiles and sanitaryware, prepared as per your selection.", styles["body"]))
@@ -1087,7 +1084,7 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
                 seat_urls = _seat_cover_urls(item)
                 diagram_urls = _media_urls(item, "dimension_image_urls") if quotation.get("include_dimensions") and not item.get("exclude_dimension") else []
                 primary_image = item.get("image") or (seat_urls[0] if seat_urls else None)
-                product_images: list[Flowable] = [_img(primary_image, width_mm=image_width_mm, height_mm=image_height_mm)]
+                product_images: list[Flowable] = [_img(primary_image, width_mm=image_width_mm, height_mm=image_height_mm, force_landscape=True)]
                 product_images.extend(
                     _img(url, width_mm=image_width_mm, height_mm=image_height_mm)
                     for url in seat_urls[:1] if url != primary_image

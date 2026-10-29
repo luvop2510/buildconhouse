@@ -204,6 +204,8 @@ def granted_floor_ids(grants, *, user_id: str, path: str, action: str, resource:
             floor = "first-floor"
         if quotation_default and floor == "first-floor":
             resources = ("catalog", "quotations")
+        elif quotation_lookup and floor == "ground-floor" and fullmatch(r"/api/customers(?:/[^/]+)?", path):
+            resources = (*resources, "tiles")
         elif quotation_lookup and floor == "first-floor":
             resources = (*resources, "quotations")
         elif quotation_custom and floor == "first-floor":

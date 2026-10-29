@@ -24,6 +24,8 @@ export const TextInput = forwardRef<TextInput, TextInputProps>(function AppTextI
     return () => { if (Platform.OS !== "web") reportInputFocus(id, false); };
   }, []);
   return <NativeTextInput {...props} ref={ref}
+    // Keep Android's landscape IME editor from replacing the whole workspace.
+    disableFullscreenUI={props.disableFullscreenUI ?? Platform.OS === "android"}
     // Plain editing fields must not dismiss the keyboard and restore chrome on Enter.
     blurOnSubmit={props.blurOnSubmit ?? (props.submitBehavior || props.onSubmitEditing ? undefined : false)}
     onFocus={event => { if (Platform.OS !== "web") reportInputFocus(focusId.current, true); onFocus?.(event); }}

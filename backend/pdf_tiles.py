@@ -34,7 +34,7 @@ from reportlab.platypus import (
 
 from pdf_generator import (
     LOGO_PATH, LOGO_RATIO, _draw_footer, _draw_room_watermark, _escape, _img, _money, _currency_symbol, _SingleLineParagraph,
-    LANDSCAPE_A4, PRODUCT_IMAGE_ASPECT_RATIO, _po_final_payment_table, brand_partners_table, prefetch_product_images,
+    PORTRAIT_A4, quotation_pdf_filename, _po_final_payment_table, brand_partners_table, prefetch_product_images,
 )
 
 INK = colors.HexColor("#111111")
@@ -43,9 +43,8 @@ GREEN = colors.HexColor("#1D7A3C")
 GRID = colors.HexColor("#8A8A8A")
 HEADER_GREY = colors.HexColor("#C8C8C8")
 ZEBRA = colors.HexColor("#F0F0F0")
-# Landscape A4 width (297 mm) minus 8 mm left/right margins. The Tiles Pro
-# form must use the same wide frame on its summary and detail pages.
-PAGE_W_MM = 281.0
+# Portrait A4 minus the shared 8 mm side margins.
+PAGE_W_MM = 194.0
 
 # ---------------------------------------------------------------------------
 # Optional unicode fonts — needed only for the ₹ / ☺ / ☎ glyphs the reference
@@ -90,8 +89,9 @@ def _rupee(value: float) -> str:
 
 
 def _draw_tiles_page_chrome(cv, doc, branding: dict | None = None) -> None:
-    """Persistent footer and watermark for every tile page."""
-    _draw_room_watermark(cv, doc, branding)
+    """Keep the cover clean and watermark the product-details pages."""
+    if doc.page > 1:
+        _draw_room_watermark(cv, doc, branding)
     if doc.page == 1:
         _draw_footer(cv, doc, branding)
 
@@ -133,11 +133,9 @@ def _parse_doc_date(doc: dict) -> datetime:
 
 
 def tiles_pdf_filename(doc: dict) -> str:
-    """`<Customer Name> <DD-MM-YYYY>.pdf` — e.g. "Nileshbhai Pokiya 08-07-2026.pdf"."""
-    name = " ".join((doc.get("customer_name") or "Customer").split())
-    stamp = _parse_doc_date(doc).strftime("%d-%m-%Y")
-    safe = "".join(ch for ch in f"{name} {stamp}" if ch not in '\\/:*?"<>|')
-    return f"{safe}.pdf"
+    return quotation_pdf_filename(
+        doc.get("customer_name"), doc, selection=doc.get("doc_type") == "tiles_selection",
+    )
 
 
 def _logo_flowable(width_mm: float) -> Flowable:
@@ -163,11 +161,6 @@ def _fmt_rate_sqft(value, suffix: str = "") -> str:
     text = f"{num:g}"
     return f"{text}{suffix}"
 
-
-def _portrait_tile_size(value: object) -> bool:
-    import re
-    match = re.search(r"(\d+(?:\.\d+)?)\s*[x×X]\s*(\d+(?:\.\d+)?)", str(value or ""))
-    return bool(match and float(match.group(1)) < float(match.group(2)))
 
 
 def _quantity_unit(value: object) -> str:
@@ -196,23 +189,23 @@ def _tiles_styles() -> dict:
     return {
         "titleMain": ParagraphStyle("titleMain", parent=base, fontName="Helvetica-Bold", fontSize=16, leading=17.5, textColor=INK, alignment=2),
         "titleSub": ParagraphStyle("titleSub", parent=base, fontName="Helvetica", fontSize=8, leading=9, textColor=colors.HexColor("#444444"), alignment=2),
-        "metaLabel": ParagraphStyle("metaLabel", parent=base, fontName="Helvetica-Bold", fontSize=7, leading=8, textColor=INK, alignment=1),
-        "metaValue": ParagraphStyle("metaValue", parent=base, fontName="Helvetica", fontSize=8.5, leading=9.5, textColor=INK, alignment=1),
-        "intro": ParagraphStyle("intro", parent=base, fontName="Helvetica", fontSize=8, leading=9.5, textColor=INK, alignment=1),
+        "metaLabel": ParagraphStyle("metaLabel", parent=base, fontName="Helvetica-Bold", fontSize=9.5, leading=11.5, textColor=INK, alignment=1),
+        "metaValue": ParagraphStyle("metaValue", parent=base, fontName="Helvetica", fontSize=11.5, leading=14, textColor=INK, alignment=1),
+        "intro": ParagraphStyle("intro", parent=base, fontName="Helvetica", fontSize=9, leading=11, textColor=INK, alignment=1),
         "sectionTitle": ParagraphStyle("sectionTitle", parent=base, fontName="Helvetica-Bold", fontSize=9.2, leading=10.5, textColor=INK, alignment=1),
-        "term": ParagraphStyle("term", parent=base, fontName="Helvetica", fontSize=6.35, leading=7.4, textColor=colors.HexColor("#3A3A3A"), alignment=0),
-        "contact": ParagraphStyle("contact", parent=base, fontName="Helvetica", fontSize=7.4, leading=8.5, textColor=INK, alignment=1),
-        "sigNote": ParagraphStyle("sigNote", parent=base, fontName="Helvetica", fontSize=7, leading=8, textColor=INK, alignment=1),
-        "sigLabel": ParagraphStyle("sigLabel", parent=base, fontName="Helvetica-Bold", fontSize=7, leading=8, textColor=INK, alignment=2),
+        "term": ParagraphStyle("term", parent=base, fontName="Helvetica", fontSize=8, leading=10, textColor=colors.HexColor("#3A3A3A"), alignment=0),
+        "contact": ParagraphStyle("contact", parent=base, fontName="Helvetica", fontSize=9, leading=11, textColor=INK, alignment=1),
+        "sigNote": ParagraphStyle("sigNote", parent=base, fontName="Helvetica", fontSize=8, leading=10, textColor=INK, alignment=1),
+        "sigLabel": ParagraphStyle("sigLabel", parent=base, fontName="Helvetica-Bold", fontSize=8, leading=10, textColor=INK, alignment=2),
         "sumLabel": ParagraphStyle("sumLabel", parent=base, fontName="Helvetica-Bold", fontSize=8.6, leading=10.5, textColor=INK, alignment=1),
         "sumValue": ParagraphStyle("sumValue", parent=base, fontName="Helvetica", fontSize=8.6, leading=10.5, textColor=INK, alignment=1),
         "sumRed": ParagraphStyle("sumRed", parent=base, fontName="Helvetica-Bold", fontSize=9.2, leading=11, textColor=RED, alignment=1),
         "colHead": ParagraphStyle("colHead", parent=base, fontName="Helvetica-Bold", fontSize=7.8, leading=9.2, textColor=INK, alignment=1),
         "colHeadRed": ParagraphStyle("colHeadRed", parent=base, fontName="Helvetica-Bold", fontSize=7.8, leading=9.2, textColor=RED, alignment=1),
-        "cell": ParagraphStyle("cell", parent=base, fontName="Helvetica", fontSize=8.2, leading=10, textColor=INK, alignment=1),
-        "cellBold": ParagraphStyle("cellBold", parent=base, fontName="Helvetica-Bold", fontSize=8.2, leading=10, textColor=INK, alignment=1),
-        "cellRed": ParagraphStyle("cellRed", parent=base, fontName="Helvetica-Bold", fontSize=8.2, leading=10, textColor=RED, alignment=1),
-        "cellOffer": ParagraphStyle("cellOffer", parent=base, fontName="Helvetica-Bold", fontSize=8.2, leading=10, textColor=GREEN, alignment=1),
+        "cell": ParagraphStyle("cell", parent=base, fontName="Helvetica", fontSize=9, leading=11, textColor=INK, alignment=1),
+        "cellBold": ParagraphStyle("cellBold", parent=base, fontName="Helvetica-Bold", fontSize=9, leading=11, textColor=INK, alignment=1),
+        "cellRed": ParagraphStyle("cellRed", parent=base, fontName="Helvetica-Bold", fontSize=9, leading=11, textColor=RED, alignment=1),
+        "cellOffer": ParagraphStyle("cellOffer", parent=base, fontName="Helvetica-Bold", fontSize=9, leading=11, textColor=GREEN, alignment=1),
         "sqftCaption": ParagraphStyle("sqftCaption", parent=base, fontName="Helvetica", fontSize=6, leading=7.2, textColor=colors.HexColor("#666666"), alignment=1),
     }
 
@@ -222,7 +215,7 @@ def _header_block(main_title: str, subtitle: str, styles: dict) -> Table:
     masthead and the page 2+ "PRODUCT DETAILS" section header."""
     table = Table(
         [["", _logo_flowable(46), [Paragraph(main_title, styles["titleMain"]), Paragraph(subtitle, styles["titleSub"])]]],
-        colWidths=[10 * mm, 135 * mm, 136 * mm],
+        colWidths=[0, PAGE_W_MM / 2 * mm, PAGE_W_MM / 2 * mm],
     )
     table.setStyle(TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
@@ -258,7 +251,7 @@ def _meta_grid(quotation: dict, customer: dict, styles: dict) -> Table:
         [Paragraph(label, styles["metaLabel"]) for label in row2_labels],
         [Paragraph(_escape(value) or "&nbsp;", styles["metaValue"]) for value in row2_values],
     ]
-    table = Table(data, colWidths=[PAGE_W_MM / 4 * mm] * 4, minRowHeights=[5 * mm, 7 * mm, 5 * mm, 7 * mm])
+    table = Table(data, colWidths=[PAGE_W_MM / 4 * mm] * 4, minRowHeights=[7 * mm, 8 * mm, 7 * mm, 8 * mm])
     table.setStyle(TableStyle([
         # A single explicit grid avoids the disconnected, partial form rules
         # seen in printed selections. ReportLab draws continuous straight
@@ -288,7 +281,7 @@ def _brand_terms_signature_block(styles: dict, branding: dict, *, density: str =
     after_terms_gap = 0.6 if compact else (2.0 if airy else 1.3)
     before_signature_gap = 0.8 if compact else (2.5 if airy else 1.5)
     term_style = (
-        ParagraphStyle("termCompact", parent=styles["term"], fontSize=5.6, leading=6.35)
+        ParagraphStyle("termCompact", parent=styles["term"], fontSize=8, leading=10)
         if compact else styles["term"]
     )
     email = branding.get("footer_email") or DEFAULT_EMAIL
@@ -325,7 +318,7 @@ def _brand_terms_signature_block(styles: dict, branding: dict, *, density: str =
             Paragraph("I/We have reviewed and agree to the terms and conditions mentioned in this quotation.", styles["sigNote"]),
             Paragraph("CUSTOMER SIGNATURE &amp; DATE", styles["sigLabel"]),
         ]],
-        colWidths=[180 * mm, 101 * mm], rowHeights=[8 * mm if compact else 9 * mm],
+        colWidths=[128 * mm, 66 * mm], minRowHeights=[11 * mm],
     )
     signature.setStyle(TableStyle([
         ("BOX", (0, 0), (-1, -1), 0.6, GRID),
@@ -345,7 +338,7 @@ def _price_summary_table(total_quantity: str, subtotal: float, transportation_fe
         [Paragraph("TRANSPORTATION", styles["sumLabel"]), _SingleLineParagraph(_rupee(transportation_fee), styles["sumValue"])],
         [Paragraph(f"TOTAL QUOTE ({_currency_symbol()})", styles["sumRed"]), _SingleLineParagraph(_rupee(total_quote), styles["sumRed"])],
     ]
-    table = Table(rows, colWidths=[188 * mm, 93 * mm], rowHeights=[5.5 * mm] * 4, hAlign="CENTER")
+    table = Table(rows, colWidths=[130 * mm, 64 * mm], rowHeights=[5.5 * mm] * 4, hAlign="CENTER")
     table.setStyle(TableStyle([
         ("GRID", (0, 0), (-1, -1), 0.6, GRID),
         ("ALIGN", (0, 0), (-1, -1), "CENTER"),
@@ -360,10 +353,10 @@ def _price_summary_table(total_quantity: str, subtotal: float, transportation_fe
 # ===========================================================================
 # TILES SELECTION
 # ===========================================================================
-_SEL_COLS = [11 * mm, 70 * mm, 35 * mm, 74 * mm, 32 * mm, 59 * mm]  # SR/IMAGE/AREA/DETAIL/SIZE/RATE-SQFT — 281 mm full landscape width
+_SEL_COLS = [10 * mm, 44 * mm, 24 * mm, 54 * mm, 26 * mm, 36 * mm]
 # Image column width less the table's 2 mm padding on each side.
-SELECTION_PRODUCT_IMAGE_WIDTH_MM = 66.0
-SELECTION_PRODUCT_IMAGE_HEIGHT_MM = SELECTION_PRODUCT_IMAGE_WIDTH_MM / PRODUCT_IMAGE_ASPECT_RATIO
+SELECTION_PRODUCT_IMAGE_WIDTH_MM = 40.0
+SELECTION_PRODUCT_IMAGE_HEIGHT_MM = SELECTION_PRODUCT_IMAGE_WIDTH_MM / (16 / 10)
 
 
 def build_tiles_selection_pdf(quotation: dict, customer: dict, branding: dict | None = None) -> bytes:
@@ -371,7 +364,7 @@ def build_tiles_selection_pdf(quotation: dict, customer: dict, branding: dict | 
     prefetch_product_images(quotation.get("items") or [])
     buf = BytesIO()
     doc = SimpleDocTemplate(
-        buf, pagesize=LANDSCAPE_A4, leftMargin=8 * mm, rightMargin=8 * mm,
+        buf, pagesize=PORTRAIT_A4, leftMargin=8 * mm, rightMargin=8 * mm,
         topMargin=10 * mm, bottomMargin=16 * mm,
         title=f"Selection — {quotation.get('customer_name') or ''}",
         author=b.get("footer_company_name") or "Buildcon House",
@@ -415,7 +408,7 @@ def build_tiles_selection_pdf(quotation: dict, customer: dict, branding: dict | 
                 item.get("image"),
                 width_mm=SELECTION_PRODUCT_IMAGE_WIDTH_MM,
                 height_mm=SELECTION_PRODUCT_IMAGE_HEIGHT_MM,
-                force_landscape=_portrait_tile_size(item.get("size")),
+                force_landscape=True,
                 cover=True,
             ),
             Paragraph(_escape(item.get("room") or ""), styles["cell"]),
@@ -435,7 +428,7 @@ def build_tiles_selection_pdf(quotation: dict, customer: dict, branding: dict | 
     # behind the product details; full-width row fills concealed the logo.
     for r in range(2, len(rows), 2):
         style_cmds.append(("BACKGROUND", (0, r), (0, r), ZEBRA))
-    table = Table(rows, colWidths=_SEL_COLS, rowHeights=[9 * mm] + [45 * mm] * (len(rows) - 1), repeatRows=1)
+    table = Table(rows, colWidths=_SEL_COLS, minRowHeights=[10 * mm] + [32 * mm] * (len(rows) - 1), repeatRows=1)
     table.setStyle(TableStyle(style_cmds))
     story.append(table)
 
@@ -450,12 +443,10 @@ def build_tiles_selection_pdf(quotation: dict, customer: dict, branding: dict | 
 # ===========================================================================
 # TILES QUOTATION
 # ===========================================================================
-# SR / PRODUCT IMAGE / AREA / PRODUCT DETAIL / SIZE / RATE-SQFT / OFFER RATE /
-# RATE-BOX / QUANTITY / UNIT / TOTAL — sums to PAGE_W_MM (281mm).
-_QUO_COLS = [10 * mm, 50 * mm, 20 * mm, 46 * mm, 21 * mm, 21 * mm, 21 * mm, 21 * mm, 19 * mm, 18 * mm, 34 * mm]
-# Image column width less the table's 2 mm padding on each side.
-QUOTATION_PRODUCT_IMAGE_WIDTH_MM = 46.0
-QUOTATION_PRODUCT_IMAGE_HEIGHT_MM = QUOTATION_PRODUCT_IMAGE_WIDTH_MM / PRODUCT_IMAGE_ASPECT_RATIO
+# Preserve all original product-detail columns and their order on portrait A4.
+_QUO_COLS = [width * mm for width in (7, 32, 18, 32, 16, 13, 13, 15, 10, 10, 28)]
+QUOTATION_PRODUCT_IMAGE_WIDTH_MM = 28.0
+QUOTATION_PRODUCT_IMAGE_HEIGHT_MM = QUOTATION_PRODUCT_IMAGE_WIDTH_MM / (16 / 10)
 
 
 def build_tiles_quotation_pdf(quotation: dict, customer: dict, branding: dict | None = None) -> bytes:
@@ -463,7 +454,7 @@ def build_tiles_quotation_pdf(quotation: dict, customer: dict, branding: dict | 
     prefetch_product_images(quotation.get("items") or [])
     buf = BytesIO()
     doc = SimpleDocTemplate(
-        buf, pagesize=LANDSCAPE_A4, leftMargin=8 * mm, rightMargin=8 * mm,
+        buf, pagesize=PORTRAIT_A4, leftMargin=8 * mm, rightMargin=8 * mm,
         topMargin=10 * mm, bottomMargin=16 * mm,
         title=f"Quotation — {quotation.get('customer_name') or ''}",
         author=b.get("footer_company_name") or "Buildcon House",
@@ -528,7 +519,7 @@ def build_tiles_quotation_pdf(quotation: dict, customer: dict, branding: dict | 
         Paragraph("AREA", styles["colHead"]), Paragraph("PRODUCT DETAIL", styles["colHead"]),
         Paragraph("SIZE", styles["colHead"]), Paragraph("RATE/<br/>SQ.FT", styles["colHeadRed"]),
         Paragraph("OFFER<br/>RATE", styles["colHead"]), Paragraph("RATE/<br/>UNIT", styles["colHead"]),
-        Paragraph("QUANTITY", styles["colHead"]), Paragraph("UNIT", styles["colHead"]),
+        _SingleLineParagraph("QUANTITY", styles["colHead"]), Paragraph("UNIT", styles["colHead"]),
         _SingleLineParagraph(f"TOTAL ({_currency_symbol()})", styles["colHead"]),
     ]
     rows: list[list[object]] = [head]
@@ -545,7 +536,7 @@ def build_tiles_quotation_pdf(quotation: dict, customer: dict, branding: dict | 
                 item.get("image"),
                 width_mm=QUOTATION_PRODUCT_IMAGE_WIDTH_MM,
                 height_mm=QUOTATION_PRODUCT_IMAGE_HEIGHT_MM,
-                rotate_portrait=True,
+                force_landscape=True,
                 cover=True,
             ),
             Paragraph(_escape(item.get("room") or ""), styles["cell"]),
@@ -582,9 +573,7 @@ def build_tiles_quotation_pdf(quotation: dict, customer: dict, branding: dict | 
     table = Table(
         rows,
         colWidths=_QUO_COLS,
-        # 28.75 mm image + 8 mm of cell padding must fit inside every row.
-        # The former 33 mm height let image content bleed into the next row.
-        rowHeights=[9 * mm] + [37 * mm] * len(items),
+        minRowHeights=[12 * mm] + [32 * mm] * len(items),
         repeatRows=1,
     )
     table.setStyle(TableStyle(style_cmds))

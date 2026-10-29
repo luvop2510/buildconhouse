@@ -6,14 +6,30 @@ import { Linking, Platform } from "react-native";
 
 import { api, beginIdentityOperation, getRequestFloorId, getToken, type IdentityOperation } from "@/src/api/client";
 import { toast } from "@/src/components/Toast";
-import type { File as NativeFile } from "expo-file-system";
+import type { Directory as NativeDirectory, File as NativeFile } from "expo-file-system";
+
+const nativeDirectories = new WeakMap<NativeFile, NativeDirectory>();
 
 export async function createPreparedNativeFile(filename: string): Promise<NativeFile> {
-  const { File, Paths } = await import("expo-file-system");
-  const safeName = filename.replace(/[\\/]/g, "").trim() || "download";
-  const file = new File(Paths.cache, `${Date.now()}-${Math.random().toString(36).slice(2)}-${safeName}`);
-  file.create();
-  return file;
+  const { Directory, File, Paths } = await import("expo-file-system");
+  const safeName = filename.replace(/[\\/:*?"<>|\u0000-\u001f]/g, "").trim().replace(/^\.+$/, "") || "download";
+  const directory = new Directory(Paths.cache, `prepared-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  directory.create();
+  try {
+    const file = new File(directory, safeName);
+    file.create();
+    nativeDirectories.set(file, directory);
+    return file;
+  } catch (error) { directory.delete(); throw error; }
+}
+
+export function removePreparedNativeFile(file?: NativeFile): void {
+  if (!file) return;
+  const directory = nativeDirectories.get(file);
+  if (directory) {
+    if (directory.exists) directory.delete();
+    nativeDirectories.delete(file);
+  } else if (file.exists) file.delete();
 }
 
 /** The caller owns the temporary file and removes it after the share sheet closes. */
@@ -56,7 +72,18 @@ function nativeBlobBase64(blob: Blob): Promise<string> {
   });
 }
 
-async function fetchApiBlob(path: string, errorLabel: string, floorId: string | undefined, operation: IdentityOperation): Promise<Blob | null> {
+function quotationDownloadFilename(path: string, disposition: string | null | undefined): string | null {
+  if (!path.startsWith("/quotations/") || !/\/(?:portal-)?pdf(?:\/|\?|$)/.test(path) || !disposition) return null;
+  const encoded = disposition.match(/filename\*\s*=\s*UTF-8''([^;]+)/i);
+  const plain = disposition.match(/filename\s*=\s*"([^"]+)"/i);
+  try {
+    const name = encoded ? decodeURIComponent(encoded[1].trim()) : plain?.[1];
+    const safe = name?.replace(/[\\/:*?"<>|\u0000-\u001f]/g, "").trim();
+    return safe?.toLowerCase().endsWith(".pdf") ? safe : null;
+  } catch { return null; }
+}
+
+async function fetchApiBlob(path: string, errorLabel: string, floorId: string | undefined, operation: IdentityOperation, onFilename?: (name: string) => void): Promise<Blob | null> {
   // Capture the selected workspace before token hydration can yield to a floor switch.
   const floor = floorId === undefined ? getRequestFloorId() : Promise.resolve(floorId);
   const [token, requestFloorId] = await Promise.all([getToken(), floor]);
@@ -78,7 +105,10 @@ async function fetchApiBlob(path: string, errorLabel: string, floorId: string | 
       return null;
     }
     const blob = await res.blob();
-    return operation.isCurrent() ? blob : null;
+    if (!operation.isCurrent()) return null;
+    const filename = quotationDownloadFilename(path, res.headers?.get("Content-Disposition"));
+    if (filename) onFilename?.(filename);
+    return blob;
   } catch {
     if (operation.isCurrent()) toast.show(`Couldn't download the ${errorLabel} — check your connection`);
     return null;
@@ -186,15 +216,13 @@ function saveMobileBrowserFile(blob: Blob, filename: string, errorLabel: string,
   });
 }
 
-// Download an authenticated file UNDER A SPECIFIC FILENAME (the tiles
-// documents must save as "<Customer Name> <DD-MM-YYYY>.pdf", never
-// "quotation.pdf") — window.open() ignores Content-Disposition for blob:
-// URLs, so desktop web uses an <a download> click instead. Native shares a
-// named local file; mobile web offers a fresh Save/Share tap after fetching.
+// Quotation names come from the authenticated response; other files keep the
+// caller's name. Blob URLs lose Content-Disposition, so retain the chosen name
+// through the browser download and native file-sharing paths.
 export async function downloadApiFile(path: string, filename: string, errorLabel = "file", floorId?: string): Promise<boolean> {
   const operation = beginIdentityOperation();
   try {
-    const blob = await fetchApiBlob(path, errorLabel, floorId, operation);
+    const blob = await fetchApiBlob(path, errorLabel, floorId, operation, name => { filename = name; });
     return blob && operation.isCurrent() ? await savePreparedFile(blob, filename, errorLabel, operation) : false;
   } finally { operation.finish(); }
 }
@@ -206,7 +234,7 @@ export async function savePreparedFile(blob: Blob, filename: string, errorLabel 
     if (!operation.isCurrent()) return false;
     if (Platform.OS !== "web") {
       let file: NativeFile | undefined;
-      const removePrivateFile = () => { if (file?.exists) file.delete(); };
+      const removePrivateFile = () => removePreparedNativeFile(file);
       operation.signal.addEventListener("abort", removePrivateFile, { once: true });
       try {
         const base64 = await nativeBlobBase64(blob);
@@ -245,7 +273,7 @@ export async function shareApiPdf(path: string, filename: string, floorId?: stri
   if (Platform.OS !== "web") return downloadApiFile(path, filename, "PDF", floorId);
   const operation = beginIdentityOperation();
   try {
-    const blob = await fetchApiBlob(path, "PDF", floorId, operation);
+    const blob = await fetchApiBlob(path, "PDF", floorId, operation, name => { filename = name; });
     if (!blob || !operation.isCurrent()) return false;
     if (blob.type && blob.type !== "application/pdf") {
       toast.show("The PDF could not be prepared. Try again.");

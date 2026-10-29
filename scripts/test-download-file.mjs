@@ -37,7 +37,7 @@ assert.equal(JSON.parse(requests[0].body).target, `/api${path}`);
 // Mobile fetch failures stay in the app; successful generation waits for a
 // fresh tap before handing the blob to Safari's downloader or share sheet.
 for (const document of [
-  { path, filename: "Customer.pdf", label: "quotation PDF", type: "application/pdf", body: "%PDF-1.4" },
+  { path, filename: "Customer.pdf", expectedFilename: "Customer 29-10-2026 quotation PDF.pdf", disposition: "attachment; filename*=UTF-8\'\'Customer%2029-10-2026%20quotation%20PDF.pdf", label: "quotation PDF", type: "application/pdf", body: "%PDF-1.4" },
   { path: "/quotations/q-tablet/pptx", filename: "Customer PPT 05-10-2026.pptx", label: "product PPT",
     type: "application/vnd.openxmlformats-officedocument.presentationml.presentation", body: "PK" },
 ]) {
@@ -74,7 +74,7 @@ for (const navigator of [
     fetch: async (url, options) => {
       fetches.push({ url, options });
       return fail ? { ok: false, status: 503, json: async () => ({ detail: "PDF generation failed" }) }
-        : { ok: true, blob: async () => new Blob([document.body], { type: document.type }) };
+        : { ok: true, headers: { get: () => document.disposition || null }, blob: async () => new Blob([document.body], { type: document.type }) };
     },
   });
   const saving = module.exports.downloadApiFile(document.path, document.filename, document.label);
@@ -107,7 +107,7 @@ for (const navigator of [
   assert.equal(clicks, 1);
   const anchor = elements.find(element => element.tag === "a");
   assert.equal(anchor.href, "blob:ready-pdf");
-  assert.equal(anchor.download, document.filename);
+  assert.equal(anchor.download, document.expectedFilename || document.filename);
   assert.equal(anchor.target, undefined, "download should not force the file into a separate tab");
   const cancelled = module.exports.downloadApiFile(document.path, document.filename, document.label, "ground-floor");
   await new Promise(resolve => setImmediate(resolve));
@@ -120,6 +120,33 @@ for (const navigator of [
 }
 }
 console.log("PDF/PPT downloads: floor binding, mobile fresh-gesture save, and recoverable generation failures passed");
+
+// Only authenticated quotation PDFs adopt the server name; malformed headers
+// and non-PDF files preserve the explicit caller fallback.
+for (const [path, disposition, expected] of [
+  ["/quotations/q/portal-pdf/revision/2", 'attachment; filename="Client 29-10-2026 quotation PDF.pdf"', "Client 29-10-2026 quotation PDF.pdf"],
+  ["/quotations/q/pdf", "attachment; filename*=UTF-8''%E0%A4%A8%E0%A4%BE%E0%A4%AE%2029-10-2026%20quotation%20PDF.pdf", "नाम 29-10-2026 quotation PDF.pdf"],
+  ["/quotations/q/pdf", "attachment; filename*=UTF-8''%broken", "fallback.pdf"],
+  ["/quotations/q/pdf", 'attachment; filename="../Client.pdf"', "..Client.pdf"],
+  ["/quotations/q/pdf", 'attachment; filename="Client.xlsx"', "fallback.pdf"],
+  ["/tile-orders/chalans/q/pdf", 'attachment; filename="Server.pdf"', "fallback.pdf"],
+]) {
+  const module = { exports: {} };
+  const anchors = [];
+  vm.runInNewContext(compile("../src/utils/downloadFile.ts"), {
+    module, exports: module.exports, Blob, navigator: { userAgent: "Desktop Chrome" },
+    require: name => name === "react-native" ? { Platform: { OS: "web" } } : name.includes("Toast")
+      ? { toast: { show: value => { throw new Error(value); } } }
+      : { beginIdentityOperation: stableIdentity, getToken: async () => null, getRequestFloorId: async () => "ground-floor", api: { base: "" } },
+    document: { body: { appendChild: item => anchors.push(item) }, createElement: () => ({ click() {}, remove() {} }) },
+    URL: { createObjectURL: () => "blob:named-pdf", revokeObjectURL() {} }, setTimeout() {},
+    fetch: async () => ({ ok: true, headers: { get: () => disposition }, blob: async () => new Blob(["%PDF"], { type: "application/pdf" }) }),
+  });
+  assert.equal(await module.exports.downloadApiFile(path, "fallback.pdf"), true);
+  assert.equal(anchors[0].download, expected);
+}
+console.log("Quotation response filenames: download/portal routes, Unicode, invalid encoding, path safety and unrelated documents passed");
+
 
 // A slow token hydration must not move an in-flight download to another floor.
 {
