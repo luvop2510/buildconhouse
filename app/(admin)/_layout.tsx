@@ -89,7 +89,7 @@ function Wordmark({ compact }: { compact?: boolean }) {
   return <BuildConLogo height={32} />;
 }
 
-// ── Sidebar item — the brass bar is the only accent in the chrome. ─────────
+// Labelled navigation uses the shared neutral selected state.
 function SideItem({ item, active, onPress, compact = false }: { item: NavItem; active: boolean; onPress: () => void; compact?: boolean }) {
   return (
     <WorkspaceLink
@@ -108,8 +108,7 @@ function SideItem({ item, active, onPress, compact = false }: { item: NavItem; a
         Platform.OS === "web" ? ({ cursor: "pointer" } as any) : null,
       ]}
     >
-      <View style={[styles.brassBar, { backgroundColor: active ? color.brass : "transparent" }]} />
-      <Feather name={item.icon} size={16} color={active ? color.action : color.inkSoft} />
+      <Feather name={item.icon} size={20} color={active ? color.action : color.inkSoft} accessible={false} />
       {!compact ? <Text
         style={{
           fontFamily: active ? font.semibold : font.medium,
@@ -210,7 +209,7 @@ const FLOOR_ROUTE_SEGMENTS: Record<string, string[]> = {
   [FURNITURE_FLOOR_ID]: ["furniture", "furniture-quotations"],
 };
 
-const SHARED_FLOOR_ROUTES = ["catalog", "customers", "payments", "payments-list", "walkins", "followups", "settings", "team", "sales-data"];
+const SHARED_FLOOR_ROUTES = ["dashboard", "catalog", "customers", "payments", "payments-list", "walkins", "followups", "settings", "team", "sales-data"];
 
 function isSharedFloorRoute(segments: string[]) {
   return SHARED_FLOOR_ROUTES.some(segment => segments.includes(segment));
@@ -222,7 +221,7 @@ function isKitchenReportingRoute(segments: string[]) {
 
 function isRouteCompatibleWithFloor(segments: string[], floorId: string) {
   if (segments.includes("notifications")) return false;
-  if (floorId === KITCHEN_FLOOR_ID && !segments.includes("kitchen") && !isKitchenReportingRoute(segments) && !isPersonalAccountRoute(segments) && !isCustomerEditorRoute(segments)) return false;
+  if (floorId === KITCHEN_FLOOR_ID && !segments.includes("kitchen") && !segments.includes("dashboard") && !isKitchenReportingRoute(segments) && !isPersonalAccountRoute(segments) && !isCustomerEditorRoute(segments)) return false;
   if (segments.includes("catalog") && ![SANITARY_FLOOR_ID, TILES_FLOOR_ID].includes(floorId)) return false;
   return !Object.entries(FLOOR_ROUTE_SEGMENTS).some(([restrictedFloor, roots]) => (
     restrictedFloor !== floorId && roots.some((root) => segments.includes(root))
@@ -271,7 +270,7 @@ function useVisibleNav() {
   const { staff } = useAuth();
   const { access, selectedFloorId } = useFloorAccess(!!staff);
   return (items: NavItem[]) => items.filter((item) => {
-    if (selectedFloorId === KITCHEN_FLOOR_ID && !item.match.startsWith("kitchen-") && !isKitchenReportingRoute([item.match])) return false;
+    if (selectedFloorId === KITCHEN_FLOOR_ID && !item.match.startsWith("kitchen-") && item.match !== "dashboard" && !isKitchenReportingRoute([item.match])) return false;
     const permission = item.match.startsWith("kitchen-") ? "kitchen-projects" : item.match;
     if (item.floors && selectedFloorId && !item.floors.includes(selectedFloorId)) return false;
     if (staff?.custom_access) return hasAccess(permission);
@@ -482,19 +481,11 @@ function FloorAccessGate({ children }: { children: React.ReactNode }) {
     }
   }, [authLoading, staff, destinationReady, initialAccount, initialPersonal, access, selectedFloorId, loading, segments, router]);
 
-  useEffect(() => {
-    if (authLoading || !staff || staff.custom_access || !access || !selectedFloorId || !destinationReady || !segments.includes("dashboard")) return;
-    const kitchenOrFurniture = selectedFloorId === KITCHEN_FLOOR_ID || selectedFloorId === FURNITURE_FLOOR_ID;
-    if (!kitchenOrFurniture) return;
-    // Only choose a department default for the generic dashboard. A bookmarked
-    // floor-specific page owns its floor synchronization; replacing it here
-    // races that hook and loses the user's destination during hydration.
-    router.replace(`/(admin)${floorLandingPath(selectedFloorId)}` as any);
-  }, [authLoading, staff, access, selectedFloorId, destinationReady, segments, router]);
+
 
   const retiredWorkspaceRoute = Boolean(selectedFloorId && (
     segments.includes("notifications") ||
-    (selectedFloorId === KITCHEN_FLOOR_ID && destinationReady && !segments.includes("kitchen") && !isKitchenReportingRoute(segments) && !isPersonalAccountRoute(segments) && !isCustomerEditorRoute(segments)) ||
+    (selectedFloorId === KITCHEN_FLOOR_ID && destinationReady && !segments.includes("kitchen") && !segments.includes("dashboard") && !isKitchenReportingRoute(segments) && !isPersonalAccountRoute(segments) && !isCustomerEditorRoute(segments)) ||
     (["purchases", "purchases-completed", "purchase-orders"].some(part => segments.includes(part)) && selectedFloorId !== SANITARY_FLOOR_ID) ||
     (segments.includes("catalog") && ![SANITARY_FLOOR_ID, TILES_FLOOR_ID].includes(selectedFloorId))
   ));
@@ -652,7 +643,7 @@ const styles = StyleSheet.create({
   },
   sideItem: {
     flexDirection: "row", alignItems: "center", gap: 10,
-    height: 44, borderRadius: radius.sm, paddingLeft: 10, paddingRight: 10,
+    minHeight: 44, borderRadius: radius.md, paddingLeft: 12, paddingRight: 12,
     overflow: "hidden",
   },
   sideItemCompact: {
@@ -664,9 +655,6 @@ const styles = StyleSheet.create({
     backgroundColor: color.sunken,
   },
   sidebarToggleLabel: { fontFamily: font.medium, fontWeight: "500", fontSize: 11.5, color: color.inkMid },
-  brassBar: {
-    position: "absolute", left: 0, top: 8, bottom: 8, width: 2.5, borderRadius: 2,
-  },
   brassBarRail: {
     position: "absolute", left: 0, top: 10, bottom: 10, width: 3, borderRadius: 3,
   },

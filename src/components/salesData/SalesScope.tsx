@@ -7,7 +7,7 @@ import { useSalesPeriod } from "./useSalesPeriod";
 
 function useScope() {
   const { staff } = useAuth();
-  const canView = useActionAccess("sales_data", "view", !!staff && ["owner", "admin", "manager"].includes(staff.role));
+  const canView = useActionAccess("sales_data", "view", staff?.role === "owner");
   const { floors, selectedFloorId, error, retry } = useFloorAccess(!!staff && canView);
   const [reportFloor, setReportFloor] = useState<string | null>(null);
   const previousFloor = useRef("");

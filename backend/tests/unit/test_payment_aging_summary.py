@@ -253,7 +253,7 @@ def test_detail_keeps_confirmation_date_and_hides_pending_automation_balances(mo
     assert requested[0]["$nor"] == [{"status": "pending", "automation_key": {"$exists": True}, "label": {"$ne": "labor cost"}}]
 
 
-def test_fully_paid_history_honors_multiple_authorized_floors_over_active_workspace(monkeypatch):
+def test_fully_paid_history_rejects_other_floors_even_if_account_has_access(monkeypatch):
     fake_db = Db([])
     queries = []
     def find(query, *_args):
@@ -264,11 +264,11 @@ def test_fully_paid_history_honors_multiple_authorized_floors_over_active_worksp
     user = UserPublic(email="accounts@forge.app", full_name="Accounts", role="accounts",
                       floor_ids=["first-floor", "second-floor"], active_floor_id="first-floor")
     result = asyncio.run(payments.fully_paid_orders(
-        q=None, business_unit="first-floor,second-floor", sort="date_desc", skip=0, limit=50, user=user,
+        q=None, business_unit="first-floor", sort="date_desc", skip=0, limit=50, user=user,
     ))
     assert result["total"] == 0
-    assert queries[0] == {"status": {"$in": ["ordered", "won"]}, "floor_id": {"$in": ["first-floor", "second-floor"]}}
+    assert queries[0] == {"status": {"$in": ["ordered", "won"]}, "floor_id": {"$in": ["first-floor"]}}
     with pytest.raises(HTTPException) as error:
-        asyncio.run(payments.fully_paid_orders(q=None, business_unit="first-floor,third-floor", sort="date_desc", skip=0, limit=50, user=user))
+        asyncio.run(payments.fully_paid_orders(q=None, business_unit="first-floor,second-floor", sort="date_desc", skip=0, limit=50, user=user))
     assert error.value.status_code == 403
     assert len(queries) == 1  # reject before any data is queried

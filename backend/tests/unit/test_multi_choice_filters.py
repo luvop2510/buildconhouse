@@ -32,13 +32,13 @@ def test_analytics_multi_floor_and_entity_filters_keep_date_scope():
 
 
 def test_payment_history_multi_selection_never_widens_floor_access():
-    user = UserPublic(id="sales", email="sales@example.com", full_name="Sales", role="sales", floor_ids=["first-floor", "ground-floor"])
-    floors = _resolve_history_floor_ids(user, "first-floor,ground-floor")
+    user = UserPublic(id="sales", email="sales@example.com", full_name="Sales", role="sales", floor_ids=["first-floor", "ground-floor"], active_floor_id="first-floor")
+    floors = _resolve_history_floor_ids(user, "first-floor")
     query = _history_filter(floors, None, None, None, None, "cash,upi", "completed")
-    assert query["floor_id"] == {"$in": ["first-floor", "ground-floor"]}
+    assert query["floor_id"] == {"$in": ["first-floor"]}
     assert query["mode"] == {"$in": ["cash", "upi"]}
     with pytest.raises(HTTPException) as error:
-        _resolve_history_floor_ids(user, "first-floor,second-floor")
+        _resolve_history_floor_ids(user, "first-floor,ground-floor")
     assert error.value.status_code == 403
 
 

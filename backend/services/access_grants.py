@@ -28,7 +28,7 @@ RESOURCE_REGISTRY: dict[str, dict[str, Any]] = {
     "notebook_walkins": {"label": "Legacy lead notebook", "retired": True, "floor_ids": ["second-floor", "third-floor"], "actions": ["view", "create", "update"], "description": "Add walk-ins, record contact attempts, and move leads to quotation follow-up."},
     "notebook_quotations": {"label": "Quotation Follow-up", "retired": True, "floor_ids": ["second-floor", "third-floor"], "actions": ["view", "update"], "description": "Review converted leads, update quotation values, contact customers, and record outcomes."},
     "furniture_quotations": {"label": "RNB quotations", "floor_ids": ["third-floor"], "actions": ["view", "create", "update", "export"], "description": "Prepare RNB quotations, edit items and terms, download PDFs, and send configured WhatsApp exports."},
-    "sales_data": {"label": "Sales Data", "actions": ["view", "export"], "description": "Review floor sales, customer and brand totals, and export reports."},
+    "sales_data": {"label": "Sales Data", "owner_only": True, "actions": ["view", "export"], "description": "Owner-only sales analysis and report exports. Historical grants can be revoked."},
 }
 
 RESOURCE_REGISTRY["dashboard"].update(actions=["view"], description="View today's floor summary and activity.")
@@ -61,7 +61,7 @@ def delegation_resource_catalog(floor_ids: list[str]) -> list[dict[str, Any]]:
             continue
         supported = [floor for floor in floor_ids
                      if not metadata.get("floor_ids") or floor in metadata["floor_ids"]]
-        assignable = [] if metadata.get("retired") else [
+        assignable = [] if metadata.get("retired") or metadata.get("owner_only") else [
             floor for floor in supported if floor != "second-floor" or key == "kitchen_projects"
         ]
         resources.append({

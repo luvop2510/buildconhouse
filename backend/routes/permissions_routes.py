@@ -46,7 +46,7 @@ MODULE_KEYS = {m["key"] for m in MODULES}
 
 # Mirrors the nav `roles` restriction that existed before this feature —
 # every module defaults to "worker" (i.e. visible to everyone) except Team.
-DEFAULT_MIN_ROLE: dict[str, str] = {"team": "owner", "sales-data": "admin"}
+DEFAULT_MIN_ROLE: dict[str, str] = {"team": "owner", "sales-data": "owner"}
 
 
 def _default_matrix() -> dict[str, dict[str, bool]]:
@@ -81,6 +81,8 @@ async def get_permission_matrix(_: UserPublic = Depends(get_current_user)):
         for mod_key, allowed in row.items():
             if mod_key in MODULE_KEYS:
                 matrix[role][mod_key] = bool(allowed)
+    for role, row in matrix.items():
+        row["sales-data"] = role == "owner"
     return {
         "modules": MODULES,
         "roles": _roles_payload(),

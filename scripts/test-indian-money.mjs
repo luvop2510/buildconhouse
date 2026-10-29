@@ -8,7 +8,10 @@ function tokens(file, require) {
     { module, exports: module.exports, require });
   return module.exports;
 }
-const design = tokens('src/design/tokens.ts', () => ({ StyleSheet: { create: x => x } }));
+const textFamily = tokens('src/components/appTextFamily.ts', () => ({}));
+const design = tokens('src/design/tokens.ts', name => name === 'react-native'
+  ? { StyleSheet: { create: x => x }, Platform: { OS: 'web' } }
+  : textFamily);
 const theme = tokens('src/theme/tokens.ts', () => design);
 for (const [value, expected] of [[0,'0'], [74300,'74,300'], [100000,'1.00 L'], [743000,'7.43 L'], [10000000,'1.00 Cr'], [-74300,'-74,300']]) {
   assert.equal(design.fmtMoneyCompact(value), expected);

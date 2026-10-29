@@ -1,3 +1,4 @@
+import { todayFixture, mockTodayOverview } from './today-fixtures';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { mockSession } from './audit-fixtures';
 import { mockSalesAnalytics } from './sales-analytics-fixtures';
@@ -154,28 +155,16 @@ test('phone More destinations open with Enter and dismiss the workspace sheet', 
   await expect(sheet).toHaveCount(0);
 });
 
-test('dashboard pipeline and follow-up links expose names and keyboard destinations', async ({ page }) => {
-  await mockSession(page, '/dashboard', false, { staff: { id: 'audit-manager', email: 'manager@example.test', full_name: 'Audit Manager', role: 'manager', active: true, floor_ids: ['first-floor'] } });
-  await page.route('**/api/followups/mission', route => route.fulfill({ json: {
-    due_count: 1, revenue_at_risk: 0, revenue_at_risk_short: '0', overdue_payments: 0,
-    quotations_expiring_today: 0, critical_count: 0, estimated_minutes: 1, greeting_name: 'Fixture',
-  } }));
-  await page.route('**/api/dashboard/stats', route => route.fulfill({ json: {
-    revenue_month: 1000, open_pipeline: 2000, pending_approval: 1, quotes_this_month: 1,
-  } }));
-  await page.route('**/api/purchases/shortages?**', route => route.fulfill({ json: {
-    items: [{ id: 'fixture-shortage', customer_name: 'Fixture customer', name: 'Fixture basin', shortage_qty: 1 }],
-  } }));
-  for (const [name, destination] of [
-    ['View all quotations', '/quotations'], ['All follow-ups', '/followups'],
-    ['1 quotation waiting for approval', '/quotations'], ['1 customer awaiting reorder after a transfer', '/purchases'],
-  ]) {
+test('Today department controls expose names and keyboard destinations', async ({ page }) => {
+  await mockSession(page, '/dashboard', false);
+  await mockTodayOverview(page);
+  await page.route('**/api/dashboard/today', route => route.fulfill({ json: todayFixture() }));
+  for (const [name, path] of [['Open Quotations', '/quotations'], ['Open Follow-ups', '/followups']]) {
     await page.goto('/dashboard');
-    const link = page.getByRole('link', { name, exact: true });
-    await targetSize(link);
-    await link.focus();
+    const action = page.getByRole('button', { name, exact: true });
+    await action.focus();
     await page.keyboard.press('Enter');
-    await expect(page).toHaveURL(new RegExp(`${destination}$`));
+    await expect(page).toHaveURL(new RegExp(path));
   }
 });
 

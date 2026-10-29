@@ -54,7 +54,7 @@ export function staffLandingPath(profile?: AccessProfile | null, grants?: Person
       orders: "/(admin)/tiles/orders", walkins: "/(admin)/walkins", dashboard: "/(admin)/dashboard",
       tiles: "/(admin)/tiles", godown_stock: "/(admin)/godown-stock",
       kitchen_projects: "/(admin)/kitchen",
-      furniture_quotations: "/(admin)/notebook/furniture-quotations", sales_data: "/(admin)/sales-data",
+      furniture_quotations: "/(admin)/notebook/furniture-quotations",
   };
   // Legacy stage-specific notebook grants do not authorize the replacement
   // shared registers. Choose a supported page, or the stable account access

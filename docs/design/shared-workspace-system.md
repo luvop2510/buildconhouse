@@ -2,6 +2,8 @@
 
 Ground, Sanitary, Kitchen and Furniture share the application shell, accessible controls and data table contract. Floor-specific business fields and permissions remain separate. Kitchen uses the scoped workspace presentation in `src/components/kitchen/KitchenPrimitives.tsx`; shared primitives remain in `src/components/ui.tsx`, re-exported from `src/components/ds.tsx`.
 
+The canonical visual contract is [src/design/README.md](../../src/design/README.md), with values from `src/design/tokens.ts`. The [interface acceptance checklist](interface-acceptance.md) applies to all page families and account viewpoints. Older release screenshots and preview palettes do not override these sources.
+
 ## Page and task hierarchy
 
 Use one page title and one primary task action. Keep contextual customer identity, phone and site visible above the current task. Put secondary actions in the page header or a labelled menu. Header and content should share the same scrolling region on compact screens, with consistent aligned gutters. Preserve the component tree across rotation so typed drafts survive.
@@ -12,9 +14,9 @@ Kitchen's page frame supports a contained 1,560 px maximum width, 16 px phone gu
 
 Interactive targets have a minimum 44 px touch region. Text fields have visible persistent labels, a 48 px minimum height and a 16 px input font. Related fields can share a row only when each remains usable; otherwise wrap. Required values and errors must be expressed in text. Keep loading buttons disabled while their request runs, preserve draft values after failures and provide a retry or reload path.
 
-Keyboard focus uses a visible blue outline without changing the element's dimensions. Focus, press and hover states must not move neighbouring controls. Respect reduced motion and do not rely on animation, icons or colour alone to communicate state. Date-only values stay in India time and use browser-native calendar inputs on web.
+Keyboard focus uses the shared teal focus role without changing the element's dimensions. Focus, press and hover states must not move neighbouring controls. Respect reduced motion and do not rely on animation, icons or colour alone to communicate state. Date-only values stay in India time and use browser-native calendar inputs on web.
 
-Kitchen's measured text pairs are ink `#17232E` on white (15.95:1), muted `#53616F` on white (6.35:1), muted text on `#F6F7F9` (5.92:1) and white on action blue `#0066CC` (5.57:1). All exceed 4.5:1 for ordinary text.
+Every floor uses the system text face and Feather outline icons. Canonical text pairs on white are graphite `#1D1D1F` (16.83:1), secondary `#545458` (7.54:1), supporting `#626267` (6.07:1) and focus/chart teal `#22766D` (5.41:1). White on the graphite primary action is 16.83:1. These figures were calculated from sRGB token values; composed overlays and future themes need their own measurements.
 
 ## Data tables across all floors
 

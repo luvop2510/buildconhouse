@@ -1,0 +1,78 @@
+import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { affectedPlan, changedFiles, contractCommands, fingerprint, runPlan } from './check-affected.mjs';
+
+const root = mkdtempSync(join(tmpdir(), 'forge-affected-'));
+const write = (file, text) => { mkdirSync(dirname(join(root, file)), { recursive: true }); writeFileSync(join(root, file), text); };
+const git = args => execFileSync('git', args, { cwd: root, stdio: 'pipe' });
+try {
+  write('package.json', JSON.stringify({ scripts: { 'test:one': 'node scripts/test-one.mjs', 'test:two': 'node scripts/test-two.mjs', 'test:frontend-drift': 'node scripts/test-frontend-drift.mjs' } }));
+  write('src/one.ts', "export { value } from './nested';");
+  write('src/nested.ts', 'export const value = 1;');
+  write('src/two.ts', 'export const value = 2;');
+  write('scripts/test-one.mjs', "import '../src/one.ts';");
+  write('scripts/test-two.mjs', "import '../src/two.ts';");
+  git(['init', '-q']); git(['add', '.']);
+  git(['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '-qm', 'fixture']);
+  assert.ok(!contractCommands(root).has('scripts/test-frontend-drift.mjs'), 'External-baseline diagnostic stays outside automatic local checks');
+  const plan = affectedPlan(root, ['src/nested.ts']);
+  assert.deepEqual(plan.checks.filter(check => check.id !== 'typescript').map(check => check.id), ['scripts/test-one.mjs'], 'Transitive caller is selected without unrelated feature test');
+  const one = plan.checks.find(check => check.id === 'scripts/test-one.mjs');
+  const first = fingerprint(root, one);
+  write('src/two.ts', 'export const value = 3;');
+  assert.equal(fingerprint(root, one), first, 'Unrelated source does not invalidate successful focused receipt');
+  write('src/nested.ts', 'export const value = 4;');
+  assert.notEqual(fingerprint(root, one), first, 'Transitive input invalidates successful receipt');
+  assert.equal(affectedPlan(root, ['src/new-unmapped.ts']).broad, true, 'Unmapped code is conservative');
+  assert.ok(affectedPlan(root, ['src/new-unmapped.ts']).checks.every(check => check.id === 'typescript' || check.unbounded), 'Broad fallback receipts fingerprint complete source');
+  write('scripts/test-added.mjs', 'console.log(1);');
+  assert.ok(affectedPlan(root, ['scripts/test-added.mjs']).checks.some(check => check.id === 'scripts/test-added.mjs'), 'New or edited standalone regression runs even before package registration');
+  assert.equal(affectedPlan(root, ['docs/note.md']).checks.length, 0, 'Prose does not run business contracts');
+  write('src/new.ts', 'export const value = 5;');
+  write('src/staged.ts', 'export const value = 6;'); git(['add', 'src/staged.ts']);
+  const changed = changedFiles(root);
+  for (const file of ['src/nested.ts', 'src/two.ts', 'src/new.ts', 'src/staged.ts']) assert.ok(changed.includes(file), `Detect ${file}`);
+  assert.throws(() => changedFiles(root, '--bad-revision'), /Base must/);
+  git(['rm', 'src/one.ts']);
+  assert.ok(changedFiles(root).includes('src/one.ts'), 'Staged deletion is included');
+  assert.equal(affectedPlan(root, ['src/one.ts']).broad, true, 'Deleted dependency cannot silently lose coverage');
+
+  let runs = 0;
+  const fixture = { checks: [one] };
+  const output = []; const log = console.log, error = console.error;
+  console.log = message => output.push(message); console.error = message => output.push(message);
+  try {
+  const run = () => { runs++; return { status: 0, stdout: 'passed' }; };
+  assert.deepEqual(runPlan(root, fixture, { run }), { passed: 1, reused: 0, failed: 0 });
+  assert.deepEqual(runPlan(root, fixture, { run }), { passed: 0, reused: 1, failed: 0 });
+  assert.equal(runs, 1);
+  write('src/added-later.ts', 'export const value = 9;');
+  assert.equal(runPlan(root, fixture, { run }).passed, 1, 'New source inventory invalidates receipt');
+  assert.equal(runPlan(root, fixture, { run, force: true }).passed, 1, 'Force bypasses receipt');
+  write('scripts/test-one.mjs', "import '../src/one.ts'; // changed");
+  assert.equal(runPlan(root, fixture, { run: () => ({ status: 1, stderr: 'failure' }) }).failed, 1);
+  assert.equal(runPlan(root, fixture, { run }).passed, 1, 'Failed execution cannot be reused');
+  write('src/nested.ts', 'export const value = 7;');
+  assert.equal(runPlan(root, fixture, { run: () => { write('src/nested.ts', 'export const value = 8;'); return { status: 0 }; } }).failed, 1, 'Concurrent input edits cannot receive passing receipt');
+  assert.ok(readFileSync(join(root, 'package.json'), 'utf8'));
+  const backend = { ...one, id: 'backend-unit' };
+  assert.equal(runPlan(root, { checks: [backend] }, { run }).passed, 1);
+  assert.equal(runPlan(root, { checks: [backend] }, { run }).passed, 1, 'Python results are never cached');
+  assert.ok(output.some(line => line.startsWith('FAIL')));
+  } finally { console.log = log; console.error = error; }
+  write('src/group/file.ts', 'export const value = 1;');
+  write('scripts/test-dynamic.mjs', "import { readFileSync } from 'node:fs'; const name = 'file'; readFileSync(new URL(`../src/group/${name}.ts`, import.meta.url));");
+  const commands = new Map([['scripts/test-dynamic.mjs', ['node', 'scripts/test-dynamic.mjs']]]);
+  const dynamic = affectedPlan(root, ['src/group/file.ts'], { commands });
+  assert.equal(dynamic.broad, false);
+  const dynamicCheck = dynamic.checks.find(check => check.id === 'scripts/test-dynamic.mjs');
+  assert.ok(dynamicCheck, 'Dynamic file prefix selects its contract');
+  assert.equal(dynamicCheck.unbounded, true);
+  const dynamicBefore = fingerprint(root, dynamicCheck);
+  write('src/two.ts', 'export const value = 10;');
+  assert.notEqual(fingerprint(root, dynamicCheck), dynamicBefore, 'Dynamic discovery fingerprints all source inputs');
+  console.log('Affected-check selection, transitive fingerprints, staged/unstaged/untracked/deleted changes, conservative fallback, reuse, failures and concurrent edits passed.');
+} finally { rmSync(root, { recursive: true, force: true }); }

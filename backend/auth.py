@@ -14,7 +14,7 @@ from db import db
 from models import Role, UserPublic, CustomerPublic
 from settings import settings
 from access_profiles import profile_allows_request
-from services.access_grants import action_for_api_request, granted_floor_ids, grants_for_user, is_common_access_request, is_global_followup_admin_request, request_resource
+from services.access_grants import action_for_api_request, granted_floor_ids, grants_for_user, is_common_access_request, is_global_followup_admin_request, request_resource, resource_for_api_path
 
 JWT_SECRET = settings.jwt_secret
 JWT_ALG = settings.jwt_algorithm
@@ -233,6 +233,14 @@ async def authorize_staff_request(user: UserPublic, request: Request | None) -> 
             raise HTTPException(status_code=403, detail="Custom access requires request context")
         return user
     path = request.url.path
+    # Sales reporting is an owner surface; stale role settings or a saved
+    # custom page grant must not authorize its direct API or export URLs.
+    if resource_for_api_path(path) == "sales_data" or path == "/api/dashboard/stats":
+        raise HTTPException(status_code=403, detail="Sales Data is available only to the owner")
+    if request.method == "GET" and path in {"/api/dashboard/today", "/api/dashboard/today/overview"}:
+        # The DTO applies current department grants before any business read.
+        # It is also the safe landing page for narrowly scoped profiles.
+        return user
     if not profile_allows_request(user.access_profile, request.method, path):
         raise HTTPException(status_code=403, detail="This account is not permitted to use this function")
     if user.custom_access and is_global_followup_admin_request(request.method, path):

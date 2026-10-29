@@ -90,6 +90,8 @@ export function useModuleAccess() {
   return useCallback(
     (moduleKey: string) => {
       if (moduleKey.startsWith("kitchen-")) moduleKey = "kitchen-projects";
+      if (moduleKey === "dashboard" && staff) return true;
+      if (moduleKey === "sales-data") return staff?.role === "owner";
       if (!staff) return true;
       if (staff.role === "owner") return true;
       if (moduleKey === "team") return false;
@@ -114,6 +116,7 @@ export function useModuleAccess() {
 export function useActionAccess(resource: string, action: GrantAction, legacyAllowed = true): boolean {
   const { staff } = useAuth();
   const { selectedFloorId } = useFloorAccess(!!staff);
+  if (resource === "sales_data") return staff?.role === "owner";
   if (staff?.role === "owner") return true;
   if (!staff?.custom_access) return legacyAllowed;
   return hasGrantAccess(staff.access_grants, selectedFloorId, resource, action);

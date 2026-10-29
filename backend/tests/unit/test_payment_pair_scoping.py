@@ -112,11 +112,11 @@ def test_coexisting_floors_keep_separate_balances_and_only_settled_history(datab
         assert stock == {("reused-id", "first-floor"): 50}
         assert len(database.payments.pipelines) == 2 and len(database.purchase_orders.pipelines) == 1
         settled = await routes.fully_paid_orders(q=None, business_unit=None, sort="date_desc", skip=0, limit=50, user=user("owner"))
-        assert [(row["floor_id"], row["received"], row["refund_due"]) for row in settled["items"]] == [("first-floor", 100, 50)]
+        assert [(row["floor_id"], row["received"], row["refund_due"]) for row in settled["items"]] == []
         history = await routes.completed_payment_list(Response(), q=None, date_from=None, date_to=None,
             business_unit=None, mode=None, sort="date_desc", skip=0, limit=50, user=user("owner"))
-        assert history["total"] == 1
-        assert [row["id"] for row in history["items"]] == ["other-receipt"]
+        assert history["total"] == 0
+        assert history["items"] == []
     asyncio.run(run())
 
 

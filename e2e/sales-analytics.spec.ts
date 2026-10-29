@@ -74,11 +74,11 @@ test('forbidden direct profile and export requests show recovery without protect
   await analyticsFitsViewport(page);
 });
 
-test('owner homepage is the same company overview with independently scoped team effort', async ({ page }) => {
+test('owner sales overview retains independently scoped team effort', async ({ page }) => {
   const health = captureRuntimeHealth(page);
   const requests: URL[] = [];
   await mockSalesAnalytics(page, { onRequest: url => requests.push(url) });
-  await page.goto('/dashboard?preset=custom&date_from=2026-09-01&date_to=2026-09-30');
+  await page.goto('/sales-data?preset=custom&date_from=2026-09-01&date_to=2026-09-30');
   await expect(page.getByRole('heading', { name: 'Company overview', exact: true })).toBeVisible();
   await expect(page.getByTestId('analytics-kpi-sales')).toContainText('₹3,00,000.5');
   const operations = page.getByTestId('analytics-owner-operations');
@@ -89,8 +89,6 @@ test('owner homepage is the same company overview with independently scoped team
   await operations.getByRole('button',{name:'View workflow stages',exact:true}).click();
   await expect(operations.getByText('Production',{exact:true})).toBeVisible();
   expect(requests.filter(url => url.pathname.endsWith('/owner-operations')).at(-1)?.searchParams.has('date_from')).toBe(false);
-  await expect(page.getByTestId('dashboard-personal-operations')).toBeVisible();
-  await expect(page.getByRole('button', {name:'View quotation & payment snapshot',exact:true})).toBeVisible();
   await expect(page.getByText('Won this month', { exact: true })).toHaveCount(0);
   await expect(page.getByTestId('analytics-kpis')).toHaveCount(1);
   await analyticsFloor(page, 'ground-floor');
@@ -107,7 +105,7 @@ test('owner team read failure leaves sales usable and has an explicit recovery',
   await mockSalesAnalytics(page, { operations: route => fail
     ? route.fulfill({ status: 503, json: { detail: 'Team activity temporarily unavailable' } })
     : route.fulfill({ json: { generated_at: '2026-10-29T06:30:00Z', floor_ids: ['first-floor'], period_label: 'Current follow-ups · contacts in the last 30 days', open_followups: 0, overdue_followups: 0, completed_followups: 0, dismissed_followups: 0, unassigned_followups: 0, team: [], notes: [] } }) });
-  await page.goto('/dashboard?floor_id=first-floor');
+  await page.goto('/sales-data?floor_id=first-floor');
   const operations = page.getByTestId('analytics-owner-operations');
   await expect(operations.getByRole('alert')).toContainText('Team activity temporarily unavailable');
   await expect(page.getByTestId('analytics-kpi-sales')).toContainText('₹2,40,000');

@@ -1,8 +1,9 @@
-"""Dashboard aggregates. Fast, role-agnostic snapshot for internal home screen."""
+"""Floor-local Today work plus the owner-only legacy sales snapshot."""
 import asyncio
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Response
+from pymongo.errors import ExecutionTimeout
 
 from auth import floor_query, floor_scope_ids, get_current_user
 from db import db
@@ -10,6 +11,28 @@ from models import UserPublic
 from services.analytics import cache
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
+
+
+@router.get("/today/overview")
+async def today_overview(response: Response, user: UserPublic = Depends(get_current_user)):
+    from services.today_dashboard import today_overview as load_overview
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        async with asyncio.timeout(8):
+            return await load_overview(db, user)
+    except (TimeoutError, ExecutionTimeout) as exc:
+        raise HTTPException(503, "The floor overview is taking too long. Try again.") from exc
+
+
+@router.get("/today")
+async def today(response: Response, user: UserPublic = Depends(get_current_user)):
+    from services.today_dashboard import today_dashboard
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        async with asyncio.timeout(12):
+            return await today_dashboard(db, user)
+    except (TimeoutError, ExecutionTimeout) as exc:
+        raise HTTPException(503, "Today's work is taking too long. Try again.") from exc
 
 
 @router.get("/stats")

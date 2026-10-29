@@ -1,43 +1,23 @@
 import { expect, test } from '@playwright/test';
 import { mockSession } from './audit-fixtures';
+import { todayFixture, mockTodayOverview } from './today-fixtures';
 
 test.beforeEach(async ({ context }) => {
   await context.route('**/*', route => new URL(route.request().url()).origin === 'http://127.0.0.1:8096'
     ? route.continue() : route.abort());
 });
 
-test('dashboard publishes ready sections while an unrelated request is pending', async ({ page }) => {
-  await mockSession(page, '/dashboard', false, { staff: { id: 'audit-manager', email: 'manager@example.test', full_name: 'Audit Manager', role: 'manager', active: true, floor_ids: ['first-floor'] } });
-  let release!: () => void;
-  const pending = new Promise<void>(resolve => { release = resolve; });
-  let delayedRequestStarted = false;
-  await page.route('**/api/purchases/shortages?**', async route => {
-    delayedRequestStarted = true;
-    await pending;
-    await route.fulfill({ json: { items: [] } });
-  });
-  await page.route('**/api/followups?**', route => route.fulfill({ json: [] }));
-  await page.route('**/api/followups/mission', route => route.fulfill({ json: {
-    due_count: 0, revenue_at_risk_short: '0', estimated_minutes: 0,
-    greeting_name: 'Ready sections', overdue_payments: 0,
-  } }));
-  await page.route('**/api/dashboard/stats', route => route.fulfill({ json: {
-    open_pipeline: 1000, revenue_month: 500, quotes_this_month: 1, pending_approval: 0,
-  } }));
-  await page.route('**/api/payments/stats', route => route.fulfill({ json: {
-    total_outstanding: 0, collected_this_month: 500, active_orders: 1,
-  } }));
-  await page.route('**/api/quotations/recent?**', route => route.fulfill({ json: [] }));
-  try {
-    await page.goto('/dashboard', { waitUntil: 'domcontentloaded' });
-    await expect.poll(() => delayedRequestStarted).toBe(true);
-    // The server still hasn't completed purchases: these assertions fail
-    // with the former single Promise.allSettled publication barrier.
-    await expect(page.getByText('All clear. No follow-ups waiting.', { exact: true })).toBeVisible();
-    await expect(page.getByText('No quotations yet.', { exact: true })).toBeVisible();
-    await expect(page.getByText(/Ready sections\./)).toBeVisible();
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
-  } finally { release(); }
+test('Today loads floor work without requesting company analytics or unrelated pages', async ({ page }) => {
+  await mockSession(page, '/dashboard', false);
+  const requests: string[] = [];
+  page.on('request', request => { if (request.url().includes('/api/')) requests.push(new URL(request.url()).pathname); });
+  await mockTodayOverview(page);
+  await page.route('**/api/dashboard/today', route => route.fulfill({ json: todayFixture() }));
+  await page.goto('/dashboard', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByText('First fixture customer', { exact: true })).toBeVisible();
+  await expect(page.getByText('Floor payments', { exact: true })).toBeVisible();
+  expect(requests.filter(path => /sales-analytics|dashboard\/stats|followups\/mission|payments\/stats|purchases\/shortages/.test(path))).toEqual([]);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
 });
 
 test('legacy brand page redirects to current analytics preserving reporting context', async ({ page }) => {
@@ -61,14 +41,15 @@ test('dashboard-only grants do not fetch or link unrelated pages', async ({ page
     const path = new URL(request.url()).pathname;
     if (/^\/api\/(followups|payments|quotations|purchases)(?:\/|$)/.test(path)) forbidden.push(path);
   });
-  await page.route('**/api/dashboard/stats', route => route.fulfill({ json: {
-    open_pipeline: 1000, revenue_month: 500, quotes_this_month: 1, pending_approval: 3,
-  } }));
+  const data = todayFixture('first-floor', false);
+  data.resources = [];
+  data.tasks = [];
+  data.task_summary = {open:0,overdue:0,due_today:0,completed_today:0};
+  await mockTodayOverview(page);
+  await page.route('**/api/dashboard/today', route => route.fulfill({ json: data }));
   await page.goto('/dashboard');
-  await expect(page.getByText('1 quotations this month', { exact: true })).toBeVisible();
-  await expect(page.getByText('Some information is unavailable', { exact: true })).toHaveCount(0);
-  await expect(page.getByRole('link', { name: /quotation.*waiting for approval/ })).toHaveCount(0);
-  await expect(page.getByRole('link', { name: 'View all quotations' })).toHaveCount(0);
-  await expect(page.getByText('Collected this month', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('No open tasks recorded.', { exact: true })).toBeVisible();
+  await expect(page.getByTestId('today-floor-overview')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /Open quotations|Open payments/ })).toHaveCount(0);
   expect(forbidden).toEqual([]);
 });

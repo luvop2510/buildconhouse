@@ -1,6 +1,7 @@
-import { Slot } from "expo-router";
+import { Redirect, Slot } from "expo-router";
 import { View } from "react-native";
 
+import { useAuth } from "@/src/state/auth";
 import { AnalyticsNavigation } from "@/src/components/salesAnalytics/AnalyticsNavigation";
 import { SalesScopeProvider } from "@/src/components/salesData/SalesScope";
 
@@ -9,6 +10,9 @@ import { SalesScopeProvider } from "@/src/components/salesData/SalesScope";
  * workspace never renders its own navigation and they cannot drift apart.
  */
 export default function SalesDataLayout() {
+  const { staff } = useAuth();
+  if (!staff) return null;
+  if (staff.role !== "owner") return <Redirect href="/(admin)/dashboard" />;
   return (
     // No gap: the switcher now owns its own vertical padding and closes with
     // a hairline rule, so an extra gap here would float that rule in dead

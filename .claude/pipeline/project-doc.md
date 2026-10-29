@@ -137,3 +137,27 @@ Verification includes hermetic unit/HTTP tests, disposable Mongo integration,
 real browser fixtures at five widths and the unchanged full performance gate.
 Coverage percentage is not measured. Current evidence and limits:
 docs/audits/2026-10-29-sales-analytics.md.
+
+## Floor Today, design consistency and affected checks — 29 October 2026
+
+Native fallback delta scan of the current diff retains Expo/FastAPI/Motor and the
+existing resource/floor authorization model. `services/today_dashboard.py` is a
+read-only floor work projection. Department-limited payloads contain safe tasks
+and recorded progress; full-floor overview reads run separately. Sales Data is
+owner-only at the shared authorization boundary, and payment history no longer
+unions business floors. No schema migration or business-data rewrite is needed.
+
+The shared system font, Feather icons and graphite/neutral tokens remain.
+Today uses a task-first bento layout; owner floor analytics omits self-comparison
+charts. The acceptance checklist covers every page family and account viewpoint;
+legacy palette instructions are reconciled. Development checks discover affected
+transitive contracts, retain compact logs and reuse input-bound successes. Shared
+or unknown changes fall back conservatively, while the final release gate remains.
+
+Changed files and verification are recorded in
+`docs/audits/2026-10-29-floor-today-design-performance.md`. Coverage percentage
+is not measured. AGENTS.md now records the user's new Today/reporting contract so
+a future change cannot restore the superseded homepage behavior. No new framework,
+dependency, database, session mechanism or architectural directory is introduced.
+
+Last scanned: 2026-10-29.

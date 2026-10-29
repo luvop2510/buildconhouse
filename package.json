@@ -69,7 +69,9 @@
     "test:kitchen-commercial": "node scripts/test-kitchen-commercial.mjs && node scripts/test-kitchen-note-fields.mjs && node scripts/test-kitchen-pdf-files.mjs",
     "test:kitchen-autosave": "node scripts/test-kitchen-draft-reconciliation.mjs && node scripts/test-kitchen-autosave.mjs",
     "test:table-layout": "node scripts/test-table-layout.mjs",
-    "test:e2e:tables": "playwright test --config playwright.tables.config.ts"
+    "test:e2e:tables": "playwright test --config playwright.tables.config.ts",
+    "check:affected": "node scripts/check-affected.mjs --run",
+    "check:affected:plan": "node scripts/check-affected.mjs"
   },
   "dependencies": {
     "@expo/metro-runtime": "~55.0.12",

@@ -1,5 +1,27 @@
 # AGENTS.md — BuildCon House ERP (forge2.0)
 
+## Floor Today and owner reporting — 2026-10-29
+
+The latest user instruction supersedes the homepage analytics wording below.
+Today is the selected floor's operational work queue, schedule and recorded task
+progress. Departmental accounts receive only permitted tasks; full-floor accounts
+also receive that floor's workflow/payment overview. Sales Data, its reports and
+exports are owner-only even if old custom grants or saved matrix overrides exist.
+Payments and its history stay on the selected floor. Do not restore the previous
+Sanitary/Ground payment union or company analytics on Today.
+
+Primary `GET /dashboard/today` publishes tasks before optional
+`GET /dashboard/today/overview`; the latter independently checks full-floor access.
+Preserve no-store, whitelisted task fields, complete server counts, bounded
+previews, India dates, floor generations, optimistic completion and explicit
+failure/retry. No generated progress, missing amounts treated as zero, or merged
+INR/RNB ledgers. Canonical design is `src/design/README.md`; every new page uses
+`docs/design/interface-acceptance.md` and its viewpoint/page-family matrix.
+
+During edits use `npm run check:affected:plan` / `npm run check:affected` for compact
+source-bound checks. Cached development results do not waive the existing full
+release/performance gate on the final revision. See `docs/affected-checks.md`.
+
 ## Owner interface and Kitchen refinements — 2026-10-29
 
 The shared mobile-first interface contract is `src/design/README.md`: platform

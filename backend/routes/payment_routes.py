@@ -23,7 +23,7 @@ from urllib.parse import quote_plus
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
 
 from auth import (
-    TILES_FLOOR_ID, accessible_floor_ids, floor_for_write, floor_inherit, floor_query,
+    accessible_floor_ids, floor_for_write, floor_inherit, floor_query, floor_scope_ids,
     get_current_user, get_floor_scoped_or_404, require_min_role,
 )
 from db import client, db
@@ -45,21 +45,8 @@ ORDER_STATUSES = ("ordered", "won")
 
 
 def _payment_scope_query(user: UserPublic, base: dict | None = None) -> dict:
-    """Include Ground Floor tile orders for users authorized to see them.
-
-    Payments is shared by the sanitary and tiles modules, while ``floor_query``
-    follows the user's ambient floor header. That header can remain on First
-    Floor while a manager is reviewing Ground Floor tiles, so payment screens
-    must include the fixed tiles floor explicitly.
-    """
-    # Furniture is an independent workspace; do not include tile orders there.
-    if user.active_floor_id == "third-floor":
-        return floor_query(user, base)
-    queries = [floor_query(user, base)]
-    allowed = accessible_floor_ids(user)
-    if user.role in ("owner", "manager") or (allowed and TILES_FLOOR_ID in allowed):
-        queries.append({"$and": [{"floor_id": TILES_FLOOR_ID}, base or {}]})
-    return queries[0] if len(queries) == 1 else {"$or": queries}
+    """Collections belong to the selected floor, like every operational page."""
+    return floor_query(user, base)
 
 MODE_LABELS = {
     "cash": "Cash",
@@ -921,29 +908,17 @@ async def fully_paid_orders(
 # the same indexed collection lets the ledger paginate and export correctly
 # without a separate, eventually-consistent history read model.
 #
-# Floor scope follows the Sales Data precedent (routes/sales_data_routes.py
-# `_resolve_floor_ids`), NOT the single-active-floor `floor_query()` used
-# everywhere else — this is deliberately a cross-business-unit reconciliation
-# view (it has its own Business Unit column + filter), the same carve-out
-# auth.py's `_resolve_floor_scope` docstring documents for Sales Data.
+# Operational payment history follows its selected floor; owner reporting
+# across departments belongs to the separate Sales Data surface.
 # ---------------------------------------------------------------------------
-def _resolve_history_floor_ids(user: UserPublic, business_unit: Optional[str]) -> Optional[list[str]]:
-    """None means "no floor restriction" (every floor the caller can see).
-    An explicit business_unit narrows to exactly that floor, after checking
-    the caller is actually allowed onto it."""
-    if user.active_floor_id == "third-floor":
-        allowed = accessible_floor_ids(user)
-        if allowed is not None and "third-floor" not in allowed:
-            return []
-        if business_unit and business_unit != "all" and any(value != "third-floor" for value in filter_values(business_unit)):
-            raise HTTPException(status_code=403, detail="You do not have access to this business unit in Furniture Floor")
-        return ["third-floor"]
-    if business_unit and business_unit != "all":
-        allowed = accessible_floor_ids(user)
-        if allowed is not None and any(value not in allowed for value in filter_values(business_unit)):
-            raise HTTPException(status_code=403, detail="You do not have access to this business unit")
-        return filter_values(business_unit)
-    return accessible_floor_ids(user)  # None (unrestricted) for owner/manager, else their assigned floors
+def _resolve_history_floor_ids(user: UserPublic, business_unit: Optional[str]) -> list[str]:
+    floors = floor_scope_ids(user)
+    allowed = accessible_floor_ids(user)
+    if not floors or len(floors) != 1 or (not user.active_floor_id and (allowed is None or len(allowed) != 1)):
+        raise HTTPException(status_code=422, detail="Choose a floor to view its payments")
+    if business_unit and business_unit != "all" and any(floor != floors[0] for floor in filter_values(business_unit)):
+        raise HTTPException(status_code=403, detail="Payment history is limited to the selected floor")
+    return floors
 
 
 async def _floor_names() -> dict[str, str]:

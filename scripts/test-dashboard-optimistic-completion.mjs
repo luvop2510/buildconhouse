@@ -5,12 +5,12 @@ import vm from 'node:vm';
 import ts from 'typescript';
 
 const source = readFileSync(new URL('../app/(admin)/dashboard.tsx', import.meta.url), 'utf8');
-const marker = '  const loading = queue === null;';
+const marker = '  const loading = queue === null && !error;';
 assert.ok(source.includes(marker));
-const compiled = ts.transpileModule(source.replace(marker, '  return { queue, mission, pendingIds, complete, load };\n' + marker), {
+const compiled = ts.transpileModule(source.replace(marker, '  return { queue, data, pendingIds, complete, load };\n' + marker), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
 }).outputText;
-const rows = ['a', 'b', 'c'].map(id => ({ id, customer_name: `Fixture ${id}`, status: 'open' }));
+const rows = ['a', 'b', 'c'].map(id => ({ id, title: `Fixture ${id}`, resource: 'followups', status: 'open' }));
 function fixture() {
   const hooks = [], effects = [], reads = [], writes = [], notices = [];
   let cursor = 0, dirty = false, state, floor = 'first-floor', user = 'staff-a';
@@ -30,7 +30,7 @@ function fixture() {
   };
   const request = (list, path, options, body) => new Promise((resolve, reject) => list.push({ path, options, body, resolve, reject }));
   const modules = {
-    react, 'expo-router': { useRouter: () => ({}) },
+    react, 'expo-router': { useRouter: () => ({}), useFocusEffect: fn => react.useEffect(fn, [fn]) },
     '@/src/state/auth': { useAuth: () => ({ staff: { id: user, full_name: 'Fixture' } }) },
     '@/src/hooks/use-floor-access': { useFloorAccess: () => ({ selectedFloorId: floor }) },
     '@/src/hooks/use-permissions': { useActionAccess: () => true },
@@ -42,8 +42,8 @@ function fixture() {
   vm.runInNewContext(compiled, { exports, require: id => modules[id] || {}, console });
   const render = () => { cursor = 0; dirty = false; state = exports.default(); while (effects.length) effects.shift()(); };
   const settle = async () => { for (let i = 0; i < 12; i++) { await Promise.resolve(); if (dirty) render(); } };
-  const answer = async (start = 0) => {
-    for (const read of reads.slice(start)) read.resolve(read.path.startsWith('/followups?') ? rows : read.path === '/followups/mission' ? { due_count: 3, greeting_name: 'Fixture' } : {});
+  const answer = async (start = 0, taskRows = rows) => {
+    for (const read of reads.slice(start)) read.resolve({ floor_id: read.options.floorId, tasks: taskRows, task_summary: { open: taskRows.length, due_today: 3, overdue: 0, completed_today: 0 }, resources: ['followups'], workflows: [], payments: null, full_floor_access: false });
     await settle();
   };
   return { reads, writes, notices, render, settle, answer, get state() { return state; },
@@ -107,6 +107,19 @@ test('out-of-order summary responses cannot replace the newest confirmed summary
   const f = await ready(); f.state.complete(rows[0]); f.state.complete(rows[1]);
   f.writes[0].resolve({}); await f.settle(); const earlier = f.reads.at(-1);
   f.writes[1].resolve({}); await f.settle(); const later = f.reads.at(-1);
-  later.resolve({ due_count: 1 }); await f.settle(); earlier.resolve({ due_count: 2 }); await f.settle();
-  assert.equal(f.state.mission.due_count, 1);
+  later.resolve({ floor_id: 'first-floor', tasks: rows, task_summary: { open: 1 } }); await f.settle(); earlier.resolve({ floor_id: 'first-floor', tasks: rows, task_summary: { open: 2 } }); await f.settle();
+  assert.equal(f.state.data.task_summary.open, 1);
+});
+
+
+test('a later explicit reopen appears after the completed task was acknowledged absent', async () => {
+  const f = await ready();
+  f.state.complete(rows[0]);
+  const afterCompletion = f.reads.length;
+  f.writes[0].resolve({status:'done'}); await f.settle();
+  await f.answer(afterCompletion, rows.slice(1));
+  assert.deepEqual(ids(f), ['b','c']);
+  const later = f.reads.length;
+  void f.state.load(true); await f.answer(later, rows);
+  assert.deepEqual(ids(f), ['a','b','c']);
 });
