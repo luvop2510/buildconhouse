@@ -327,7 +327,7 @@ test('Kitchen mobile input and blur taps preserve the form viewport and select t
   expect(editingViewport!.height, 'Hidden navigation gives its space to the form').toBeGreaterThan(before!.height);
   const inputBeforeBlur = await field.boundingBox();
   expect(Math.abs(inputBeforeBlur!.y - restingField!.y), 'Typing the first dirty value must not move the field').toBeLessThan(2);
-  await page.getByText('Lead status', { exact: true }).click();
+  await page.getByText('Architect / Interior designer', { exact: true }).click();
   await expect(page.getByTestId('mobile-workspace-header')).toBeVisible();
   await expect(page.getByRole('navigation', { name: 'Primary', exact: true })).toBeVisible();
   await expect.poll(() => scroll.boundingBox(), { message: 'Dismissal restores the resting viewport after the tap settles' }).toEqual(before);
