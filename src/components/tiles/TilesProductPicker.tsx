@@ -182,12 +182,13 @@ export function TilesProductPicker({
             value={query}
             onChangeText={setQuery}
             placeholder="Search SKU, tile name or brand"
+            accessibilityLabel="Search tile catalog"
             placeholderTextColor={colors.onSurfaceMuted}
             style={styles.input}
             returnKeyType="search"
             testID="tiles-picker-search"
           />
-          {query ? <Pressable onPress={() => setQuery("")} hitSlop={10} accessibilityLabel="Clear search"><Feather name="x-circle" size={17} color={colors.onSurfaceMuted} /></Pressable> : null}
+          {query ? <Pressable onPress={() => setQuery("")} style={styles.clearSearch} accessibilityRole="button" accessibilityLabel="Clear search"><Feather name="x-circle" size={17} color={colors.onSurfaceMuted} /></Pressable> : null}
           {loading || choosing ? <ActivityIndicator size="small" color={colors.brand} /> : null}
         </View>
         <FlatList
@@ -284,31 +285,32 @@ function TileCatalogCard({
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.surface },
   header: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingHorizontal: spacing.lg, paddingVertical: spacing.md, backgroundColor: colors.surfaceSecondary, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: colors.border },
-  close: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", backgroundColor: colors.surfaceTertiary },
+  close: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center", backgroundColor: colors.surfaceTertiary },
   title: { fontSize: 18, fontWeight: "700", color: colors.onSurface },
   subtitle: { fontSize: 12, color: colors.onSurfaceSecondary, marginTop: 1 },
   searchWrap: { flexDirection: "row", alignItems: "center", gap: spacing.sm, margin: spacing.lg, marginBottom: spacing.sm, paddingHorizontal: spacing.md, minHeight: 48, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceSecondary },
-  input: { flex: 1, minWidth: 0, color: colors.onSurface, fontSize: 15, paddingVertical: 8, ...(Platform.OS === "web" ? { outlineStyle: "none" } as any : {}) },
+  input: { flex: 1, minWidth: 0, color: colors.onSurface, fontSize: 16, paddingVertical: 8, ...(Platform.OS === "web" ? { outlineStyle: "none" } as any : {}) },
+  clearSearch: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
   grid: { padding: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.xxxl, gap: spacing.md },
   gridRow: { gap: spacing.md },
   card: { minWidth: 0, overflow: "hidden", borderRadius: radius.md, backgroundColor: colors.surfaceSecondary, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border },
   cardPressed: { opacity: 0.82, borderColor: colors.brand },
   image: { width: "100%", aspectRatio: TILE_IMAGE_ASPECT_RATIO, borderRadius: 0, backgroundColor: colors.surfaceTertiary },
   phoneCard: { flexDirection: "row", alignItems: "stretch", minHeight: 100 },
-  phoneImage: { width: 128, aspectRatio: TILE_IMAGE_ASPECT_RATIO, alignSelf: "center", marginLeft: spacing.sm, borderRadius: radius.sm },
+  phoneImage: { width: 88, aspectRatio: TILE_IMAGE_ASPECT_RATIO, alignSelf: "center", marginLeft: spacing.sm, borderRadius: radius.sm },
   cardBody: { flex: 1, minWidth: 0, padding: spacing.sm, gap: 3 },
-  brand: { fontSize: 10, fontWeight: "700", letterSpacing: 0.45, textTransform: "uppercase", color: colors.onSurfaceMuted },
-  name: { minHeight: 34, fontSize: 13, lineHeight: 17, fontWeight: "700", color: colors.onSurface },
-  meta: { fontSize: 11, color: colors.onSurfaceSecondary },
+  brand: { fontSize: 12, fontWeight: "600", color: colors.onSurfaceMuted },
+  name: { fontSize: 14, lineHeight: 20, fontWeight: "600", color: colors.onSurface },
+  meta: { fontSize: 12, color: colors.onSurfaceSecondary },
   sizePicker: { gap: 4, marginTop: 2 },
-  sizeLabel: { fontSize: 10, fontWeight: "700", color: colors.onSurfaceMuted, textTransform: "uppercase", letterSpacing: 0.35 },
+  sizeLabel: { fontSize: 12, fontWeight: "600", color: colors.onSurfaceMuted },
   sizeChoices: { flexDirection: "row", flexWrap: "wrap", gap: 4 },
   // Size is an independent action inside an otherwise tappable product card,
   // so it receives a full touch target rather than inheriting chip-sized UI.
   sizeChoice: { maxWidth: 104, minHeight: 44, justifyContent: "center", borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, borderRadius: radius.pill, paddingHorizontal: 7, paddingVertical: 3, backgroundColor: colors.surface },
   sizeChoiceCurrent: { backgroundColor: colors.brand, borderColor: colors.brand },
   sizeChoicePressed: { opacity: 0.72 },
-  sizeChoiceText: { fontSize: 10, fontWeight: "600", color: colors.onSurfaceSecondary },
+  sizeChoiceText: { fontSize: 12, fontWeight: "600", color: colors.onSurfaceSecondary },
   sizeChoiceTextCurrent: { color: colors.onBrand },
   cardFooter: { minHeight: 32, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 4, marginTop: 3 },
   price: { flex: 1, minWidth: 0, fontSize: 12, fontWeight: "700", color: colors.onSurface, fontVariant: ["tabular-nums"] },

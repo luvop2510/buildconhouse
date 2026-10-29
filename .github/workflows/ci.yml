@@ -163,6 +163,27 @@ jobs:
       - name: Remove run-owned customer deletion replica
         if: always()
         run: docker rm -f customer-deletion-mongo || true
+      - name: Start isolated Ground sales replica
+        run: |
+          docker run -d --name ground-sales-mongo --network host mongo:7.0 \
+            --port 28176 --replSet ground_qa --bind_ip 127.0.0.1
+          for attempt in {1..30}; do
+            if docker exec ground-sales-mongo mongosh --quiet --port 28176 --eval 'db.adminCommand({ping:1}).ok'; then break; fi
+            sleep 1
+          done
+          docker exec ground-sales-mongo mongosh --quiet --port 28176 --eval 'rs.initiate({_id:"ground_qa",members:[{_id:0,host:"127.0.0.1:28176"}]})'
+          for attempt in {1..30}; do
+            if docker exec ground-sales-mongo mongosh --quiet --port 28176 --eval 'quit(db.hello().isWritablePrimary ? 0 : 1)'; then break; fi
+            sleep 1
+          done
+          docker exec ground-sales-mongo mongosh --quiet --port 28176 --eval 'quit(db.hello().isWritablePrimary ? 0 : 1)'
+      - name: Verify Ground drafts, one order and linked loss transactions
+        env:
+          TILE_DRAFT_TEST_MONGO_URL: mongodb://127.0.0.1:28176
+        run: python -m pytest tests/integration/test_tiles_draft_recovery_mongo.py tests/integration/test_ground_sales_lifecycle_mongo.py -v
+      - name: Remove run-owned Ground sales replica
+        if: always()
+        run: docker rm -f ground-sales-mongo || true
       - uses: actions/setup-node@v4
         with:
           node-version: "22"

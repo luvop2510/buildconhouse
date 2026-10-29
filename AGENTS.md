@@ -1,5 +1,27 @@
 # AGENTS.md — BuildCon House ERP (forge2.0)
 
+## Ground mobile documents and sales loss — 2026-10-30
+
+Ground and Sanitary document lists page 30 summaries with a 31st-row sentinel,
+literal server search, deterministic created_at/id order, exact floors and stale
+callback guards. Summary reads omit product/history payloads and catalog-media
+hydration; default/detail/export reads keep their full ownership contract.
+Migration 0042 adds only the supporting nonunique read index. Apply through the
+controlled migration runner before backend rollout; retain it on app rollback.
+
+Saved Ground selections/quotations, including empty named drafts and approved
+unplaced quotations, remain eligible for follow-ups until ordered or closed.
+A linked Ground/Sanitary Lost action updates the quotation outcome and closes
+its reminders in one Mongo transaction, preserving document status/history.
+Completed excludes lost outcomes; Place Order rejects closed quotations. Never
+infer an order from quotation approval or create duplicate orders on retry.
+
+Phone tile media uses a bounded thumbnail; short fields pair only with enough
+width and ordinary text scale. Keep 320px/large-text single-column fallback,
+16px inputs, named controls, 44px targets and the mounted keyboard-aware dock.
+Preserve node/draft identity and container-only reveal. Browser emulation does
+not establish physical keyboard acceptance. See the 30 October Ground audit.
+
 ## Kitchen save reliability and production entry — 2026-10-30
 
 The user's latest instruction removes Production entry manager approval from

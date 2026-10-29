@@ -21,7 +21,17 @@ const child = spawnSync(process.execPath, ['--input-type=module', '-e', `
     assert.equal(typeof result.label, 'string');
     assert.ok(result.label.length > 0);
   }
+  // GHSA-qr28-fpjm-wq7f: distinct encoded runs triggered quadratic rescans
+  // even in 0.5.0. Keep the maintainer's full-sized attack behind this timeout.
+  let distinctRuns = '';
+  for (let i = 0; i < 32000; i++) {
+    distinctRuns += '%' + Math.floor(i / 256).toString(16).padStart(2, '0')
+      + '%' + (i % 256).toString(16).padStart(2, '0') + 'x';
+  }
+  const result = queryString.parse('label=' + distinctRuns + '%zz&floor=ground-floor');
+  assert.equal(result.floor, 'ground-floor');
+  assert.ok(result.label.endsWith('%zz'));
 `], { timeout: 5000, encoding: 'utf8' });
 assert.ifError(child.error);
 assert.equal(child.status, 0, child.stderr);
-console.log('URI decoder: router query compatibility and four malformed URL attacks passed.');
+console.log('URI decoder: router query compatibility, malformed URLs and distinct-run CPU attack passed.');

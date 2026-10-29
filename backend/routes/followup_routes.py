@@ -1542,6 +1542,39 @@ async def contact_followup(followup_id: str, body: FollowupContactPayload, user:
     return result
 
 
+async def _record_lost_quotation_followup(followup: dict, update: dict, user: UserPublic) -> None:
+    """Commit a linked sales loss with its quotation so Place Order cannot race it."""
+    from db import client
+
+    floor = followup["floor_id"]
+    require_floor_access(floor, user)
+    query = {"id": followup["id"], "floor_id": floor}
+    async def record(session):
+        current = await db.followups.find_one(query, {"_id": 0}, session=session)
+        if not current:
+            raise HTTPException(404, "Follow-up not found")
+        if current.get("status") not in {"open", "snoozed"} or current.get("updated_at") != followup.get("updated_at") or current.get("quotation_id") != followup.get("quotation_id"):
+            raise HTTPException(409, "This follow-up changed. Reopen it before recording the loss.")
+        quotation_query = {"id": followup["quotation_id"], "floor_id": floor}
+        quotation = await db.quotations.find_one(quotation_query, {"_id": 0}, session=session)
+        if not quotation or quotation.get("customer_id") != current.get("customer_id"):
+            raise HTTPException(404, "Linked quotation not found on this floor")
+        if quotation.get("status") == "ordered" or quotation.get("customer_outcome") == "won":
+            raise HTTPException(409, "This quotation already has a placed order or won outcome and cannot be marked lost")
+        patch = update["$set"]
+        await db.quotations.update_one(quotation_query, {"$set": {
+            "customer_outcome": "lost", "outcome_reason": patch["lost_reason"], "updated_at": patch["updated_at"],
+        }}, session=session)
+        await db.followups.update_one(query, update, session=session)
+        # Retire other reminders for this document while retaining their assignments/history.
+        await db.followups.update_many({"quotation_id": quotation["id"], "floor_id": floor, "status": {"$in": ["open", "snoozed"]}}, {"$set": {
+            key: patch[key] for key in ("status", "completed_at", "completed_outcome", "resolution_note", "lost_reason", "updated_at")
+        }}, session=session)
+
+    async with await client.start_session() as session:
+        await session.with_transaction(record)
+
+
 @router.post("/{followup_id}/log-call")
 async def log_call(followup_id: str, body: FollowupCallOutcomePayload, user: UserPublic = Depends(get_current_user)):
     outcome = "lost" if body.outcome == "rejected" else body.outcome
@@ -1691,7 +1724,10 @@ async def log_call(followup_id: str, body: FollowupCallOutcomePayload, user: Use
     update = {"$set": patch}
     if not pending_attempt:
         update["$inc"] = {"contact_attempts": 1, "call_attempts": 1}
-    await db.followups.update_one(floor_query(user, {"id": followup_id}), update)
+    if outcome == "lost" and f.get("quotation_id") and f.get("floor_id") in {"ground-floor", "first-floor"}:
+        await _record_lost_quotation_followup(f, update, user)
+    else:
+        await db.followups.update_one(floor_query(user, {"id": followup_id}), update)
     if pending_attempt:
         # A second initiation by this worker may finish while this outcome is
         # awaiting scope writes. Only consume the attempt that we actually read.

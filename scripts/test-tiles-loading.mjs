@@ -13,25 +13,27 @@ vm.runInNewContext(ts.transpileModule(readFileSync(new URL('../src/utils/referre
 const source = readFileSync(new URL('../app/(admin)/tiles/index.tsx', import.meta.url), 'utf8');
 const marker = '  return (\n    <SafeAreaView';
 assert.ok(source.includes(marker));
-const compiled = ts.transpileModule(source.replace(marker, '  return { documents, loading, selectedLoading, loadErrors, load, setDocumentType, setDeleteTarget, deleteDocument, deleteError, deleting };\n' + marker), {
+const compiled = ts.transpileModule(source.replace(marker, '  return { documents, docs, loading, selectedLoading, loadErrors, load, pages, pageErrors, loadMore, searching, query, setSearch, setDocumentType, setDeleteTarget, deleteDocument, deleteError, deleting };\n' + marker), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
 }).outputText;
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
 function screen({ canDelete = true } = {}) {
-  const hooks = [], effects = [], requests = [];
-  let index = 0, dirty = false, state, ready = false, completed = false;
+  const hooks = [], effects = [], requests = [], timers = new Map();
+  let nextTimer = 0;
+  let index = 0, dirty = false, state, ready = false, completed = false, actor = 'owner';
   const same = (a, b) => a && b && a.length === b.length && a.every((value, i) => Object.is(value, b[i]));
   const react = {
     useState(initial) { const slot = index++; hooks[slot] ||= { value: initial }; return [hooks[slot].value, value => { const next = typeof value === 'function' ? value(hooks[slot].value) : value; if (!Object.is(next, hooks[slot].value)) { hooks[slot].value = next; dirty = true; } }]; },
     useRef(initial) { return hooks[index++] ||= { current: initial }; },
     useCallback(callback, deps) { const slot = index++; if (!same(hooks[slot]?.deps, deps)) hooks[slot] = { value: callback, deps }; return hooks[slot].value; },
+    useEffect(callback, deps) { const slot = index++; if (!same(hooks[slot]?.deps, deps)) { const cleanup = hooks[slot]?.cleanup; hooks[slot] = { deps }; effects.push(() => { cleanup?.(); hooks[slot].cleanup = callback(); }); } },
   };
   const focus = callback => { const slot = index++; if (hooks[slot]?.callback !== callback) { const cleanup = hooks[slot]?.cleanup; hooks[slot] = { callback }; effects.push(() => { cleanup?.(); hooks[slot].cleanup = callback(); }); } };
   const modules = {
     react, 'react/jsx-runtime': { jsx: () => null },
     'react-native': { StyleSheet: { create: value => value } },
     'expo-router': { useRouter: () => ({}), useLocalSearchParams: () => ({ view: completed ? 'completed' : 'pending' }), useFocusEffect: focus },
-    '@/src/state/auth': { useAuth: () => ({ staff: { role: 'owner' } }) },
+    '@/src/state/auth': { useAuth: () => ({ staff: { id: actor, role: 'owner' } }) },
     '@/src/hooks/use-permissions': { useActionAccess: () => canDelete },
     '@/src/constants/roles': { canManageDestructiveData: () => true },
     '@/src/hooks/use-floor-access': { useRequireFloorAccessState: () => ({ ready }) },
@@ -41,10 +43,26 @@ function screen({ canDelete = true } = {}) {
     '@/src/api/client': { api: { get: (url, options) => { const pending = deferred(); requests.push({ ...pending, method: 'GET', url, options }); return pending.promise; }, delete: (url, options) => { const pending = deferred(); requests.push({ ...pending, method: 'DELETE', url, options }); return pending.promise; } } },
   };
   const exports = {};
-  vm.runInNewContext(compiled, { exports, require: id => modules[id] || {} });
+  vm.runInNewContext(compiled, { exports, require: id => modules[id] || {}, AbortController,
+    setTimeout: callback => { const id = ++nextTimer; timers.set(id, callback); return id; }, clearTimeout: id => timers.delete(id) });
   const render = () => { index = 0; dirty = false; state = exports.default(); while (effects.length) effects.shift()(); return state; };
-  return { requests, render, get state() { return state; }, ready(value) { ready = value; render(); }, completed(value) { completed = value; render(); }, async settle() { for (let pass = 0; pass < 12; pass++) { await Promise.resolve(); if (dirty) render(); } } };
+  return { requests, render, get state() { return state; }, ready(value) { ready = value; render(); }, actor(value) { actor = value; render(); }, completed(value) { completed = value; render(); },
+    search(value) { state.setSearch(value); render(); }, flushSearch() { const callbacks = [...timers.values()]; timers.clear(); callbacks.forEach(callback => callback()); if (dirty) render(); },
+    async settle() { for (let pass = 0; pass < 12; pass++) { await Promise.resolve(); if (dirty) render(); } } };
 }
+
+test('Ground account change cancels old reads even when floor readiness stays true', async () => {
+  const fixture = screen(); fixture.render(); fixture.ready(true);
+  const oldLoad = fixture.state.load;
+  fixture.actor('another-worker');
+  assert.equal(fixture.requests.length, 4);
+  assert.equal(fixture.requests[0].options.signal.aborted, true);
+  await oldLoad(); assert.equal(fixture.requests.length, 4);
+  fixture.requests[2].resolve([]); fixture.requests[3].resolve([{ id: 'current-account' }]); await fixture.settle();
+  fixture.requests[0].resolve([{ id: 'old-account-selection' }]); fixture.requests[1].resolve([{ id: 'old-account-quotation' }]); await fixture.settle();
+  assert.equal(fixture.state.documents.tiles_quotation[0].id, 'current-account');
+  assert.equal(fixture.state.documents.tiles_selection.length, 0);
+});
 
 test('Ground Floor list waits for access, publishes quotation before selection settles, and preserves it after selection failure/retry', async () => {
   const fixture = screen(); fixture.render(); assert.equal(fixture.requests.length, 0);
@@ -71,6 +89,61 @@ test('old lifecycle/floor callbacks cannot overwrite new documents or start reta
   assert.equal(fixture.state.documents.tiles_quotation[0].id, 'completed');
   assert.equal(Object.keys(fixture.state.loadErrors).length, 0);
   fixture.ready(false); await oldLoad(); assert.equal(fixture.requests.length, 4);
+});
+
+test('Ground list reads 30 summary documents per type and pages beyond the first hundred without duplicate taps', async () => {
+  const fixture = screen(); fixture.render(); fixture.ready(true);
+  const rows = (start, count) => Array.from({ length: count }, (_, i) => ({ id: `q-${start + i}`, doc_type: 'tiles_quotation' }));
+  fixture.requests[0].resolve([]); fixture.requests[1].resolve(rows(0, 31)); await fixture.settle();
+  assert.equal(fixture.state.documents.tiles_quotation.length, 30);
+  assert.equal(fixture.state.pages.tiles_quotation.skip, 30);
+  assert.equal(fixture.state.pages.tiles_quotation.hasMore, true);
+  assert.ok(fixture.requests[1].url.includes('summary=true'));
+  for (const start of [30, 60, 90]) {
+    const page = fixture.state.loadMore('tiles_quotation');
+    void fixture.state.loadMore('tiles_quotation');
+    const request = fixture.requests.at(-1);
+    assert.ok(request.url.includes(`skip=${start}&limit=31`));
+    request.resolve(rows(start, 31)); await page; await fixture.settle();
+  }
+  assert.equal(fixture.requests.length, 5);
+  assert.equal(fixture.state.documents.tiles_quotation.length, 120);
+  const page = fixture.state.loadMore('tiles_quotation');
+  fixture.requests.at(-1).resolve(rows(120, 1)); await page; await fixture.settle();
+  assert.equal(fixture.state.documents.tiles_quotation.at(-1).id, 'q-120');
+  assert.equal(fixture.state.pages.tiles_quotation.hasMore, false);
+});
+
+test('Ground page failure keeps loaded documents and retries only the same page', async () => {
+  const fixture = screen(); fixture.render(); fixture.ready(true);
+  fixture.requests[0].resolve([]); fixture.requests[1].resolve(Array.from({ length: 31 }, (_, i) => ({ id: `q-${i}`, doc_type: 'tiles_quotation' }))); await fixture.settle();
+  const first = fixture.state.loadMore('tiles_quotation');
+  fixture.requests[2].reject({ detail: 'Page unavailable' }); await first; await fixture.settle();
+  assert.equal(fixture.state.documents.tiles_quotation.length, 30);
+  assert.equal(fixture.state.pageErrors.tiles_quotation, 'Page unavailable');
+  const retry = fixture.state.loadMore('tiles_quotation');
+  assert.equal(fixture.requests[3].url, fixture.requests[2].url);
+  fixture.requests[3].resolve([{ id: 'q-30', doc_type: 'tiles_quotation' }]); await retry; await fixture.settle();
+  assert.equal(fixture.state.documents.tiles_quotation.length, 31);
+  assert.equal(fixture.state.pageErrors.tiles_quotation, undefined);
+});
+
+test('Ground search queries all records, hides stale matches and cancels obsolete page callbacks', async () => {
+  const fixture = screen(); fixture.render(); fixture.ready(true);
+  fixture.requests[0].resolve([]); fixture.requests[1].resolve(Array.from({ length: 31 }, (_, i) => ({ id: `old-${i}`, doc_type: 'tiles_quotation' }))); await fixture.settle();
+  const oldMore = fixture.state.loadMore;
+  const pendingPage = fixture.state.loadMore('tiles_quotation');
+  fixture.search('Customer [120].*');
+  assert.equal(fixture.state.searching, true);
+  assert.equal(fixture.state.docs, null, 'Results from the previous term must not masquerade as current results');
+  fixture.flushSearch(); await fixture.settle();
+  assert.equal(fixture.requests.length, 5);
+  assert.equal(fixture.requests[2].options.signal.aborted, true);
+  assert.ok(fixture.requests[4].url.includes(`q=${encodeURIComponent('Customer [120].*')}&skip=0&limit=31`));
+  fixture.requests[3].resolve([]); fixture.requests[4].resolve([{ id: 'matching-120', doc_type: 'tiles_quotation' }]); await fixture.settle();
+  fixture.requests[2].resolve([{ id: 'stale', doc_type: 'tiles_quotation' }]); await pendingPage; await fixture.settle();
+  assert.deepEqual(Array.from(fixture.state.docs, row => row.id), ['matching-120']);
+  await oldMore('tiles_quotation'); assert.equal(fixture.requests.length, 5);
 });
 
 const builderSource = readFileSync(new URL('../src/components/tiles/TilesDocBuilder.tsx', import.meta.url), 'utf8');

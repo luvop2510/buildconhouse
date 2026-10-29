@@ -25,7 +25,10 @@ TILES_STAGE_LABELS: dict[str, str] = {
 
 
 def tiles_stage_label(doc_type: str, status: str) -> str:
-    return TILES_STAGE_LABELS[tiles_stage(doc_type, status)]
+    stage = tiles_stage(doc_type, status)
+    if status in {"approved", "won"}:
+        return f"{'Selection' if doc_type == 'tiles_selection' else 'Quotation'} — Approved"
+    return TILES_STAGE_LABELS[stage]
 
 
 def can_move_to_quotation(doc_type: str, status: str) -> bool:

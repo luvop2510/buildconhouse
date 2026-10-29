@@ -319,13 +319,13 @@ async def _tiles_pipeline_producer(quotations: list[dict], customers: dict[str, 
         if q.get("customer_outcome") in {"won", "lost"}:
             continue
         cust = customers.get(q.get("customer_id"))
-        if not cust or not q.get("items"):
+        if not cust:
             continue
         doc_type = q.get("doc_type")
         status = q.get("status")
-        if doc_type == "tiles_selection" and status not in ("rejected", "lost"):
+        if doc_type == "tiles_selection" and status not in ("ordered", "rejected", "lost", "cancelled"):
             build(q, cust, selection_offsets, "selection_waiting", "selection", "Selection")
-        elif doc_type == "tiles_quotation" and status not in ("approved", "won", "ordered", "rejected", "lost"):
+        elif doc_type == "tiles_quotation" and status not in ("ordered", "rejected", "lost", "cancelled"):
             build(q, cust, quotation_offsets, "quotation_tiles_waiting", "quotation", "Quotation")
     return out
 

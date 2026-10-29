@@ -1,5 +1,19 @@
 # BuildCon House project documentation
 
+## Ground Floor completion delta — 30 October 2026
+
+Native fallback delta scan retains Expo/React Native Web, FastAPI, MongoDB and
+the existing authorization/transport layers; no new framework, dependency or
+authentication pattern is introduced. Mobile tile editors use bounded media and
+adaptive paired fields. Ground/Sanitary lists request bounded Mongo summaries and
+literal server search. Migration 0042 adds the stable-order read index without
+rewriting business data. Linked Lost follow-ups close their quotation outcome and
+sibling reminders transactionally. Existing order outbox/replay ownership remains.
+The URI decoder override receives its published 0.5.1 security patch, retaining
+the Router compatibility adapter and a full-sized malformed-input regression.
+Verification and publication evidence: docs/audits/2026-10-30-ground-floor.md.
+Coverage percentage is not measured. No architectural regeneration is needed.
+
 ## Kitchen saving and mobile editor follow-up — 30 October 2026
 
 Native fallback delta scan: captured Kitchen file-finalization failures originate

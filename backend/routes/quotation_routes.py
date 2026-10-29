@@ -33,6 +33,7 @@ from pdf_tiles import build_tiles_quotation_pdf, build_tiles_selection_pdf, tile
 from services.quotation_catalog_prices import price_review, apply_price_choice, line_catalog_snapshot
 from services.quotation_ppt import build_product_ppt, presentation_filename
 from services.quotation_excel import build_quotation_excel, quotation_excel_filename
+from services.quotation_list import list_projection, list_search
 from services import catalog_service
 from services.customer_completion import completed_customer_ids
 from services.activity_log import log_event
@@ -107,7 +108,7 @@ def _quotation_view_query(view: str | None) -> dict:
             "customer_outcome": {"$nin": ["won", "lost"]},
         }
     if view == "completed":
-        return {"status": {"$in": list(COMPLETED_QUOTATION_STATUSES)}}
+        return {"status": {"$in": list(COMPLETED_QUOTATION_STATUSES)}, "customer_outcome": {"$ne": "lost"}}
     if view == "won":
         return {"$or": [
             {"customer_outcome": "won"},
@@ -381,6 +382,8 @@ async def list_quotations(
     completion: str | None = Query(None, pattern="^(active|completed)$"),
     status: str | None = None,
     customer_id: str | None = None,
+    summary: bool = False,
+    q: str | None = None,
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1),
     user: UserPublic = Depends(get_current_user),
@@ -414,7 +417,10 @@ async def list_quotations(
         completion_user = user.model_copy(update={"active_floor_id": TILES_FLOOR_ID}) if doc_type in TILES_DOC_TYPES else user
         complete_ids = await completed_customer_ids(db, completion_user)
         scoped = {"$and": [scoped, {"customer_id": {"$in" if completion == "completed" else "$nin": sorted(complete_ids)}}]}
-    docs = await db.quotations.find(scoped, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+    scoped = list_search(scoped, q)
+    docs = await db.quotations.find(scoped, list_projection(summary)).sort([("created_at", -1), ("id", -1)]).skip(skip).limit(limit).to_list(limit)
+    if summary:
+        return [{**doc, **({"purchase_completion_status": "completed" if doc.get("customer_id") in complete_ids else "active"} if complete_ids is not None else {})} for doc in docs]
     # Resolve each floor's entire page together. List responses must obey the
     # same image ownership contract as detail/export without one lookup per
     # quotation or an additional Atlas call.
@@ -1835,6 +1841,8 @@ class PlaceOrderConfirmPayload(BaseModel):
 
 
 def _require_active_sales_quotation(doc: dict) -> None:
+    if doc.get("status") in {"lost", "rejected", "cancelled"}:
+        raise HTTPException(status_code=409, detail="This quotation is closed. Duplicate it to start a new quotation before placing an order.")
     if doc.get("customer_outcome") in {"won", "lost"}:
         raise HTTPException(
             status_code=409,

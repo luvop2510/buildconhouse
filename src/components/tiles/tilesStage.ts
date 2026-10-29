@@ -10,7 +10,12 @@ export function tilesStage(docType: string, status: string): TilesStage {
 export const TILES_STAGE_LABELS: Record<TilesStage, string> = {
   selection_draft: "Selection — Draft", quotation_draft: "Quotation — Draft", ordered: "Order placed",
 };
-export const tilesStageLabel = (docType: string, status: string) => TILES_STAGE_LABELS[tilesStage(docType, status)];
+export function tilesStageLabel(docType: string, status: string) {
+  const stage = tilesStage(docType, status);
+  return ["approved", "won"].includes(status)
+    ? `${docType === "tiles_selection" ? "Selection" : "Quotation"} — Approved`
+    : TILES_STAGE_LABELS[stage];
+}
 export const canMoveToQuotation = (docType: string, status: string) => docType === "tiles_selection" && EDITABLE_TILES_STATUSES.has(status);
 export function canPlaceOrder(docType: string, status: string) {
   if (docType === "tiles_selection") return false;

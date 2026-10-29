@@ -3,10 +3,10 @@ import { mockSession } from './audit-fixtures';
 
 test('critical sanitary pending quotations have a clear phone gutter and keep card contents in view', async ({ page }) => {
   await mockSession(page, '/quotations', false);
-  await page.route('**/api/quotations?doc_type=standard&view=pending', route => route.fulfill({ json: [{
+  await page.route('**/api/quotations?doc_type=standard&view=pending&**', route => route.fulfill({ json: [{
     id: 'mobile-pending', number: 'Q-2026-00421', customer_name: 'Mobile Buyer', status: 'pending_approval',
     grand_total: 127500, created_at: '2026-10-10T10:00:00Z',
-    items: [{ id: 'line-one', name: 'Bathroom basin', qty: 1 }],
+    item_count: 1,
   }] }));
 
   await page.goto('/quotations');

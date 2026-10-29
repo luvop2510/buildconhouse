@@ -8,7 +8,7 @@ Covers (per review request):
     rows carry tag TILES and a reason starting with "Selection "/"Quotation ".
   * quotation_id on a workspace row resolves to the real matching Tiles doc.
   * WhatsApp contact template exact text for selection + quotation categories.
-  * Auto-close: approving + move-to-quotation resolves the open
+  * Auto-close: move-to-quotation resolves the open
     selection_waiting card (status=done, auto_resolved=true).
   * Regression: GET /followups/config/rules includes the two new rule types
     alongside all pre-existing ones, and a standard (non-tiles) quotation is
@@ -209,11 +209,7 @@ class TestAutoCloseOnMoveToQuotation:
         card = sel_cards[0]
         qid = card["quotation_id"]
 
-        # Approve then move-to-quotation
-        r1 = session.patch(f"{API}/quotations/{qid}", json={"status": "approved"}, headers=_h(owner_token), timeout=15)
-        assert r1.status_code == 200, r1.text
-        assert r1.json()["status"] == "approved"
-
+        # Selection moves directly to quotation without a retired approval step.
         r2 = session.post(f"{API}/quotations/{qid}/move-to-quotation", headers=_h(owner_token), timeout=15)
         assert r2.status_code == 200, r2.text
         assert r2.json()["doc_type"] == "tiles_quotation"

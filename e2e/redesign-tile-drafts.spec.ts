@@ -59,6 +59,9 @@ test('critical tile quotation auto saves without address and survives reload wit
   await page.goto('/tiles/quotation?productId=draft-tile');
   await expect(lineName(page)).toHaveValue(product.name);
   await customerName(page).fill('Automatic draft customer');
+  await expect(page.getByText('No matching customers. Keep typing to create a new customer.', { exact: true })).toBeVisible();
+  expect(creates).toBe(0);
+  await customerName(page).blur();
   await expect.poll(() => creates).toBe(1);
   await expect(page).toHaveURL(/id=saved-draft/);
   await expect.poll(() => saved?.items?.[0]?.product_id).toBe('draft-tile');

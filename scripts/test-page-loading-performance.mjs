@@ -6,6 +6,7 @@ import ts from 'typescript';
 import './test-customer-edit-lifecycle.mjs';
 import './test-customer-switcher-lifecycle.mjs';
 import './test-kitchen-lazy-entry.mjs';
+import './test-quotation-list-paging.mjs';
 
 // Execute the production screen hooks, holding secondary responses indefinitely.
 // A fake clock makes the initial-load/search distinction deterministic and tests

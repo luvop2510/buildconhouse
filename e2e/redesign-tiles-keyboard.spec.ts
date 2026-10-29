@@ -23,9 +23,12 @@ for (const kind of ['selection', 'quotation'] as const) {
     await page.route('**/api/quotations/keyboard-document*', route => route.fulfill({ json: {
       id: 'keyboard-document', number: 'T-KEYBOARD', doc_type: `tiles_${kind}`,
       customer_id: 'keyboard-customer', customer_name: 'Keyboard Customer', phone_snapshot: '9900000000',
-      address_snapshot: 'Original customer address', status: 'draft', items: [], subtotal: 0, grand_total: 0,
+      address_snapshot: 'Original customer address', status: 'draft',
+      items: [{ id: 'keyboard-line', product_id: 'keyboard-tile', name: 'Keyboard floor tile', room: 'Bathroom', size: '600 × 600', rate_sqft: 50, rate_box: 100, qty: 10, quantity_unit: 'Box', net_amount: 1000 }],
+      subtotal: 1000, grand_total: 1000,
       updated_at: '2026-10-29T00:00:00Z',
     } }));
+    await page.route('**/api/products/keyboard-tile/size-variants', route => route.fulfill({ json: { available_sizes: ['600 × 600'] } }));
     await page.goto(path);
     const dock = page.getByTestId('tiles-mobile-workflow-dock');
     const scroll = page.getByTestId('tiles-mobile-editor-scroll');
@@ -61,5 +64,17 @@ for (const kind of ['selection', 'quotation'] as const) {
     const editor = await scroll.boundingBox(), actions = await dock.boundingBox();
     expect(editor!.y + editor!.height).toBeLessThanOrEqual(actions!.y + 1);
     await expect(address).toHaveValue('Customer address entered while keyboard is open edited');
+    const numeric = page.getByTestId(kind === 'quotation' ? 'mobile-totalBox-0' : 'mobile-rateSqft-0');
+    await numeric.fill('25');
+    await page.evaluate(height => (window as any).keyboardGeometry(height, 24), layout.keyboardHeight);
+    await expect(dock).toBeHidden();
+    await expect.poll(async () => {
+      const field = await numeric.boundingBox(), bounds = await scroll.boundingBox();
+      return field!.y >= bounds!.y && field!.y + field!.height <= bounds!.y + bounds!.height;
+    }, { message: 'Product numeric field stays fully visible above the keyboard' }).toBe(true);
+    await page.keyboard.type('0');
+    await expect(numeric).toHaveValue('250');
+    expect(await numeric.evaluate(node => node === document.activeElement)).toBe(true);
+    expect(await page.evaluate(() => window.scrollY)).toBe(0);
   });
 }

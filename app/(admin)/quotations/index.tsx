@@ -1,7 +1,7 @@
 // BuildCon House · Quotations list
 // One padded scroll on phones; aligned commercial records on larger workspaces.
 
-import { filterValues, matchesFilter, toggleFilterValue } from "@/src/utils/filters";
+import { filterValues, toggleFilterValue } from "@/src/utils/filters";
 import Feather from "@expo/vector-icons/Feather";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -11,7 +11,7 @@ import { Text } from "@/src/components/AppText";
 import { AdminPage } from "@/src/components/AdminPage";
 import { useBp } from "@/src/design/responsive";
 import {
-  Chip, PageHeader, EmptyState, ErrorState, IconButton, SearchField, Skeleton, StatusBadge,
+  Button, Chip, PageHeader, EmptyState, ErrorState, IconButton, SearchField, Skeleton, StatusBadge,
 } from "@/src/components/ui";
 import { ConfirmDialog, MobileFilterSection } from "@/src/components/ds";
 import { api } from "@/src/api/client";
@@ -19,14 +19,15 @@ import { colors, font, money, radius, spacing } from "@/src/theme/tokens";
 import { color as ds, layout, space } from "@/src/design/tokens";
 import { useAuth } from "@/src/state/auth";
 import { useActionAccess } from "@/src/hooks/use-permissions";
-import { useRequireFloorAccess } from "@/src/hooks/use-floor-access";
+import { useRequireFloorAccessState } from "@/src/hooks/use-floor-access";
 
 type Quotation = {
   id: string; number: string; customer_name: string;
   purchase_completion_status?: "active" | "completed";
   customer_outcome?: "won" | "lost" | null;
-  status: string; grand_total: number; created_at: string; items: any[];
+  status: string; grand_total: number; created_at: string; item_count?: number; items?: unknown[];
 };
+const PAGE_SIZE = 30;
 
 type Filter = "all" | "draft" | "approved" | "ordered" | "won";
 const PENDING_FILTERS: { key: Filter; label: string }[] = [
@@ -41,7 +42,7 @@ const COMPLETED_FILTERS: { key: Filter; label: string }[] = [
 ];
 
 export default function QuotationsList() {
-  useRequireFloorAccess("first-floor");
+  const floor = useRequireFloorAccessState("first-floor");
   const router = useRouter();
   const { view } = useLocalSearchParams<{ view?: string }>();
   const completed = view === "completed" || view === "fulfilled";
@@ -53,65 +54,93 @@ export default function QuotationsList() {
 
   const [items, setItems] = useState<Quotation[] | null>(null);
   const [q, setQ] = useState("");
+  const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [deleteTarget, setDeleteTarget] = useState<Quotation | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const requestId = useRef(0);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [pageError, setPageError] = useState<string | null>(null);
+  const scope = `${staff?.id}:${floor.ready}:${completed}:${outcome}:${query}:${statusFilter}`;
+  const scopeRef = useRef(scope);
+  scopeRef.current = scope;
+  const cursor = useRef({ scope, skip: 0, hasMore: false });
+  const pendingPage = useRef<number | null>(null);
+  const deletingRef = useRef(false);
 
   useEffect(() => { setStatusFilter("all"); }, [completed, outcome]);
+  useEffect(() => {
+    const timer = setTimeout(() => setQuery(q.trim()), 250);
+    return () => clearTimeout(timer);
+  }, [q]);
 
   const deleteQuotation = async () => {
-    if (!deleteTarget) return;
+    if (!deleteTarget || deletingRef.current || !canDeleteQuotations || !floor.ready) return;
+    const target = deleteTarget;
+    const deletionScope = scope;
+    deletingRef.current = true;
     setDeleting(true);
     setDeleteError(null);
     try {
-      await api.delete(`/quotations/${deleteTarget.id}`);
-      setItems((current) => current?.filter((item) => item.id !== deleteTarget.id) || []);
+      await api.delete(`/quotations/${encodeURIComponent(target.id)}`, { floorId: "first-floor" });
+      if (scopeRef.current !== deletionScope) return;
+      // Refresh the page boundary so deletion cannot skip the next record.
+      void load();
       setDeleteTarget(null);
     } catch (e: any) {
-      setDeleteError(e?.detail || "Quotation could not be deleted. Try again.");
-      setDeleteTarget(null);
-    } finally { setDeleting(false); }
+      if (scopeRef.current === deletionScope) setDeleteError(e?.detail || "Quotation could not be deleted. Try again.");
+    } finally { deletingRef.current = false; setDeleting(false); }
   };
 
-  const load = useCallback(async () => {
+  const loadPage = useCallback(async (append = false) => {
+    if (!floor.ready || scopeRef.current !== scope) return;
+    if (append && (pendingPage.current !== null || cursor.current.scope !== scope || !cursor.current.hasMore)) return;
     const currentRequest = ++requestId.current;
+    pendingPage.current = currentRequest;
+    const skip = append ? cursor.current.skip : 0;
+    const current = () => currentRequest === requestId.current && scopeRef.current === scope;
     setLoadError(null);
-    setItems(null);
+    setPageError(null);
+    setLoadingMore(append);
+    if (!append) { setItems(null); setHasMore(false); }
     try {
-      const nextItems = await api.get<Quotation[]>(outcome
-        ? `/quotations?doc_type=standard&view=${outcome}`
-        : `/quotations?doc_type=standard&view=${completed ? "completed" : "pending"}`);
-      if (currentRequest === requestId.current) setItems(nextItems);
+      const statuses = filterValues(statusFilter).flatMap(value => value === "draft" ? ["draft", "pending_approval", "sent"] : [value]);
+      const params = new URLSearchParams({ doc_type: "standard", view: outcome || (completed ? "completed" : "pending"),
+        summary: "true", q: query, status: statuses.join(","), skip: String(skip), limit: String(PAGE_SIZE + 1) });
+      const rows = await api.get<Quotation[]>(`/quotations?${params}`, { floorId: "first-floor" });
+      if (!current()) return;
+      const page = rows.slice(0, PAGE_SIZE);
+      const more = rows.length > PAGE_SIZE;
+      cursor.current = { scope, skip: skip + page.length, hasMore: more };
+      setHasMore(more);
+      setItems(previous => append ? [...(previous || []), ...page.filter(row => !previous?.some(item => item.id === row.id))] : page);
     } catch (e: any) {
-      if (currentRequest === requestId.current) setLoadError(e?.detail || "Could not load quotations");
+      if (current()) (append ? setPageError : setLoadError)(e?.detail || "Could not load quotations");
+    } finally {
+      if (pendingPage.current === currentRequest) pendingPage.current = null;
+      if (current()) setLoadingMore(false);
     }
-  }, [completed, outcome]);
+  }, [floor.ready, scope, statusFilter, query, outcome, completed]);
+  const load = useCallback(() => loadPage(), [loadPage]);
   useFocusEffect(useCallback(() => {
+    setDeleteTarget(null);
+    setDeleteError(null);
     void load();
-    return () => { requestId.current += 1; };
+    return () => { requestId.current += 1; pendingPage.current = null; };
   }, [load]));
-
-  const counts = useMemo(() => {
-    const map: Record<string, number> = { all: items?.length || 0 };
-    (items || []).forEach((it) => { const status = ["pending_approval", "sent"].includes(it.status) ? "draft" : it.status; map[status] = (map[status] || 0) + 1; });
-    return map;
-  }, [items]);
 
   const filters = outcome ? [{ key: "all" as const, label: "All" }] : completed ? COMPLETED_FILTERS : PENDING_FILTERS;
 
-  const filtered = useMemo(() => (items || []).filter((it) => {
-    if (!matchesFilter(!completed && ["pending_approval", "sent"].includes(it.status) ? "draft" : it.status, statusFilter)) return false;
-    if (q && !`${it.number} ${it.customer_name}`.toLowerCase().includes(q.toLowerCase())) return false;
-    return true;
-  }), [items, q, statusFilter, completed]);
+  const searching = q.trim() !== query;
+  const filtered = useMemo(() => searching ? [] : items || [], [items, searching]);
 
   const totalValue = filtered.reduce((s, it) => s + (it.grand_total || 0), 0);
 
   const pageTitle = outcome ? `${outcome === "won" ? "Won Customer" : "Lost Customer"} · Quotations` : completed ? "Approved & ordered quotations" : "Quotations";
-  const pageSubtitle = loadError ? "Pipeline unavailable" : items ? `${items.length} ${outcome ? `${outcome} quotations` : completed ? "approved or ordered" : "drafts"} · ${money(totalValue)} filtered` : "Loading pipeline…";
+  const pageSubtitle = loadError ? "Pipeline unavailable" : items && !searching ? `${items.length} quotations shown · ${money(totalValue)}` : "Loading quotations…";
   const headerActions = (
         <View style={styles.headerActions}>
           <Pressable accessibilityRole="button" accessibilityLabel={completed ? "View draft quotations" : "View completed quotations"}
@@ -131,6 +160,8 @@ export default function QuotationsList() {
         </View>
   );
 
+  if (floor.error) return <ErrorState title="Couldn’t open quotations" subtitle={floor.error} onRetry={() => void floor.retry()} />;
+  if (!floor.ready) return <View accessibilityLabel="Opening Sanitary quotations"><Skeleton w={220} h={24} /></View>;
   return (
     <AdminPage
       title={pageTitle}
@@ -171,7 +202,7 @@ export default function QuotationsList() {
             />
             <ScrollView horizontal showsHorizontalScrollIndicator={isPhone} contentContainerStyle={{ gap: 8, paddingRight: spacing.lg }}>
               {filters.map((f) => (
-                <Chip key={f.key} testID={`filter-${f.key}`} label={f.label} active={f.key === "all" ? !filterValues(statusFilter).length : filterValues(statusFilter).includes(f.key)} onPress={() => setStatusFilter(current => toggleFilterValue(current, f.key))} count={counts[f.key]} />
+                <Chip key={f.key} testID={`filter-${f.key}`} label={f.label} active={f.key === "all" ? !filterValues(statusFilter).length : filterValues(statusFilter).includes(f.key)} onPress={() => setStatusFilter(current => toggleFilterValue(current, f.key))} />
               ))}
             </ScrollView>
             </MobileFilterSection>
@@ -187,7 +218,7 @@ export default function QuotationsList() {
         ListEmptyComponent={
           loadError ? (
             <ErrorState title="Quotations unavailable" subtitle={loadError} onRetry={load} />
-          ) : !items ? (
+          ) : !items || searching ? (
             <View style={{ gap: spacing.sm }}>
               {Array.from({ length: 6 }).map((_, i) => <View key={i} style={[styles.card, { gap: 10 }]}><Skeleton w={110} h={12} /><Skeleton w={220} h={16} /><Skeleton w={160} h={12} /></View>)}
             </View>
@@ -195,16 +226,21 @@ export default function QuotationsList() {
             <EmptyState icon="file-text" title={q || statusFilter !== "all" ? "No quotations match" : "No quotations yet"} subtitle={q || statusFilter !== "all" ? "Try clearing filters or searching a different term." : outcome ? `No ${outcome} customer quotations have been recorded.` : "Press New Quotation to start building."} />
           )
         }
+        ListFooterComponent={!searching && items?.length ? <View style={{ gap: spacing.sm, paddingVertical: spacing.md }}>
+          {pageError ? <Text accessibilityRole="alert" style={{ color: ds.risk }}>{pageError}</Text> : null}
+          {hasMore ? <Button label={pageError ? "Retry loading quotations" : "Show more quotations"} variant="secondary"
+            testID="quotations-load-more" loading={loadingMore} onPress={() => void loadPage(true)} /> : null}
+        </View> : null}
         renderItem={({ item }) => (
           <QuotationRow q={item} onPress={() => router.push(`/(admin)/quotations/${item.id}` as any)} canDelete={canDeleteQuotations} onDelete={() => { setDeleteError(null); setDeleteTarget(item); }} />
         )}
       />
       <ConfirmDialog
         visible={!!deleteTarget}
-        onClose={() => setDeleteTarget(null)}
+        onClose={() => { if (!deleting) setDeleteTarget(null); }}
         onConfirm={deleteQuotation}
         title="Delete this quotation?"
-        description="This removes only this quotation, its pending records and reserved stock. The customer and other quotations stay. Paid orders must be removed through Customers → Delete customer data."
+        description={deleteError || "This removes only this quotation, its pending records and reserved stock. The customer and other quotations stay. Paid orders must be removed through Customers → Delete customer data."}
         confirmLabel="Delete quotation"
         tone="danger"
         loading={deleting}
@@ -218,7 +254,7 @@ export default function QuotationsList() {
 function QuotationRow({ q, onPress, canDelete, onDelete }: { q: Quotation; onPress: () => void; canDelete: boolean; onDelete: () => void }) {
   const { isPhone, isDesktop } = useBp();
   const created = new Date(q.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
-  const count = q.items?.length || 0;
+  const count = q.item_count ?? q.items?.length ?? 0;
   const status = q.purchase_completion_status === "completed" ? <Text style={[styles.meta, { color: ds.ok }]}>100% completed</Text> : <StatusBadge status={q.customer_outcome || (["pending_approval", "sent"].includes(q.status) ? "draft" : q.status)} />;
   return <View style={[styles.record, isPhone && styles.recordPhone]}>
     <Pressable accessibilityRole="button"
@@ -262,7 +298,7 @@ const styles = StyleSheet.create({
   record: { flexDirection: "row", alignItems: "stretch", backgroundColor: ds.surface, minWidth: 0 },
   recordPhone: { borderRadius: radius.md, overflow: "hidden" },
   openRecord: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: space.x4, padding: space.x4, minHeight: 88 },
-  openRecordPhone: { flexDirection: "column", alignItems: "stretch", gap: space.x4, paddingRight: space.x2 },
+  openRecordPhone: { flexDirection: "column", alignItems: "stretch", gap: space.x2, paddingRight: space.x2 },
   phoneAmount: { width: "100%", flexDirection: "row", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between" },
   deleteTarget: { justifyContent: "center", paddingRight: space.x2 },
   customer: { fontSize: 16, lineHeight: 24, fontFamily: font.semibold, fontWeight: "600", color: ds.ink },

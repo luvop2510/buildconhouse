@@ -11,9 +11,16 @@ test('critical quotation workspace keeps title and actions in the padded scrolli
     id: `workspace-${index}`, number: `Q-2026-${String(index + 1).padStart(5, '0')}`,
     customer_name: index === 0 ? 'Shah Residence — Guest Bathroom and Powder Room' : `Showroom customer ${index + 1}`,
     status: index % 2 ? 'sent' : 'draft', grand_total: 127500 + index * 1250,
-    created_at: '2026-10-23T10:00:00Z', items: [{ id: `line-${index}`, qty: 2 }],
+    created_at: '2026-10-23T10:00:00Z', item_count: 1,
   }));
-  await page.route('**/api/quotations?**', route => route.fulfill({ json: quotes }));
+  await page.route('**/api/quotations?**', route => {
+    const params = new URL(route.request().url()).searchParams;
+    expect(params.get('summary')).toBe('true');
+    const query = (params.get('q') || '').toLowerCase();
+    const matches = quotes.filter(quote => `${quote.number} ${quote.customer_name}`.toLowerCase().includes(query));
+    const skip = Number(params.get('skip') || 0), limit = Number(params.get('limit') || 31);
+    return route.fulfill({ json: matches.slice(skip, skip + limit) });
+  });
   await page.goto('/quotations');
   const heading = page.getByRole('heading', { name: 'Quotations', exact: true });
   await expect(page.getByTestId('quotation-workspace-0')).toBeVisible();

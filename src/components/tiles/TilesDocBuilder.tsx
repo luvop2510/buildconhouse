@@ -44,7 +44,7 @@ import Feather from "@expo/vector-icons/Feather";
 import { randomUUID } from "expo-crypto";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, View, type ViewStyle } from "react-native";
+import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, useWindowDimensions, View, type ViewStyle } from "react-native";
 import { Text, TextInput } from "@/src/components/AppText";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -1857,17 +1857,17 @@ function SummaryLine({ label, value, bold }: { label: string; value: string; bol
 }
 
 function MobileRowCard({
-  doc, row, index, docType, onOpenPicker, fieldColumns,
+  doc, row, index, docType, onOpenPicker, fieldColumns, isPhone,
 }: {
-  doc: ReturnType<typeof useTilesDoc>; row: TileRow; index: number; docType: TilesDocType; onOpenPicker: () => void; fieldColumns: number;
+  doc: ReturnType<typeof useTilesDoc>; row: TileRow; index: number; docType: TilesDocType; onOpenPicker: () => void; fieldColumns: number; isPhone: boolean;
 }) {
   const fields = MOBILE_FIELDS[docType];
   const compact = fieldColumns > 1;
   return (
     <View style={mobileStyles.rowCard} testID={`mobile-row-${index}`}>
-      <View style={[mobileStyles.productHeader, compact && mobileStyles.productHeaderCompact]}>
+      <View style={mobileStyles.productHeader}>
       {row.productId ? (
-      <Pressable accessibilityRole="button" onPress={onOpenPicker} style={[mobileStyles.productImage, compact && mobileStyles.tabletProductImage]} testID={`mobile-thumb-${index}`} accessibilityLabel={row.productId ? "Change product image" : "Select product image"}>
+      <Pressable accessibilityRole="button" onPress={onOpenPicker} style={mobileStyles.productImage} testID={`mobile-thumb-${index}`} accessibilityLabel={row.productId ? "Change product image" : "Select product image"}>
           {row.image ? (
             <ProductImage source={row.image} contentFit="contain" frameInset={0} borderRadius={radius.md} disableSkeleton frameBackground={colors.surface} style={{ width: "100%", height: "100%" }} accessibilityLabel="Quotation product image" />
           ) : (
@@ -1875,7 +1875,7 @@ function MobileRowCard({
           )}
       </Pressable>
       ) : null}
-      <View style={[mobileStyles.rowHeading, compact && mobileStyles.tabletRowHeading]}>
+      <View style={mobileStyles.rowHeading}>
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text style={mobileStyles.rowIndex}>Item {index + 1}</Text>
           {row.productId ? (
@@ -1884,6 +1884,7 @@ function MobileRowCard({
                 value={row.name}
                 onChangeText={(t) => doc.updateRow(row.key, { name: t })}
                 multiline
+                accessibilityLabel={`Product name for item ${index + 1}`}
                 style={mobileStyles.rowTitleInput}
                 testID={`mobile-name-${index}`}
               />
@@ -1900,7 +1901,7 @@ function MobileRowCard({
           )}
         </View>
         {index > 0 || doc.rows.length > 1 ? (
-          <Pressable accessibilityRole="button" accessibilityLabel={`Remove ${row.name || `product row ${index + 1}`}`} onPress={() => doc.removeRow(row.key)} hitSlop={10} style={mobileStyles.deleteBtn} testID={`mobile-remove-row-${index}`}>
+          <Pressable accessibilityRole="button" accessibilityLabel={`Remove ${row.name || `product row ${index + 1}`}`} onPress={() => doc.removeRow(row.key)} style={mobileStyles.deleteBtn} testID={`mobile-remove-row-${index}`}>
             <Feather name="trash-2" size={15} color={colors.error} />
           </Pressable>
         ) : null}
@@ -1909,16 +1910,19 @@ function MobileRowCard({
 
       <View style={[mobileStyles.fieldStack, compact && mobileStyles.fieldGrid]}>
         {fields.map((f) => (
-          <View key={f.key} style={compact ? { width: fieldColumns === 3 ? "32%" : "49%", minWidth: 0 } : mobileStyles.fieldFull}>
+          <View key={f.key} style={compact && !(isPhone && f.key === "area") ? { width: fieldColumns === 3 ? "32%" : "49%", minWidth: 0 } : mobileStyles.fieldFull}>
             {f.key === "size" ? (
-              <TileSizeField
-                row={row}
-                onChangeText={(size) => doc.updateRow(row.key, { size })}
-                onSelect={(size) => void doc.selectRowSize(row.key, size)}
-                onLoad={() => void doc.loadRowSizes(row.key, row.productId!)}
-                testID={`mobile-${f.key}-${index}`}
-                mobile
-              />
+              <View style={{ gap: spacing.sm }}>
+                {row.productId ? <Text style={type.label}>Size</Text> : null}
+                <TileSizeField
+                  row={row}
+                  onChangeText={(size) => doc.updateRow(row.key, { size })}
+                  onSelect={(size) => void doc.selectRowSize(row.key, size)}
+                  onLoad={() => void doc.loadRowSizes(row.key, row.productId!)}
+                  testID={`mobile-${f.key}-${index}`}
+                  mobile
+                />
+              </View>
             ) : f.key === "quantityUnit" ? (
               <>
                 <Text style={type.label}>Unit</Text>
@@ -1953,12 +1957,11 @@ function MobileTilesEditor({
   docType, doc, router, onDelete, canDelete, workspaceWidth,
 }: { docType: TilesDocType; doc: ReturnType<typeof useTilesDoc>; router: ReturnType<typeof useRouter>; onDelete: () => void; canDelete: boolean; workspaceWidth: number }) {
   const { isPhone } = useBp();
-  // The sidebar can consume tablet space. Reflow the usable editor rather
-  // than stretching phone images and stacking every field at tablet widths.
-  // A 768px tablet with its expanded 240px sidebar leaves a 528px
-  // workspace. Two columns still fit there; treating it as a one-column
-  // phone layout inflated the product photo and hid editable fields.
-  const fieldColumns = workspaceWidth >= 720 ? 3 : workspaceWidth >= 480 ? 2 : 1;
+  const { fontScale } = useWindowDimensions();
+  // Pair short fields where they fit; larger accessibility text reclaims a column.
+  const fieldWidth = workspaceWidth / Math.max(1, fontScale);
+  const fieldColumns = fieldWidth >= 720 ? 3 : fieldWidth >= 360 ? 2 : 1;
+  const splitCustomerFields = !isPhone && fieldColumns > 1;
   const insets = useSafeAreaInsets();
   const inputActive = useInputActive();
   const [pickerRow, setPickerRow] = useState<string | null>(null);
@@ -2031,9 +2034,9 @@ function MobileTilesEditor({
 
             <Card padding={spacing.md} style={{ gap: spacing.md }}>
               <Text style={mobileStyles.sectionTitle}>CUSTOMER &amp; DETAILS</Text>
-              <View style={[mobileStyles.fieldStack, fieldColumns > 1 && mobileStyles.fieldGrid]}>
-                <View style={fieldColumns > 1 ? mobileStyles.halfField : mobileStyles.fieldFull}><FormFieldCustomerName doc={doc} /></View>
-                <View style={fieldColumns > 1 ? mobileStyles.halfField : mobileStyles.fieldFull}><TextField label="Contact no." value={doc.header.phone} onChangeText={(t: string) => doc.setHeaderField("phone", t)} keyboardType="phone-pad" testID="mobile-phone" /></View>
+              <View style={[mobileStyles.fieldStack, splitCustomerFields && mobileStyles.fieldGrid]}>
+                <View style={splitCustomerFields ? mobileStyles.halfField : mobileStyles.fieldFull}><FormFieldCustomerName doc={doc} /></View>
+                <View style={splitCustomerFields ? mobileStyles.halfField : mobileStyles.fieldFull}><TextField label="Contact no." value={doc.header.phone} onChangeText={(t: string) => doc.setHeaderField("phone", t)} keyboardType="phone-pad" testID="mobile-phone" /></View>
               </View>
               <Disclosure title="Document details">
                 <View style={mobileStyles.fieldFull}>
@@ -2060,7 +2063,7 @@ function MobileTilesEditor({
             <View style={{ gap: spacing.sm }}>
               <Text style={mobileStyles.sectionTitle}>PRODUCTS{itemCount ? ` (${itemCount})` : ""}</Text>
               {doc.rows.map((row, index) => (
-                <MobileRowCard key={row.key} doc={doc} row={row} index={index} docType={docType} fieldColumns={fieldColumns} onOpenPicker={() => setPickerRow(row.key)} />
+                <MobileRowCard key={row.key} doc={doc} row={row} index={index} docType={docType} fieldColumns={fieldColumns} isPhone={isPhone} onOpenPicker={() => setPickerRow(row.key)} />
               ))}
               <Button
                 label="Add product" icon="plus" variant="secondary" fullWidth
@@ -2162,22 +2165,19 @@ const mobileStyles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
     padding: spacing.md, gap: spacing.md,
   },
-  productHeader: { gap: spacing.md },
-  productHeaderCompact: { flexDirection: "row", alignItems: "center" },
-  tabletProductImage: { width: 144, flexShrink: 0 },
-  tabletRowHeading: { flex: 1, minWidth: 0 },
+  productHeader: { flexDirection: "row", alignItems: "flex-start", gap: spacing.md },
   productImage: {
-    width: "100%", aspectRatio: TILE_IMAGE_ASPECT_RATIO, borderRadius: radius.md, backgroundColor: colors.surfaceSecondary,
+    width: 88, minHeight: 44, flexShrink: 0, aspectRatio: TILE_IMAGE_ASPECT_RATIO, borderRadius: radius.md, backgroundColor: colors.surfaceSecondary,
     alignItems: "center", justifyContent: "center", overflow: "hidden",
     borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
   },
-  rowHeading: { flexDirection: "row", gap: spacing.sm, alignItems: "flex-start" },
+  rowHeading: { flex: 1, minWidth: 0, flexDirection: "row", gap: spacing.sm, alignItems: "flex-start" },
   rowIndex: { ...type.overline, color: colors.onSurfaceMuted, marginBottom: 2 },
   rowTitleInput: {
-    fontSize: 14, fontFamily: type.titleMd.fontFamily, fontWeight: "600", color: colors.onSurface,
-    padding: 0, ...(Platform.OS === "web" ? { outlineStyle: "none" } as any : {}),
+    fontSize: 16, fontFamily: type.titleMd.fontFamily, fontWeight: "600", color: colors.onSurface,
+    minHeight: 44, padding: 0, ...(Platform.OS === "web" ? { outlineStyle: "none" } as any : {}),
   },
-  swapRow: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 6 },
+  swapRow: { minHeight: 44, flexDirection: "row", alignItems: "center", gap: 4 },
   swapLabel: { fontSize: 12, color: colors.brand, fontWeight: "600" },
   selectBtn: {
     flexDirection: "row", alignItems: "center", gap: 6, alignSelf: "flex-start",
@@ -2186,7 +2186,7 @@ const mobileStyles = StyleSheet.create({
   },
   selectLabel: { fontSize: 13, color: colors.brand, fontWeight: "600" },
   deleteBtn: {
-    width: 36, height: 36, borderRadius: radius.md, alignItems: "center", justifyContent: "center",
+    width: 44, height: 44, borderRadius: radius.md, alignItems: "center", justifyContent: "center",
     backgroundColor: colors.surfaceSecondary,
   },
   summaryLine: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 5 },

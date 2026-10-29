@@ -5,7 +5,7 @@ from services.tiles_stage import can_move_to_quotation, can_place_order, next_ti
 @pytest.mark.parametrize("status", ["draft", "pending_approval", "approved", "sent", "won"])
 def test_every_editable_selection_moves_directly_to_quotation(status):
     assert tiles_stage("tiles_selection", status) == "selection_draft"
-    assert tiles_stage_label("tiles_selection", status) == "Selection — Draft"
+    assert tiles_stage_label("tiles_selection", status) == ("Selection — Approved" if status in {"approved", "won"} else "Selection — Draft")
     assert can_move_to_quotation("tiles_selection", status)
     assert next_tiles_action("tiles_selection", status) == {"label": "Move to Quotation", "kind": "move_to_quotation", "next_status": None}
     assert not can_place_order("tiles_selection", status)
@@ -29,3 +29,9 @@ def test_standard_quotation_workflow_is_unchanged():
     assert can_place_order("standard", "approved")
     with pytest.raises(ValueError):
         tiles_stage("standard", "draft")
+
+
+@pytest.mark.parametrize("status", ["approved", "won"])
+def test_completed_legacy_quotation_keeps_its_approval_label_without_an_order(status):
+    assert tiles_stage_label("tiles_quotation", status) == "Quotation — Approved"
+    assert can_place_order("tiles_quotation", status)

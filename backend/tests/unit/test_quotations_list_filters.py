@@ -198,6 +198,15 @@ def test_historical_outcomes_are_excluded_from_pending_quotations(monkeypatch):
     assert _flatten(fake_db.quotations.last_query)["customer_outcome"] == {"$nin": ["won", "lost"]}
 
 
+def test_lost_approved_documents_are_excluded_from_completed_quotations(monkeypatch):
+    fake_db = _FakeDb()
+    monkeypatch.setattr(quotation_routes, "db", fake_db)
+    asyncio.run(quotation_routes.list_quotations(view="completed", user=_user()))
+    query = _flatten(fake_db.quotations.last_query)
+    assert query["status"] == {"$in": ["approved", "ordered", "won"]}
+    assert query["customer_outcome"] == {"$ne": "lost"}
+
+
 @pytest.mark.parametrize("view", ["won", "lost"])
 def test_recent_quotations_share_outcome_filters_and_remain_bounded(monkeypatch, view):
     fake_db = _FakeDb()
