@@ -4,6 +4,14 @@ from fastapi import HTTPException
 from services.kitchen_projects import order_basis_expression
 
 
+def kitchen_paid_expression(kind):
+    def convert(value):
+        return {"$convert": {"input": value, "to": kind, "onError": None, "onNull": None}}
+    return {"$add": [convert({"$cond": ["$_order.advance.received", "$_order.advance.amount", "0"]}),
+        {"$reduce": {"input": {"$ifNull": ["$_order.installments", []]}, "initialValue": 0,
+                     "in": {"$add": ["$$value", convert("$$this.amount")]}}}]}
+
+
 def kitchen_referral_pipeline(match, *, include_leads=False, require_referrer=True):
     # Kitchen has no product-line attribution. A product-filtered report must
     # not add unrelated Kitchen value to its selected product cohort.
@@ -53,8 +61,8 @@ def kitchen_referral_pipeline(match, *, include_leads=False, require_referrer=Tr
                   "grand_total": {"$convert": {"input": {"$cond": ["$_confirmed", "$_order.final_amount", "$_quote.amount"]}, "to": "double", "onError": 0, "onNull": 0}},
                   "kitchen_stage": "$stage",
                   "_kitchen_total_decimal": {"$convert": {"input": "$_order.final_amount", "to": "decimal", "onError": None, "onNull": None}},
-                  "_kitchen_paid_decimal": {"$convert": {"input": {"$cond": ["$_order.advance.received", "$_order.advance.amount", "0"]}, "to": "decimal", "onError": None, "onNull": None}},
-                  "_kitchen_paid": {"$convert": {"input": {"$cond": ["$_order.advance.received", "$_order.advance.amount", "0"]}, "to": "double", "onError": 0, "onNull": 0}}}},
+                  "_kitchen_paid_decimal": kitchen_paid_expression("decimal"),
+                  "_kitchen_paid": kitchen_paid_expression("double")}},
         {"$match": match},
     ]
 

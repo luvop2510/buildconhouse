@@ -172,6 +172,8 @@ export function KitchenProjectProvider({ id, returnTo, children }: { id: string;
         quotation_receive: [`${cycle}.quotation.new.edit`, `${cycle}.quotation.new.${String(payload.design_version_id)}.edit`, `${cycle}.quotation.date`, `${cycle}.quotation.amount`, `${cycle}.quotation.file`, `${cycle}.quotation.url`, `${cycle}.quotation.notes`],
         quotation_share: [`${cycle}.quotation.${String(payload.version_id)}.shareDate`],
         quotation_response: [`${cycle}.quotation.${String(payload.version_id)}.response`],
+        order_installment: [`${cycle}.order.installment.${String(payload.order_id)}.amount`, `${cycle}.order.installment.${String(payload.order_id)}.date`],
+        order_material_arrived: [`${cycle}.order.installment.${String(payload.order_id)}.arrived`],
         order_confirmation: [`${cycle}.order.confirmed`],
         order_confirm: [`${cycle}.order.finalAmount.`, `${cycle}.order.amountApproved`, `${cycle}.order.confirmed`, `${cycle}.order.date`, `${cycle}.order.file`, `${cycle}.order.notes`],
         order_update: [`${cycle}.order.${current.orders?.at(-1)?.id}.edit`],
@@ -233,6 +235,7 @@ export function KitchenProjectProvider({ id, returnTo, children }: { id: string;
           if (!(["edit_lead", "save_visit", "save_cad"].includes(name))) baselines.current[key] = submittedDrafts[key];
           if ((name === "exception" || name === "order_status") && key === "exception.reason") baselines.current[key] = "";
           if (name === "design_revision" && key.endsWith(".revisionReason")) baselines.current[key] = "";
+          if (name === "order_installment") baselines.current[key] = key.endsWith(".amount") ? "" : kitchenToday();
           if (name === "site_visit" && key.startsWith(`${cycle}.site.`)) baselines.current[key] = key.endsWith(".actual") ? "Not recorded" : key.endsWith(".date") ? kitchenToday() : "";
         }
         const acknowledged: Partial<Record<KitchenCommand, string[]>> = {

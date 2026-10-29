@@ -135,7 +135,7 @@ class ProjectCommand(StrictModel):
     command: Literal["edit_lead", "convert", "save_visit", "save_cad", "advance_stage", "move_stage", "assign", "metadata",
                      "design_present", "design_update", "design_share", "design_response", "design_revision", "design_handoff",
                      "quotation_receive", "quotation_update", "quotation_share", "quotation_response", "order_confirm", "order_confirmation", "order_update", "order_advance",
-                     "order_amend", "order_status", "order_document", "exception", "production_update", "installation_update", "site_visit", "approval", "review_duplicate"]
+                     "order_installment", "order_material_arrived", "installation_material_photos", "order_amend", "order_status", "order_document", "exception", "production_update", "installation_update", "site_visit", "approval", "review_duplicate"]
     payload: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -383,6 +383,23 @@ class AdvancePayment(StrictModel):
     date: str | None = None
     _amount = field_validator("amount", mode="before")(money_text)
     _date = field_validator("date", mode="before")(date_only)
+
+
+class OrderInstallment(StrictModel):
+    order_id: Identifier
+    amount: str
+    date: str
+    _amount = field_validator("amount", mode="before")(money_text)
+    _date = field_validator("date", mode="before")(date_only)
+
+
+class MaterialArrival(StrictModel):
+    order_id: Identifier
+    arrived: StrictBool
+
+
+class MaterialPhotos(StrictModel):
+    attachment_ids: list[Identifier] = Field(min_length=1, max_length=100)
 
 
 class OrderAmendment(StrictModel):

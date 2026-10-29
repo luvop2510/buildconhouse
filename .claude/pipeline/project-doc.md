@@ -174,3 +174,12 @@ a future change cannot restore the superseded homepage behavior. No new framewor
 dependency, database, session mechanism or architectural directory is introduced.
 
 Last scanned: 2026-10-29.
+
+## Kitchen payment/material update — 29 October 2026
+
+Kitchen orders embed dated installment receipts and explicit material arrival.
+Analytics includes advances once plus installments. Installation material-list
+photos reuse private project attachments and verified transport. Production's
+existing completion date derives from its start plus two calendar months on UI
+and server, with explicit work status. No dependency, migration or architectural
+layer is introduced. See docs/audits/2026-10-29-kitchen-installments-materials.md.

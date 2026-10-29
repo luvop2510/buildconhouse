@@ -1,3 +1,4 @@
+import { kitchenProductionEnd } from "../src/components/kitchen/KitchenDates";
 import { prepareKitchenFixtureCommand, uploadKitchenPdfInForm } from './kitchen-pdf-fixtures';
 import { projectControl, openProjectTool } from './kitchen-controls';
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
@@ -84,7 +85,10 @@ test('Every Kitchen date entry point chooses India today when blank and preserve
       await todayDefault(page, 'kitchen-advance-date');
     } else if (target_stage === 'production' || target_stage === 'installation') {
       await todayDefault(page, `kitchen-${target_stage}-start`);
-      await todayDefault(page, `kitchen-${target_stage}-complete`);
+      if (target_stage === 'production') {
+        await expect(page.getByTestId('kitchen-production-complete')).toHaveValue(kitchenProductionEnd(await page.getByTestId('kitchen-production-start').inputValue()));
+        await expect(page.getByTestId('kitchen-production-complete')).toBeDisabled();
+      } else await todayDefault(page, 'kitchen-installation-complete');
       if (target_stage === 'installation') {
         await openProjectTool(page, 'site-visit');
         await todayDefault(page, 'kitchen-site-date');
@@ -126,30 +130,33 @@ test('Production and Installation select both dates on load without interaction 
     await open(page, project.id, stage);
     // Neither date is focused, clicked, filled or changed before these assertions.
     await expect(page.getByTestId(`kitchen-${stage}-start`)).toHaveValue(today);
-    await expect(page.getByTestId(`kitchen-${stage}-complete`)).toHaveValue(today);
+    await expect(page.getByTestId(`kitchen-${stage}-complete`)).toHaveValue(stage === "production" ? kitchenProductionEnd(today) : today);
     await expect(page.getByTestId('kitchen-disclose-site-visit')).toHaveCount(0);
     await expect(page.getByTestId('kitchen-site-save')).toHaveCount(0);
     await expect(page.getByTestId('kitchen-current-task-region')).not.toContainText('Installation site visits');
     const beforeSave = await (await context.request.get(`/api/kitchen-projects/${project.id}`, { headers })).json();
     expect(beforeSave[stage]).toBeUndefined(); // Defaults alone never record work.
+    const workStart = stage === 'installation' ? project.production?.completion_date || today : today;
     for (const status of ['not-started', stage === 'production' ? 'in-production' : 'in-progress']) {
+      await page.getByTestId(`kitchen-${stage}-start`).fill(workStart);
       await page.getByTestId(`kitchen-${stage}-status-${status}`).click();
       const response = page.waitForResponse(r => r.url().endsWith('/commands') && r.request().postDataJSON()?.command === `${stage}_update`);
       await page.getByTestId(`kitchen-${stage}-save`).click();
       const accepted = await response;
       expect(accepted.ok(), await accepted.text()).toBe(true);
       const record = (await accepted.json())[stage];
-      expect(record.start_date).toBe(status === 'not-started' ? null : today);
-      expect(record.completion_date).toBeNull();
+      expect(record.start_date).toBe(status === 'not-started' ? null : workStart);
+      expect(record.completion_date).toBe(status !== 'not-started' && stage === 'production' ? kitchenProductionEnd(workStart) : null);
       await page.reload();
-      await expect(page.getByTestId(`kitchen-${stage}-start`)).toHaveValue(today);
-      await expect(page.getByTestId(`kitchen-${stage}-complete`)).toHaveValue(today);
+      await expect(page.getByTestId(`kitchen-${stage}-start`)).toHaveValue(status === "not-started" ? today : workStart);
+      await expect(page.getByTestId(`kitchen-${stage}-complete`)).toHaveValue(stage === "production" ? kitchenProductionEnd(workStart) : today);
     }
-    const start = stage === 'production' ? '2026-10-22' : '2026-10-24';
-    const complete = stage === 'production' ? '2026-10-23' : '2026-10-25';
+    const start = stage === 'production' ? '2026-10-22' : '2026-12-24';
+    const complete = stage === 'production' ? '2026-12-22' : '2026-12-25';
     await page.getByTestId(`kitchen-${stage}-status-completed`).click();
     await page.getByTestId(`kitchen-${stage}-start`).fill(start);
-    await page.getByTestId(`kitchen-${stage}-complete`).fill(complete);
+    if (stage === "installation") await page.getByTestId("kitchen-installation-complete").fill(complete);
+    else await expect(page.getByTestId("kitchen-production-complete")).toHaveValue(complete);
     const saved = page.waitForResponse(r => r.url().endsWith('/commands') && r.request().postDataJSON()?.command === `${stage}_update`);
     await page.getByTestId(`kitchen-${stage}-save`).click();
     expect((await saved).ok()).toBe(true);

@@ -205,7 +205,9 @@ def normalize(source, doc, products, brands, payments):
     if source == "kitchen":
         advance = order.get("advance") or {}
         paid = money(advance.get("amount")) if advance.get("received") is True else 0
-        payments = [{"id": f"{order.get('id', doc['id'])}:advance", "amount": paid, "date": stamp(advance.get("date") or advance.get("at")), "mode": "Recorded advance", "currency": "INR"}] if paid else []
+        payments = [{"id": f"{order.get('id', doc['id'])}:advance", "amount": paid, "date": stamp(advance.get("date") or advance.get("at")), "mode": "Recorded advance", "currency": "INR"}] if advance.get("received") is True else []
+        payments += [{"id": p["id"], "amount": money(p.get("amount")), "date": stamp(p.get("date")), "mode": "Installment", "currency": "INR"} for p in order.get("installments", [])]
+        paid = _sum_known(payments, "amount")
     elif source == "furniture":
         paid = money(doc.get("total_received_rmb"))
         payments = [{"id": p.get("id"), "amount": money(p.get("amount_rmb")), "date": stamp(p.get("created_at")), "mode": "Deposit", "currency": "RNB"} for p in doc.get("deposits") or []]
@@ -442,7 +444,7 @@ def dashboard(rows, q, floors, now=None):
     if "RNB" in currencies:
         notes.append("Furniture uses its own RNB ledger; it is never added to INR sales.")
     if any(r["source"] == "kitchen" for r in selected):
-        notes.append("Kitchen collections contain only the recorded order advance; other payment history is unavailable.")
+        notes.append("Kitchen collections include the recorded advance and dated installments; unrecorded payments are unavailable.")
     if q.date_basis == "quotation":
         notes.append("Quotation date selects already-confirmed customer orders; unconfirmed quotations are never counted as sales.")
     if q.date_basis == "payment":

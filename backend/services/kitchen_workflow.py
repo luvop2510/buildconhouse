@@ -5,18 +5,37 @@ configured internal approvers before invoking these strict domain operations.
 """
 import copy
 from decimal import Decimal
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
+from calendar import monthrange
 from uuid import uuid4
 
 from fastapi import HTTPException
 
-from models_kitchen import (AdvancePayment, CustomerResponse, DesignPresentation,
+from models_kitchen import (AdvancePayment, OrderInstallment, MaterialArrival, MaterialPhotos, CustomerResponse, DesignPresentation,
     DesignRevision, DesignUpdate, InternalApproval, OrderAmendment, OrderConfirmation,
     QuotationReceived, QuotationUpdate, SiteVisit, VersionDate, WorkProgress, OrderStatusChange, ExceptionCommand, OrderDocument, OrderUpdate, OrderConfirmationValue)
 
 COMMANDS = {"design_present", "design_update", "design_share", "design_response", "design_revision", "design_handoff",
             "quotation_receive", "quotation_update", "quotation_share", "quotation_response", "order_confirm", "order_confirmation", "order_update", "order_advance",
-            "order_amend", "order_status", "order_document", "exception", "production_update", "installation_update", "site_visit", "approval"}
+            "order_installment", "order_material_arrived", "installation_material_photos", "order_amend", "order_status", "order_document", "exception", "production_update", "installation_update", "site_visit", "approval"}
+
+
+def production_end_date(start):
+    if not start:
+        return None
+    day = date.fromisoformat(start)
+    month = day.month - 1 + 2
+    year = day.year + month // 12
+    month = month % 12 + 1
+    return date(year, month, min(day.day, monthrange(year, month)[1])).isoformat()
+
+
+def order_paid(order):
+    advance = order.get("advance") or {}
+    if advance.get("received") and advance.get("amount") is None:
+        reject("The recorded advance amount is unavailable; correct the advance before adding payments")
+    return (Decimal(advance.get("amount") or "0") if advance.get("received") else Decimal(0)) + sum(
+        (Decimal(row["amount"]) for row in order.get("installments", [])), Decimal(0))
 
 
 def reject(message):
@@ -195,7 +214,7 @@ def transition(project, target, policy):
             if project.get("commercial_basis_invalidated") or order.get("authorization_invalidated") or not quote.get("shared_date") or order["status"] != "Confirmed" or not order["confirmed"] or quote["response"] != "Approved":
                 reject("Confirm the order against the current approved quotation first")
             advance = order.get("advance", {})
-            if not advance.get("received") or Decimal(advance.get("amount") or "0") <= 0 or not advance.get("date"):
+            if order_paid(order) <= 0:
                 reject("Record the required advance payment first")
             if not policy.get("department_manager_user_ids") or not has_approval(project, "production", policy):
                 reject("Awaiting selected department manager production approval")
@@ -491,7 +510,7 @@ def apply(project, command, payload, policy, user, now, validate):
         project["orders"].append(record({**body.model_dump(), "confirmed": True, "status": "Confirmed",
             "workflow_cycle": project.get("workflow_cycle", 1), "approval_identity": str(uuid4()),
             "original_amount": quote.get("amount"), "final_amount": final_amount, "amendments": amendments,
-            "advance": {"status": "Not recorded", "received": False, "amount": "0.00", "date": None}}))
+            "advance": {"status": "Not recorded", "received": False, "amount": "0.00", "date": None}, "installments": [], "material_arrived": None}))
         project["order_amount"] = final_amount
         project["customer_order_confirmation"] = "Yes"
         project["commercial_basis_invalidated"] = False
@@ -571,10 +590,42 @@ def apply(project, command, payload, policy, user, now, validate):
             reject("Received advance requires a positive amount and receipt date")
         if not body.received and (Decimal(body.amount) != 0 or body.date):
             reject("An unreceived advance must have zero amount and no receipt date")
-        if Decimal(body.amount) > Decimal(row["final_amount"]):
-            reject("Advance cannot exceed the approved final order amount")
+        if Decimal(body.amount) + sum((Decimal(p["amount"]) for p in row.get("installments", [])), Decimal(0)) > Decimal(row["final_amount"]):
+            reject("Recorded payments cannot exceed the approved final order amount")
         row["advance"] = body.model_dump()
         row["approval_identity"] = str(uuid4())
+    elif command in {"order_installment", "order_material_arrived"}:
+        if stage not in {"order", "production", "installation", "completed"}:
+            reject("Confirm the order before recording payments or material arrival")
+        body = validate(OrderInstallment if command == "order_installment" else MaterialArrival, payload)
+        row = current(project, "orders")
+        if body.order_id != row["id"] or project.get("commercial_basis_invalidated") or row.get("authorization_invalidated"):
+            reject("Select the current confirmed order")
+        if row.get("status") != "Confirmed" or not row.get("confirmed"):
+            reject("Confirm the order before recording payments or material arrival")
+        if command == "order_installment":
+            if Decimal(body.amount) <= 0 or not body.date:
+                reject("Record a positive installment amount and payment date")
+            if body.date < row["order_date"] or body.date > recorded_day(now):
+                reject("Payment date must be between order confirmation and today")
+            if len(row.get("installments", [])) >= 1000:
+                reject("This order has reached the supported installment limit")
+            if order_paid(row) + Decimal(body.amount) > Decimal(row["final_amount"]):
+                reject("Installment exceeds the remaining order balance")
+            row.setdefault("installments", []).append(record(body.model_dump(exclude={"order_id"})))
+        else:
+            row["material_arrived"] = body.arrived
+    elif command == "installation_material_photos":
+        require_stage("installation")
+        body = validate(MaterialPhotos, payload)
+        photos = project.get("installation", {}).get("material_photo_ids", [])
+        combined = list(dict.fromkeys([*photos, *body.attachment_ids]))
+        if len(combined) > 100:
+            reject("Attach at most 100 material-list photos")
+        attachments = {row["id"]: row for row in project.get("attachments", [])}
+        if any(identity not in attachments or attachments[identity].get("content_type") not in {"image/jpeg", "image/png"} for identity in body.attachment_ids):
+            reject("Choose uploaded JPG or PNG photos belonging to this project")
+        project.setdefault("installation", {"status": "Not Started"})["material_photo_ids"] = combined
     elif command == "order_amend":
         require_stage("order")
         body = validate(OrderAmendment, payload)
@@ -585,7 +636,7 @@ def apply(project, command, payload, policy, user, now, validate):
             reject("Only confirmed orders can approve amended terms")
         if not body.customer_approved:
             reject("Changed commercial terms require explicit customer approval")
-        if body.date < row["order_date"] or Decimal(body.amount) < Decimal(row["advance"]["amount"]):
+        if body.date < row["order_date"] or Decimal(body.amount) < order_paid(row):
             reject("Amendment date/amount conflicts with the confirmed order or advance")
         row["amendments"].append(record(body.model_dump()))
         row["approval_identity"] = str(uuid4())
@@ -656,13 +707,15 @@ def apply(project, command, payload, policy, user, now, validate):
             earliest = project.get("production", {}).get("completion_date")
         if body.start_date and earliest and body.start_date < earliest:
             reject("Work cannot start before the preceding stage's completion/confirmation")
+        if expected == "production":
+            body.completion_date = production_end_date(body.start_date)
         if body.status == "Completed" and not body.completion_date:
             reject("Record the completion date")
-        if body.completion_date and (body.status != "Completed" or not body.start_date or body.completion_date < body.start_date):
+        if body.completion_date and ((expected != "production" and body.status != "Completed") or not body.start_date or body.completion_date < body.start_date):
             reject("Completion must follow start and have Completed status")
         if expected == "production" and body.status != "Not Started" and project.get("orders"):
             project["orders"][-1]["production_started"] = True
-        project[expected] = body.model_dump()
+        project[expected] = {**previous, **body.model_dump()}
         if body.status == "Completed":
             project[expected]["completion_identity"] = str(uuid4())
         recompute_completion(project, policy)

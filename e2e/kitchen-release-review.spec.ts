@@ -342,3 +342,48 @@ test('Kitchen task controls remain reachable at 200 percent text with reduced mo
   expect(calendar!.height).toBeGreaterThanOrEqual(44);
   await page.screenshot({ path: info.outputPath('kitchen-expanded-text-review.png') });
 });
+
+test('Kitchen records dated installments, material arrival, automatic completion and multiple material photos', async ({page,context}) => {
+  const health = captureRuntimeHealth(page);
+  let project = await projectAt(context.request, 'order');
+  const date = kitchenIndiaToday();
+  const send = async (command: string,payload: object) => {
+    const r = await context.request.post(`/api/kitchen-projects/${project.id}/commands`,{headers,data:{command,payload,expected_version:project.version,idempotency_key:randomUUID()}});
+    expect(r.ok(),await r.text()).toBe(true);project=await r.json();return project;
+  };
+  await send('order_confirm',{quotation_version_id:project.quotation_versions.at(-1).id,order_date:date,final_amount:'1000000'});
+  await seed(page);await page.goto(`/kitchen/${project.id}/stages/order`);
+  for(const [index,amount] of ['300000','200000','500000'].entries()){
+    await page.getByTestId('kitchen-installment-amount').fill(amount);
+    await page.getByTestId('kitchen-installment-date').fill(date);
+    project=await clickCommand(page,'kitchen-installment-save','order_installment');
+    await expect(page.getByTestId(`kitchen-installment-${index}`)).toContainText('Installment');
+  }
+  expect(project.orders.at(-1).installments.map((p:any)=>p.amount)).toEqual(['300000.00','200000.00','500000.00']);
+  await page.getByTestId('kitchen-material-arrived-yes').click();
+  project=await clickCommand(page,'kitchen-material-arrived-save','order_material_arrived');
+  expect(project.orders.at(-1).material_arrived).toBe(true);
+  await page.reload();await expect(page.getByTestId('kitchen-material-arrived-yes')).toHaveAttribute('aria-pressed','true');
+  await send('move_stage',{target_stage:'production'});await page.goto(`/kitchen/${project.id}/stages/production`);
+  await page.getByTestId('kitchen-production-start').fill('2026-10-20');
+  await expect(page.getByTestId('kitchen-production-complete')).toHaveValue('2026-12-20');
+  await expect(page.getByTestId('kitchen-production-complete')).toBeDisabled();
+  await page.getByTestId('kitchen-production-start').fill(date);
+  await page.getByTestId('kitchen-production-status-in-production').click();
+  project=await clickCommand(page,'kitchen-production-save','production_update');
+  const expected = new Date(`${date}T00:00:00Z`);expected.setUTCMonth(expected.getUTCMonth()+2);
+  expect(project.production.completion_date).toBe(expected.toISOString().slice(0,10));
+  await send('move_stage',{target_stage:'installation'});await page.goto(`/kitchen/${project.id}/stages/installation`);
+  for(const index of [1,2]){
+    const chooser=page.waitForEvent('filechooser');await page.getByTestId('kitchen-material-photos-pick').click();
+    await (await chooser).setFiles({name:`material-list-${index}.png`,mimeType:'image/png',buffer:Buffer.concat([Buffer.from('89504e470d0a1a0a','hex'),Buffer.from(`Synthetic material page ${index}`)])});
+    const linked=page.waitForResponse(r=>r.url().endsWith('/commands')&&r.request().postDataJSON()?.command==='installation_material_photos');
+    await page.getByTestId('kitchen-material-photos-upload').click();
+    const saved=await linked;expect(saved.ok(),await saved.text()).toBe(true);project=await saved.json();
+    expect(project.installation.material_photo_ids).toHaveLength(index);
+  }
+  await page.reload();await expect(page.getByRole('button',{name:'Open photo',exact:true})).toHaveCount(2);
+  const independent=await context.request.get(`/api/kitchen-projects/${project.id}`,{headers});
+  expect((await independent.json()).installation.material_photo_ids).toHaveLength(2);
+  await health.assertHealthy();
+});

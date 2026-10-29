@@ -5,7 +5,8 @@ import { Alert } from "@/src/components/ds";
 import { KITCHEN_STAGES, STAGE_LABELS, type KitchenCommand, type KitchenProject, type KitchenStage, type KitchenWork } from "@/src/api/kitchenProjects";
 import { Choice, displayDate, KitchenPanel, KitchenDetails, historicalCount, rupees } from "./shared";
 import { KitchenSelect, KitchenDateField } from "./KitchenFilters";
-import { kitchenToday } from "./KitchenDates";
+import { KitchenPdfFiles } from "./KitchenPdfFiles";
+import { kitchenProductionEnd, kitchenToday } from "./KitchenDates";
 import { kitchenOrderContext, kitchenProductionStarted, kitchenOrderQuotations, kitchenHasFinalDesign, kitchenHasFinalQuotation } from "./KitchenVersions";
 import { DesignStage } from "./DesignStage";
 import { QuotationStage } from "./QuotationStage";
@@ -69,7 +70,7 @@ function StageForms({ project, stage, disabled, command }: CommercialProps) {
       const work = stage === "production" ? production : installation;
       const saved = await command(stage === "production" ? "production_update" : "installation_update", {
         status: work.status, start_date: work.status === "Not Started" ? null : work.start_date || kitchenToday(),
-        completion_date: work.status === "Completed" ? work.completion_date || kitchenToday() : null, notes: work.notes ?? null,
+        completion_date: work.status === "Not Started" ? null : stage === "production" ? kitchenProductionEnd(work.start_date || kitchenToday()) : work.status === "Completed" ? work.completion_date || kitchenToday() : null, notes: work.notes ?? null,
       });
       if (!saved || !move || !target) return saved;
       const moved = await command("move_stage", { target_stage: target });
@@ -104,7 +105,7 @@ function StageForms({ project, stage, disabled, command }: CommercialProps) {
   </>;
 
   return <View style={{ gap: spacing.lg, display: ["lead", "visit", "cad"].includes(stage) ? "none" : "flex" }}>
-    {!active && !preview && stage !== "completed" ? <Alert tone="info" title="Stage record" description="Review the saved stage record here. Use the current stage for ongoing work; previous versions are in History." /> : null}
+    {!active && !preview && stage !== "completed" ? <Alert tone="info" title="Stage record" description={stage === "order" ? "Review saved order terms and record installments or material arrival for the current order." : "Review the saved stage record here. Use the current stage for ongoing work; previous versions are in History."} /> : null}
     {stage === "design" ? <DesignStage project={project} disabled={disabled} command={command} /> : stage === "quotation" ? <QuotationStage project={project} disabled={disabled} command={command} /> : stage === "order" ? <>
       <KitchenPanel>
         {order ? <Text testID="kitchen-order-approved-amount" style={type.bodyStrong}>Approved final amount: {rupees(order.final_amount)}</Text> : <Text testID="kitchen-order-pending" style={type.caption}>Status: Pending confirmation</Text>}
@@ -133,7 +134,8 @@ function StageForms({ project, stage, disabled, command }: CommercialProps) {
 
 
       </KitchenPanel>
-      {preview || active && order?.advance.received ? approval("production") : null}
+      <OrderInstallments project={project} stage={stage} disabled={disabled} command={command} />
+      {preview || active && (order?.advance.received || order?.installments?.length) ? approval("production") : null}
     </> : stage === "production" || stage === "installation" ? <>
       <View style={{ gap: spacing.sm }}>
         <Text style={type.bodyStrong}>{savedContext.order ? `Quotation ${savedContext.quotation?.number ?? "unavailable"} · Design v${savedContext.design?.number ?? "unavailable"}` : "No active order version recorded"}</Text>
@@ -151,6 +153,7 @@ function StageForms({ project, stage, disabled, command }: CommercialProps) {
         <Button label={`Save ${stage} details`} disabled={locked} onPress={() => saveWork()} testID={`kitchen-${stage}-save`} />
         <Button label={`Save and go to ${STAGE_LABELS[target!]}`} variant="secondary" disabled={locked} onPress={() => saveWork(true)} testID={`kitchen-${stage}-save-next`} /></View> : null}
       </KitchenPanel>
+      {stage === "installation" ? <KitchenPanel title="Material list photos"><Text style={type.caption}>Attach each page or photo of the material list. You can add multiple photos.</Text><KitchenPdfFiles project={project} attachmentIds={project.installation?.material_photo_ids || []} finalId="" onSelect={() => {}} onAdd={id => command("installation_material_photos", { attachment_ids: [id] })} disabled={disabled || !active} fileKind="photo" testID="kitchen-material-photos" draftKey={`${draftCycle}.installation.photos`} /></KitchenPanel> : null}
       {stage === "installation" && (preview || active && project.installation?.status === "Completed") ? approval("closure") : null}
     </> : stage === "completed" ? <KitchenPanel><KitchenDetails testID="kitchen-completed-details" items={[
       { label: "Project completion", value: displayDate(project.completion_date) },
@@ -211,8 +214,9 @@ function Disclosure({ draftKey, label, testID, children }: { draftKey: string; l
 function WorkForm({ value, onChange, production, disabled }: { value: KitchenWork; onChange: Dispatch<SetStateAction<KitchenWork>>; production: boolean; disabled: boolean }) {
   return <View style={{ gap: spacing.md }}>
     <Choice label={production ? "Production status" : "Installation status"} value={value.status} values={production ? ["Not Started", "In Production", "Completed"] : ["Not Started", "In Progress", "Completed"]} onChange={status => onChange({ ...value, status })} disabled={disabled} testID={`kitchen-${production ? "production" : "installation"}-status`} />
+    {production ? <Text style={type.caption}>Production time: 2 months. Completion date is calculated automatically from the start date.</Text> : null}
     <KitchenFieldRow><View style={{ flex: 1, minWidth: 180 }}><KitchenDateField label="Start date" value={value.start_date || ""} onChange={start_date => onChange(previous => ({ ...previous, start_date: start_date || null }))} disabled={disabled} testID={`kitchen-${production ? "production" : "installation"}-start`} /></View>
-    <View style={{ flex: 1, minWidth: 180 }}><KitchenDateField label="Completion date" value={value.completion_date || ""} onChange={completion_date => onChange(previous => ({ ...previous, completion_date: completion_date || null }))} min={value.start_date || undefined} disabled={disabled} testID={`kitchen-${production ? "production" : "installation"}-complete`} /></View></KitchenFieldRow>
+    <View style={{ flex: 1, minWidth: 180 }}><KitchenDateField label="Completion date" value={production ? kitchenProductionEnd(value.start_date) : value.completion_date || ""} onChange={completion_date => { if (!production) onChange(previous => ({ ...previous, completion_date: completion_date || null })); }} defaultToToday={!production} min={value.start_date || undefined} disabled={disabled || production} testID={`kitchen-${production ? "production" : "installation"}-complete`} /></View></KitchenFieldRow>
     <TextField label="Internal notes" testID={`kitchen-${production ? "production" : "installation"}-notes`} value={value.notes || ""} onChangeText={notes => onChange({ ...value, notes })} editable={!disabled} multiline />
   </View>;
 }
@@ -242,6 +246,34 @@ function OrderAmendment({ project, disabled, command, inline = false }: Commerci
         </>;
   return order ? inline ? form : <KitchenPanel title="Approved order amendment">{form}</KitchenPanel> : <KitchenPanel title="Approved order amendment"><Text style={type.bodyMuted}>No current order to amend. Confirm an order against the current approved quotation first.</Text></KitchenPanel>;
 
+}
+
+function OrderInstallments({ project, disabled, command }: CommercialProps) {
+  const order = kitchenOrderContext(project).order;
+  const key = `commercial.cycle.${project.workflow_cycle ?? 1}.order.installment.${order?.id || "pending"}`;
+  const [amount, setAmount] = useKitchenDraft(`${key}.amount`, "");
+  const [date, setDate] = useKitchenDraft(`${key}.date`, kitchenToday());
+  const [arrived, setArrived] = useKitchenDraft(`${key}.arrived`, order?.material_arrived == null ? "" : order.material_arrived ? "Yes" : "No");
+  const paid = Math.round(Number(order?.advance.received ? order.advance.amount : 0) * 100) + (order?.installments || []).reduce((sum, row) => sum + Math.round(Number(row.amount) * 100), 0);
+  const remaining = Math.max(0, Math.round(Number(order?.final_amount || 0) * 100) - paid);
+  const locked = disabled || !order || !["order", "production", "installation", "completed"].includes(project.stage) || !order.confirmed || order.status !== "Confirmed";
+  const validAmount = /^\d+(?:\.\d{1,2})?$/.test(amount.trim()) && Number(amount) > 0 && Math.round(Number(amount) * 100) <= remaining;
+  const add = async () => {
+    if (!order || !validAmount || !date || locked) return;
+    if (await command("order_installment", { order_id: order.id, amount: amount.trim(), date })) { setAmount(""); setDate(kitchenToday()); }
+  };
+  return <KitchenPanel title="Installments">
+    {!order ? <Text style={type.bodyMuted}>Confirm the customer order before recording installments.</Text> : <>
+      <KitchenDetails items={[{ label: "Order total", value: rupees(order.final_amount) }, { label: "Total paid", value: rupees((paid / 100).toFixed(2)) }, { label: "Remaining", value: rupees((remaining / 100).toFixed(2)) }]} />
+      {order.advance.received ? <Text style={type.body}>Advance · {displayDate(order.advance.date)} · {rupees(order.advance.amount)}</Text> : null}
+      {(order.installments || []).map((row, index) => <Text key={row.id} style={type.body} testID={`kitchen-installment-${index}`}>{`Installment ${index + 1} · ${displayDate(row.date)} · ${rupees(row.amount)}`}</Text>)}
+      <TextField label="Installment amount paid (INR)" keyboardType="decimal-pad" value={amount} onChangeText={setAmount} editable={!locked} testID="kitchen-installment-amount" />
+      <KitchenDateField label="Payment date" value={date} onChange={setDate} min={order.order_date} max={kitchenToday()} disabled={locked} testID="kitchen-installment-date" />
+      <Button label="Record installment" disabled={locked || !validAmount || !date || date < order.order_date || date > kitchenToday()} onPress={() => void add()} testID="kitchen-installment-save" />
+      <Choice label="Material arrived" value={arrived} values={["Yes", "No"]} onChange={setArrived} disabled={locked} testID="kitchen-material-arrived" />
+      <Button label="Save material arrival" variant="secondary" disabled={locked || !arrived} onPress={() => command("order_material_arrived", { order_id: order.id, arrived: arrived === "Yes" })} testID="kitchen-material-arrived-save" />
+    </>}
+  </KitchenPanel>;
 }
 
 function OrderAdvance({ project, disabled, command }: CommercialProps) {

@@ -111,3 +111,6 @@ disabledCalendar.calendar().onPress();
 assert.equal(calendarInput.node.focused, 0, 'Disabled historical calendars cannot be opened');
 assert.equal(calendarInput.node.opened, 0);
 console.log('Kitchen visible calendar opener: native picker, unsupported-browser direct entry, disabled history passed');
+
+for (const [start, complete] of [['2026-10-20','2026-12-20'],['2026-12-31','2027-02-28'],['2023-12-31','2024-02-29'],['2026-01-31','2026-03-31']]) assert.equal(exports.kitchenProductionEnd(start),complete);
+console.log('Production completion adds exactly two calendar months across year/leap-month boundaries');

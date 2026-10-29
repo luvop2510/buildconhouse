@@ -32,6 +32,9 @@ const mocks = {
   '@/src/theme/tokens': { radius: {}, spacing: {} },
   './KitchenPrimitives': { KitchenButton: host('button'), KitchenTextField: host('input'), KitchenFieldRow: host('row'), kitchenColors: {}, kitchenType: {} },
 };
+const dateExports = {};
+new Function('exports', ts.transpileModule(await readFile(new URL('../src/components/kitchen/KitchenDates.ts', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText)(dateExports);
+mocks['./KitchenDates'].kitchenProductionEnd = dateExports.kitchenProductionEnd;
 const versionExports = {};
 const versionSource = await readFile(new URL('../src/components/kitchen/KitchenVersions.ts', import.meta.url), 'utf8');
 new Function('exports', ts.transpileModule(versionSource, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText)(versionExports);
@@ -283,8 +286,8 @@ view = render('order', { quotation_versions: [quotation], orders: [order] });
 assert.ok(view.control('kitchen-order-edit-date'), 'Routine order date stays open');
 assert.ok(view.control('kitchen-order-edit-notes'), 'Routine order notes stay open');
 for (const id of ['kitchen-amend-save', 'kitchen-advance-save', 'kitchen-order-status-save', 'kitchen-order-confirmation-save', 'kitchen-order-edit-save']) assert.equal(view.control(id), undefined, `${id} stays behind its explicit disclosure`);
-assert.equal(view.nodes.filter(node => node.type === 'panel').length, 1, 'Order uses one form panel');
-assert.equal(view.nodes.filter(node => node.type === 'panel' && node.props.title).length, 0, 'The page header names Order once');
+assert.equal(view.nodes.filter(node => node.type === 'panel').length, 2, 'Order has one terms panel and the requested installments section');
+assert.equal(view.nodes.filter(node => node.type === 'panel' && node.props.title).length, 1, 'Only the installments panel adds a section title');
 assert.equal(view.nodes.some(node => node.type === 'panel' && ['Approved order amendment', 'Advance payment'].includes(node.props.title)), false, 'Amendment and advance retain their actions without duplicate boxes');
 assert.equal(view.control('kitchen-order-details'), undefined, 'Order does not repeat its editable values in summary boxes');
 assert.equal(view.text.match(/Approved final amount:/g)?.length, 1, 'The approved amount has one location');
@@ -306,7 +309,7 @@ assert.ok(view.control('kitchen-order-autosave-retry'), 'Failed ordinary writes 
 autosaveStatus = 'saved';
 
 for (const stage of ['production', 'installation']) {
-  const work = { status: 'Completed', start_date: '2026-10-23', completion_date: '2026-10-26', notes: 'Preserve work' };
+  const work = { status: 'Completed', start_date: '2026-10-23', completion_date: stage === 'production' ? '2026-12-23' : '2026-10-26', notes: 'Preserve work' };
   const commands = [];
   let finishSave;
   view = render(stage, {}, { [stage]: work }, async (...args) => {
@@ -430,9 +433,10 @@ for(const stage of ['production','installation']) {
     task.control(`kitchen-${stage}-complete`).props.onChange('2026-10-26');
     task = task.refresh();
     assert.equal(task.control(`kitchen-${stage}-start`).props.value,'2026-10-26');
-    assert.equal(task.control(`kitchen-${stage}-complete`).props.value,'2026-10-26');
+    assert.equal(task.control(`kitchen-${stage}-complete`).props.value,stage==='production'?'2026-12-26':'2026-10-26');
+    assert.equal(task.control(`kitchen-${stage}-complete`).props.disabled,stage==='production');
     await task.control(`kitchen-${stage}-save`).props.onPress();
-    assert.deepEqual(commands,[[`${stage}_update`,{status,start_date:status==='Not Started'?null:'2026-10-26',completion_date:status==='Completed'?'2026-10-26':null,notes:null}]],'Proposed dates never change the selected status or violate the work API');
+    assert.deepEqual(commands,[[`${stage}_update`,{status,start_date:status==='Not Started'?null:'2026-10-26',completion_date:status==='Not Started'?null:stage==='production'?'2026-12-26':status==='Completed'?'2026-10-26':null,notes:null}]],'Proposed dates never change the selected status or violate the work API');
     task.control(`kitchen-${stage}-start`).props.onChange('');
     task.control(`kitchen-${stage}-complete`).props.onChange('');
     task = task.refresh();

@@ -6,12 +6,12 @@ import { kitchenProjectsApi, type KitchenAttachment, type KitchenOwnFileTransfer
 import { ErrorNotice, displayDate } from "./shared";
 import { KitchenOption } from "./KitchenFilters";
 import { useKitchenDraft, useKitchenProject } from "./KitchenProjectState";
-import { downloadKitchenFile, uploadKitchenFile, KITCHEN_MAX_PDF_BYTES } from "./KitchenFileTransport";
+import { downloadKitchenFile, uploadKitchenFile, KITCHEN_MAX_PDF_BYTES, KITCHEN_MAX_FILE_BYTES } from "./KitchenFileTransport";
 import { KitchenButton as Button, kitchenType as type } from "./KitchenPrimitives";
 import { kitchenApprovalDate } from "./KitchenVersions";
 import { spacing } from "@/src/theme/tokens";
 
-export function KitchenPdfFile({ project, file, selected, onSelect, disabled, testID }: { project: KitchenProject; file: KitchenAttachment; selected?: boolean; onSelect?: () => void; disabled?: boolean; testID: string }) {
+export function KitchenPdfFile({ project, file, selected, onSelect, disabled, testID, photo = false }: { photo?: boolean; project: KitchenProject; file: KitchenAttachment; selected?: boolean; onSelect?: () => void; disabled?: boolean; testID: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const pending = useRef(false);
@@ -23,11 +23,11 @@ export function KitchenPdfFile({ project, file, selected, onSelect, disabled, te
     const preview = open && Platform.OS === "web" ? window.open("about:blank", "_blank") : undefined;
     if (preview) preview.opener = null;
     try {
-      if (open && Platform.OS === "web" && !preview) throw new Error("Allow this browser to open a PDF preview, then try again.");
+      if (open && Platform.OS === "web" && !preview) throw new Error(`Allow this browser to open a ${photo ? "photo" : "PDF"} preview, then try again.`);
       await downloadKitchenFile(project.id, file, () => {}, preview || undefined);
     } catch (failure) {
       preview?.close();
-      setError(failure instanceof Error ? failure.message : "The PDF could not be opened. Try again.");
+      setError(failure instanceof Error ? failure.message : `The ${photo ? "photo" : "PDF"} could not be opened. Try again.`);
     } finally { pending.current = false; setBusy(false); }
   };
   const uploadDate = file.upload_date || kitchenApprovalDate(file.uploaded_at) || "";
@@ -36,8 +36,8 @@ export function KitchenPdfFile({ project, file, selected, onSelect, disabled, te
     <Text style={type.caption}>Uploaded: {uploadDate ? displayDate(uploadDate) : "Historical date not recorded"}</Text>
     <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
       {onSelect ? <KitchenOption label={selected ? "Finalize PDF · Selected" : "Finalize PDF"} accessibilityLabel={`Finalize PDF: ${file.filename}`} active={selected} disabled={disabled} onPress={onSelect} testID={`${testID}-final`} /> : null}
-      <Button label="Open PDF" variant="secondary" disabled={busy} onPress={() => void download(true)} testID={`${testID}-open`} />
-      <Button label="Download PDF" variant="secondary" disabled={busy} onPress={() => void download(false)} testID={`${testID}-download`} />
+      <Button label={photo ? "Open photo" : "Open PDF"} variant="secondary" disabled={busy} onPress={() => void download(true)} testID={`${testID}-open`} />
+      <Button label={photo ? "Download photo" : "Download PDF"} variant="secondary" disabled={busy} onPress={() => void download(false)} testID={`${testID}-download`} />
     </View>
     {error ? <Text accessibilityRole="alert" style={type.bodyMuted}>{error}</Text> : null}
   </View>;
@@ -46,8 +46,10 @@ export function KitchenPdfFile({ project, file, selected, onSelect, disabled, te
 type PdfTransfer = Pick<KitchenOwnFileTransfer, "project_id" | "transfer_id" | "filename" | "state">;
 
 /** Uploads attach private files; the parent explicitly saves its PDF selection. */
-export function KitchenPdfFiles({ project, attachmentIds, finalId, onAdd, onSelect, disabled, selectionDisabled = false, label, testID, draftKey }: { project: KitchenProject; attachmentIds: string[]; finalId: string; onAdd: (id: string) => void | boolean | Promise<void | boolean>; onSelect: (id: string) => void; disabled: boolean; selectionDisabled?: boolean; label?: string; testID: string; draftKey: string }) {
+export function KitchenPdfFiles({ project, attachmentIds, finalId, onAdd, onSelect, disabled, selectionDisabled = false, label, testID, draftKey, fileKind = "pdf" }: { fileKind?: "pdf" | "photo"; project: KitchenProject; attachmentIds: string[]; finalId: string; onAdd: (id: string) => void | boolean | Promise<void | boolean>; onSelect: (id: string) => void; disabled: boolean; selectionDisabled?: boolean; label?: string; testID: string; draftKey: string }) {
   const { policy, documentSubmission: submission, updateProject, reload } = useKitchenProject();
+  const photo = fileKind === "photo";
+  const noun = photo ? "photo" : "PDF";
   const [picked, setPicked] = useKitchenDraft<DocumentPicker.DocumentPickerAsset | null>(`${draftKey}.picked`, null);
   const [uploadedFile, setUploadedFile] = useKitchenDraft<{ id: string; fingerprint: string } | null>(`${draftKey}.uploaded`, null);
   const [progress, setProgress] = useState(0);
@@ -78,19 +80,19 @@ export function KitchenPdfFiles({ project, attachmentIds, finalId, onAdd, onSele
     }).catch(() => { /* Starting an upload still validates the transfer state on the server. */ });
     return () => { currentScope.live = false; controller.abort(); };
   }, [project.id, scopeKey]);
-  const files = (project.attachments || []).filter(file => file.content_type === "application/pdf");
+  const files = (project.attachments || []).filter(file => photo ? ["image/jpeg", "image/png"].includes(file.content_type) : file.content_type === "application/pdf");
   const included = files.filter(file => attachmentIds.includes(file.id));
   const pick = async () => {
     if (pending.current || submission.busy || disabled) return;
     const currentScope = scope.current;
     try {
-      const result = await DocumentPicker.getDocumentAsync({ type: "application/pdf", copyToCacheDirectory: true, multiple: false });
+      const result = await DocumentPicker.getDocumentAsync({ type: photo ? ["image/jpeg", "image/png"] : "application/pdf", copyToCacheDirectory: true, multiple: false });
       if (!result.canceled && currentScope.live && scope.current === currentScope) { submission.clearFeedback(); setPicked(result.assets[0]); setUploadedFile(null); }
-    } catch { if (currentScope.live && scope.current === currentScope) submission.setError("The PDF picker could not open. Try again."); }
+    } catch { if (currentScope.live && scope.current === currentScope) submission.setError(`The ${noun} picker could not open. Try again.`); }
   };
   const upload = async () => {
     if (!picked || !policy?.files || pending.current || submission.busy || disabled) return;
-    if (!/\.pdf$/i.test(picked.name) || !picked.size || picked.size > Math.min(policy.files.max_bytes, KITCHEN_MAX_PDF_BYTES)) { submission.setError("Choose a nonempty PDF up to 10 MB (10,000,000 bytes). The server validates its content."); return; }
+    if (!(photo ? /\.(jpe?g|png)$/i : /\.pdf$/i).test(picked.name) || !picked.size || picked.size > Math.min(policy.files.max_bytes, photo ? KITCHEN_MAX_FILE_BYTES : KITCHEN_MAX_PDF_BYTES)) { submission.setError(photo ? "Choose a nonempty JPG or PNG photo up to 25 MB. The server validates its content." : "Choose a nonempty PDF up to 10 MB (10,000,000 bytes). The server validates its content."); return; }
     const currentScope = scope.current;
     const active = () => currentScope.live && scope.current === currentScope;
     const input = { id: project.id, uri: picked.uri, name: picked.name, size: picked.size };
@@ -111,7 +113,7 @@ export function KitchenPdfFiles({ project, attachmentIds, finalId, onAdd, onSele
           updateProject(value);
           setUnfinished(null);
           addedFileId = file?.id;
-          if (!file) { submission.setError("The PDF uploaded, but its saved file could not be identified. Reload Kitchen and choose the PDF again to retry."); return; }
+          if (!file) { submission.setError(`The ${noun} uploaded, but its saved file could not be identified. Reload Kitchen and choose it again to retry.`); return; }
           setUploadedFile({ id: file.id, fingerprint });
         });
         if (!uploaded || !addedFileId || !active()) return;
@@ -120,12 +122,12 @@ export function KitchenPdfFiles({ project, attachmentIds, finalId, onAdd, onSele
       const accepted = await onAdd(addedFileId);
       if (!active()) return;
       if (accepted === false) {
-        submission.setError("The PDF uploaded. Its stage entry is waiting to be saved. Retry to finish; the saved PDF will be reused.");
+        submission.setError(`The ${noun} uploaded. Its stage entry is waiting to be saved. Retry to finish; the saved file will be reused.`);
         return;
       }
       setPicked(null); setUploadedFile(null); setProgress(0);
     } catch (failure) {
-      if (active()) submission.setError(`${failure instanceof Error ? failure.message : "The PDF entry could not be saved."} Your PDF selection has been kept.`);
+      if (active()) submission.setError(`${failure instanceof Error ? failure.message : `The ${noun} entry could not be saved.`} Your file selection has been kept.`);
     } finally { pending.current = false; if (active()) setOperation(null); }
   };
   const discard = async () => {
@@ -141,18 +143,18 @@ export function KitchenPdfFiles({ project, attachmentIds, finalId, onAdd, onSele
     } finally { pending.current = false; if (currentScope.live && scope.current === currentScope) setOperation(null); }
   };
   const busy = submission.busy || uploading || discarding;
-  const progressLabel = discarding ? "Discarding unfinished PDF upload…" : progress === 0 ? "Preparing PDF…" : progress < 95 ? `Uploading PDF · ${progress}%` : progress < 100 ? "Verifying and saving PDF…" : "Saving PDF entry…";
+  const progressLabel = discarding ? `Discarding unfinished ${noun} upload…` : progress === 0 ? `Preparing ${noun}…` : progress < 95 ? `Uploading ${noun} · ${progress}%` : progress < 100 ? `Verifying and saving ${noun}…` : `Saving ${noun} entry…`;
   return <View style={{ gap: spacing.md }} testID={testID}>
     {label ? <Text style={type.bodyStrong}>{label}</Text> : null}
-    {!disabled ? <Text style={type.caption}>PDF · Up to 10 MB (10,000,000 bytes) per file.</Text> : null}
-    {included.map(file => <KitchenPdfFile key={file.id} project={project} file={file} selected={file.id === finalId} onSelect={() => onSelect(file.id)} disabled={disabled || selectionDisabled || busy} testID={`${testID}-${file.id}`} />)}
+    {!disabled ? <Text style={type.caption}>{photo ? "JPG or PNG · Up to 25 MB per photo. Add more photos after each upload." : "PDF · Up to 10 MB (10,000,000 bytes) per file."}</Text> : null}
+    {included.map(file => <KitchenPdfFile key={file.id} project={project} file={file} photo={photo} selected={!photo && file.id === finalId} onSelect={photo ? undefined : () => onSelect(file.id)} disabled={disabled || selectionDisabled || busy} testID={`${testID}-${file.id}`} />)}
     {!disabled ? <>
-      <Button label={label ? `Choose ${label} PDF` : "Choose PDF"} variant="secondary" disabled={busy || !policy?.files} onPress={pick} testID={`${testID}-pick`} />
-      {picked ? <><Text style={type.body}>{picked.name}</Text><Button label={uploading ? progressLabel : uploadedFile ? "Retry saving PDF entry" : "Upload PDF"} disabled={busy || !policy?.files} loading={uploading} onPress={upload} testID={`${testID}-upload`} /></> : null}
-      {!policy?.files ? <Text style={type.bodyMuted}>PDF upload settings are unavailable. Reload Kitchen setup before uploading.</Text> : null}
+      <Button label={photo ? "Choose photo" : label ? `Choose ${label} PDF` : "Choose PDF"} variant="secondary" disabled={busy || !policy?.files} onPress={pick} testID={`${testID}-pick`} />
+      {picked ? <><Text style={type.body}>{picked.name}</Text><Button label={uploading ? progressLabel : uploadedFile ? `Retry saving ${noun} entry` : photo ? "Upload photo" : "Upload PDF"} disabled={busy || !policy?.files} loading={uploading} onPress={upload} testID={`${testID}-upload`} /></> : null}
+      {!policy?.files ? <Text style={type.bodyMuted}>{photo ? "Photo" : "PDF"} upload settings are unavailable. Reload Kitchen setup before uploading.</Text> : null}
       {unfinished && (!submission.busy || discarding) ? <>
-        <Text style={type.caption}>{unfinished.project_id !== project.id ? "An unfinished upload belongs to another project." : "An unfinished PDF upload is waiting."}{unfinished.filename ? ` ${unfinished.filename}` : ""}</Text>
-        {unfinished.state === "open" ? <Button label={discarding ? "Discarding PDF upload…" : unfinished.project_id !== project.id ? "Discard other project’s unfinished PDF upload" : "Discard unfinished PDF upload"} variant="secondary" disabled={busy} loading={discarding} onPress={discard} testID={`${testID}-discard`} /> : <Text style={type.caption}>{unfinished.project_id !== project.id ? "Verification has started. Open that project to retry its upload." : "Verification has started. Retry this upload to check its saved result."}</Text>}
+        <Text style={type.caption}>{unfinished.project_id !== project.id ? "An unfinished upload belongs to another project." : `An unfinished ${noun} upload is waiting.`}{unfinished.filename ? ` ${unfinished.filename}` : ""}</Text>
+        {unfinished.state === "open" ? <Button label={discarding ? `Discarding ${noun} upload…` : unfinished.project_id !== project.id ? `Discard other project’s unfinished ${noun} upload` : `Discard unfinished ${noun} upload`} variant="secondary" disabled={busy} loading={discarding} onPress={discard} testID={`${testID}-discard`} /> : <Text style={type.caption}>{unfinished.project_id !== project.id ? "Verification has started. Open that project to retry its upload." : "Verification has started. Retry this upload to check its saved result."}</Text>}
       </> : null}
     </> : null}
     {uploading || discarding ? <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }} testID={`${testID}-progress`} accessibilityLiveRegion="polite"><ActivityIndicator size="small" /><Text style={type.caption}>{progressLabel}</Text></View> : null}

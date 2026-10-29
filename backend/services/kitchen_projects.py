@@ -353,7 +353,7 @@ class KitchenProjectService:
             version_fields = {"id", "number", "response", "approval_date", "shared_date", "handoff_date", "handoff_status", "presentation_date", "received_date",
                               "received_status", "sent_status", "amount", "design_version_id", "workflow_cycle", "attachment_id", "url", "requirements", "budget_discussion", "attachment_ids", "final_attachment_id", "pdf_options", "kitchen_type", "upload_date"}
             order_fields = {"id", "confirmed", "status", "order_date", "final_amount", "original_amount", "quotation_version_id",
-                            "confirmation_document_id", "authorization_invalidated", "advance"}
+                            "confirmation_document_id", "authorization_invalidated", "advance", "installments", "material_arrived"}
             order = project.get("orders", [])[-1] if project.get("orders") else None
             bound_order = order if order and not project.get("commercial_basis_invalidated") and not order.get("authorization_invalidated") else None
             quote = next((row for row in project.get("quotation_versions", []) if bound_order and row["id"] == bound_order["quotation_version_id"]), None)
@@ -814,7 +814,7 @@ class KitchenProjectService:
             workflow.apply(updated, command, payload, policy, user, timestamp(), validate)
         else:
             raise HTTPException(422, "Unsupported Kitchen command")
-        if project["stage"] == "completed" and command not in {"exception", "move_stage"}:
+        if project["stage"] == "completed" and command not in {"exception", "move_stage", "order_installment", "order_material_arrived"}:
             raise HTTPException(422, "The owner must explicitly reopen a completed project before editing it")
         if updated["stage"] != project["stage"] and command not in {"exception", "move_stage"}:
             required = required_fields_error(updated, project["stage"], policy)
@@ -852,6 +852,12 @@ class KitchenProjectService:
                     "after": next(row for row in updated["quotation_versions"] if row["id"] == payload["version_id"])}
             if command in {"order_update", "order_confirmation"} and project.get("orders"):
                 record["changes"]["order"] = {"before": project["orders"][-1], "after": updated["orders"][-1]}
+            if command == "order_installment":
+                record["order_id"] = updated["orders"][-1]["id"]
+                record["changes"]["installment"] = {"added": updated["orders"][-1]["installments"][-1]}
+            if command == "order_material_arrived":
+                record["order_id"] = updated["orders"][-1]["id"]
+                record["changes"]["material_arrived"] = {"before": project["orders"][-1].get("material_arrived"), "after": updated["orders"][-1]["material_arrived"]}
             if command == "order_document":
                 record["changes"]["confirmation_document_id"] = {
                     "before": project["orders"][-1].get("confirmation_document_id"),
