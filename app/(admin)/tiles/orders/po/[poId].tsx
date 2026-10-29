@@ -10,8 +10,8 @@
 // align down the screen, and the batch total plus "Release Selected" live in
 // a sticky bar that is always reachable without scrolling back.
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Platform, Pressable, StyleSheet, View } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Platform, Pressable, StyleSheet, View } from "react-native";
 import { Text, TextInput } from "@/src/components/AppText";
 
 import { tileOrdersApi, type PurchaseOrderDetail } from "@/src/api/tileOrders";
@@ -19,7 +19,7 @@ import { Alert } from "@/src/components/ui";
 import { toast } from "@/src/components/Toast";
 import {
   ActionBar, BackLink, Button, ButtonGroup, CenteredState, PageHeader, PageShell,
-  Section, Stat, StatRow, Toolbar,
+  OperationStatus, Section, Stat, StatRow, Toolbar,
 } from "@/src/components/tiles/TileLayout";
 import { StatusPill, WorkflowRail } from "@/src/components/tiles/TileOrderStatusUI";
 import { TileOrderProductCell } from "@/src/components/tiles/TileOrderProductCell";
@@ -27,6 +27,8 @@ import { tileIdentityMeta } from "@/src/components/tiles/tilePresentation";
 import { CellNumber, CellText, DataTable, type Column } from "@/src/components/tiles/TileTable";
 import { useRequireFloorAccess } from "@/src/hooks/use-floor-access";
 import { colors, radius, spacing, type } from "@/src/theme/tokens";
+import { Disclosure } from "@/src/design/Disclosure";
+import { ExcelExportButton } from "@/src/components/ExcelExportButton";
 
 type ReleaseItem = PurchaseOrderDetail["items"][number];
 
@@ -60,24 +62,38 @@ export default function BrandOrderDetailScreen() {
   const [releaseQty, setReleaseQty] = useState<Record<string, string>>({});
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [submitting, setSubmitting] = useState(false);
+  const [submittingLine, setSubmittingLine] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const requestId = useRef(0);
+  const activeScope = useRef({ id: poId, active: true });
+  if (activeScope.current.id !== poId) activeScope.current = { id: poId, active: true };
+  const scope = activeScope.current;
+  const submitBusy = useRef(false);
 
   const load = useCallback(async () => {
-    if (!poId) return;
+    if (!poId || !scope.active || activeScope.current !== scope) return;
+    const request = ++requestId.current;
     setLoading(true);
     setLoadError(null);
     try {
-      setOrder(await tileOrdersApi.purchaseOrderDetail(poId));
+      const result = await tileOrdersApi.purchaseOrderDetail(poId);
+      if (request === requestId.current && scope.active && activeScope.current === scope) setOrder(result);
     } catch (e: any) {
+      if (request !== requestId.current || !scope.active || activeScope.current !== scope) return;
       const message = e?.detail || "Could not load order";
       setLoadError(message);
       toast.error(message);
     } finally {
-      setLoading(false);
+      if (request === requestId.current && scope.active && activeScope.current === scope) setLoading(false);
     }
-  }, [poId]);
+  }, [poId, scope]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    scope.active = true;
+    setOrder(null); setSelected({}); setReleaseQty({}); setSaveError(null);
+    void load();
+    return () => { scope.active = false; requestId.current += 1; };
+  }, [load, scope]);
 
   // Ticking a line pre-fills its full remaining quantity. Without this the
   // checkbox alone left "Release Selected" disabled until a quantity was
@@ -99,7 +115,7 @@ export default function BrandOrderDetailScreen() {
   }, []);
 
   const releaseOne = useCallback(async (itemId: string, remaining: number) => {
-    if (submitting) return;
+    if (submitBusy.current || !scope.active || activeScope.current !== scope) return;
     setSaveError(null);
     const rawQty = releaseQty[itemId]?.trim() ?? "";
     const qty = Number(rawQty);
@@ -107,20 +123,25 @@ export default function BrandOrderDetailScreen() {
       toast.error(`Enter between 1 and ${remaining} ${qtyUnit(order?.items.find((item) => item.id === itemId) || ({ quantity_unit: "Box" } as ReleaseItem))}`);
       return;
     }
+    submitBusy.current = true;
+    setSubmittingLine(itemId);
     setSubmitting(true);
     try {
       await tileOrdersApi.releaseMaterial(order?.id || poId!, [{ po_item_id: itemId, qty }]);
+      if (!scope.active || activeScope.current !== scope) return;
       const releasedUnit = qtyUnit(order?.items.find((item) => item.id === itemId) || ({ quantity_unit: "Box" } as ReleaseItem));
       toast.success(`${qty} ${releasedUnit} released`);
       setReleaseQty((current) => ({ ...current, [itemId]: "" }));
       setSelected((current) => ({ ...current, [itemId]: false }));
       await load();
     } catch (e: any) {
+      if (!scope.active || activeScope.current !== scope) return;
       setSaveError(e?.detail || "Could not release material. Your selected quantities are retained; try again.");
     } finally {
-      setSubmitting(false);
+      submitBusy.current = false;
+      if (activeScope.current.active) { setSubmitting(false); setSubmittingLine(null); }
     }
-  }, [releaseQty, order?.id, order?.items, poId, load, submitting]);
+  }, [releaseQty, order?.id, order?.items, poId, load, scope]);
 
   const columns = useMemo<Column<ReleaseItem>[]>(() => [
     {
@@ -131,11 +152,11 @@ export default function BrandOrderDetailScreen() {
         return (
           <Pressable
             testID={`tile-release-select-${item.id}`}
-            disabled={!selectable}
+            disabled={!selectable || submitting}
             onPress={() => toggleItem(item.id, item.boxes_pending)}
             hitSlop={11}
             accessibilityRole="checkbox"
-            accessibilityState={{ checked, disabled: !selectable }}
+            accessibilityState={{ checked, disabled: !selectable || submitting }}
             accessibilityLabel={`Select ${item.name} for material release`}
             style={({ hovered }: any) => [
               styles.checkbox,
@@ -181,7 +202,7 @@ export default function BrandOrderDetailScreen() {
         return (
           <TextInput
             testID={`tile-release-quantity-${item.id}`}
-            editable={selectable}
+            editable={selectable && !submitting}
             value={releaseQty[item.id] || ""}
             onChangeText={(value) => setQuantity(item.id, value)}
             keyboardType="number-pad"
@@ -220,6 +241,7 @@ export default function BrandOrderDetailScreen() {
             size="sm"
             variant="primary"
             disabled={submitting}
+            loading={submitting && submittingLine === item.id}
             testID={`tile-release-row-${item.id}`}
             onPress={() => releaseOne(item.id, item.boxes_pending)}
           />
@@ -228,17 +250,15 @@ export default function BrandOrderDetailScreen() {
         )
       ),
     },
-  ], [selected, releaseQty, submitting, toggleItem, setQuantity, releaseOne]);
+  ], [selected, releaseQty, submitting, submittingLine, toggleItem, setQuantity, releaseOne]);
 
-  if (loading) {
+  if (loading && !order) {
     return (
-      <CenteredState>
-        <ActivityIndicator color={colors.brand} />
-      </CenteredState>
+      <PageShell><PageHeader title="Release material" /><OperationStatus label="Loading release quantities…" /></PageShell>
     );
   }
 
-  if (loadError || !order) {
+  if (!order) {
     return (
       <CenteredState>
         <Text style={type.titleMd}>{loadError || "Order not found"}</Text>
@@ -282,19 +302,23 @@ export default function BrandOrderDetailScreen() {
   };
 
   const releaseSelected = async () => {
-    if (submitting || !selectedItems.length) return;
+    if (submitBusy.current || !selectedItems.length) return;
     setSaveError(null);
+    submitBusy.current = true;
     setSubmitting(true);
     try {
       await tileOrdersApi.releaseMaterial(order.id, selectedItems);
+      if (!scope.active || activeScope.current !== scope) return;
       toast.success(`${selectedItems.length} product line${selectedItems.length === 1 ? "" : "s"} released`);
       setReleaseQty({});
       setSelected({});
       await load();
     } catch (e: any) {
+      if (!scope.active || activeScope.current !== scope) return;
       setSaveError(e?.detail || "Could not release material. Your selected quantities are retained; try again.");
     } finally {
-      setSubmitting(false);
+      submitBusy.current = false;
+      if (activeScope.current.active) setSubmitting(false);
     }
   };
 
@@ -316,6 +340,7 @@ export default function BrandOrderDetailScreen() {
                 variant="primary"
                 size="lg"
                 disabled={!selectedItems.length || submitting}
+                loading={submitting}
                 testID="tile-release-selected"
                 onPress={releaseSelected}
               />
@@ -335,20 +360,24 @@ export default function BrandOrderDetailScreen() {
         eyebrow={order.number}
         title={order.customer_name}
         subtitle={`${order.brand_name || "Unassigned brand"} · release material to BuildCon`}
-        actions={<StatusPill status={order.overall_status} />}
+        actions={<ButtonGroup><StatusPill status={order.overall_status} /><ExcelExportButton resource="orders" floorId="ground-floor" page="Tiles release order" section="Release products" filename={`${order.number}-release`} scopeKey={poId} testID="tile-release-export" rows={[
+          ["Order", "Customer", "Brand", "Product", "SKU", "Unit", "Ordered", "Released", "Remaining"],
+          ...order.items.map(item => [order.number, order.customer_name, order.brand_name, item.name, item.sku, item.quantity_unit || "Box", item.qty, item.boxes_ready, item.boxes_pending]),
+        ]} /></ButtonGroup>}
       />
 
+      {loading ? <OperationStatus label="Updating release quantities…" /> : null}
+      {loadError ? <Alert tone="error" title={loadError} /> : null}
       <Section>
+        <Disclosure title="Release summary" summary={`${order.items.length} products · ${totals.remaining} units remaining`}>
         <WorkflowRail active={anyPending ? "release" : "released"} testID="tile-brand-workflow-rail" />
-      </Section>
-
-      <Section>
         <StatRow testID="tile-release-totals">
           <Stat label="Product lines" value={order.items.length} />
           <Stat label="Units ordered" value={totals.ordered} />
           <Stat label="Units released" value={totals.released} tone="brand" />
           <Stat label="Units remaining" value={totals.remaining} tone={totals.remaining > 0 ? "warn" : "default"} />
         </StatRow>
+        </Disclosure>
       </Section>
 
       <Section>
@@ -361,7 +390,7 @@ export default function BrandOrderDetailScreen() {
           actions={
             anyPending ? (
               <ButtonGroup>
-                <Button label="Select all pending" testID="tile-release-select-all" onPress={selectAllPending} />
+                <Button label="Select all pending" testID="tile-release-select-all" disabled={submitting} onPress={selectAllPending} />
               </ButtonGroup>
             ) : null
           }

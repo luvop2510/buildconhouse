@@ -9,14 +9,13 @@ import { PageHeader as SharedPageHeader } from "@/src/design/PageHeader";
 // The module's spacing contract, applied here once instead of being retyped
 // (and mistyped) per screen:
 //   page gutter    32 desktop · 24 tablet · 20 phone
-//   section gap    32
-//   card padding   24
-//   control gap    12 minimum, 16 between groups
-//   tap target     36 small · 40 medium · 44 large
+//   section gap    16 phone · 20 tablet · 24 desktop
+//   card padding   12 phone · 16 tablet · 20 desktop
+//   control gap    8; touch targets remain at least 44px
 // Nothing in Tile Orders should set its own horizontal page padding, its own
 // button metrics, or its own section rhythm — it comes from here.
 import { type ReactNode, useState } from "react";
-import { Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { Text, TextInput } from "@/src/components/AppText";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -50,6 +49,7 @@ export function PageShell({
         style={styles.pageScroll}
         contentContainerStyle={[
           styles.pageContent,
+          isPhone ? { paddingTop: spacing.s8, paddingBottom: spacing.s24 } : null,
           { paddingHorizontal: gutter },
           // Clears the sticky action bar so the last table row is never
           // trapped underneath it.
@@ -92,10 +92,19 @@ export function BackLink({ label, onPress, testID }: { label: string; onPress: (
 
 export function PageHeader({ eyebrow, title, subtitle, actions }: {
   eyebrow?: string; title: string; subtitle?: string; actions?: ReactNode;
-}) { return <SharedPageHeader embedded title={title} overline={eyebrow} subtitle={subtitle} actions={actions} />; }
+}) { return <SharedPageHeader embedded dense title={title} overline={eyebrow} subtitle={subtitle} actions={actions} />; }
 
 export function Section({ children, testID }: { children: ReactNode; testID?: string }) {
-  return <View style={styles.section} testID={testID}>{children}</View>;
+  const { isPhone, isTablet } = useBreakpoint();
+  return <View style={[styles.section, { marginTop: isPhone ? spacing.s16 : isTablet ? spacing.s20 : spacing.s24 }]} testID={testID}>{children}</View>;
+}
+
+/** Keep acknowledged content mounted while its current scope refreshes. */
+export function OperationStatus({ label, testID }: { label: string; testID?: string }) {
+  return <View testID={testID} accessibilityRole="progressbar" accessibilityLabel={label} accessibilityState={{ busy: true }} style={styles.operationStatus}>
+    <ActivityIndicator size="small" color={colors.brand} />
+    <Text style={type.caption}>{label}</Text>
+  </View>;
 }
 
 export function SectionHeader({
@@ -115,8 +124,8 @@ export function SectionHeader({
 }
 
 export function Card({ children, testID }: { children: ReactNode; testID?: string }) {
-  const { isPhone } = useBreakpoint();
-  return <View style={[styles.card, isPhone ? styles.cardPhone : null]} testID={testID}>{children}</View>;
+  const { isPhone, isTablet } = useBreakpoint();
+  return <View style={[styles.card, isPhone ? styles.cardPhone : isTablet ? { padding: spacing.s16 } : null]} testID={testID}>{children}</View>;
 }
 
 // ── Controls ────────────────────────────────────────────────────────────────
@@ -124,10 +133,10 @@ export function Card({ children, testID }: { children: ReactNode; testID?: strin
 export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
 export type ButtonSize = "sm" | "md" | "lg";
 
-export function Button({ label, onPress, variant = "secondary", size = "md", disabled, testID, fullWidth }: {
+export function Button({ label, onPress, variant = "secondary", size = "sm", disabled, loading, testID, fullWidth }: {
   label: string; onPress?: () => void; variant?: ButtonVariant; size?: ButtonSize;
-  disabled?: boolean; testID?: string; fullWidth?: boolean;
-}) { return <SharedButton label={label} onPress={onPress} variant={variant} size={size} disabled={disabled} testID={testID} full={fullWidth} />; }
+  disabled?: boolean; loading?: boolean; testID?: string; fullWidth?: boolean;
+}) { return <SharedButton label={label} onPress={onPress} variant={variant} size={size} disabled={disabled} loading={loading} testID={testID} full={fullWidth} />; }
 
 /**
  * A horizontal cluster of buttons with the module's minimum 12px separation.
@@ -283,7 +292,7 @@ const styles = StyleSheet.create({
     alignSelf: "flex-start",
     minHeight: 44,
     paddingRight: spacing.s8,
-    marginBottom: spacing.lg,
+    marginBottom: spacing.s4,
   },
   backLinkHovered: { opacity: 0.7 },
   backLinkArrow: { ...type.bodyMuted, fontSize: 16, lineHeight: 20 },
@@ -303,28 +312,29 @@ const styles = StyleSheet.create({
   eyebrow: { ...type.overline, color: colors.brand, marginBottom: spacing.s4 },
   pageSubtitle: { maxWidth: 720 },
 
-  section: { marginTop: spacing.s32 },
+  section: { marginTop: spacing.s24 },
+  operationStatus: { flexDirection: "row", alignItems: "center", gap: spacing.s8, minHeight: 32, marginTop: spacing.s8 },
   sectionHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    gap: spacing.lg,
-    marginBottom: spacing.lg,
+    gap: spacing.s8,
+    marginBottom: spacing.s8,
     flexWrap: "wrap",
   },
   sectionHeaderText: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: spacing.s12, flexShrink: 1, minWidth: 0, maxWidth: "100%" },
   sectionHeaderActions: { flexDirection: "row", alignItems: "center", gap: spacing.s12 },
   sectionHeaderCompact: { alignItems: "stretch" },
-  sectionHeaderActionsCompact: { width: "100%" },
+  sectionHeaderActionsCompact: { maxWidth: "100%", flexShrink: 1 },
 
   card: {
     backgroundColor: colors.surfaceSecondary,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.md,
-    padding: spacing.s24,
+    padding: spacing.s20,
   },
-  cardPhone: { padding: spacing.lg },
+  cardPhone: { padding: spacing.s12 },
 
   buttonBase: {
     flexDirection: "row",
@@ -347,10 +357,10 @@ const styles = StyleSheet.create({
   buttonLabelSecondary: { color: colors.onSurface },
   buttonLabelDanger: { color: colors.errorFg },
 
-  buttonGroup: { flexDirection: "row", alignItems: "center", gap: spacing.s12, flexWrap: "wrap" },
+  buttonGroup: { flexDirection: "row", alignItems: "center", gap: spacing.s8, flexWrap: "wrap", maxWidth: "100%" },
   buttonGroupRight: { justifyContent: "flex-end" },
-  buttonGroupCompact: { alignItems: "stretch" },
-  buttonGroupPhone: { flexDirection: "column", flexWrap: "nowrap", width: "100%", flexGrow: 1, flexShrink: 1 },
+  buttonGroupCompact: { alignItems: "center", flexShrink: 1 },
+  buttonGroupPhone: { flexShrink: 1 },
 
   searchWrap: {
     flexDirection: "row",
@@ -428,22 +438,22 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     // Wide columns, tighter rows: when the stats wrap onto a second line the
     // two lines belong to one block and should not read as two blocks.
-    columnGap: spacing.s40,
-    rowGap: spacing.s24,
+    columnGap: spacing.s24,
+    rowGap: spacing.s12,
     backgroundColor: colors.surfaceSecondary,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.md,
-    paddingVertical: spacing.s20,
-    paddingHorizontal: spacing.s24,
+    paddingVertical: spacing.s12,
+    paddingHorizontal: spacing.s16,
   },
-  stat: { minWidth: 104, gap: spacing.s4 },
-  statPhone: { minWidth: 0, flexBasis: "44%", flexGrow: 1 },
-  statRowPhone: { columnGap: spacing.lg, rowGap: spacing.lg, padding: spacing.lg },
+  stat: { minWidth: 80, gap: spacing.s4 },
+  statPhone: { minWidth: 76, flexBasis: "28%", flexGrow: 1 },
+  statRowPhone: { columnGap: spacing.s12, rowGap: spacing.s12, padding: spacing.s12 },
   statValue: {
     fontFamily: type.displayMd.fontFamily,
-    fontSize: 22,
-    lineHeight: 28,
+    fontSize: 18,
+    lineHeight: 24,
     letterSpacing: -0.3,
     color: colors.onSurface,
     fontWeight: "700",

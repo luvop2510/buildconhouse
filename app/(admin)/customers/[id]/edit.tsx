@@ -245,7 +245,7 @@ export default function EditCustomer() {
           <TextField label="Notes" value={notes} onChangeText={setNotes} multiline numberOfLines={2} style={{ minHeight: 56, textAlignVertical: "top" }} testID="edit-customer-notes" />
 
 
-          <Button testID="edit-customer-save" label={saving ? "Saving…" : "Save changes"} variant="primary" size="lg" icon="check" disabled={saving} onPress={() => save()} fullWidth />
+          <Button testID="edit-customer-save" label={saving ? "Saving…" : "Save changes"} variant="primary" size="lg" icon="check" disabled={saving} onPress={() => save()} />
 
           {/* Customer Portal */}
           <Card style={{ gap: spacing.md, marginTop: spacing.sm }}>

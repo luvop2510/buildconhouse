@@ -127,7 +127,7 @@ export function NotebookScreen({ floorId, floorName, view }: { floorId: string; 
       ItemSeparatorComponent={() => <View style={{ height: spacing.md }} />}
       ListHeaderComponent={<View style={styles.listHeader}>
         <SearchField value={search} onChangeText={setSearch} onClear={() => setSearch("")} placeholder="Search customer, phone, address, referral or notes" />
-        {isPhone && canCreate && view === "followups" ? <Button label="New walk-in" icon="plus" onPress={() => setDraftOpen(true)} fullWidth /> : null}
+        {isPhone && canCreate && view === "followups" ? <Button label="New walk-in" icon="plus" onPress={() => setDraftOpen(true)} /> : null}
         {view === "followups" ? <View style={styles.chips}>{FOLLOWUP_FILTERS.map((item) => <Chip key={item} label={item === "all" ? "All" : STATUS_LABELS[item]} active={item === "all" ? filter === "all" : filterValues(filter).includes(item)} onPress={() => setFilter(current => toggleFilterValue(current, item))} />)}</View> : null}
       </View>}
       ListEmptyComponent={loadError ? <ErrorState title="Register unavailable" subtitle={loadError} onRetry={() => void load()} /> : loading ? <ActivityIndicator color={colors.brand} /> : <EmptyState icon="users" title={search ? "No matching customers" : view === "quotation" ? "No quotation follow-ups" : "No walk-ins yet"} subtitle={view === "quotation" ? "Converted opportunities remain here while the order is pending." : "Add the first customer inquiry to begin."} action={canCreate && view === "followups" ? <Button label="New walk-in" icon="plus" onPress={() => setDraftOpen(true)} /> : undefined} />}

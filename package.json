@@ -20,7 +20,7 @@
     "test:quotation-reorder": "node --experimental-strip-types --no-warnings scripts/test-quotation-reorder.mjs",
     "test:quotation-individual": "node scripts/test-quotation-individual.mjs",
     "test:multi-filters": "node --experimental-strip-types --no-warnings scripts/test-multi-filters.mjs",
-    "test:section-excel": "node --experimental-strip-types --no-warnings scripts/test-section-excel.mjs",
+    "test:section-excel": "node --experimental-strip-types --no-warnings scripts/test-section-excel.mjs && node --experimental-strip-types --no-warnings scripts/test-tile-orders-excel.mjs",
     "preview:local": "node scripts/serve-local.mjs",
     "test:quotation-concealed-parts": "node --experimental-strip-types --no-warnings scripts/test-quotation-concealed-parts.mjs",
     "test:purchases-contract": "node scripts/test-purchases-contract.mjs && node scripts/test-purchase-floor-races.mjs",

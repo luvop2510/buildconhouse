@@ -12,7 +12,7 @@ import { TILES_FLOOR_ID } from "@/src/constants/floors";
 // Before this, "View Dispatch" opened a read-only 5-line summary built from
 // one row of the Dispatch List, and Delivered was unreachable from any
 // screen even though the backend modelled it.
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { Text, TextInput } from "@/src/components/AppText";
 
@@ -58,7 +58,7 @@ export function ChalanPreviewSheet({ chalanId, onClose }: { chalanId: string; on
 
   return (
     <Sheet visible onClose={onClose} title="Chalan preview" subtitle={chalan ? `${chalan.number} · ${chalan.customer_name}` : "Loading…"} testID="tile-chalan-preview-sheet">
-      <ScrollView contentContainerStyle={styles.body}>
+      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.body}>
         {error ? <Text style={type.bodyStrong}>{error}</Text> : !chalan ? <ActivityIndicator color={colors.brand} /> : (
           <>
             <View style={styles.fieldGrid}>
@@ -110,41 +110,63 @@ export function DispatchRecordSheet({
   const [detail, setDetail] = useState<DispatchDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const requestId = useRef(0);
+  const activeScope = useRef({ id: dispatchId, active: true });
+  if (activeScope.current.id !== dispatchId) activeScope.current = { id: dispatchId, active: true };
+  const scope = activeScope.current;
   const [editing, setEditing] = useState(false);
   const [preview, setPreview] = useState(false);
   const [form, setForm] = useState({ vehicle_number: "", driver_name: "", receiver_name: "", reference_number: "" });
   const [receivedBy, setReceivedBy] = useState("");
 
   const load = useCallback(async () => {
+    if (!scope.active || activeScope.current !== scope) return;
+    const request = ++requestId.current;
     setError(null);
-    setDetail(null);
+    setRefreshing(true);
     try {
       const next = await tileOrdersApi.dispatchDetail(dispatchId);
+      if (!scope.active || activeScope.current !== scope || request !== requestId.current) return;
       setDetail(next);
       setForm({
         vehicle_number: next.chalan.vehicle_number || "", driver_name: next.chalan.driver_name || "",
         receiver_name: next.chalan.receiver_name || "", reference_number: next.chalan.reference_number || "",
       });
     } catch (e: any) {
+      if (!scope.active || activeScope.current !== scope || request !== requestId.current) return;
       setError(e?.detail || "Could not load dispatch");
+    } finally {
+      if (scope.active && activeScope.current === scope && request === requestId.current) setRefreshing(false);
     }
-  }, [dispatchId]);
+  }, [dispatchId, scope]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    scope.active = true; busyRef.current = false; setBusy(false); setDetail(null); setEditing(false); setPreview(false);
+    void load();
+    return () => { scope.active = false; requestId.current += 1; };
+  }, [load, scope]);
 
   const run = async (fn: () => Promise<unknown>, success: string): Promise<boolean> => {
+    if (busyRef.current || !scope.active || activeScope.current !== scope) return false;
+    busyRef.current = true;
     setBusy(true);
     try {
       await fn();
+      if (!scope.active || activeScope.current !== scope) return false;
       toast.success(success);
       await load();
+      if (!scope.active || activeScope.current !== scope) return false;
       onChanged?.();
       return true;
     } catch (e: any) {
+      if (!scope.active || activeScope.current !== scope) return false;
       toast.error(e?.detail?.message || e?.detail || "Action failed");
       return false;
     } finally {
-      setBusy(false);
+      if (activeScope.current === scope) busyRef.current = false;
+      if (scope.active && activeScope.current === scope) setBusy(false);
     }
   };
 
@@ -161,11 +183,13 @@ export function DispatchRecordSheet({
   return (
     <>
       <Sheet
-        visible onClose={onClose} title={dispatch?.dispatch_number || "Dispatch"}
+        visible onClose={onClose} dismissable={!busy} title={dispatch?.dispatch_number || "Dispatch"}
         subtitle={dispatch ? `${dispatch.dispatch_date} · ${dispatch.status} · from ${dispatch.source === "godown" ? "Godown" : "Released"}` : "Loading…"}
         testID="tile-dispatch-record-sheet"
       >
-        <ScrollView contentContainerStyle={styles.body}>
+        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.body}>
+          {busy ? <View accessibilityRole="progressbar" accessibilityLabel="Saving dispatch changes" style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}><ActivityIndicator size="small" color={colors.brand} /><Text style={type.caption}>Saving dispatch changes…</Text></View> : null}
+          {refreshing && detail && !busy ? <View accessibilityRole="progressbar" accessibilityLabel="Updating dispatch record"><ActivityIndicator size="small" color={colors.brand} /></View> : null}
           {error ? <Text style={type.bodyStrong}>{error}</Text> : !detail || !dispatch ? <ActivityIndicator color={colors.brand} /> : (
             <>
               <View style={styles.fieldGrid}>

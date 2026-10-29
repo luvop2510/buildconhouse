@@ -56,12 +56,13 @@ export function Button({
       disabled={dim}
       accessibilityRole="button"
       accessibilityLabel={label}
-      accessibilityState={{ disabled: dim }}
+      accessibilityState={{ disabled: dim, busy: Boolean(loading) }}
+      aria-busy={Boolean(loading)}
       style={({ pressed, hovered }: any) => [
         {
-          minHeight: h, paddingVertical: 12, paddingHorizontal: px, borderRadius: btnRadius,
+          minHeight: h, paddingVertical: size === "sm" ? 8 : 10, paddingHorizontal: px, borderRadius: btnRadius,
           flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
-          opacity: dim ? 0.45 : 1,
+          opacity: disabled && !loading ? 0.45 : 1,
           minWidth: 0, maxWidth: "100%",
           alignSelf: full ? "stretch" : "flex-start",
         },

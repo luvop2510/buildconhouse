@@ -43,7 +43,7 @@ export default function SettingsPassword() {
           <TextField testID="current-password-input" label="Current password" value={current} onChangeText={setCurrent} secureTextEntry placeholder="••••••••" autoCapitalize="none" editable={!saving} />
           <TextField testID="new-password-input" label="New password" value={next} onChangeText={setNext} secureTextEntry placeholder="At least 6 characters" autoCapitalize="none" editable={!saving} />
           <TextField testID="confirm-password-input" label="Confirm new password" value={confirm} onChangeText={setConfirm} secureTextEntry placeholder="Re-enter new password" autoCapitalize="none" editable={!saving} error={error} />
-          <Button testID="save-password-btn" label="Update password" icon="lock" loading={saving} onPress={submit} fullWidth />
+          <Button testID="save-password-btn" label="Update password" icon="lock" loading={saving} onPress={submit} />
         </Card>
       </View>
     </AdminPage>

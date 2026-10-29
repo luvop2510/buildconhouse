@@ -11,8 +11,8 @@
 // summary, then the workflow position, then one section per brand whose every
 // product line is immediately actionable.
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, ScrollView, StyleSheet, View } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ScrollView, StyleSheet, View } from "react-native";
 import { Text } from "@/src/components/AppText";
 
 import { tileOrdersApi, type CustomerOrderDetail, type CustomerOrderItem } from "@/src/api/tileOrders";
@@ -21,7 +21,7 @@ import { DispatchRecordSheet, openChalanPdf } from "@/src/components/tiles/Dispa
 import { DispatchFromGodownSheet, DispatchFromReleasedSheet, MoveToGodownSheet } from "@/src/components/tiles/TileMovementSheets";
 import {
   BackLink, Button, ButtonGroup, Card, CenteredState, PageHeader, PageShell,
-  Section, SectionHeader, Stat,
+  OperationStatus, Section, SectionHeader, Stat,
 } from "@/src/components/tiles/TileLayout";
 import { AgeingBadge, StatusPill, WorkflowRail } from "@/src/components/tiles/TileOrderStatusUI";
 import { TileOrderProductCell } from "@/src/components/tiles/TileOrderProductCell";
@@ -29,6 +29,8 @@ import { tileIdentityMeta } from "@/src/components/tiles/tilePresentation";
 import { CellNumber, DataTable, type Column } from "@/src/components/tiles/TileTable";
 import { Sheet } from "@/src/components/ui";
 import { Dropdown } from "@/src/components/ds";
+import { Disclosure } from "@/src/design/Disclosure";
+import { ExcelExportButton, type ExcelRows } from "@/src/components/ExcelExportButton";
 import { useRequireFloorAccess } from "@/src/hooks/use-floor-access";
 import { useAuth } from "@/src/state/auth";
 import { useBreakpoint } from "@/src/hooks/use-breakpoint";
@@ -77,37 +79,56 @@ export default function CustomerOrderDetailScreen() {
   const [sheet, setSheet] = useState<ActiveSheet>(null);
   const [timeline, setTimeline] = useState<Record<string, any>[] | null>(null);
   const [timelineLoading, setTimelineLoading] = useState(false);
+  const [timelineError, setTimelineError] = useState<string | null>(null);
   const [openDispatchId, setOpenDispatchId] = useState<string | null>(null);
+  const requestId = useRef(0);
+  const activeScope = useRef({ id: id, active: true });
+  if (activeScope.current.id !== id) activeScope.current = { id: id, active: true };
+  const scope = activeScope.current;
+  const timelineRequestId = useRef(0);
+  const timelineBusy = useRef(false);
 
   const load = useCallback(async () => {
-    if (!id) return;
+    if (!id || !scope.active || activeScope.current !== scope) return;
+    const request = ++requestId.current;
     setLoading(true);
     setLoadError(null);
     try {
-      setOrder(await tileOrdersApi.customerOrderDetail(id));
+      const result = await tileOrdersApi.customerOrderDetail(id);
+      if (request === requestId.current && scope.active && activeScope.current === scope) setOrder(result);
     } catch (e: any) {
+      if (request !== requestId.current || !scope.active || activeScope.current !== scope) return;
       const message = e?.detail || "Could not load order";
       setLoadError(message);
       toast.error(message);
     } finally {
-      setLoading(false);
+      if (request === requestId.current && scope.active && activeScope.current === scope) setLoading(false);
     }
-  }, [id]);
+  }, [id, scope]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    scope.active = true;
+    setOrder(null); setSheet(null); setTimeline(null); setOpenDispatchId(null);
+    void load();
+    return () => { scope.active = false; requestId.current += 1; timelineRequestId.current += 1; timelineBusy.current = false; };
+  }, [load, scope]);
 
   const openTimeline = useCallback(async () => {
-    if (!id) return;
+    if (!id || timelineBusy.current || !scope.active || activeScope.current !== scope) return;
+    const request = ++timelineRequestId.current;
+    timelineBusy.current = true;
+    setTimeline([]);
+    setTimelineError(null);
     setTimelineLoading(true);
     try {
       const result = await tileOrdersApi.customerOrderTimeline(id);
-      setTimeline(result.events);
+      if (request === timelineRequestId.current && scope.active && activeScope.current === scope) setTimeline(result.events);
     } catch (e: any) {
-      toast.error(e?.detail || "Could not load order timeline");
+      if (request === timelineRequestId.current) setTimelineError(e?.detail || "Could not load order timeline. Try again.");
     } finally {
-      setTimelineLoading(false);
+      if (request === timelineRequestId.current) { timelineBusy.current = false; setTimelineLoading(false); }
     }
-  }, [id]);
+  }, [id, scope]);
 
   // Register rows link here with ?timeline=1 ("Open timeline"), so the
   // sheet has to open itself on arrival rather than waiting for a tap.
@@ -165,15 +186,15 @@ export default function CustomerOrderDetailScreen() {
     },
   ], [readOnlyDeliveryLookup]);
 
-  if (loading) {
+  if (loading && !order) {
     return (
       <CenteredState>
-        <ActivityIndicator color={colors.brand} />
+        <OperationStatus label="Loading customer order…" />
       </CenteredState>
     );
   }
 
-  if (loadError || !order) {
+  if (!order) {
     return (
       <CenteredState>
         <Text style={type.titleMd}>{loadError || "Order not found"}</Text>
@@ -184,6 +205,10 @@ export default function CustomerOrderDetailScreen() {
   }
 
   const { summary, suppliers: brandGroups } = order;
+  const exportRows: ExcelRows = [
+    ["Order", "Customer", "Brand", "Product", "SKU", "Unit", "Ordered", "Released", "Godown", "Dispatched", "Remaining", "Location"],
+    ...brandGroups.flatMap(group => group.items.map(item => [summary.number, summary.customer_name, group.brand_name, item.tile_name, item.sku, item.quantity_unit || "Box", item.boxes_ordered, item.boxes_ready, item.boxes_godown, item.boxes_dispatched, item.boxes_pending, item.current_location])),
+  ];
 
   return (
     <>
@@ -195,34 +220,21 @@ export default function CustomerOrderDetailScreen() {
           title={summary.customer_name}
           subtitle={`Ordered ${summary.order_date.slice(0, 10)} · ${summary.brand_count} brand${summary.brand_count === 1 ? "" : "s"}`}
           actions={
-            // The whole workflow is reachable from the order it belongs to.
-            // Without these, Register/Dispatches/Timeline were three separate
-            // screens an operator had to find and re-filter by hand, which is
-            // what made this page read as a report.
             <ButtonGroup>
-              <Button
-                label={timelineLoading ? "Loading timeline…" : "View Timeline"}
-                fullWidth={isPhone}
-                testID="tile-order-view-timeline"
-                onPress={openTimeline}
-              />
-              <Button
-                label="View Register"
-                fullWidth={isPhone}
-                testID="tile-order-view-register"
-                onPress={() => router.push(`/(admin)/tiles/orders?tab=material-register&search=${encodeURIComponent(summary.customer_name)}` as any)}
-              />
-              <Button
-                label="View Dispatches"
-                fullWidth={isPhone}
-                testID="tile-order-view-dispatches"
-                onPress={() => router.push(`/(admin)/tiles/orders?tab=dispatch-list&search=${encodeURIComponent(summary.customer_name)}` as any)}
-              />
+              <Dropdown label="Actions" testID="tile-order-actions" items={[
+                { label: "View Timeline", testID: "tile-order-view-timeline", onPress: () => void openTimeline() },
+                { label: "View Register", testID: "tile-order-view-register", onPress: () => router.push(`/(admin)/tiles/orders?tab=material-register&search=${encodeURIComponent(summary.customer_name)}` as any) },
+                { label: "View Dispatches", testID: "tile-order-view-dispatches", onPress: () => router.push(`/(admin)/tiles/orders?tab=dispatch-list&search=${encodeURIComponent(summary.customer_name)}` as any) },
+              ]} />
+              <ExcelExportButton resource="orders" floorId="ground-floor" page="Tiles customer order" section="Order products" filename={`${summary.number}-products`} rows={exportRows} scopeKey={id} testID="tile-order-export" />
             </ButtonGroup>
           }
         />
 
+        {loading ? <OperationStatus label="Updating order quantities…" testID="tile-order-updating" /> : null}
+        {loadError ? <View role="alert" style={styles.refreshError}><Text style={type.caption}>{loadError}</Text><Button label="Retry refresh" onPress={() => void load()} /></View> : null}
         <Section testID="tile-order-summary">
+          <Disclosure title="Order summary" summary={`${summary.total_products} products · ${summary.total_boxes} units · ${summary.completion_percentage}% complete`}>
           <Card>
             <View style={styles.summaryBadges}>
               <StatusPill status={summary.overall_status} />
@@ -236,13 +248,11 @@ export default function CustomerOrderDetailScreen() {
               <Stat label="Waiting" value={`${summary.waiting_days}d`} tone={summary.ageing_band === "green" ? "default" : "warn"} />
             </View>
           </Card>
-        </Section>
-
-        <Section>
           <WorkflowRail
             active={summary.completion_percentage >= 100 ? "delivered" : summary.overall_status === "Ready" ? "released" : "release"}
             testID="tile-customer-workflow-rail"
           />
+          </Disclosure>
         </Section>
 
         {brandGroups.map((group) => (
@@ -255,7 +265,7 @@ export default function CustomerOrderDetailScreen() {
                 // notices it is owed — so the release queue has to be one tap
                 // from here, not a separate hunt through the Brands tab.
                 <Button
-                  label="Open Release Queue →"
+                  label="Release queue →"
                   testID={`tile-order-open-release-queue-${group.purchase_order_id}`}
                   onPress={() => router.push(`/(admin)/tiles/orders/po/${group.purchase_order_id}` as any)}
                 />
@@ -278,7 +288,7 @@ export default function CustomerOrderDetailScreen() {
 
       <Sheet
         visible={timeline !== null}
-        onClose={() => setTimeline(null)}
+        onClose={() => { timelineRequestId.current += 1; timelineBusy.current = false; setTimelineLoading(false); setTimeline(null); }}
         title="Order timeline"
         subtitle="Immutable material movement history"
         testID="tile-order-timeline-sheet"
@@ -288,7 +298,7 @@ export default function CustomerOrderDetailScreen() {
             `summary` and whose kind is `event_type` (services/activity_log.py).
             Reading `title`/`type` made every row render "Workflow event". */}
         <ScrollView style={{ flex: 1, minHeight: 0 }} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.timelineList}>
-          {timeline?.length ? timeline.map((event, index) => {
+          {timelineLoading ? <OperationStatus label="Loading order timeline…" /> : timelineError ? <View role="alert"><Text style={type.bodyMuted}>{timelineError}</Text><Button label="Retry timeline" onPress={() => void openTimeline()} /></View> : timeline?.length ? timeline.map((event, index) => {
             const target = timelineTarget(event);
             return (
               <View
@@ -349,7 +359,8 @@ export default function CustomerOrderDetailScreen() {
 const styles = StyleSheet.create({
   summaryBadges: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: spacing.s12, marginBottom: spacing.s20 },
   summaryStats: { flexDirection: "row", flexWrap: "wrap", columnGap: spacing.s40, rowGap: spacing.s24 },
-  summaryStatsPhone: { columnGap: spacing.lg, rowGap: spacing.lg },
+  summaryStatsPhone: { columnGap: spacing.s12, rowGap: spacing.s12 },
+  refreshError: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: spacing.s8 },
   actionCell: { gap: spacing.s8, width: "100%" },
   hint: { ...type.caption, color: colors.onSurfaceMuted },
   note: { ...type.caption, color: colors.onSurfaceMuted, marginTop: spacing.s12 },

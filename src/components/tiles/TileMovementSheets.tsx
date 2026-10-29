@@ -9,7 +9,7 @@ import { TILES_FLOOR_ID } from "@/src/constants/floors";
 //     Always create a Dispatch + Chalan and auto-open the PDF.
 // Replaces src/components/tiles/ReadyDispatchSheets.tsx (MarkReadySheet /
 // DispatchSheet), which conflated all of this into one Brand-owned action.
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { View } from "react-native";
 import { Text } from "@/src/components/AppText";
 
@@ -23,8 +23,8 @@ import { tileIdentityMeta } from "@/src/components/tiles/tilePresentation";
 
 function SheetFooter({ onCancel, onConfirm, confirmLabel, busy, disabled = false }: { onCancel: () => void; onConfirm: () => void; confirmLabel: string; busy: boolean; disabled?: boolean }) {
   return <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, flex: 1 }}>
-    <Button label="Cancel" variant="secondary" disabled={busy} onPress={onCancel} style={{ flexGrow: 1 }} />
-    <Button label={confirmLabel} loading={busy} disabled={disabled} onPress={onConfirm} style={{ flexGrow: 1 }} />
+    <Button label="Cancel" variant="secondary" disabled={busy} onPress={onCancel} style={{ alignSelf: "flex-start" }} />
+    <Button label={confirmLabel} loading={busy} disabled={disabled} onPress={onConfirm} style={{ alignSelf: "flex-start" }} />
   </View>;
 }
 
@@ -79,18 +79,20 @@ export function ReleaseMaterialSheet({ poId, items, onClose, onDone }: { poId: s
     () => prefill(items, (item) => item.id, (item) => item.boxes_pending),
   );
   const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const validation = validateQuantities(qtyByItem, items
     .filter((item) => item.boxes_pending > 0)
     .map((item) => ({ id: item.id, name: item.name, available: item.boxes_pending })));
 
   const submit = async () => {
-    if (busy) return;
+    if (busyRef.current) return;
     setSaveError(null);
     if (Object.keys(validation.errors).length || validation.formError) {
       toast.error("Fix the highlighted quantities before confirming");
       return;
     }
+    busyRef.current = true;
     setBusy(true);
     try {
       await tileOrdersApi.releaseMaterial(poId, validation.entries);
@@ -99,6 +101,7 @@ export function ReleaseMaterialSheet({ poId, items, onClose, onDone }: { poId: s
     } catch (e: any) {
       setSaveError(e?.detail || "Could not release material. Your quantities are retained; try again.");
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   };
@@ -125,18 +128,20 @@ export function MoveToGodownSheet({ poId, items, onClose, onDone }: { poId: stri
     () => prefill(items, (item) => item.po_item_id, (item) => item.boxes_ready),
   );
   const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const validation = validateQuantities(qtyByItem, items
     .filter((item) => item.boxes_ready > 0)
     .map((item) => ({ id: item.po_item_id, name: item.tile_name, available: item.boxes_ready })));
 
   const submit = async () => {
-    if (busy) return;
+    if (busyRef.current) return;
     setSaveError(null);
     if (Object.keys(validation.errors).length || validation.formError) {
       toast.error("Fix the highlighted quantities before confirming");
       return;
     }
+    busyRef.current = true;
     setBusy(true);
     try {
       await tileOrdersApi.moveToGodown(poId, validation.entries);
@@ -145,6 +150,7 @@ export function MoveToGodownSheet({ poId, items, onClose, onDone }: { poId: stri
     } catch (e: any) {
       setSaveError(e?.detail || "Could not move to Godown. Your quantities are retained; try again.");
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   };
@@ -249,22 +255,26 @@ function DispatchSheet({
   );
   const [transport, setTransport] = useState<TransportDetails>(EMPTY_TRANSPORT);
   const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const validation = validateQuantities(qtyByItem, items
     .filter((item) => available(item) > 0)
     .map((item) => ({ id: item.po_item_id, name: item.tile_name, available: available(item) })));
 
   const submit = async () => {
-    if (busy) return;
+    if (busyRef.current) return;
     setSaveError(null);
     if (Object.keys(validation.errors).length || validation.formError) {
       toast.error("Fix the highlighted quantities before confirming");
       return;
     }
+    busyRef.current = true;
     try {
       await submitDispatch(poId, validation.entries, (id, e) => dispatch(id, e, transportPayload(transport)), onDone, setBusy, setSaveError);
     } catch (e: any) {
       setSaveError(e?.message || "Could not dispatch");
+    } finally {
+      busyRef.current = false;
     }
   };
 

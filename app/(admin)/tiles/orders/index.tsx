@@ -16,9 +16,9 @@ import { filterValues, toggleFilterValue } from "@/src/utils/filters";
 // and alignment once and both the header and the body cell read from that
 // declaration, which is what stops labels drifting off their columns.
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import Feather from "@expo/vector-icons/Feather";
-import { ActivityIndicator, Linking, Platform, Pressable, StyleSheet, View } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { Text } from "@/src/components/AppText";
 
 import {
@@ -30,14 +30,15 @@ import {
   type GodownInventoryRow,
   type MaterialMovementRow,
 } from "@/src/api/tileOrders";
-import { api } from "@/src/api/client";
 import { toast } from "@/src/components/Toast";
 import { CreateDispatchSheet } from "@/src/components/tiles/CreateDispatchSheet";
 import { DispatchRecordSheet, openChalanPdf } from "@/src/components/tiles/DispatchRecordSheet";
 import {
-  Button, ButtonGroup, FilterChip, PageHeader, PageShell,
-  SearchField, Section, Toolbar,
+  Button, ButtonGroup, FilterChip, PageShell,
+  SearchField,
 } from "@/src/components/tiles/TileLayout";
+import { NavigationTabs } from "@/src/design/NavigationTabs";
+import { TileOrdersExcelButton } from "@/src/components/tiles/TileOrdersExcelButton";
 import { StatusPill } from "@/src/components/tiles/TileOrderStatusUI";
 import { tileIdentityMeta } from "@/src/components/tiles/tilePresentation";
 import {
@@ -116,27 +117,39 @@ function TileOrdersNavigator({ value, onChange }: {
   value: TabKey;
   onChange: (key: TabKey) => void;
 }) {
+  return <NavigationTabs
+    testID="tile-orders-tab"
+    accessibilityLabel="Tile order views"
+    value={value}
+    onChange={onChange}
+    options={[...WORK_QUEUES, ...RECORDS].map(item => ({ value: item.key, label: item.label, icon: item.icon }))}
+  />;
+}
+
+/** Search stays in reach; secondary filters disclose without clearing drafts. */
+function QueueToolbar({ search, filters, actions, filterCount = 0 }: { search?: ReactNode; filters?: ReactNode; actions?: ReactNode; filterCount?: number }) {
   const { isPhone } = useBreakpoint();
-  return (
-    <View role="tablist" accessibilityLabel="Tile order views" style={styles.navigator}>
-      {[...WORK_QUEUES, ...RECORDS].map((item) => {
-        const active = value === item.key;
-        return <Pressable
-          key={item.key}
-          testID={`tile-orders-tab-${item.key}`}
-          role="tab"
-          aria-selected={active}
-          accessibilityLabel={item.label}
-          accessibilityState={{ selected: active }}
-          onPress={() => onChange(item.key)}
-          style={({ hovered, pressed }: any) => [styles.navigatorTab, isPhone && styles.navigatorTabPhone, active && styles.navigatorTabActive, (hovered || pressed) && !active && styles.navigatorTabHovered]}
-        >
-          <Feather name={item.icon} size={16} color={active ? colors.onBrand : colors.onSurfaceMuted} />
-          <Text numberOfLines={isPhone ? 2 : undefined} style={[styles.navigatorTitle, isPhone && { flex: 1, minWidth: 0 }, active && styles.navigatorTitleActive]}>{item.label}</Text>
-        </Pressable>;
-      })}
+  const [expanded, setExpanded] = useState(!isPhone);
+  const contentId = useId();
+  return <View style={styles.queueToolbar}>
+    <View style={styles.queueSearchRow}>
+      {search ? <View style={styles.queueSearch}>{search}</View> : null}
+      {filters ? <Pressable
+        testID="tile-table-filters-toggle"
+        accessibilityRole="button"
+        accessibilityLabel={filterCount ? `Filters, ${filterCount} active` : "Filters"}
+        accessibilityState={{ expanded }}
+        aria-expanded={expanded}
+        aria-controls={contentId}
+        onPress={() => setExpanded(value => !value)}
+        style={({ pressed }) => [styles.queueFilterToggle, (expanded || filterCount > 0) && styles.queueFilterToggleActive, pressed && styles.queueFilterTogglePressed]}
+      ><Feather accessible={false} name="sliders" size={18} color={expanded || filterCount > 0 ? colors.brand : colors.onSurfaceSecondary} />{filterCount > 0 ? <Text style={styles.activeFilterCount}>{filterCount}</Text> : null}</Pressable> : null}
+      {actions ? <View style={styles.queueActions}>{actions}</View> : null}
     </View>
-  );
+    {filters ? <View nativeID={contentId} testID="tile-table-filters-content" style={{ display: expanded ? "flex" : "none" }}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.queueFilterScroller} contentContainerStyle={styles.queueFilters}>{filters}</ScrollView>
+    </View> : null}
+  </View>;
 }
 
 export default function TileOrdersScreen() {
@@ -144,7 +157,7 @@ export default function TileOrdersScreen() {
   const { staff } = useAuth();
   const readOnlyDeliveryLookup = staff?.access_profile === "ground_tile_quotations_followups";
   const router = useRouter();
-  const { isPhone } = useBreakpoint();
+  const { isPhone, isTablet } = useBreakpoint();
   // Deep-link params let the Customer workspace jump straight here with the
   // right tab already selected and pre-filtered to that order — "View
   // Register"/"View Dispatches" on a customer order are navigations INTO
@@ -539,8 +552,9 @@ export default function TileOrdersScreen() {
   const renderBody = () => {
     if (loading) {
       return (
-        <View style={styles.stateBlock}>
+        <View testID="tile-orders-loading" accessibilityLiveRegion="polite" accessibilityState={{ busy: true }} style={styles.stateBlock}>
           <ActivityIndicator color={colors.brand} />
+          <Text style={type.bodyMuted}>Loading {[...WORK_QUEUES, ...RECORDS].find(view => view.key === tab)?.label.toLowerCase()}…</Text>
         </View>
       );
     }
@@ -555,6 +569,42 @@ export default function TileOrdersScreen() {
     }
 
     if (tab === "customer") {
+      if (isPhone || isTablet) return <View testID="tile-orders-customer-table" style={styles.customerList}>
+        {customerOrders.length === 0 ? <View style={styles.stateBlock}><Text style={type.bodyMuted}>No tile orders yet.</Text></View> : customerOrders.map(order => <Pressable
+          key={order.id}
+          testID={`tile-orders-customer-${order.id}`}
+          accessibilityRole="button"
+          accessibilityLabel={`Open tile order ${order.number} for ${order.customer_name}, ${order.overall_status}, ${order.total_products} products, quantity ${order.total_boxes}`}
+          accessibilityHint="Opens order details and movement actions"
+          onPress={() => openCustomerOrder(order.id)}
+          style={({ pressed }) => [styles.customerRow, isTablet && styles.customerRowTablet, pressed && styles.customerRowPressed]}
+        >
+          <View style={[styles.customerRecord, isTablet && styles.customerRecordTablet]}>
+            <View style={styles.customerIdentity}>
+              <View style={styles.customerNameBlock}>
+                <Text style={styles.customerName}>{order.customer_name}</Text>
+                <View style={styles.customerQuantity}>
+                  {isTablet ? <Text style={styles.customerFactLabel}>ORDER NO.</Text> : null}
+                  <Text style={styles.customerReference}>{order.number}</Text>
+                </View>
+              </View>
+              {!isTablet ? <Feather accessible={false} name="chevron-right" size={16} color={colors.onSurfaceMuted} /> : null}
+            </View>
+            <View style={styles.customerBrandLine}>
+              {isTablet ? <Text style={styles.customerFactLabel}>BRANDS</Text> : null}
+              <Text numberOfLines={1} style={styles.customerBrands}>{order.brands.map(brand => brand.brand_name).join(", ") || "Brand not recorded"}</Text>
+            </View>
+          </View>
+          <View style={[styles.customerFacts, isTablet && styles.customerFactsTablet]}>
+            <View style={styles.customerQuantity}><Text style={styles.customerFactLabel}>PRODUCTS</Text><Text style={styles.customerFactValue}>{order.total_products}</Text></View>
+            <View style={styles.customerQuantity}><Text style={styles.customerFactLabel}>QTY</Text><Text style={styles.customerFactValue}>{order.total_boxes}</Text></View>
+            <View style={[styles.customerStatus, isTablet && styles.customerStatusTablet]}><Text style={styles.customerFactLabel}>STATUS</Text><Text style={styles.customerStatusValue}>{order.overall_status}</Text></View>
+            {isTablet ? <View style={styles.customerQuantity}><Text style={styles.customerFactLabel}>WAITING</Text><Text style={styles.customerFactValue}>{order.waiting_days}d</Text></View> : null}
+            {isTablet ? <Text style={styles.customerReference}>{order.completion_percentage}% complete</Text> : null}
+          </View>
+          {isTablet ? <Feather accessible={false} name="chevron-right" size={16} color={colors.onSurfaceMuted} /> : null}
+        </Pressable>)}
+      </View>;
       return (
         <DataTable
           testID="tile-orders-customer-table"
@@ -626,45 +676,39 @@ export default function TileOrdersScreen() {
     );
   };
 
-  const exportHistory = async (format: "csv" | "xlsx") => {
-    try {
-      const qs = new URLSearchParams({ format });
-      if (historySearch) qs.set("search", historySearch);
-      if (historyDateRange !== "All") qs.set("date_from", historyDateRange === "year" ? `${new Date().getFullYear()}-01-01` : new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10));
-      const url = await api.authenticatedUrl(`/tile-orders/history/export?${qs.toString()}`);
-      if (Platform.OS === "web") window.open(url, "_blank"); else await Linking.openURL(url);
-      toast.success("History export ready");
-    } catch { toast.error("History export failed"); }
-  };
+  const exportParams = tab === "customer" ? { search: customerSearch || undefined, status: customerStatus === "All" ? undefined : customerStatus, customer_id: params.customer_id }
+    : tab === "brands" ? { search: brandSearch || undefined }
+    : tab === "dispatch-list" ? { search: dispatchSearch || undefined, status: dispatchStatus === "All" ? undefined : dispatchStatus }
+    : tab === "history" ? { search: historySearch || undefined, date_from: historyDateRange === "year" ? `${new Date().getFullYear()}-01-01` : historyDateRange === "30d" ? new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10) : undefined }
+    : tab === "inventory" ? { search: inventorySearch || undefined }
+    : { search: movementSearch || undefined };
+  const exportAction = <TileOrdersExcelButton
+    section={tab}
+    params={exportParams}
+    testID={tab === "history" ? "tile-orders-history-export" : `tile-orders-${tab}-export`}
+  />;
 
   return (
     <>
       <PageShell testID="tile-orders-screen">
-        <PageHeader
-          eyebrow="GROUND FLOOR · TILES"
-          title="Tile Orders"
-          subtitle={[...WORK_QUEUES, ...RECORDS].find(view => view.key === tab)?.description}
-        />
+        <View style={[styles.orderHeader, isPhone && styles.orderHeaderPhone]}>
+          <View style={styles.orderHeading}>
+            {!isPhone ? <Text style={styles.orderEyebrow}>GROUND FLOOR · TILES</Text> : null}
+            <Text accessibilityRole="header" aria-level={1} style={[styles.orderTitle, isPhone && styles.orderTitlePhone]}>Tile Orders</Text>
+            {!isPhone ? <Text style={type.bodyMuted}>{[...WORK_QUEUES, ...RECORDS].find(view => view.key === tab)?.description}</Text> : null}
+          </View>
+          {exportAction}
+        </View>
 
-        {/* No WorkflowRail here. On a detail screen the rail answers "where is
-            THIS order", which is worth its height. On this screen it was
-            hardcoded to `active="quotation"` — the same eight static dots on
-            every visit, for a list whose rows are each at a different stage —
-            so it cost ~130px above the fold and told an operator nothing.
-            Restore with <WorkflowRail active=… /> if a real stage is ever
-            derivable for the list as a whole. */}
-        <Section>
-          <TileOrdersNavigator
-            value={tab}
-            onChange={changeTab}
-          />
-        </Section>
+        <View style={styles.stageNavigation}>
+          <TileOrdersNavigator value={tab} onChange={changeTab} />
+        </View>
 
-        <Section testID="tile-orders-body">
-          {isPhone ? <Text accessibilityRole="header" aria-level={2} style={type.titleMd}>{[...WORK_QUEUES, ...RECORDS].find(view => view.key === tab)?.label}</Text> : null}
+        <View testID="tile-orders-body">
           {tab === "customer" ? (
-            <Toolbar
+            <QueueToolbar
               search={<SearchField testID="tile-orders-customer-search" value={customerSearchDraft} onChangeText={setCustomerSearchDraft} onSubmit={() => setCustomerSearch(customerSearchDraft.trim())} placeholder="Search customer, phone or order number…" accessibilityLabel="Search active tile orders" />}
+              filterCount={customerStatus === "All" ? 0 : filterValues(customerStatus, "All").length}
               filters={CUSTOMER_STATUS_FILTERS.map(([value, label]) => (
                 <FilterChip
                   key={value}
@@ -678,13 +722,13 @@ export default function TileOrdersScreen() {
           ) : null}
 
           {tab === "brands" ? (
-            <Toolbar
+            <QueueToolbar
               search={<SearchField testID="tile-orders-brand-search" value={brandSearchDraft} onChangeText={setBrandSearchDraft} onSubmit={() => setBrandSearch(brandSearchDraft.trim())} placeholder="Search active brands…" accessibilityLabel="Search tile brands" />}
             />
           ) : null}
 
           {tab === "dispatch-list" ? (
-            <Toolbar
+            <QueueToolbar
               search={
                 <SearchField
                   testID="tile-orders-dispatch-search"
@@ -694,6 +738,7 @@ export default function TileOrdersScreen() {
                   placeholder="Search customer, brand, product, dispatch, chalan…"
                 />
               }
+              filterCount={dispatchStatus === "All" ? 0 : filterValues(dispatchStatus, "All").length}
               filters={DISPATCH_STATUS_FILTERS.map((status) => (
                 <FilterChip
                   key={status}
@@ -715,7 +760,7 @@ export default function TileOrdersScreen() {
           ) : null}
 
           {tab === "material-register" ? (
-            <Toolbar
+            <QueueToolbar
               search={
                 <SearchField
                   testID="tile-orders-movement-search"
@@ -729,17 +774,17 @@ export default function TileOrdersScreen() {
           ) : null}
 
           {tab === "history" ? (
-            <Toolbar
+            <QueueToolbar
               search={<SearchField testID="tile-orders-history-search" value={historySearchDraft} onChangeText={setHistorySearchDraft} onSubmit={() => setHistorySearch(historySearchDraft.trim())} placeholder="Search customer, order or brand…" />}
+              filterCount={historyDateRange === "All" ? 0 : 1}
               filters={[
                 ...(["All", "30d", "year"] as const).map((value) => <FilterChip key={`date-${value}`} label={value === "All" ? "All dates" : value === "30d" ? "Last 30 days" : "This year"} active={historyDateRange === value} onPress={() => setHistoryDateRange(value)} />),
               ]}
-              actions={<Button label="Export" variant="primary" onPress={() => void exportHistory("xlsx")} testID="tile-orders-history-export" />}
             />
           ) : null}
 
           {tab === "inventory" ? (
-            <Toolbar
+            <QueueToolbar
               search={<SearchField testID="tile-orders-inventory-search" value={inventorySearchDraft} onChangeText={setInventorySearchDraft} onSubmit={() => setInventorySearch(inventorySearchDraft.trim())} placeholder="Search customer, name, brand, product or size…" />}
             />
           ) : null}
@@ -756,7 +801,7 @@ export default function TileOrdersScreen() {
               ) : null}
             </View>
           ) : null}
-        </Section>
+        </View>
       </PageShell>
 
       {openDispatchId ? (
@@ -886,17 +931,43 @@ function SheetFact({ label, value }: { label: string; value: string }) {
 }
 
 const styles = StyleSheet.create({
-  navigator: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
-  navigatorTab: {
-    minHeight: 44, paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
-    borderWidth: 1, borderColor: colors.border, borderRadius: radius.sm,
-    backgroundColor: colors.surface, flexDirection: "row", alignItems: "center", gap: spacing.sm,
-  },
-  navigatorTabActive: { backgroundColor: colors.brand, borderColor: colors.brand },
-  navigatorTabPhone: { flexBasis: "47%", flexGrow: 1, minWidth: 0, minHeight: 56 },
-  navigatorTabHovered: { backgroundColor: colors.surfaceTertiary, borderColor: colors.brandBorder },
-  navigatorTitle: { ...type.bodyStrong, color: colors.onSurface },
-  navigatorTitleActive: { color: colors.onBrand },
+  orderHeader: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: spacing.md, paddingVertical: spacing.sm },
+  orderHeaderPhone: { gap: spacing.sm, paddingVertical: 0 },
+  orderHeading: { flexGrow: 1, flexShrink: 1, minWidth: 0, gap: spacing.s4 },
+  orderEyebrow: { ...type.caption, color: colors.onSurfaceMuted },
+  orderTitle: { ...type.titleMd, fontSize: 24, lineHeight: 32 },
+  orderTitlePhone: { fontSize: 20, lineHeight: 28 },
+  stageNavigation: { marginTop: spacing.sm, marginBottom: spacing.md },
+  queueToolbar: { gap: spacing.sm, marginBottom: spacing.md },
+  queueSearchRow: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: spacing.sm },
+  queueSearch: { flex: 1, minWidth: 180 },
+  queueActions: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: spacing.sm },
+  queueFilterToggle: { minWidth: 44, minHeight: 44, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.controlBorder, borderRadius: radius.sm, backgroundColor: colors.surfaceSecondary },
+  queueFilterToggleActive: { backgroundColor: colors.brandTint, borderColor: colors.brandBorder },
+  queueFilterTogglePressed: { opacity: 0.7 },
+  activeFilterCount: { ...type.captionStrong, fontSize: 11, lineHeight: 12, color: colors.brand, position: "absolute", top: spacing.s4, right: spacing.s4 },
+  queueFilterScroller: { flexGrow: 0, maxWidth: "100%" },
+  queueFilters: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  customerList: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, overflow: "hidden", backgroundColor: colors.surfaceSecondary },
+  customerRow: { paddingHorizontal: spacing.md, paddingVertical: spacing.sm, gap: spacing.s4, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border, minHeight: 88 },
+  customerRowTablet: { flexDirection: "row", alignItems: "center", gap: spacing.md },
+  customerRowPressed: { backgroundColor: colors.brandTint },
+  customerRecord: { gap: spacing.s4, minWidth: 0 },
+  customerRecordTablet: { flex: 1 },
+  customerBrandLine: { flexDirection: "row", alignItems: "center", gap: spacing.s4, minWidth: 0 },
+  customerIdentity: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  customerNameBlock: { flex: 1, minWidth: 0 },
+  customerName: { ...type.bodyStrong, fontSize: 15, lineHeight: 20 },
+  customerReference: { ...type.caption, fontSize: 12, lineHeight: 16, color: colors.onSurfaceMuted },
+  customerBrands: { ...type.caption, fontSize: 12, lineHeight: 16, color: colors.onSurfaceMuted, flexShrink: 1 },
+  customerFacts: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", columnGap: spacing.md, rowGap: spacing.s4 },
+  customerFactsTablet: { width: "46%", columnGap: spacing.md },
+  customerQuantity: { flexDirection: "row", alignItems: "center", gap: spacing.s4 },
+  customerFactLabel: { ...type.caption, fontSize: 11, lineHeight: 16, color: colors.onSurfaceMuted },
+  customerFactValue: { ...type.captionStrong, fontSize: 12, lineHeight: 16 },
+  customerStatus: { flexDirection: "row", alignItems: "center", gap: spacing.s4, flexShrink: 1 },
+  customerStatusTablet: { width: "100%" },
+  customerStatusValue: { ...type.captionStrong, fontSize: 12, lineHeight: 16, flexShrink: 1 },
   stateBlock: { paddingVertical: spacing.s48, alignItems: "center", gap: spacing.lg },
   loadMore: { paddingTop: spacing.lg, alignItems: "center", flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: spacing.md },
   pageLabel: { ...type.body, color: colors.onSurfaceMuted },

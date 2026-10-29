@@ -199,8 +199,8 @@ export function DataTable<T>({
   const [availableWidth, setAvailableWidth] = useState(0);
   const [bodyMaxHeight, setBodyMaxHeight] = useState<number | null>(null);
   const shellRef = useRef<View>(null);
-  const windowHeight = useWindowDimensions().height;
-  const { isPhone, bp } = useBreakpoint();
+  const { height: windowHeight, fontScale } = useWindowDimensions();
+  const { isPhone, bp, width } = useBreakpoint();
   // Sidebar expansion and nested cards change the usable table width without
   // changing the viewport tier. Keep names and actions readable in that space.
   const useCardRows = isPhone || (availableWidth > 0
@@ -227,6 +227,10 @@ export function DataTable<T>({
     && availableWidth - stickyWidth >= MIN_UNPINNED_WIDTH;
 
   if (useCardRows) {
+    // Tablets retain a ledger-like three-column fact grid; narrow windows and
+    // enlarged text fall back without changing the record or its actions.
+    const roomyFields = !isPhone && availableWidth >= 480;
+    const largeText = fontScale > 1.4;
     const renderMobileRow = (item: T, index: number) => {
       const selected = isRowSelected?.(item, index) ?? false;
       const primary = columns.filter((column) => column.mobile === "primary");
@@ -240,7 +244,7 @@ export function DataTable<T>({
           {details.length ? (
             <View style={styles.mobileFields}>
               {details.map((column) => (
-                <View key={column.key} style={styles.mobileField}>
+                <View key={column.key} style={[styles.mobileField, roomyFields ? { width: "30%" } : null, width < 360 || largeText ? { width: "100%" } : null]}>
                   <Text style={styles.mobileLabel}>{column.label}</Text>
                   <View style={styles.mobileValue}>{column.render(item)}</View>
                 </View>
@@ -521,20 +525,20 @@ export function ProgressCell({ percent }: { percent: number }) {
 
 const styles = StyleSheet.create({
   mobileListShell: { width: "100%", minHeight: 120 },
-  mobileListContent: { gap: spacing.lg, paddingBottom: spacing.s24 },
+  mobileListContent: { gap: spacing.s8, paddingBottom: spacing.s16 },
   mobileCard: {
     minHeight: 88,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.md,
     backgroundColor: colors.surfaceSecondary,
-    padding: spacing.s20,
+    padding: spacing.s12,
   },
-  mobileCardContent: { gap: spacing.lg },
+  mobileCardContent: { gap: spacing.s8 },
   mobilePrimary: { minWidth: 0 },
-  mobileFields: { flexDirection: "row", flexWrap: "wrap", gap: spacing.s12 },
+  mobileFields: { flexDirection: "row", flexWrap: "wrap", columnGap: spacing.s12, rowGap: spacing.s8 },
   mobileField: { gap: spacing.s4, minWidth: 0, width: "47%", flexGrow: 1 },
-  mobileLabel: { ...type.overline, fontSize: 10, color: colors.onSurfaceSubtle },
+  mobileLabel: { ...type.caption, fontSize: 11, color: colors.onSurfaceMuted },
   mobileValue: { minWidth: 0, width: "100%", alignItems: "flex-start" },
   mobileAction: { minHeight: 44, alignItems: "stretch", justifyContent: "center", gap: spacing.s8, paddingTop: spacing.s8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.divider },
   mobileEmpty: { paddingVertical: spacing.s40, paddingHorizontal: spacing.lg, alignItems: "center" },
@@ -583,7 +587,7 @@ const styles = StyleSheet.create({
   // 16px per side is the table-cell padding the whole module shares; no
   // inter-cell `gap` is used, because a gap has to be replicated identically
   // on the header to keep labels over their data.
-  cell: { paddingHorizontal: spacing.lg, paddingVertical: spacing.lg },
+  cell: { paddingHorizontal: spacing.s12, paddingVertical: spacing.s12 },
 
   emptyRow: { paddingVertical: spacing.s40, paddingHorizontal: spacing.lg, alignItems: "center" },
 

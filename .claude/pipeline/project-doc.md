@@ -1,5 +1,31 @@
 # BuildCon House project documentation
 
+## Tiles responsive workspace delta — 30 October 2026
+
+Native fallback scan of the Tiles Order workspace and shared controls retains
+Expo/React Native Web, FastAPI, MongoDB and the current transport/floor boundaries.
+The six existing views use compact horizontal stage navigation, progressive
+filters and smaller customer records. Shared tile tables adapt their record
+layout to usable tablet pane width; customer and brand detail tools preserve
+their existing movement and dispatch actions. Reused Excel generation adds
+section exports with explicit scope, bounded complete paging and visible work
+status. Shared action sizing and busy feedback also apply to walk-ins and web.
+
+No framework, dependency, database schema, authentication pattern or architectural
+directory is introduced. AGENTS.md needs no architectural regeneration. Coverage
+percentage is not measured. The new populated browser scenario covers every
+stage, navigation height, responsive search identity and overflow; verification
+results are recorded only after the integrated source is exercised.
+
+Changed areas re-scanned: the Tiles order list/customer/brand/release routes;
+shared tile table, layout and movement sheets; section Excel transport and
+explicit Tiles row mapping; walk-in list/intake/cards; shared buttons/navigation;
+and populated responsive/movement/export regressions. The initial delta also
+checks the previous commit's performance-runner and stability fixture changes,
+preserving their complete source-bound evidence and unchanged budgets.
+
+Last scanned: 2026-10-30.
+
 ## Ground Floor completion delta — 30 October 2026
 
 Independent Linux WebKit CI exposed an unsupported static interactive-widget

@@ -230,7 +230,7 @@ export default function NewWalkIn() {
         </ScrollView>
         <View style={styles.submitFooter}>
           {error ? <Text accessibilityRole="alert" testID="walkin-submit-error" style={[type.bodySm, { color: colors.error }]}>{error}</Text> : null}
-          <Button label="Log Walk-in" onPress={save} loading={saving} fullWidth testID="walkin-save-btn" />
+          <Button label="Log Walk-in" onPress={save} loading={saving} testID="walkin-save-btn" />
         </View>
       </KeyboardAvoidingView>
 

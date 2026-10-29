@@ -1,6 +1,6 @@
 // Walk-in card — Phase 4 (2026-07-30). Same visual language as
 // components/tiles cards: Card + IconButton + Button.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Pressable, View } from "react-native";
 import { Text, TextInput } from "@/src/components/AppText";
 
@@ -43,10 +43,13 @@ export function WalkInCard({
   const [price, setPrice] = useState(w.quotation_price?.toString() || "");
   const [transferring, setTransferring] = useState(false);
   const [savingPrice, setSavingPrice] = useState(false);
+  const priceWrite = useRef(false);
+  const showroomWrite = useRef(false);
 
   useEffect(() => { setPrice(w.quotation_price?.toString() || ""); }, [w.quotation_price]);
 
   const savePrice = async () => {
+    if (priceWrite.current) return;
     const trimmed = price.trim();
     const value = trimmed ? Number(trimmed) : null;
     if (value !== null && (!Number.isFinite(value) || value < 0)) {
@@ -54,8 +57,9 @@ export function WalkInCard({
       return;
     }
     if (!onSaveQuotationPrice) return;
+    priceWrite.current = true;
     setSavingPrice(true);
-    try { await onSaveQuotationPrice(value); } catch { /* The owning page displays the save error. */ } finally { setSavingPrice(false); }
+    try { await onSaveQuotationPrice(value); } catch { /* The owning page displays the save error. */ } finally { priceWrite.current = false; setSavingPrice(false); }
   };
   return (
     <Pressable onPress={onPress} testID={`walkin-card-${w.id}`}>
@@ -95,9 +99,9 @@ export function WalkInCard({
           {onWhatsApp ? <IconButton icon="message-circle" onPress={onWhatsApp} size={44} tone="surface" accessibilityLabel="WhatsApp" testID={`walkin-wa-${w.id}`} /> : null}
           {onVisitShowroom && !w.showroom_followup_id && !w.showroom_transferred_at && w.status !== "lost" ? (
             <Button label={w.showroom_followup_id ? "View Visit Showroom" : "Visit Showroom"} icon="home" size="sm" loading={transferring} onPress={() => {
-              if (transferring) return;
-              setTransferring(true);
-              void onVisitShowroom().finally(() => setTransferring(false));
+              if (showroomWrite.current) return;
+              showroomWrite.current = true; setTransferring(true);
+              void onVisitShowroom().catch(() => { /* The owning page displays the error. */ }).finally(() => { showroomWrite.current = false; setTransferring(false); });
             }} testID={`walkin-visit-showroom-${w.id}`} />
           ) : null}
           {w.floor_id === "ground-floor" && onScheduleSelection && w.status !== "lost" && w.status !== "converted" && w.status !== "quotation_created" ? (

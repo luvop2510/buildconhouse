@@ -186,9 +186,9 @@ export const tileOrdersApi = {
   // ---- Brands tab ----
   listBrands: (params?: { page?: number; page_size?: number; search?: string }, signal?: AbortSignal) =>
     api.get<{ brands: BrandLandingCard[] } & PageMeta>(`/tile-orders/brands${toQuery(params)}`, { ...GROUND_FLOOR, signal }),
-  brandOrders: (brandId: string, params?: { page?: number; page_size?: number; sort?: string; status?: string; search?: string }) =>
+  brandOrders: (brandId: string, params?: { page?: number; page_size?: number; sort?: string; status?: string; search?: string }, signal?: AbortSignal) =>
     api.get<{ kpi: BrandOrdersKpi; orders: BrandOrderRow[] } & PageMeta>(
-      `/tile-orders/brands/${brandId}/orders${toQuery(params)}`, GROUND_FLOOR,
+      `/tile-orders/brands/${brandId}/orders${toQuery(params)}`, { ...GROUND_FLOOR, signal },
     ),
   purchaseOrderDetail: (poId: string) => api.get<PurchaseOrderDetail>(`/tile-orders/purchase-orders/${poId}`, GROUND_FLOOR),
 

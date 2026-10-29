@@ -1,19 +1,30 @@
 import Feather from '@expo/vector-icons/Feather';
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Platform, Pressable, ScrollView, View } from "react-native";
 import { Text } from "@/src/components/AppText";
 import { color, font, radius, space } from './tokens';
 
-export function NavigationTabs<T extends string>({ value, options, onChange, testID, fullWidth, disabled = false, segmented = false }: {
+export function NavigationTabs<T extends string>({ value, options, onChange, testID, accessibilityLabel, fullWidth, disabled = false, segmented = false }: {
   value: T; options: { value: T; label: string; count?: number; icon?: keyof typeof Feather.glyphMap }[];
-  onChange: (value: T) => void; testID?: string; fullWidth?: boolean; disabled?: boolean; segmented?: boolean;
+  onChange: (value: T) => void; testID?: string; accessibilityLabel?: string; fullWidth?: boolean; disabled?: boolean; segmented?: boolean;
 }) {
-  const tabs = <View role="tablist" style={{ flexDirection: 'row', gap: segmented ? 4 : space.x5,
+  const scroller = useRef<ScrollView>(null);
+  const positions = useRef<Record<string, number>>({});
+  useEffect(() => {
+    const x = positions.current[value];
+    if (x !== undefined) scroller.current?.scrollTo({ x: Math.max(0, x - 12), animated: false });
+  }, [value]);
+  const tabs = <View role="tablist" accessibilityLabel={accessibilityLabel} style={{ flexDirection: 'row', gap: segmented ? 4 : space.x5,
     padding: segmented ? 4 : 0, backgroundColor: segmented ? color.sunken : 'transparent',
     borderRadius: radius.sm, flexGrow: fullWidth ? 1 : undefined }}>
     {options.map((option, index) => {
       const active = value === option.value;
       return <Pressable key={option.value}
+        onLayout={event => {
+          const x = event.nativeEvent.layout.x;
+          positions.current[option.value] = x;
+          if (active) scroller.current?.scrollTo({ x: Math.max(0, x - 12), animated: false });
+        }}
         testID={testID ? `${testID}-${option.value}` : undefined} role="tab"
         aria-selected={active} accessibilityLabel={option.label} accessibilityState={{ selected: active, disabled }} disabled={disabled}
         tabIndex={active ? 0 : -1} onPress={() => onChange(option.value)}
@@ -47,7 +58,7 @@ export function NavigationTabs<T extends string>({ value, options, onChange, tes
       </Pressable>;
     })}
   </View>;
-  return <ScrollView horizontal testID={testID} showsHorizontalScrollIndicator={false}
+  return <ScrollView ref={scroller} horizontal testID={testID} showsHorizontalScrollIndicator={false}
     style={{ flexGrow: 0, flexShrink: 0, maxWidth: '100%' }} contentContainerStyle={{ flexGrow: fullWidth ? 1 : undefined }}>
     {tabs}
   </ScrollView>;

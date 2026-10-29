@@ -5,7 +5,7 @@ import { mockSession } from './audit-fixtures';
 test('critical mobile tile editor retains document details and explicitly retries a failed save', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await mockSession(page, '/tiles/selection');
-  await page.route('**/api/customers', r => r.fulfill({ json: r.request().method() === 'POST' ? { id: 'tile-customer', name: 'Tile customer', phone: null } : [] }));
+  await page.route('**/api/customers**', r => r.fulfill({ json: r.request().method() === 'POST' ? { id: 'tile-customer', name: 'Tile customer', phone: null } : [] }));
   const writes: any[] = [];
   await page.route('**/api/quotations', r => { writes.push(r.request().postDataJSON()); return r.fulfill({ status: 503, json: { detail: 'Save unavailable' } }); });
   await page.goto('/tiles/selection');
@@ -15,6 +15,7 @@ test('critical mobile tile editor retains document details and explicitly retrie
   await page.getByTestId('mobile-reference').fill('Architect discussion');
   await details.click();
   await page.getByLabel('Customer name', { exact: true }).fill('Tile customer');
+  await page.getByLabel('Customer name', { exact: true }).blur();
   await expect(page.getByRole('alert').filter({ hasText: 'Could not sync this draft. Retry save.' })).toBeVisible();
   await page.getByRole('button', { name: 'Retry save', exact: true }).click();
   await expect.poll(() => writes.length).toBe(2);

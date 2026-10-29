@@ -20,6 +20,8 @@ import { useKitchenExitGuard } from "./KitchenExitGuard";
 import { KitchenPolicyEditor } from "./KitchenPolicy";
 import { downloadApiFile } from "@/src/utils/downloadFile";
 import { KITCHEN_FLOOR_ID } from "@/src/constants/floors";
+import { ExcelExportButton } from "@/src/components/ExcelExportButton";
+import { collectPagedExportRows } from "@/src/utils/pagedExcel";
 export { LeadFields } from "./KitchenLeadFields";
 
 const LIMIT = 25;
@@ -105,6 +107,15 @@ function ProjectList({ page, stage, values, setValues, returnTo, search, setSear
     {page === "review" ? <Text style={type.bodyMuted}>Confirm a distinct project or mark a duplicate lead Lost. The original record and customer stay intact.</Text> : null}
     <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12, alignItems: "center", paddingBottom: 20, borderBottomWidth: 1, borderColor: colors.divider }}>
       <View style={{ flex: 1, minWidth: Math.min(220, contentWidth || 220) }}><SearchField placeholder={page === "completed" ? "Search completed projects" : "Search project or customer"} accessibilityLabel="Search Kitchen projects" value={search} onChangeText={setSearch} onClear={() => setSearch("")} testID="kitchen-search" /></View>
+      {canExport ? <ExcelExportButton resource="kitchen_projects" page="Kitchen" section={page === "projects" ? "All customer projects" : STAGE_LABELS[stage || "lead"]} filename={`kitchen-${page === "projects" ? "projects" : stage}.xlsx`} floorId={KITCHEN_FLOOR_ID} scopeKey={queryKey} disabled={loading || Boolean(failure) || !result?.total} testID="kitchen-projects-export-excel" loadRows={async (signal, onProgress) => {
+        const projects = await collectPagedExportRows<KitchenProject>(async exportPage => {
+          const response = await kitchenProjectsApi.list({ ...query, page: exportPage, limit: 100 }, signal);
+          const hasMore = response.page * response.limit < response.total;
+          return { ...response, page_size: response.limit, has_more: hasMore, next_page: hasMore ? response.page + 1 : null };
+        }, signal, onProgress);
+        const columns = stageColumns(page === "projects" ? undefined : stage);
+        return [["Project", "Customer", "Phone", "Stage", "Status", "Assigned to", "Target completion", ...columns.map(column => column.label)], ...projects.map(project => [project.project_reference || project.reference, project.customer.name, project.customer.phone, STAGE_LABELS[project.stage], projectStatus(project), project.assigned_to_name || "Unassigned", project.target_completion_date, ...columns.map(column => column.value(project))])];
+      }} /> : null}
       {page === "completed" && canExport ? <Button label="Export" icon="download" variant="secondary" loading={exporting} onPress={() => { setExporting(true); setExportError(null); void downloadApiFile(kitchenProjectsApi.exportPath({ search: values.search }), "kitchen-completed.csv", "completed projects CSV", KITCHEN_FLOOR_ID).catch(error => setExportError(errorText(error))).finally(() => setExporting(false)); }} testID="kitchen-completed-export" /> : null}
     </View>
     {exportError ? <Alert tone="error" title="Export unavailable" description={`${exportError} Try Export again.`} /> : null}

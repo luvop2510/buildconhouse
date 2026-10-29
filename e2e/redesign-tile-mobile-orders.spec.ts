@@ -5,7 +5,7 @@ const order = { id: 'mobile-order', number: 'TCO-MOBILE', customer_name: 'Mobile
   order_date: '2026-10-01T10:00:00Z', waiting_days: 4, ageing_band: 'green', brands: [{ brand_name: 'Tile Brand' }],
   total_products: 3, total_boxes: 24, total_value: 48000, overall_status: 'Partially Dispatched', completion_percentage: 50 };
 
-test('critical Tile Orders phone views form a readable grid and records retain identity with paired quantities', async ({ page }, info) => {
+test('critical Tile Orders phone views stay on one compact row and records retain identity with paired quantities', async ({ page }, info) => {
   await mockSession(page, '/tiles/orders', false);
   await page.route('**/api/tile-orders/customer-orders?**', route => route.fulfill({ json: { orders: Array.from({ length: 12 }, (_, i) => ({ ...order, id: `mobile-${i}` })), page: 1, page_size: 30, total: 12, has_more: false } }));
   await page.goto('/tiles/orders');
@@ -14,11 +14,15 @@ test('critical Tile Orders phone views form a readable grid and records retain i
     const tabs = page.getByRole('tablist', { name: 'Tile order views' }).getByRole('tab');
     await expect(tabs).toHaveCount(6);
     const bounds = await tabs.evaluateAll(nodes => nodes.map(node => { const b = node.getBoundingClientRect(); return { x: b.x, y: b.y, width: b.width, height: b.height }; }));
-    for (let i = 0; i < bounds.length; i += 2) {
-      expect(bounds[i].y).toBeCloseTo(bounds[i + 1].y, 0);
-      expect(bounds[i].height).toBeGreaterThanOrEqual(44);
-      expect(bounds[i].width).toBeCloseTo(bounds[i + 1].width, 0);
+    for (const tab of bounds) {
+      expect(tab.y).toBeCloseTo(bounds[0].y, 0);
+      expect(tab.height).toBeGreaterThanOrEqual(44);
     }
+    const navigation = await page.getByTestId('tile-orders-tab').boundingBox();
+    expect(navigation!.height).toBeLessThanOrEqual(56);
+    await tabs.last().scrollIntoViewIfNeeded();
+    await expect(tabs.last()).toBeInViewport();
+    await tabs.first().scrollIntoViewIfNeeded();
     const card = page.getByTestId('tile-orders-customer-mobile-0');
     await expect(card.getByText(order.number, { exact: true })).toBeVisible();
     await expect(card.getByText('Tile Brand', { exact: true })).toBeVisible();

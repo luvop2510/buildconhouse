@@ -2,6 +2,7 @@ import { MobileFilterSection, MultiSelectFilterBar } from "@/src/components/ds";
 import { filterValues, toggleFilterValue } from "@/src/utils/filters";
 import { WALKIN_SUMMARY_LABELS, walkinSummaryFilters, type WalkinSummary } from "@/src/utils/walkinSummary";
 import { Disclosure } from "@/src/design/Disclosure";
+import { ExcelExportButton } from "@/src/components/ExcelExportButton";
 // Walk-ins — Phase 4 (2026-07-30). Company-wide CRM entry point:
 // Walk-in -> Customer -> Selection -> Quotation -> Order -> Dispatch -> Payment.
 // Dedicated workspace: KPI dashboard + filterable list, matching the same
@@ -236,7 +237,15 @@ export default function WalkInsScreen({
   const pageHeader = <PageHeader
     title={title} overline={quotationFollowup ? "QUOTATION FOLLOW-UP" : "CRM"}
     subtitle="Every customer journey starts here"
-    actions={canCreate ? <Button label="Log Walk-in" icon="user-plus" onPress={() => router.push((fixedFloorId ? `/(admin)/walkins/new?floor_id=${fixedFloorId}` : "/(admin)/walkins/new") as any)} testID="walkin-new-btn" /> : undefined}
+    actions={<View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
+      {canCreate ? <Button label="Log Walk-in" size="sm" icon="user-plus" onPress={() => router.push((fixedFloorId ? `/(admin)/walkins/new?floor_id=${fixedFloorId}` : "/(admin)/walkins/new") as any)} testID="walkin-new-btn" /> : null}
+      <ExcelExportButton resource="walkins" page={title} section="Filtered walk-ins" filename="walk-ins.xlsx" floorId={filterFloorIds} scopeKey={queryKey} disabled={loading || Boolean(loadError) || !items.length} testID="walkins-export-excel" loadRows={async () => {
+        if (items.length >= 2000) throw new Error("This list reached the 2,000-walk-in limit. Narrow the filters before exporting.");
+        return [
+        ["Customer", "Phone", "Walk-in", "Visited", "Status", "Salesperson", "Floor", "Source", "Interested products", "Next follow-up"],
+        ...items.map(item => [item.customer_name, item.customer_phone, item.number, item.visited_at, item.status.replace(/_/g, " "), item.salesperson_name || "Unassigned", item.floor_id, item.source, item.interested_products.join(", "), item.next_followup_at]),
+      ]; }} />
+    </View>}
     embedded={isPhone}
   />;
 

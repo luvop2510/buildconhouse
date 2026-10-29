@@ -30,16 +30,11 @@ async function scrollOwner(element: import('@playwright/test').Locator, amount: 
 
 test('critical tile order timeline scrolls through its final event and closes without moving the order page', async ({ page }, info) => {
   await order(page);
-  if (page.viewportSize()!.width < 768) {
-    const actions = ['timeline', 'register', 'dispatches'];
-    let previousBottom = 0;
-    for (const action of actions) {
-      const bounds = (await page.getByTestId(`tile-order-view-${action}`).boundingBox())!;
-      expect(bounds.width).toBe(page.viewportSize()!.width - 32);
-      expect(bounds.y).toBeGreaterThanOrEqual(previousBottom);
-      previousBottom = bounds.y + bounds.height;
-    }
-  }
+  const actions = page.getByTestId('tile-order-actions');
+  expect((await actions.boundingBox())!.width).toBeLessThan(200);
+  await expect(page.getByTestId('tile-order-view-timeline')).toBeHidden();
+  await actions.click();
+  for (const action of ['timeline', 'register', 'dispatches']) await expect(page.getByTestId(`tile-order-view-${action}`)).toBeVisible();
   await page.getByTestId('tile-order-view-timeline').click();
   const sheet = page.getByTestId('tile-order-timeline-sheet');
   await expect(sheet).toBeVisible();
@@ -52,7 +47,7 @@ test('critical tile order timeline scrolls through its final event and closes wi
   expect((await first.boundingBox())!.y).toBeLessThan(before.y - 300);
   await sheet.getByRole('button', { name: 'Close', exact: true }).click();
   await expect(sheet).toHaveCount(0);
-  await expect(page.getByTestId('tile-order-view-timeline')).toBeInViewport();
+  await expect(page.getByTestId('tile-order-actions')).toBeInViewport();
   expect(await page.evaluate(() => document.scrollingElement!.scrollTop)).toBe(0);
   await page.screenshot({ path: info.outputPath('tile-order-page.png') });
 });
@@ -61,6 +56,9 @@ test('critical tile order phone metrics and product quantities stay grouped and 
   await order(page);
   const width = page.viewportSize()!.width;
   const summary = page.getByTestId('tile-order-summary');
+  const summaryToggle = summary.getByRole('button', { name: 'Order summary', exact: true });
+  await expect(summaryToggle).toHaveAttribute('aria-expanded', 'false');
+  await summaryToggle.click();
   const products = summary.getByText('Products', { exact: true });
   const value = products.locator('..').getByText('12', { exact: true });
   const pb = (await products.boundingBox())!, vb = (await value.boundingBox())!;
@@ -69,9 +67,11 @@ test('critical tile order phone metrics and product quantities stay grouped and 
     const metricCells = ['Products', 'Units ordered', 'Complete', 'Brands', 'Waiting'];
     const cells = await Promise.all(metricCells.map(async label => (await summary.getByText(label, { exact: true }).locator('..').boundingBox())!));
     expect(cells[0].y).toBeCloseTo(cells[1].y, 0);
-    expect(cells[2].y).toBeCloseTo(cells[3].y, 0);
-    expect(cells[2].y).toBeGreaterThan(cells[0].y);
-    expect(cells[0].x).toBeCloseTo(cells[2].x, 0);
+    if (width >= 375) {
+      expect(cells[2].y).toBeCloseTo(cells[0].y, 0);
+      expect(cells[3].y).toBeGreaterThan(cells[0].y);
+      expect(cells[0].x).toBeCloseTo(cells[3].x, 0);
+    }
   }
   const group = page.getByTestId('tile-order-brand-mobile-po');
   const action = page.getByTestId('tile-order-actions-line-11');

@@ -8,6 +8,7 @@ import { Text } from "@/src/components/AppText";
 
 import { ConfirmDialog } from "@/src/components/ds";
 import { AdminPage, IconAction } from "@/src/components/AdminPage";
+import { ExcelExportButton } from "@/src/components/ExcelExportButton";
 import { Avatar, Badge, Button, Chip, EmptyState, ErrorState, Sheet, Skeleton, TextField } from "@/src/components/ui";
 import { TempPasswordDialog, TempPasswordResult } from "@/src/components/TempPasswordDialog";
 import { api } from "@/src/api/client";
@@ -74,7 +75,13 @@ export default function Team() {
     <AdminPage
       title="Team"
       subtitle="Choose each person’s floors, pages and actions"
-      right={<IconAction icon="user-plus" label="Add" onPress={() => setAddOpen(true)} focusRef={addButtonRef} testID="team-add-btn" />}
+      right={<View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
+        <IconAction icon="user-plus" label="Add" onPress={() => setAddOpen(true)} focusRef={addButtonRef} testID="team-add-btn" />
+        <ExcelExportButton resource="team" page="Team" section="Team directory" filename="team-directory.xlsx" testID="team-export-excel" disabled={!items?.length || loadError} scopeKey={ownerId || ""} loadRows={async () => {
+          if (!items || items.length >= 200) throw new Error("The team directory reached its 200-member read limit. A complete export is unavailable.");
+          return [["Name", "Email", "Phone", "Login ID", "Role", "Access type", "Status", "Floors"], ...items.map(member => [member.full_name, optionalContact(member.email), teamPhone(member), optionalContact(member.login_id), member.team_role || member.role, member.custom_access ? "Delegated" : "Standard", member.active ? "Active" : "Disabled", (member.floor_ids || []).map(id => options?.floors.find(floor => floor.id === id)?.name || id).join(", ")])];
+        }} />
+      </View>}
     >
       {optionsError ? <ErrorState title="Access options unavailable" subtitle="Retry before assigning staff access." onRetry={loadOptions} /> : null}
       {loadError ? <ErrorState title="Could not load team" subtitle={items ? "Your last loaded team is shown below. Retry to refresh it." : undefined} onRetry={load} /> : null}
@@ -248,7 +255,7 @@ function AddStaffSheet({ visible, options, optionsError, onRetry, onClose, onCre
         <AccountAccessPicker value={role} onChange={setRole} disabled={saving} prefix="add-staff" />
         {role === "owner" ? <Text style={type.caption}>An owner can access all floors and pages and manage the whole team.</Text> : <DelegationOptions options={options} error={optionsError} onRetry={onRetry} value={delegation} onChange={setDelegation} disabled={saving} />}
         {error ? <Text accessibilityRole="alert" style={[type.caption, { color: colors.error }]}>{error}</Text> : null}
-        <Button testID="add-staff-save" label={saving ? "Adding…" : "Add staff member"} variant="primary" size="lg" icon="check" disabled={saving || !options || optionsError} onPress={save} fullWidth />
+        <Button testID="add-staff-save" label={saving ? "Adding…" : "Add staff member"} variant="primary" size="lg" icon="check" disabled={saving || !options || optionsError} loading={saving} onPress={save} />
       </ScrollView>
   </Sheet>;
 }
@@ -390,10 +397,10 @@ function EditStaffSheet({ staff, options, optionsError, onRetry, selfId, onClose
         </View>
         {isSelf ? <Text style={type.caption}>You can’t change your own account access.</Text> : role === "owner" ? <Text style={type.caption}>An owner has full access to all floors and pages.</Text> : grantsError ? <ErrorState title="Current access unavailable" subtitle={grantsError} onRetry={() => setRetryCount((count) => count + 1)} /> : grantsLoading ? <Text style={type.caption}>Loading this person’s access…</Text> : <DelegationOptions options={options} error={optionsError} onRetry={onRetry} value={delegation} onChange={setDelegation} disabled={saving} />}
         {saveError ? <Text accessibilityRole="alert" style={[type.caption, { color: colors.error }]}>{saveError}</Text> : null}
-        <Button testID="edit-staff-save" label={saving ? "Saving…" : "Save changes"} variant="primary" icon="check" disabled={saving || resetting || deleting || (!isSelf && accessChanged && accessUnavailable)} onPress={save} fullWidth />
+        <Button testID="edit-staff-save" label={saving ? "Saving…" : "Save changes"} variant="primary" icon="check" disabled={saving || resetting || deleting || (!isSelf && accessChanged && accessUnavailable)} loading={saving} onPress={save} />
         <View style={styles.divider} />
         <Text accessibilityRole="header" style={type.titleSm}>Current password</Text>
-        <Button testID="edit-staff-view-password" label={visiblePassword !== null ? "Hide password" : "View password"} icon={visiblePassword !== null ? "eye-off" : "eye"} variant="secondary" loading={revealing} disabled={resetting || saving || deleting} onPress={() => void revealPassword()} fullWidth />
+        <Button testID="edit-staff-view-password" label={visiblePassword !== null ? "Hide password" : "View password"} icon={visiblePassword !== null ? "eye-off" : "eye"} variant="secondary" loading={revealing} disabled={resetting || saving || deleting} onPress={() => void revealPassword()} />
         {visiblePassword !== null ? <Text testID="edit-staff-current-password" selectable style={type.bodyStrong}>{visiblePassword}</Text> : null}
         {revealError ? <Text testID="edit-staff-password-unavailable" accessibilityRole="alert" style={type.caption}>{revealError}</Text> : null}
         {isSelf ? <Text style={type.caption}>Use Settings → Change password to update your own password.</Text> : <>
@@ -401,13 +408,13 @@ function EditStaffSheet({ staff, options, optionsError, onRetry, selfId, onClose
           <Text style={type.caption}>Reset this member’s password if they forget it. They can also change it themselves in Settings. Resetting signs them out of every device.</Text>
           <TextField testID="edit-staff-password" label="New password" value={newPassword} onChangeText={setNewPassword} secureTextEntry autoCapitalize="none" editable={!resetting && !deleting && !saving} placeholder="At least 6 characters" />
           <TextField testID="edit-staff-confirm-password" label="Confirm new password" value={confirmPassword} onChangeText={setConfirmPassword} secureTextEntry autoCapitalize="none" editable={!resetting && !deleting && !saving} error={passwordError} />
-          <Button testID="edit-staff-set-password" label="Save entered password" variant="primary" icon="key" loading={resetting} disabled={saving || deleting} onPress={() => void resetPassword()} fullWidth />
+          <Button testID="edit-staff-set-password" label="Save entered password" variant="primary" icon="key" loading={resetting} disabled={saving || deleting} onPress={() => void resetPassword()} />
           <Text testID="edit-staff-set-password-help" style={type.caption}>Saves the password you entered and confirmed above.</Text>
-          <Button testID="edit-staff-reset-password" label="Generate and save random password" variant="secondary" icon="refresh-cw" disabled={resetting || saving || deleting} onPress={() => void resetPassword(true)} fullWidth />
+          <Button testID="edit-staff-reset-password" label="Generate and save random password" variant="secondary" icon="refresh-cw" disabled={resetting || saving || deleting} loading={resetting} onPress={() => void resetPassword(true)} />
           <Text testID="edit-staff-generate-password-help" style={type.caption}>Creates and saves a random password immediately. It ignores the fields above. Share the new password using the delivery shown after saving.</Text>
           <Text style={type.caption}>The password applies only to this member. They can change it using their old password, or ask the owner to reset it.</Text>
           <View style={styles.divider} />
-          {!protectedOwner ? <Button testID="edit-staff-delete" label="Delete team member" variant="danger" icon="trash-2" disabled={resetting || saving || deleting} onPress={() => setDeleteOpen(true)} fullWidth /> : null}
+          {!protectedOwner ? <Button testID="edit-staff-delete" label="Delete team member" variant="danger" icon="trash-2" disabled={resetting || saving || deleting} onPress={() => setDeleteOpen(true)} /> : null}
         </>}
       </ScrollView>
     <ConfirmDialog visible={deleteOpen} onClose={() => { if (!deleting) setDeleteOpen(false); }} onConfirm={() => void deleteMember()} title="Delete team member?" description={`This removes ${staff.full_name} from the team and blocks their sign-in on every device. Business records remain available.`} confirmLabel="Delete member" tone="danger" loading={deleting} testID="confirm-delete-team-member" />

@@ -12,8 +12,8 @@ async function targetSize(control: Locator) {
   expect(box!.height).toBeGreaterThanOrEqual(44);
 }
 
-test.beforeEach(async ({ context }) => {
-  await context.route('**/*', route => new URL(route.request().url()).origin === 'http://127.0.0.1:8096'
+test.beforeEach(async ({ context, baseURL }) => {
+  await context.route('**/*', route => new URL(route.request().url()).origin === new URL(baseURL!).origin
     ? route.continue() : route.abort());
 });
 
@@ -72,7 +72,7 @@ test('tile orders reflow with usable pane width and retain tablet brands and wai
   const record = page.getByTestId('tile-orders-customer-responsive-order');
   await expect(record).toBeVisible();
   await expect(record.getByText('Customer with a long project and company name', { exact: true })).toBeVisible();
-  if (width < 1280) {
+  if (width < 1366) {
     await expect(table).not.toHaveAttribute('role', 'table');
     await expect(record.getByText('TCO-RESPONSIVE', { exact: true })).toBeVisible();
     await expect(record.getByText('Example Tile Brand', { exact: true })).toBeVisible();
@@ -92,10 +92,13 @@ test('tile orders reflow with usable pane width and retain tablet brands and wai
   }
   const search = page.getByTestId('tile-orders-customer-search');
   await expect(search).toBeVisible();
+  if (width < 768) await page.getByTestId('tile-table-filters-toggle').click();
   await targetSize(page.getByTestId('tile-orders-customer-status-all'));
   if (width === 1024) {
     await page.getByTestId('admin-sidebar-collapse-toggle').click();
-    await expect(table).toHaveRole('table');
+    await expect(table).not.toHaveAttribute('role', 'table');
+    await expect(record.getByText('WAITING', { exact: true })).toBeVisible();
+    expect((await record.boundingBox())!.height).toBeLessThanOrEqual(150);
     await page.getByTestId('admin-sidebar-collapse-toggle').click();
     await expect(table).not.toHaveAttribute('role', 'table');
     await expect(record.getByText('BRANDS', { exact: true })).toBeVisible();

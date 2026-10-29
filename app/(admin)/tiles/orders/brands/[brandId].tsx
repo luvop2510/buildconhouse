@@ -7,18 +7,21 @@
 // the only columns here; tapping a row opens the order for Release only.
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, StyleSheet, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 import { Text } from "@/src/components/AppText";
 
 import { tileOrdersApi, type BrandOrderRow, type BrandOrdersKpi } from "@/src/api/tileOrders";
 import { toast } from "@/src/components/Toast";
 import {
-  BackLink, Button, CenteredState, PageHeader, PageShell, Section, Stat, StatRow,
+  BackLink, Button, OperationStatus, PageHeader, PageShell, Section, Stat, StatRow,
 } from "@/src/components/tiles/TileLayout";
 import { AgeingBadge, StatusPill, WorkflowRail } from "@/src/components/tiles/TileOrderStatusUI";
 import { CellLink, CellMono, CellNumber, CellTitle, DataTable, type Column } from "@/src/components/tiles/TileTable";
 import { useRequireFloorAccess } from "@/src/hooks/use-floor-access";
-import { colors, spacing, type } from "@/src/theme/tokens";
+import { spacing, type } from "@/src/theme/tokens";
+import { Disclosure } from "@/src/design/Disclosure";
+import { ExcelExportButton } from "@/src/components/ExcelExportButton";
+import { collectTileExportRows } from "@/src/utils/tileOrdersExcel";
 
 export default function BrandDashboardScreen() {
   useRequireFloorAccess("ground-floor");
@@ -66,7 +69,7 @@ export default function BrandDashboardScreen() {
     // a 1512px window — this is a triage screen, and an operator triaging a
     // release queue should not have to scroll sideways to see the status.
     {
-      key: "customer", label: "CUSTOMER", grow: 1, minWidth: 200,
+      key: "customer", label: "CUSTOMER", grow: 1, minWidth: 200, mobile: "primary",
       render: (order) => <CellTitle>{order.customer_name}</CellTitle>,
     },
     {
@@ -97,9 +100,7 @@ export default function BrandDashboardScreen() {
 
   if (loading) {
     return (
-      <CenteredState>
-        <ActivityIndicator color={colors.brand} />
-      </CenteredState>
+      <PageShell><PageHeader title="Brand release queue" /><OperationStatus label="Loading brand orders…" /></PageShell>
     );
   }
 
@@ -114,11 +115,14 @@ export default function BrandDashboardScreen() {
         eyebrow="GROUND FLOOR · TILES"
         title="Brand release queue"
         subtitle="Every customer order this brand still owes material against."
+        actions={<ExcelExportButton resource="orders" floorId="ground-floor" page="Tiles brand orders" section="Brand customer orders" filename={`brand-orders-${brandId}`} scopeKey={brandId} testID="tile-brand-queue-export" loadRows={async (signal, onProgress) => {
+          const rows = await collectTileExportRows<BrandOrderRow>(async nextPage => {
+            const result = await tileOrdersApi.brandOrders(brandId!, { page: nextPage, page_size: 100 }, signal);
+            return { ...result, rows: result.orders };
+          }, signal, onProgress);
+          return [["Customer", "Order", "Products", "Ordered", "Released", "Remaining", "Waiting days", "Status"], ...rows.map(row => [row.customer_name, row.po_number, row.total_products, row.total_boxes, row.boxes_released, row.boxes_remaining, row.waiting_days, row.overall_status])];
+        }} />}
       />
-
-      <Section>
-        <WorkflowRail active="release" testID="tile-brand-queue-workflow-rail" />
-      </Section>
 
       {loadError ? (
         <Section>
@@ -131,6 +135,8 @@ export default function BrandDashboardScreen() {
         <>
           {kpi ? (
             <Section>
+              <Disclosure title="Release summary" summary={`${kpi.orders} orders · ${kpi.boxes_remaining} units remaining`}>
+              <WorkflowRail active="release" testID="tile-brand-queue-workflow-rail" />
               <StatRow testID="tile-brand-queue-kpis">
                 <Stat label="Orders" value={kpi.orders} />
                 <Stat label="Pending" value={kpi.pending} tone={kpi.pending > 0 ? "warn" : "default"} />
@@ -141,6 +147,7 @@ export default function BrandDashboardScreen() {
                 <Stat label="Units released" value={kpi.boxes_released} />
                 <Stat label="Oldest waiting" value={`${kpi.oldest_pending_days}d`} tone={kpi.oldest_pending_days > 7 ? "warn" : "default"} />
               </StatRow>
+              </Disclosure>
             </Section>
           ) : null}
 
