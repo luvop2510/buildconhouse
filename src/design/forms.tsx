@@ -34,7 +34,7 @@ export const Input = React.forwardRef<TextInput, React.ComponentProps<typeof Tex
           minHeight: control.height.md, borderRadius: radius.md, paddingHorizontal: space.x4,
           backgroundColor: color.surface,
           borderWidth: 1,
-          borderColor: invalid ? color.risk : focused ? color.focus : color.line,
+          borderColor: invalid ? color.risk : focused ? color.focus : color.controlBorder,
         },
         focused && Platform.OS === "web" ? ({ boxShadow: `0 0 0 3px ${color.focus}` } as any) : null,
       ]}

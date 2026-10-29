@@ -54,6 +54,7 @@ export const colors = {
 
   // Borders & dividers — shared neutral separators
   border: palette.gray100,             // default separator
+  controlBorder: color.controlBorder, // input boundaries, not panel separators
   borderStrong: palette.gray150,       // hovered/emphasized
   borderMuted: "rgba(15, 23, 42, 0.06)",
   divider: palette.gray100,

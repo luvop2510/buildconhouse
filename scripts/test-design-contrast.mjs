@@ -12,3 +12,10 @@ for (const [foreground, background] of [['ink', 'canvas'], ['ink2', 'canvas'], [
   assert(contrast >= 4.5, `${foreground} on ${background} must meet AA for normal text; received ${contrast.toFixed(2)}:1`);
   console.log(`${foreground}/${background}: ${contrast.toFixed(2)}:1 (AA)`);
 }
+
+for (const background of ['white','canvas','sunken']) {
+  const values=[luminance(palette.controlBoundary),luminance(palette[background])].sort((a,b)=>a-b);
+  const ratio=(values[1]+.05)/(values[0]+.05);
+  assert(ratio>=3, `Input boundary on ${background} requires 3:1; received ${ratio.toFixed(2)}`);
+  console.log(`controlBoundary/${background}: ${ratio.toFixed(2)}:1 (non-text AA)`);
+}

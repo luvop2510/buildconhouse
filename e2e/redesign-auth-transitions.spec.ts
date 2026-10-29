@@ -138,10 +138,10 @@ test('critical transient startup identity failure preserves the saved session an
   await page.goto('/dashboard');
   await expect(page.getByTestId('session-recovery')).toBeVisible();
   await expect(page.getByTestId('login-submit')).toHaveCount(0);
-  await expect(page.getByRole('heading', { name: /^Good (morning|afternoon|evening), Recovered\.$/ })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Today', exact:true })).toHaveCount(0);
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem('forge.jwt.kind') || 'null'))).toBe('staff');
   unavailable = false;
   await page.reload();
   await expect(page).toHaveURL(/dashboard$/);
-  await expect(page.getByRole('heading', { name: /^Good (morning|afternoon|evening), Recovered\.$/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Today', exact:true })).toBeVisible();
 });

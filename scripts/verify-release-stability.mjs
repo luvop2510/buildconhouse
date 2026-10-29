@@ -3,6 +3,42 @@ import { appendFile, readFile, writeFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { requiredStabilityScenarios, stabilityProjects, stabilityRoutes, stabilityRouteTitle } from './stability-routes.ts';
 
+function verifyRequiredCases(executed, routes) {
+  for (const project of stabilityProjects) {
+    for (const route of routes) {
+      assert.equal(executed.filter(test => test.project === project && test.file === 'app-audit.spec.ts' && test.title === stabilityRouteTitle(route)).length, 1,
+        `Missing or duplicate route acceptance: ${project} ${route}`);
+    }
+    for (const [file, scenarios] of Object.entries(requiredStabilityScenarios)) for (const title of scenarios) {
+      assert.equal(executed.filter(test => test.project === project && test.file === file && test.title === title).length, 1,
+        `Missing or duplicate regression scenario: ${project} ${file}: ${title}`);
+    }
+  }
+}
+
+// Test collection is cheap: detect renamed or undiscovered requirements before
+// building an export and running the complete browser matrix.
+export function verifyStabilityInventory(report, routes = stabilityRoutes()) {
+  assert.ok(report && Array.isArray(report.suites) && report.suites.length, 'No stability scenarios were collected');
+  assert.ok(!report.errors?.length, 'Stability collection errors are blocking');
+  assert.deepEqual(report.config?.projects?.map(project => project.name).sort(), [...stabilityProjects].sort(), 'Every release device must be collected');
+  assert.ok(report.config.projects.every(project => project.retries === 0 && project.timeout === 30_000), 'Collection must preserve deadlines and retries');
+  const collected = [];
+  function collect(suites) {
+    for (const suite of suites) {
+      for (const spec of suite.specs || []) for (const test of spec.tests || []) {
+        assert.equal(test.expectedStatus, 'passed', `Skipped/expected failures are not required scenarios: ${spec.title}`);
+        assert.ok(test.timeout > 0 && test.timeout <= 30_000, `Scenario deadline was increased: ${spec.title}`);
+        collected.push({ file: spec.file, title: spec.title, project: test.projectName });
+      }
+      collect(suite.suites || []);
+    }
+  }
+  collect(report.suites);
+  verifyRequiredCases(collected, routes);
+  return collected.length;
+}
+
 export function verifyStabilityReport(report, routes = stabilityRoutes()) {
   assert.ok(report && typeof report === 'object', 'Stability report is missing');
   assert.ok(Array.isArray(report.suites) && report.suites.length, 'No stability suites executed');
@@ -28,16 +64,7 @@ export function verifyStabilityReport(report, routes = stabilityRoutes()) {
     }
   }
   collect(report.suites);
-  for (const project of stabilityProjects) {
-    for (const route of routes) {
-      assert.equal(executed.filter(test => test.project === project && test.file === 'app-audit.spec.ts' && test.title === stabilityRouteTitle(route)).length, 1,
-        `Missing or duplicate route acceptance: ${project} ${route}`);
-    }
-    for (const [file, scenarios] of Object.entries(requiredStabilityScenarios)) for (const title of scenarios) {
-      assert.equal(executed.filter(test => test.project === project && test.file === file && test.title === title).length, 1,
-        `Missing or duplicate regression scenario: ${project} ${file}: ${title}`);
-    }
-  }
+  verifyRequiredCases(executed, routes);
   assert.equal(report.stats?.expected, executed.length, 'Pass counts must match actual executed evidence');
   for (const key of ['unexpected', 'flaky', 'skipped']) assert.equal(report.stats[key], 0, `${key} stability cases are blocking`);
   return { passed: executed.length, routes: routes.length, devices: stabilityProjects, failures: 0, flaky: 0, skipped: 0 };

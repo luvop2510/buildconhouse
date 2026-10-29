@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { retiredNotebookRedirect } from './retired-notebook-fixtures';
 import { mockSession } from './audit-fixtures';
+import { todayFixture, mockTodayOverview } from './today-fixtures';
 
 const row = {
   id: 'note-required', customer_id: 'client-1', customer_name: 'Note Required Customer',
@@ -37,17 +38,18 @@ test('critical Follow-ups Done is note-free and retains the task after a failed 
 
 test('critical dashboard Done completes directly without a note', async ({ page }) => {
   await mockSession(page, '/dashboard', false, { staff: { id: 'audit-manager', email: 'manager@example.test', full_name: 'Audit Manager', role: 'manager', active: true, floor_ids: ['first-floor'] } });
-  await page.route('**/api/followups?limit=12', r => r.fulfill({ json: [row] }));
+  const data = todayFixture();
+  data.tasks = [{id:row.id,resource:'followups',title:row.customer_name,status:'open',due_at:row.due_at,updated_at:row.updated_at,assignee_name:'Eligible worker',href:'/followups',progress:null}];
+  await mockTodayOverview(page,data);
+  await page.route('**/api/dashboard/today', r => r.fulfill({ json: data }));
   const writes: any[] = [];
   await page.route('**/api/followups/note-required/complete', r => {
     writes.push(r.request().postDataJSON());
     return r.fulfill({ json: { ...row, status: 'done' } });
   });
   await page.goto('/dashboard');
-  const queueRow = page.getByLabel('Note Required Customer, Call customer', { exact: true });
-  await queueRow.hover();
-  await queueRow.getByRole('button', { name: /done|complete/i }).click();
-  await expect(queueRow).toHaveCount(0);
+  await page.getByRole('button', {name:'Mark Note Required Customer done',exact:true}).click();
+  await expect(page.getByTestId('today-task-followups-note-required')).toHaveCount(0);
   await expect(page.getByTestId('followup-change-note')).toHaveCount(0);
   expect(writes).toEqual([{}]);
 });

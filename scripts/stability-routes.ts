@@ -50,7 +50,7 @@ export const requiredStabilityScenarios: Record<string, string[]> = {
     'critical legacy navigation retains its applicable role matrix restrictions',
   ],
   'redesign-font-readiness.spec.ts': [
-    'cold sign-in waits for decoded text and icon fonts before the first form paint',
+    'cold sign-in uses system text and waits for decoded icons before the first form paint',
     'failed font assets show recovery and a retry reload reaches the complete sign-in form',
     'a stalled font request reaches bounded recovery and late completion cannot reveal the form',
   ],

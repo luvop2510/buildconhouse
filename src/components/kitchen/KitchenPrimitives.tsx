@@ -7,7 +7,7 @@ import { colors as appColors, type as appType } from "@/src/theme/tokens";
 import { useBp } from "@/src/design/responsive";
 
 /** Kitchen follows the same mobile-first system as every floor. */
-export const kitchenColors = { ...appColors, controlBorder: appColors.borderStrong };
+export const kitchenColors = { ...appColors, controlBorder: appColors.controlBorder };
 export const kitchenType = {
   ...appType,
   titleLg: { ...appType.titleLg, color: kitchenColors.onSurface, fontSize: 28, lineHeight: 36 },

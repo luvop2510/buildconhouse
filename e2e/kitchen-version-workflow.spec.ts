@@ -40,6 +40,16 @@ async function quoteInForm(page: Page, type: string, filename: string) {
   return uploaded;
 }
 
+// Historical versions remain supported by the real API. The current editor
+// updates its latest quotation and intentionally has no New quotation action.
+async function historicalQuotation(api: APIRequestContext, project: any, designId: string, type: string, filename: string) {
+  const uploaded = await uploadKitchenFixturePdf(api, project, filename);
+  return command(api, uploaded.project, 'quotation_receive', {
+    design_version_id: designId, pdf_options: [{ attachment_id: uploaded.attachment.id, kitchen_type: type }],
+    final_attachment_id: uploaded.attachment.id,
+  });
+}
+
 test('Simple design and quotation pages preserve PDF history, blank price and older order basis downstream', async ({ page, context }, info) => {
   let project = await seed(context.request);
   const health = captureRuntimeHealth(page);
@@ -69,19 +79,22 @@ test('Simple design and quotation pages preserve PDF history, blank price and ol
   await page.getByTestId('kitchen-quotation-sent-yes').click();
   await page.getByTestId('kitchen-version-response-approved').click();
   project = await clickCommand(page, 'kitchen-quotation-edit-save', 'quotation_update', { version_id: quotation1.id });
-  await page.getByTestId('kitchen-quotation-new-version').click();
-  await quoteInForm(page, 'SS', 'quotation-r2-SS.pdf');
-  project = await clickCommand(page, 'kitchen-quotation-receive', 'quotation_receive');
+  await expect(page.getByTestId('kitchen-quotation-new-version')).toHaveCount(0);
+  project = await historicalQuotation(context.request, project, project.design_versions[0].id, 'SS', 'quotation-r2-SS.pdf');
+  await page.reload();
+  await expect(page.getByTestId('kitchen-quotation-final-selection')).toContainText('SS');
+  await expect(page.getByTestId('kitchen-quotation-edit-save')).toBeVisible();
   expect(project.quotation_versions.at(-1)).toMatchObject({ number: 2, design_version_id: project.design_versions[0].id, kitchen_type: 'SS' });
   await clickCommand(page, 'kitchen-previous-stage', 'move_stage');
   await select(page, 'kitchen-design-version', 'Design 2 · Approved');
   await page.getByTestId('kitchen-design-finalize').click();
   project = await clickCommand(page, 'kitchen-design-edit-save', 'design_update');
-  await clickCommand(page, 'kitchen-advance-quotation', 'move_stage');
-  await page.getByTestId('kitchen-quotation-new-version').click();
+  project = await clickCommand(page, 'kitchen-advance-quotation', 'move_stage');
+  await expect(page.getByTestId('kitchen-quotation-new-version')).toHaveCount(0);
+  await expect(page.getByTestId('kitchen-quotation-final-design')).toContainText('design-v1.pdf');
+  project = await historicalQuotation(context.request, project, project.design_versions[1].id, 'Mix', 'quotation-r3-Mix.pdf');
+  await page.reload();
   await expect(page.getByTestId('kitchen-quotation-final-design')).toContainText('design-v2.pdf');
-  await quoteInForm(page, 'Mix', 'quotation-r3-Mix.pdf');
-  project = await clickCommand(page, 'kitchen-quotation-receive', 'quotation_receive');
   expect(project.quotation_versions.at(-1)).toMatchObject({ number: 3, design_version_id: project.design_versions[1].id, kitchen_type: 'Mix' });
   await page.getByTestId('kitchen-quotation-sent-yes').click();
   await page.getByTestId('kitchen-version-response-approved').click();

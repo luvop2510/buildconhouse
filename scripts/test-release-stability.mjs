@@ -1,9 +1,29 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { requiredStabilityScenarios, stabilityProjects, stabilityRoutes, stabilityRouteTitle } from './stability-routes.ts';
-import { verifyStabilityReport } from './verify-release-stability.mjs';
+import { verifyStabilityInventory, verifyStabilityReport } from './verify-release-stability.mjs';
+
+// Use Playwright's real collection, including generated test titles, instead of
+// synthesizing both expected and actual titles from the same registry.
+const inventoryEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('PLAYWRIGHT_JSON_OUTPUT')));
+const inventoryProcess = spawnSync(process.execPath, ['node_modules/@playwright/test/cli.js', 'test', '--config', 'playwright.stability.config.ts', '--list', '--reporter=json'], { encoding: 'utf8', env: inventoryEnv, maxBuffer: 16 * 1024 * 1024 });
+assert.equal(inventoryProcess.status, 0, inventoryProcess.stderr || 'Stability test collection failed');
+const inventory = JSON.parse(inventoryProcess.stdout);
+const collected = verifyStabilityInventory(inventory);
+const missingInventory = structuredClone(inventory);
+function renameRequired(suites) {
+  for (const suite of suites) {
+    for (const spec of suite.specs || []) if (spec.file === 'redesign-font-readiness.spec.ts' && spec.title === requiredStabilityScenarios['redesign-font-readiness.spec.ts'][0]) { spec.title = 'Renamed requirement without registry update'; return true; }
+    if (renameRequired(suite.suites || [])) return true;
+  }
+  return false;
+}
+assert.ok(renameRequired(missingInventory.suites));
+assert.throws(() => verifyStabilityInventory(missingInventory), /Missing or duplicate regression scenario/);
+console.log(`Release stability inventory: ${collected} current scenarios collected; every required route, title and device is present.`);
 
 // Platform roots must consume one guard; a native-only repair once left web
 // redirecting transient session failures to login. Browser scenarios below the

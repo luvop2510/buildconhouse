@@ -24,23 +24,23 @@ async function walkinReads(page: Page) {
   } }));
 }
 
-test('switching to Kitchen Floor opens its dedicated Kitchen hub', async ({ page }) => {
+test('switching floors on Today preserves the floor work destination', async ({ page }) => {
   await mockSession(page, '/dashboard');
   await page.goto('/dashboard');
   await page.getByTestId('floor-switcher').click();
   await page.getByRole('menuitem', { name: 'Kitchen Floor', exact: true }).click();
-  await expect(page).toHaveURL(/\/kitchen$/);
+  await expect(page).toHaveURL(/\/dashboard$/);
   await expect(page.getByTestId('floor-switcher')).toHaveAccessibleName('Switch workspace. Current workspace: Kitchen Floor');
-  await expect(page.getByRole('heading', { name: 'Kitchen dashboard', exact: true })).toBeVisible();
-  await expect(page.getByTestId('kitchen-universal-search')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible();
+  await expect(page.getByTestId('today-page')).toBeVisible();
 });
 
-test('a saved Kitchen Floor workspace opens its dedicated Kitchen hub', async ({ page }) => {
+test('a saved Kitchen Floor workspace keeps its operational Today destination', async ({ page }) => {
   await mockSession(page, '/dashboard');
   await page.addInitScript(() => localStorage.setItem('forge.active-floor', JSON.stringify('second-floor')));
   await page.goto('/dashboard');
-  await expect(page).toHaveURL(/\/kitchen$/);
-  await expect(page.getByRole('heading', { name: 'Kitchen dashboard', exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/\/dashboard$/);
+  await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible();
   await expect(page.getByTestId('floor-switcher')).toHaveAccessibleName('Switch workspace. Current workspace: Kitchen Floor');
 });
 

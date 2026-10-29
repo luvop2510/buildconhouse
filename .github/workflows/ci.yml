@@ -235,6 +235,7 @@ jobs:
       - name: Existing frontend contract tests
         run: |
           node scripts/test-check-affected.mjs
+          npm run test:design-contrast
           npm run test:supplier-catalog
           npm run test:catalog-pagination
           npm run test:quotation-media

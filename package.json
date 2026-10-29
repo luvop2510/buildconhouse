@@ -71,7 +71,8 @@
     "test:table-layout": "node scripts/test-table-layout.mjs",
     "test:e2e:tables": "playwright test --config playwright.tables.config.ts",
     "check:affected": "node scripts/check-affected.mjs --run",
-    "check:affected:plan": "node scripts/check-affected.mjs"
+    "check:affected:plan": "node scripts/check-affected.mjs",
+    "test:design-contrast": "node scripts/test-design-contrast.mjs"
   },
   "dependencies": {
     "@expo/metro-runtime": "~55.0.12",

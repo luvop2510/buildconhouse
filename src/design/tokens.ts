@@ -18,6 +18,7 @@ const pal = {
   sunken2: "#E5E5EA",  // pressed / deeper inset
   line:    "#E2E2E7",  // hairline
   line2:   "#C7C7CC",  // emphasized hairline
+  controlBoundary: "#85858A", // 3:1+ against all light input surfaces
   ink:     "#1D1D1F",  // graphite — text & the primary action
   ink2:    "#545458",  // secondary text
   ink3:    "#626267",  // tertiary text, captions
@@ -47,6 +48,7 @@ export const color = {
   sunkenDeep: pal.sunken2,
   line: pal.line,
   lineStrong: pal.line2,
+  controlBorder: pal.controlBoundary,
 
   ink: pal.ink,
   inkMid: pal.ink2,
