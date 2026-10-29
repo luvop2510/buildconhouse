@@ -314,7 +314,9 @@ test('Kitchen mobile input and blur taps preserve the form viewport and select t
   await page.goto(`/kitchen/${project.id}/stages/lead`);
   await expect(page.getByTestId('kitchen-project-ready')).toHaveCount(1);
   const field = page.getByTestId('kitchen-lead-notes');
-  await field.scrollIntoViewIfNeeded();
+  // Leave reveal clearance below the lower notes field before measuring typing stability.
+  await page.getByTestId('kitchen-lead-save').scrollIntoViewIfNeeded();
+  await expect(field).toBeInViewport();
   const scroll = page.getByTestId('kitchen-page-scroll');
   const before = await scroll.boundingBox();
   const restingField = await field.boundingBox();
