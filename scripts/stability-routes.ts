@@ -28,7 +28,7 @@ export const stabilityProjects = ['android-chrome', 'iphone-safari', 'ipad-safar
 export const requiredStabilityScenarios: Record<string, string[]> = {
   'redesign-dashboard-optimistic.spec.ts': ['success', 'failure'].map(outcome => `critical dashboard completion is immediate and handles ${outcome}`),
   'redesign-tile-mobile-orders.spec.ts': [
-    'critical Tile Orders phone views form a readable grid and records retain identity with paired quantities',
+    'critical Tile Orders phone views stay on one compact row and records retain identity with paired quantities',
     'critical switching Tile Orders views cancels the abandoned request and keeps the selected view usable',
     ...['/tiles/orders/missing', '/tiles/orders/brands/brand', '/tiles/orders/po/missing'].map(path => `critical Tile Orders Back works from a cold ${path} link`),
   ],
