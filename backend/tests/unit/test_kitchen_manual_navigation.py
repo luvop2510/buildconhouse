@@ -10,6 +10,7 @@ from tests.unit.test_kitchen_version_relationships import aggregate
 
 def commercial_evidence(database):
     evidence = aggregate()
+    evidence["final_design_version_id"] = evidence["quotation_versions"][-1]["design_version_id"]
     database.kitchen_projects.rows[0].update({key: evidence[key] for key in ("design_versions", "quotation_versions", "attachments", "final_design_version_id")})
 
 @pytest.mark.asyncio

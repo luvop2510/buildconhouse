@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -11,6 +12,7 @@ from botocore.stub import Stubber
 
 from media_storage.base import StorageError
 from media_storage.r2_driver import R2StorageDriver
+from media_storage import r2_driver
 from scripts.migrate_storage_to_r2 import (FORMAT, apply_references, binding, copy_objects,
                                           digest, plan_references, rewrite, write_record)
 from scripts.verify_backup_source import source_fingerprint
@@ -112,6 +114,83 @@ async def test_private_visibility_checks_managed_and_custom_domains(cfg, sdk, mo
     statuses["managed"] = {"enabled": True}
     with pytest.raises(StorageError):
         await driver.require_private_bucket(cfg.supabase_private_bucket)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["timeout", "connection", "json", "payload", "custom-row", "denied"])
+async def test_visibility_provider_failures_are_sanitized_and_fail_closed(cfg, sdk, monkeypatch, failure):
+    real_client = httpx.AsyncClient
+    async def respond(request):
+        if failure == "timeout":
+            raise httpx.ReadTimeout("secret-provider-url-and-token", request=request)
+        if failure == "connection":
+            raise httpx.ConnectError("secret-provider-url-and-token", request=request)
+        if failure == "json":
+            return httpx.Response(200, text="secret-provider-body")
+        if failure == "payload":
+            return httpx.Response(200, json=[])
+        if failure == "denied":
+            return httpx.Response(403, text="secret-provider-body")
+        result = {"enabled": False} if request.url.path.endswith("managed") else {"domains": ["invalid"]}
+        return httpx.Response(200, json={"success": True, "result": result})
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kw: real_client(transport=httpx.MockTransport(respond), **kw))
+    driver = R2StorageDriver(cfg=cfg, client=sdk[0])
+    for _ in range(2):
+        with pytest.raises(StorageError) as error:
+            await driver.require_private_bucket(cfg.supabase_private_bucket)
+        assert "secret" not in str(error.value)
+    assert not driver._private_checks
+
+
+@pytest.mark.asyncio
+async def test_visibility_checks_share_only_inflight_proof_and_survive_one_cancelled_caller(cfg, sdk, monkeypatch):
+    real_client = httpx.AsyncClient
+    started, release = asyncio.Event(), asyncio.Event()
+    paths = []
+    publicly_enabled = False
+    async def respond(request):
+        paths.append(request.url.path.rsplit("/", 1)[1])
+        if len(paths) == 2:
+            started.set()
+        await release.wait()
+        result = {"enabled": publicly_enabled} if request.url.path.endswith("managed") else {"domains": []}
+        return httpx.Response(200, json={"success": True, "result": result})
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kw: real_client(transport=httpx.MockTransport(respond), **kw))
+    driver = R2StorageDriver(cfg=cfg, client=sdk[0])
+    abandoned = asyncio.create_task(driver.require_private_bucket(cfg.supabase_private_bucket))
+    remaining = asyncio.create_task(driver.require_private_bucket(cfg.supabase_private_bucket))
+    await asyncio.wait_for(started.wait(), timeout=1)
+    abandoned.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await abandoned
+    assert not remaining.done()
+    release.set()
+    await remaining
+    assert paths == ["managed", "custom"]
+    # A subsequent operation must detect a newly enabled public domain rather
+    # than reuse the successful proof just acknowledged above.
+    publicly_enabled = True
+    with pytest.raises(StorageError):
+        await driver.require_private_bucket(cfg.supabase_private_bucket)
+    assert paths == ["managed", "custom", "managed", "custom"]
+
+
+@pytest.mark.asyncio
+async def test_visibility_has_one_total_deadline_and_settles_both_requests(cfg, sdk, monkeypatch):
+    real_client = httpx.AsyncClient
+    cancelled = []
+    async def respond(request):
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cancelled.append(request.url.path.rsplit("/", 1)[1])
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kw: real_client(transport=httpx.MockTransport(respond), **kw))
+    monkeypatch.setattr(r2_driver, "VISIBILITY_TIMEOUT_SECONDS", 0.025)
+    driver = R2StorageDriver(cfg=cfg, client=sdk[0])
+    with pytest.raises(StorageError, match="TimeoutError"):
+        await asyncio.wait_for(driver.require_private_bucket(cfg.supabase_private_bucket), timeout=1)
+    assert sorted(cancelled) == ["custom", "managed"]
+    assert not driver._private_checks
 
 
 @pytest.mark.asyncio

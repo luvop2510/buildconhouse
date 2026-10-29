@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import { useRouter } from "expo-router";
-import { KITCHEN_STAGES, kitchenProjectsApi, type KitchenCommand, type KitchenPolicy, type KitchenProject } from "@/src/api/kitchenProjects";
+import { KITCHEN_STAGES, kitchenProjectsApi, type KitchenCommand, type KitchenPolicy, type KitchenProject, type KitchenStage } from "@/src/api/kitchenProjects";
 import { errorText, useKitchenSubmission } from "./shared";
 import { kitchenToday } from "./KitchenDates";
 import { useKitchenExitGuard } from "./KitchenExitGuard";
@@ -18,6 +18,7 @@ type ProjectState = {
   updateProject: (project: KitchenProject) => void;
   command: (name: KitchenCommand, payload: Record<string, unknown>, background?: boolean) => Promise<boolean>;
   backgroundSaving: boolean;
+  pendingStage: KitchenStage | null;
   submission: ReturnType<typeof useKitchenSubmission>;
   documentSubmission: ReturnType<typeof useKitchenSubmission>;
   drafts: Record<string, unknown>;
@@ -63,6 +64,7 @@ export function KitchenProjectProvider({ id, returnTo, children }: { id: string;
   const [retry, setRetry] = useState(0);
   const [retainedDraft, setRetainedDraft] = useState(false);
   const [backgroundSaving, setBackgroundSaving] = useState(false);
+  const [pendingStage, setPendingStage] = useState<KitchenStage | null>(null);
   const commandPending = useRef(false);
   const [drafts, publishDrafts] = useState<Record<string, unknown>>({});
   const liveDrafts = useRef(drafts);
@@ -153,6 +155,7 @@ export function KitchenProjectProvider({ id, returnTo, children }: { id: string;
     const submittedBaselines = { ...baselines.current };
     commandPending.current = true;
     setBackgroundSaving(background);
+    setPendingStage(name === "move_stage" && typeof payload.target_stage === "string" ? kitchenStage(payload.target_stage) ?? null : null);
     let accepted = false;
     return submission.submit({ id, command: name, payload }, key => kitchenProjectsApi.command(id, current.version, key, name, payload), value => {
       if (!acceptProject(value)) return;
@@ -249,12 +252,12 @@ export function KitchenProjectProvider({ id, returnTo, children }: { id: string;
       if (value.stage !== current.stage) router.replace(kitchenProjectPath(id, `/stages/${value.stage}`, origin.current) as any);
     }).then(result => result && accepted).finally(() => {
       commandPending.current = false;
-      if (live.current) setBackgroundSaving(false);
+      if (live.current) { setBackgroundSaving(false); setPendingStage(null); }
     });
   };
   return <Context.Provider value={{ id, project, loading, failure, policy, policyError,
     returnTo: origin.current, retainedDraft, reload: () => { setRetainedDraft(true); setRetry(value => value + 1); },
-    updateProject, command, backgroundSaving, submission, documentSubmission, drafts, setDrafts, dirty, currentTaskDirty, setDraftValue, resetDraftValue, isDraftStale,
+    updateProject, command, backgroundSaving, pendingStage, submission, documentSubmission, drafts, setDrafts, dirty, currentTaskDirty, setDraftValue, resetDraftValue, isDraftStale,
   }}>{children}</Context.Provider>;
 }
 

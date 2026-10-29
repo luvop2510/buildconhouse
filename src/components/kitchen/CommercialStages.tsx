@@ -79,15 +79,16 @@ function StageForms({ project, stage, disabled, command }: CommercialProps) {
     } finally { savingWorkAndStage.current = false; }
   };
   const dateField = (label: string, value: string, onChange: (value: string) => void, id: string) => <KitchenDateField label={label} value={value} onChange={onChange} disabled={locked} testID={id} />;
-  const approval = (scope: "production" | "closure") => {
+  const closureApproval = () => {
+    const scope = "closure";
     const lastDecision = project.approvals?.filter(row => row.scope === scope).at(-1);
-    const canApprove = project.permissions?.[scope === "production" ? "can_approve_production" : "can_approve_closure"];
+    const canApprove = project.permissions?.can_approve_closure;
     const decisionForm = <View style={{ gap: spacing.md }}>
       <TextField label="Manager decision reason" value={approvalReason} onChangeText={setApprovalReason} multiline editable={!locked} />
       <Button label="Approve as selected manager" disabled={locked} onPress={() => command("approval", { scope, decision: "Approved", reason: approvalReason || null })} testID={`kitchen-approve-${scope}`} />
       <Button label="Reject as selected manager" variant="danger" disabled={locked} onPress={() => command("approval", { scope, decision: "Rejected", reason: approvalReason || null })} />
     </View>;
-    return <KitchenPanel title={`${scope === "production" ? "Production entry" : "Closure"} manager approval`}>
+    return <KitchenPanel title="Closure manager approval">
       <KitchenDetails items={[
         { label: "Last recorded decision", value: lastDecision?.decision || "Awaiting selected manager" },
         { label: "Decision date", value: displayDate(lastDecision?.at) },
@@ -135,7 +136,6 @@ function StageForms({ project, stage, disabled, command }: CommercialProps) {
 
       </KitchenPanel>
       <OrderInstallments project={project} stage={stage} disabled={disabled} command={command} />
-      {preview || active && (order?.advance.received || order?.installments?.length) ? approval("production") : null}
     </> : stage === "production" || stage === "installation" ? <>
       <View style={{ gap: spacing.sm }}>
         <Text style={type.bodyStrong}>{savedContext.order ? `Quotation ${savedContext.quotation?.number ?? "unavailable"} · Design v${savedContext.design?.number ?? "unavailable"}` : "No active order version recorded"}</Text>
@@ -154,7 +154,7 @@ function StageForms({ project, stage, disabled, command }: CommercialProps) {
         <Button label={`Save and go to ${STAGE_LABELS[target!]}`} variant="secondary" disabled={locked} onPress={() => saveWork(true)} testID={`kitchen-${stage}-save-next`} /></View> : null}
       </KitchenPanel>
       {stage === "installation" ? <KitchenPanel title="Material list photos"><Text style={type.caption}>Attach each page or photo of the material list. You can add multiple photos.</Text><KitchenPdfFiles project={project} attachmentIds={project.installation?.material_photo_ids || []} finalId="" onSelect={() => {}} onAdd={id => command("installation_material_photos", { attachment_ids: [id] })} disabled={disabled || !active} fileKind="photo" testID="kitchen-material-photos" draftKey={`${draftCycle}.installation.photos`} /></KitchenPanel> : null}
-      {stage === "installation" && (preview || active && project.installation?.status === "Completed") ? approval("closure") : null}
+      {stage === "installation" && (preview || active && project.installation?.status === "Completed") ? closureApproval() : null}
     </> : stage === "completed" ? <KitchenPanel><KitchenDetails testID="kitchen-completed-details" items={[
       { label: "Project completion", value: displayDate(project.completion_date) },
       { label: "Final order amount", value: rupees(project.order_amount) },

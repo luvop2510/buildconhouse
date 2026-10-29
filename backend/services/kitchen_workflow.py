@@ -96,6 +96,14 @@ def finalized_quotation(project, row):
     return row
 
 
+def require_quotation_design_alignment(project, quote):
+    bound_order = not project.get("commercial_basis_invalidated") and any(
+        row.get("quotation_version_id") == quote["id"] and not row.get("authorization_invalidated")
+        for row in project.get("orders", []))
+    if not bound_order and quote.get("design_version_id") != project.get("final_design_version_id"):
+        reject("Save quotation details against the current finalized design before continuing to Order")
+
+
 def selected(project, key, version_id):
     row = next((row for row in project.get(key, []) if row["id"] == version_id), None)
     if row is None:
@@ -201,13 +209,11 @@ def transition(project, target, policy):
                 reject("Record the approved design sent to company and its date first")
         elif stage == "quotation":
             quote = finalized_quotation(project, current(project, "quotation_versions"))
+            require_quotation_design_alignment(project, quote)
             if quote["response"] != "Approved" or not quote.get("shared_date"):
                 reject("The current quotation must be shared and approved by the customer")
             finalized_design(project, quote["design_version_id"])
         elif stage == "order":
-            rules = policy.get("production")
-            if rules is None:
-                reject("Department manager selection requires owner policy adoption")
             order = current(project, "orders")
             quote = selected(project, "quotation_versions", order["quotation_version_id"])
             approved_design(project, quote["design_version_id"])
@@ -216,8 +222,6 @@ def transition(project, target, policy):
             advance = order.get("advance", {})
             if order_paid(order) <= 0:
                 reject("Record the required advance payment first")
-            if not policy.get("department_manager_user_ids") or not has_approval(project, "production", policy):
-                reject("Awaiting selected department manager production approval")
         elif stage == "production":
             if project.get("production", {}).get("status") != "Completed":
                 reject("Mark production Completed first")
@@ -449,10 +453,10 @@ def apply(project, command, payload, policy, user, now, validate):
                 reject("This quotation is linked to an order; create a new quotation to change its finalized PDF or kitchen type")
         if editing and bound_orders and proposed.get("design_version_id") != row.get("design_version_id"):
             reject("This quotation is linked to an order; choose another quotation explicitly in Order to change its design")
-        for status, date in (("received_status", "received_date"), ("sent_status", "shared_date")):
+        for status, date_field in (("received_status", "received_date"), ("sent_status", "shared_date")):
             if proposed.get(status) is None:
-                proposed[status] = "Yes" if proposed.get(date) else "Not recorded"
-            if proposed.get(date) and proposed[status] != "Yes":
+                proposed[status] = "Yes" if proposed.get(date_field) else "Not recorded"
+            if proposed.get(date_field) and proposed[status] != "Yes":
                 reject("A quotation date requires its corresponding status to be Yes; edit the date or status explicitly")
         if proposed.get("received_date") and proposed["received_date"] < design["handoff_date"]:
             reject("Quotation receipt cannot precede design handoff")

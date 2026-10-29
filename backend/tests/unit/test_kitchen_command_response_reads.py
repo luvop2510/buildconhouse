@@ -23,6 +23,7 @@ async def test_next_response_hydration_times_out_before_commit_and_releases_admi
     saved["stage"] = stage
     evidence = aggregate()
     saved.update({key: evidence[key] for key in ("design_versions", "quotation_versions", "attachments", "final_design_version_id")})
+    saved["final_design_version_id"] = saved["quotation_versions"][-1]["design_version_id"]
     receipts = list(saved["command_receipts"])
     original_customers = kitchen_projects.KitchenProjectService._current_customers
 

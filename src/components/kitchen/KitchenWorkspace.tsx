@@ -233,7 +233,6 @@ function CreateLead({ onClose, onRegisterClose, onCreated }: { onClose: () => vo
       {duplicateError ? <Alert tone="warning" title="Matching projects could not be checked" description="The server will check for possible duplicates when the lead is created. Any matches require owner review before conversion." /> : null}
       {customer && (!customer.name.trim() || !customer.phone?.trim() || !customer.address?.trim()) ? <Alert tone="warning" title="Customer name, phone number and address required" description="Update the existing customer in the customer directory, then select it again. This form does not overwrite shared customer details." /> : null}
       <>
-      <View style={{ paddingTop: 24, borderTopWidth: 1, borderColor: colors.divider, gap: 6 }}><Text style={type.titleMd}>Project enquiry</Text><Text style={type.caption}>Record the customer’s kitchen enquiry.</Text></View>
       {staff?.role === "owner" ? <AssigneeChoice value={assignee} onChange={setAssignee} disabled={submission.busy} testID="kitchen-create-assignee" /> : null}
       <LeadFields value={lead} onChange={setLead} disabled={submission.busy} prefix="kitchen-create-lead" />
       <ErrorNotice error={submission.error} />

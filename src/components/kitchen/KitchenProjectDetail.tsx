@@ -81,7 +81,7 @@ export function KitchenProjectDetail({ page = "stage" }: { page?: ProjectPage })
       {selected === project.stage && canUpdate ? <StageNavigation project={project} disabled={disabled} /> : null}
       {loading ? <Text style={type.caption}>Refreshing saved project…</Text> : null}
       <View testID="kitchen-save-status" style={{ minHeight: 19 }}>
-        <Text accessibilityLiveRegion="polite" numberOfLines={1} style={[type.caption, { minHeight: 19 }]} testID={state.dirty ? "kitchen-unsaved-notice" : undefined}>{submission.busy ? "Saving…" : submission.error ? "Save failed · review and retry." : state.dirty ? "Unsaved changes · check the form below." : savedLabel}</Text>
+        <Text accessibilityLiveRegion="polite" numberOfLines={1} style={[type.caption, { minHeight: 19 }]} testID={state.dirty ? "kitchen-unsaved-notice" : undefined}>{submission.busy ? state.pendingStage ? `Moving to ${STAGE_LABELS[state.pendingStage]}…` : "Saving…" : submission.error ? "Save failed · review and retry." : state.dirty ? "Unsaved changes · check the form below." : savedLabel}</Text>
       </View>
       {retainedDraft ? <Alert tone="info" title="Drafts retained" description="The latest saved record is loaded. Your unsaved entries are kept for review." /> : null}
       <ErrorNotice error={submission.error} stale={submission.stale} onReload={reload} />
@@ -107,7 +107,7 @@ export function KitchenProjectDetail({ page = "stage" }: { page?: ProjectPage })
 }
 
 function StageNavigation({ project, disabled }: { project: KitchenProject; disabled: boolean }) {
-  const { command, submission } = useKitchenProject();
+  const { command, submission, pendingStage } = useKitchenProject();
   disabled = disabled || submission.busy;
   const index = KITCHEN_STAGES.indexOf(project.stage);
   const previous = KITCHEN_STAGES[index - 1];
@@ -116,13 +116,15 @@ function StageNavigation({ project, disabled }: { project: KitchenProject; disab
   const quote = project.quotation_versions?.at(-1);
   const prerequisite = next === "quotation" && (!kitchenHasFinalDesign(design) || project.design_revision_pending)
     ? "Select a finalized design PDF, record customer approval and choose Yes for Sent to company before continuing."
+    : next === "order" && quote && quote.design_version_id !== project.final_design_version_id && !(!project.commercial_basis_invalidated && project.orders?.some(row => row.quotation_version_id === quote.id && !row.authorization_invalidated))
+      ? "Save quotation details to apply the current finalized design before continuing to Order."
     : next === "order" && (!kitchenHasFinalQuotation(quote) || quote?.response !== "Approved" || !quote.shared_date || !kitchenHasFinalDesign(project.design_versions?.find(row => row.id === quote?.design_version_id)) || project.design_revision_pending)
       ? "Select the final quotation PDF and kitchen type, then record customer approval before continuing."
       : null;
   return <View testID="kitchen-stage-navigation">
     <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.md }}>
-      {previous ? <Button label="Previous" icon="arrow-left" variant="secondary" disabled={disabled} onPress={() => command("move_stage", { target_stage: previous })} testID="kitchen-previous-stage" /> : null}
-      {next ? <Button label={`Next: ${STAGE_LABELS[next]}`} iconRight="arrow-right" disabled={disabled || Boolean(prerequisite)} onPress={() => command("move_stage", { target_stage: next })} testID={project.stage === "lead" ? "kitchen-convert" : `kitchen-advance-${next}`} /> : null}
+      {previous ? <Button label="Previous" icon="arrow-left" variant="secondary" loading={submission.busy && pendingStage === previous} disabled={disabled} onPress={() => command("move_stage", { target_stage: previous })} testID="kitchen-previous-stage" /> : null}
+      {next ? <Button label={`Next: ${STAGE_LABELS[next]}`} iconRight="arrow-right" loading={submission.busy && pendingStage === next} disabled={disabled || Boolean(prerequisite)} onPress={() => command("move_stage", { target_stage: next })} testID={project.stage === "lead" ? "kitchen-convert" : `kitchen-advance-${next}`} /> : null}
     </View>
     {prerequisite ? <Text style={type.caption}>{prerequisite}</Text> : null}
   </View>;

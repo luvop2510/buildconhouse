@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from contextlib import asynccontextmanager
 
 from typing import Literal
 
@@ -14,6 +15,7 @@ from urllib.parse import quote
 from auth import get_current_user, floor_for_write
 from db import db
 from models import UserPublic
+from media_storage.base import StorageError
 from models_kitchen import ConfigurePolicy, CreateProject, ProjectCommand, Stage, date_only, CommandKey
 from services.kitchen_projects import KitchenProjectService
 from services.analytics import cache
@@ -28,6 +30,16 @@ async def require_kitchen_launch_access(user: UserPublic = Depends(get_current_u
 
 router = APIRouter(prefix="/kitchen-projects", tags=["kitchen-projects"],
                    dependencies=[Depends(require_kitchen_launch_access)])
+
+
+@asynccontextmanager
+async def _file_storage_operation():
+    try:
+        yield
+    except StorageError as exc:
+        logging.getLogger("forge.kitchen").warning("Kitchen file storage operation unavailable (%s)", type(exc).__name__)
+        raise HTTPException(503, "Kitchen file storage is temporarily unavailable. Please retry this file operation.",
+                            headers={"Retry-After": "2", "Cache-Control": "no-store"}) from exc
 
 
 async def _invalidate_projects():
@@ -143,9 +155,10 @@ async def upload_attachment(project_id: str, expected_version: Annotated[int, Fo
     from services.kitchen_attachments import MAX_FILE_BYTES
     data = await file.read(MAX_FILE_BYTES + 1)
     try:
-        return await KitchenProjectService(db).attach(user, project_id, expected_version=expected_version,
-            key=idempotency_key, filename=file.filename or "", content_type=file.content_type,
-            data=data, storage=get_media_storage(), bucket=private_bucket())
+        async with _file_storage_operation():
+            return await KitchenProjectService(db).attach(user, project_id, expected_version=expected_version,
+                key=idempotency_key, filename=file.filename or "", content_type=file.content_type,
+                data=data, storage=get_media_storage(), bucket=private_bucket())
     finally:
         await file.close()
 
@@ -153,7 +166,8 @@ async def upload_attachment(project_id: str, expected_version: Annotated[int, Fo
 @router.get("/{project_id}/attachments/{attachment_id}")
 async def download_attachment(project_id: str, attachment_id: str, user: UserPublic = Depends(get_current_user)):
     from media_storage.factory import get_media_storage
-    data, metadata = await KitchenProjectService(db).attachment(user, project_id, attachment_id, get_media_storage())
+    async with _file_storage_operation():
+        data, metadata = await KitchenProjectService(db).attachment(user, project_id, attachment_id, get_media_storage())
     return Response(data, media_type=metadata["content_type"], headers={
         "Content-Disposition": f"attachment; filename*=UTF-8''{quote(metadata['filename'])}",
         "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
@@ -180,7 +194,8 @@ async def finish_file_transfer(project_id: str, transfer_id: str, body: "Transfe
     if floor_for_write(user) != "second-floor":
         raise HTTPException(403, "Select the Kitchen Floor for file transfers")
     from media_storage.factory import get_media_storage, private_bucket
-    return await KitchenFileTransfers(db).finish(user, project_id, transfer_id, body, get_media_storage(), private_bucket())
+    async with _file_storage_operation():
+        return await KitchenFileTransfers(db).finish(user, project_id, transfer_id, body, get_media_storage(), private_bucket())
 
 
 @router.delete("/{project_id}/file-transfers/{transfer_id}")
@@ -195,7 +210,9 @@ async def cancel_file_transfer(project_id: str, transfer_id: str, user: UserPubl
 async def download_file_part(project_id: str, attachment_id: str, index: int, user: UserPublic = Depends(get_current_user)):
     from media_storage.factory import get_media_storage
     from services.kitchen_file_transfers import download_part
-    return Response(json.dumps(await download_part(db, user, project_id, attachment_id, index, get_media_storage())),
+    async with _file_storage_operation():
+        data = await download_part(db, user, project_id, attachment_id, index, get_media_storage())
+    return Response(json.dumps(data),
                     media_type="application/json", headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
 
 

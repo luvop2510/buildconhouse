@@ -171,6 +171,38 @@ def test_order_can_select_another_approved_quote_before_production_and_gate_foll
     assert workflow.transition(project, "production", policy) is not None
 
 
+@pytest.mark.parametrize("historical_decision", [None, "Rejected", "Approved"])
+def test_production_admission_needs_financial_basis_without_manager_approval_and_preserves_history(setup, historical_decision):
+    _, _, owner = setup
+    project = aggregate("order")
+    apply(project, "order_confirm", {"quotation_version_id": "q1", "order_date": "2026-10-25"}, owner)
+    policy = resolved_policy({"version": 2})
+    if historical_decision:
+        project["approvals"].append({"id": "historical-manager-decision", "scope": "production",
+            "subject_id": "old-order", "decision": historical_decision, "policy_version": 1})
+    assert workflow.transition(project, "production", policy) == "Record the required advance payment first"
+    project["orders"][0]["advance"] = {"received": True, "amount": "0.01", "date": "2026-10-25"}
+    before = copy.deepcopy(project)
+    assert workflow.transition(project, "production", policy) is None
+    assert project == before
+    project["orders"][0]["confirmed"] = False
+    assert "Confirm the order" in workflow.transition(project, "production", policy)
+    project["orders"][0]["confirmed"] = True
+    project["design_versions"][0]["response"] = "Pending"
+    assert "customer approval" in workflow.transition(project, "production", policy)
+
+
+def test_closure_still_requires_selected_manager_current_subject_and_policy(setup):
+    project = aggregate("installation")
+    project["installation"] = {"status": "Completed", "completion_identity": "completed-installation"}
+    policy = resolved_policy({"version": 2, "decision_contract": "2026-10-20", "department_manager_user_ids": ["manager"]})
+    assert "closure approval" in workflow.transition(project, "completed", policy)
+    project["approvals"].append({"scope": "closure", "subject_id": "completed-installation", "decision": "Approved", "policy_version": 1})
+    assert "closure approval" in workflow.transition(project, "completed", policy)
+    project["approvals"].append({"scope": "closure", "subject_id": "completed-installation", "decision": "Approved", "policy_version": 2})
+    assert workflow.transition(project, "completed", policy) is None
+
+
 def test_internal_note_correction_does_not_shift_recorded_approval_or_clear_other_fields(setup):
     _, _, owner = setup
     project = aggregate("design")
@@ -335,6 +367,28 @@ def test_quotation_update_targets_selected_id_and_preserves_old_document_and_ord
     project["production"] = {"status": "In Production"}
     with pytest.raises(HTTPException, match="Production has started"):
         apply(project, "quotation_update", {"version_id": "q1", "notes": "Locked"}, owner)
+
+
+def test_working_quotation_explicitly_follows_new_final_design_without_rewriting_order_history(setup):
+    _, _, owner = setup
+    project = aggregate()
+    project["quotation_versions"][0]["response"] = "Pending"
+    project["final_design_version_id"] = "d2"
+    other_quote = copy.deepcopy(project["quotation_versions"][1])
+    assert project["quotation_versions"][0]["design_version_id"] == "d1"
+    apply(project, "quotation_update", {"version_id": "q1", "design_version_id": "d2"}, owner)
+    assert project["quotation_versions"][0]["design_version_id"] == "d2"
+    assert project["quotation_versions"][0]["final_attachment_id"] == "quote-pdf"
+    assert project["quotation_versions"][1] == other_quote
+
+    project = aggregate("order")
+    apply(project, "order_confirm", {"quotation_version_id": "q1", "order_date": "2026-10-25"}, owner)
+    project["stage"] = "quotation"
+    project["final_design_version_id"] = "d2"
+    previous = copy.deepcopy(project)
+    with pytest.raises(HTTPException, match="linked to an order.*design"):
+        apply(project, "quotation_update", {"version_id": "q1", "design_version_id": "d2"}, owner)
+    assert project == previous
 
 
 @pytest.mark.parametrize("status", ["Not recorded", "Yes", "No"])

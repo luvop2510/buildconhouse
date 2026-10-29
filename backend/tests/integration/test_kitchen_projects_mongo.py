@@ -543,30 +543,30 @@ def test_q04_to_q09_versions_revisions_production_visits_and_late_closure(tmp_pa
             await ok("approval", {"scope": "production", "decision": "Approved"})
             await ok("order_amend", {"amount": "1200.01", "customer_approved": True, "reason": "Agreed extra work", "date": "2026-10-19"})
             assert project["orders"][0]["original_amount"] == "1100.01"
-            await blocked("advance_stage", {"target_stage": "production"})
+            assert project["blocked_transitions"] == [], "Amending financial terms does not restore the removed production manager gate"
             await ok("approval", {"scope": "production", "decision": "Approved"})
             await ok("advance_stage", {"target_stage": "production"})
-            await blocked("production_update", {"status": "Completed", "start_date": "2026-10-20", "completion_date": "2026-10-19"})
+            await blocked("production_update", {"status": "Completed", "start_date": "2026-10-18", "completion_date": "2026-10-19"})
             await ok("production_update", {"status": "In Production", "start_date": "2026-10-19"})
             await ok("production_update", {"status": "Completed", "start_date": "2026-10-19", "completion_date": "2026-10-20"})
             production_audit = project["activity"][-1]["payload"]["changes"]["production"]
             assert production_audit["before"]["status"] == "In Production"
-            assert production_audit["before"]["completion_date"] is None
-            assert production_audit["after"]["completion_date"] == "2026-10-20"
+            assert production_audit["before"]["completion_date"] == "2026-12-19"
+            assert production_audit["after"]["completion_date"] == "2026-12-19", "Production completion is calculated two months from its start"
             await ok("advance_stage", {"target_stage": "installation"})
-            await ok("installation_update", {"status": "In Progress", "start_date": "2026-10-20"})
-            await ok("site_visit", {"actual": False, "date": "2026-10-20"})
+            await ok("installation_update", {"status": "In Progress", "start_date": "2026-12-20"})
+            await ok("site_visit", {"actual": False, "date": "2026-12-20"})
             assert project["site_visit_count"] == 0
             visit_key = str(uuid4())
-            await ok("site_visit", {"actual": True, "date": "2026-10-20"}, visit_key)
-            await ok("site_visit", {"actual": True, "date": "2026-10-20"}, visit_key)
+            await ok("site_visit", {"actual": True, "date": "2026-12-20"}, visit_key)
+            await ok("site_visit", {"actual": True, "date": "2026-12-20"}, visit_key)
             assert project["site_visit_count"] == 1
-            await ok("site_visit", {"actual": True, "date": "2026-10-20"})
+            await ok("site_visit", {"actual": True, "date": "2026-12-20"})
             assert project["site_visit_count"] == 2
-            await ok("installation_update", {"status": "Completed", "start_date": "2026-10-20", "completion_date": "2026-10-21"})
+            await ok("installation_update", {"status": "Completed", "start_date": "2026-12-20", "completion_date": "2026-12-21"})
             assert project["stage"] == "installation" and project["closure_pending_reason"]
             await ok("approval", {"scope": "closure", "decision": "Approved"})
-            assert project["stage"] == "completed" and project["completion_date"] == "2026-10-21"
+            assert project["stage"] == "completed" and project["completion_date"] == "2026-12-21"
             assert project["order_amount"] == "1200.01" and project["site_visit_count"] == 2 and project["design_revision_count"] == 1
             completed = await env["api"].get("/api/kitchen-projects?completed=true", headers=headers(env))
             assert completed.json()["total"] == 1
@@ -641,11 +641,30 @@ def test_independent_q11_q14_current_approvals_and_concurrent_revision_and_visit
     asyncio.run(run())
 
 
-def test_independent_q10_q16_unconfigured_manager_identity_and_subject_invalidation():
-    """Owner role, generic manager role and selected department identity differ."""
+def test_production_admission_without_policy_adoption_retains_financial_and_closure_requirements():
     async def run():
         async with environment() as env:
-            # No adoption/identity: resolved manager gate is never silently bypassed.
+            order = await reach_stage(env, "order")
+            assert not any(row["scope"] == "production" for row in order["approvals"])
+            assert (await command(env, order, "advance_stage", {"target_stage": "production"})).status_code == 422
+            order = await accepted(env, order, "order_advance", {"received": True, "amount": "0.01", "date": "2026-10-19"})
+            approvals = order["approvals"]
+            order = await accepted(env, order, "advance_stage", {"target_stage": "production"})
+            assert order["stage"] == "production" and order["approvals"] == approvals
+            order = await accepted(env, order, "production_update", {"status": "Completed", "start_date": "2026-10-19"})
+            assert order["production"]["completion_date"] == "2026-12-19"
+            order = await accepted(env, order, "advance_stage", {"target_stage": "installation"})
+            order = await accepted(env, order, "installation_update", {"status": "Completed", "start_date": "2026-12-20", "completion_date": "2026-12-21"})
+            assert order["stage"] == "installation" and "closure approval" in order["closure_pending_reason"]
+            assert (await command(env, order, "advance_stage", {"target_stage": "completed"})).status_code == 422
+    asyncio.run(run())
+
+
+def test_independent_q10_q16_production_admission_preserves_manager_history_and_closure_authority():
+    """Production has no manager gate; historical decisions and closure stay protected."""
+    async def run():
+        async with environment() as env:
+            # Missing financial admission still blocks production before policy adoption.
             order = await reach_stage(env, "order")
             unknown = await command(env, order, "advance_stage", {"target_stage": "production"})
             assert unknown.status_code == 422
@@ -659,28 +678,28 @@ def test_independent_q10_q16_unconfigured_manager_identity_and_subject_invalidat
             assert manager_policy.status_code == 403
             order = await accepted(env, order, "order_advance", {"received": True, "amount": "0.01", "date": "2026-10-19"})
             order = await accepted(env, order, "approval", {"scope": "production", "decision": "Rejected", "reason": "Check drawings"}, actor="manager")
-            assert (await command(env, order, "advance_stage", {"target_stage": "production"})).status_code == 422
+            assert order["blocked_transitions"] == [], "A rejected historical production decision no longer blocks admission"
             order = await accepted(env, order, "approval", {"scope": "production", "decision": "Approved"}, actor="manager")
             approved_subject = order["approvals"][-1]["subject_id"]
             order = await accepted(env, order, "order_amend", {"amount": "1200.03", "customer_approved": True,
                 "reason": "Customer-approved amendment", "date": "2026-10-19"})
             assert order["orders"][0]["approval_identity"] != approved_subject
-            assert (await command(env, order, "advance_stage", {"target_stage": "production"})).status_code == 422
+            assert order["blocked_transitions"] == [], "A financial amendment does not require another production manager decision"
             order = await accepted(env, order, "approval", {"scope": "production", "decision": "Approved"}, actor="manager")
-            await configure(env)  # A policy revision invalidates an old manager decision.
-            assert (await command(env, order, "advance_stage", {"target_stage": "production"})).status_code == 422
+            await configure(env)  # A historical manager decision may be stale without blocking production.
+            assert (await env["api"].get(f"/api/kitchen-projects/{order['id']}", headers=headers(env))).json()["blocked_transitions"] == []
             order = await accepted(env, order, "approval", {"scope": "production", "decision": "Approved"}, actor="manager")
             order = await accepted(env, order, "advance_stage", {"target_stage": "production"})
             assert order["orders"][-1]["advance"]["amount"] == "0.01"  # No minimum was invented.
             assert (await command(env, order, "advance_stage", {"target_stage": "installation"})).status_code == 422
             order = await accepted(env, order, "production_update", {"status": "Completed", "start_date": "2026-10-19", "completion_date": "2026-10-20"})
             order = await accepted(env, order, "advance_stage", {"target_stage": "installation"})
-            order = await accepted(env, order, "installation_update", {"status": "Completed", "start_date": "2026-10-20", "completion_date": "2026-10-21"})
+            order = await accepted(env, order, "installation_update", {"status": "Completed", "start_date": "2026-12-20", "completion_date": "2026-12-21"})
             assert order["stage"] == "installation" and order["closure_pending_reason"]
             assert (await env["api"].get("/api/kitchen-projects?completed=true", headers=headers(env))).json()["total"] == 0
             assert (await command(env, order, "approval", {"scope": "closure", "decision": "Approved"})).status_code == 403
             order = await accepted(env, order, "approval", {"scope": "closure", "decision": "Approved"}, actor="manager")
-            assert order["stage"] == "completed" and order["completion_date"] == "2026-10-21"
+            assert order["stage"] == "completed" and order["completion_date"] == "2026-12-21"
     asyncio.run(run())
 
 
@@ -803,7 +822,7 @@ def test_independent_q13_all_eight_transition_prerequisites_and_skips():
                 ("cad", "design", [("cad.status", "In Progress"), ("cad.received", False), ("cad.progress", 99)]),
                 ("design", "quotation", [("design_versions.0.response", "Pending"), ("design_versions.0.handoff_date", None), ("design_revision_pending", True)]),
                 ("quotation", "order", [("quotation_versions.0.response", "Pending"), ("quotation_versions.0.shared_date", None), ("quotation_versions.0.design_version_id", "historical-design"), ("design_versions.0.response", "Pending")]),
-                ("order", "production", [("orders.0.status", "On Hold"), ("orders.0.confirmed", False), ("orders.0.quotation_version_id", "historical-quote"), ("orders.0.advance.received", False), ("orders.0.advance.amount", "0.00"), ("approvals.0.decision", "Rejected")]),
+                ("order", "production", [("orders.0.status", "On Hold"), ("orders.0.confirmed", False), ("orders.0.quotation_version_id", "historical-quote"), ("orders.0.advance.received", False), ("orders.0.advance.amount", "0.00")]),
                 ("production", "installation", [("production.status", "In Production")]),
                 ("installation", "completed", [("installation.status", "In Progress"), ("approvals.1.decision", "Rejected")]),
             ]
@@ -839,7 +858,7 @@ def test_independent_q01_q11_canonical_customer_create_delete_race_never_orphans
             for iteration in range(8):
                 customer_id = str(uuid4())
                 await env["db"].customers.insert_one({"id": customer_id, "name": f"Race customer {iteration}",
-                    "floor_id": "second-floor", "phone": f"99010000{iteration:02d}"})
+                    "floor_id": "second-floor", "phone": f"99010000{iteration:02d}", "address": "Synthetic race site"})
                 creation, deletion = await asyncio.gather(
                     env["api"].post("/api/kitchen-projects", headers=headers(env), json={"customer_id": customer_id, "idempotency_key": str(uuid4()), "lead": {"site_location": "Synthetic site"}}),
                     env["api"].delete(f"/api/customers/{customer_id}", headers=headers(env)))
@@ -856,7 +875,7 @@ def test_independent_q01_q11_canonical_customer_create_delete_race_never_orphans
             # the customer's final removal; no lookup-only race is accepted.
             customer_id = str(uuid4())
             await env["db"].customers.insert_one({"id": customer_id, "name": "Claimed deletion",
-                "floor_id": "second-floor", "phone": "9901000019", "kitchen_delete_token": "owned-deletion-in-flight"})
+                "floor_id": "second-floor", "phone": "9901000019", "address": "Synthetic race site", "kitchen_delete_token": "owned-deletion-in-flight"})
             blocked = await env["api"].post("/api/kitchen-projects", headers=headers(env), json={"customer_id": customer_id, "idempotency_key": str(uuid4()), "lead": {"site_location": "Synthetic site"}})
             assert blocked.status_code == 409, blocked.text
             assert await env["db"].kitchen_projects.count_documents({"customer_id": customer_id}) == 0
@@ -867,9 +886,12 @@ def test_independent_q12_q15_q16_dates_required_fields_and_audited_exceptions():
     async def run():
         async with environment() as env:
             await configure(env)
+            missing_address_customer = str(uuid4())
+            await env["db"].customers.insert_one({"id": missing_address_customer, "name": "Missing address", "phone": "9901000020", "floor_id": "second-floor"})
             missing = await env["api"].post("/api/kitchen-projects", headers=headers(env),
-                json={"customer_id": env["ids"]["customer"], "idempotency_key": str(uuid4()), "lead": {}})
+                json={"customer_id": missing_address_customer, "idempotency_key": str(uuid4()), "lead": {}})
             assert missing.status_code == 422
+            assert "address is required" in missing.text
             project, _ = await create_project(env)
             project = await accepted(env, project, "convert")
             project = await accepted(env, project, "save_visit", {"status": "Visited", "requirements": "Known requirements", "interested": True})
@@ -900,10 +922,10 @@ def test_independent_q12_q15_q16_dates_required_fields_and_audited_exceptions():
             order = await accepted(env, order, "advance_stage", {"target_stage": "installation"})
             bad_install = await command(env, order, "installation_update", {"status": "In Progress", "start_date": "2026-10-19"})
             assert bad_install.status_code == 422
-            order = await accepted(env, order, "installation_update", {"status": "In Progress", "start_date": "2026-10-20"})
+            order = await accepted(env, order, "installation_update", {"status": "In Progress", "start_date": "2026-12-20"})
             early_visit = await command(env, order, "site_visit", {"date": "2026-10-19", "actual": True})
             assert early_visit.status_code == 422
-            order = await accepted(env, order, "installation_update", {"status": "Completed", "start_date": "2026-10-20", "completion_date": "2026-10-21"})
+            order = await accepted(env, order, "installation_update", {"status": "Completed", "start_date": "2026-12-20", "completion_date": "2026-12-21"})
             assert order["stage"] == "installation"
             order = await accepted(env, order, "approval", {"scope": "closure", "decision": "Approved"}, actor="manager")
             assert order["stage"] == "completed"
@@ -1144,8 +1166,8 @@ def test_resolved_d06_late_design_return_requires_owner_reason_and_renews_full_c
         async with environment() as env:
             await configure(env)
             project = await reach_stage(env, "installation")
-            project = await accepted(env, project, "installation_update", {"status": "In Progress", "start_date": "2026-10-20"})
-            project = await accepted(env, project, "site_visit", {"actual": True, "date": "2026-10-20"})
+            project = await accepted(env, project, "installation_update", {"status": "In Progress", "start_date": "2026-12-20"})
+            project = await accepted(env, project, "site_visit", {"actual": True, "date": "2026-12-20"})
             history = {key: copy.deepcopy(project[key]) for key in ("design_versions", "quotation_versions", "orders", "approvals", "production", "installation", "site_visits")}
             for command_name, payload in (("exception", {"action": "return_to_design", "reason": "Customer changed cabinets"}),
                                           ("order_status", {"status": "On Hold", "reason": "Wait"}),
@@ -1191,8 +1213,7 @@ def test_resolved_d06_late_design_return_requires_owner_reason_and_renews_full_c
             assert project["orders"][1]["original_amount"] == "2000.02" and not project["commercial_basis_invalidated"]
             assert (await command(env, project, "advance_stage", {"target_stage": "production"})).status_code == 422
             project = await accepted(env, project, "order_advance", {"received": True, "amount": "0.01", "date": "2026-10-21"})
-            assert (await command(env, project, "advance_stage", {"target_stage": "production"})).status_code == 422
-            project = await accepted(env, project, "approval", {"scope": "production", "decision": "Approved"}, actor="manager")
+            assert project["blocked_transitions"] == []
             project = await accepted(env, project, "advance_stage", {"target_stage": "production"})
             assert project["stage"] == "production" and project["site_visit_count"] == 1
             assert any(a["type"] == "exception" and a["actor_id"] == env["ids"]["owner"] for a in project["activity"])
@@ -1216,7 +1237,7 @@ def test_resolved_d09_legacy_unknown_counts_remain_null_after_new_events_and_exp
             assert project["project_reference"] == project["reference"]
             project = await accepted(env, project, "site_visit", {"actual": True, "date": "2026-10-20"})
             assert project["site_visit_count"] is None and project["known_site_visit_count"] == 1
-            project = await accepted(env, project, "installation_update", {"status": "Completed", "start_date": "2026-10-20", "completion_date": "2026-10-21"})
+            project = await accepted(env, project, "installation_update", {"status": "Completed", "start_date": "2026-12-20", "completion_date": "2026-12-21"})
             project = await accepted(env, project, "approval", {"scope": "closure", "decision": "Approved"}, actor="manager")
             page = await env["api"].get("/api/kitchen-projects?completed=true", headers=headers(env))
             row = next(r for r in page.json()["rows"] if r["id"] == project["id"])
@@ -1594,7 +1615,7 @@ def test_attention_drilldowns_share_metrics_dates_approval_subjects_and_role_sco
             hidden = copy.deepcopy(fixtures[0])
             hidden.update(id="other-floor", reference="OTHER-FLOOR", floor_id="first-floor")
             await env["db"].kitchen_projects.insert_many([*fixtures, hidden])
-            for actor, active, pending in (("owner", 7, 2), ("manager", 7, 2), ("worker", 7, 2)):
+            for actor, active, pending in (("owner", 7, 1), ("manager", 7, 1), ("worker", 7, 1)):
                 response = await env["api"].get("/api/kitchen-projects/dashboard", headers=headers(env, actor))
                 assert response.status_code == 200, response.text
                 metrics = response.json()
@@ -1607,6 +1628,8 @@ def test_attention_drilldowns_share_metrics_dates_approval_subjects_and_role_sco
                     listed = await env["api"].get(f"/api/kitchen-projects?attention={attention}", headers=headers(env, actor))
                     assert listed.status_code == 200, listed.text
                     assert listed.json()["total"] == expected, (actor, attention)
+                    if attention == "pending_approval":
+                        assert [row["id"] for row in listed.json()["rows"]] == ["attention-4"], "Only closure remains pending; historical production decisions do not block Order"
                     assert "other-floor" not in [row["id"] for row in listed.json()["rows"]]
                 assert sum(metrics["stage_counts"].values()) == active
                 assert sum(row["project_count"] for row in metrics["workload"]) == active

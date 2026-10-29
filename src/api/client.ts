@@ -169,6 +169,22 @@ export class ApiError extends Error {
 
 type RequestOptions = { floorId?: string; signal?: AbortSignal; cacheMs?: number };
 
+/** Settle even if device storage or a native transport ignores cancellation. */
+function abortableRequest<T>(signal: AbortSignal, work: () => Promise<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const cancelled = () => new DOMException("Request cancelled.", "AbortError");
+    const abort = () => { signal.removeEventListener("abort", abort); reject(cancelled()); };
+    if (signal.aborted) { abort(); return; }
+    signal.addEventListener("abort", abort, { once: true });
+    // Observe both outcomes after cancellation, and never start deferred work
+    // after its deadline (in particular, a write after slow credential storage).
+    Promise.resolve().then(() => {
+      if (signal.aborted) throw cancelled();
+      return work();
+    }).then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
+  });
+}
+
 /** Keep shared reads alive only while at least one consumer still needs them. */
 function abortForConsumer<T>(pending: SharedGet, signal?: AbortSignal): Promise<T> {
   pending.consumers += 1;
@@ -200,18 +216,6 @@ async function request<T>(method: string, path: string, body?: any, opts?: Reque
   const identityRead = isIdentityRead(method, path);
   const controller = new AbortController();
   activeRequests.set(controller, identityRead);
-  const token = await getToken();
-  const multipart = typeof FormData !== "undefined" && body instanceof FormData;
-  const headers: Record<string, string> = multipart ? {} : { "Content-Type": "application/json" };
-  if (token) headers.Authorization = `Bearer ${token}`;
-  // Account restoration must not inherit a stale or newly revoked workspace.
-  const floorId = identityRead ? "" : opts?.floorId ?? await getRequestFloorId();
-  if (floorId) headers["X-Floor-Id"] = floorId;
-
-  if (identityRead ? identityVersion !== identityContextVersion : contextVersion !== requestContextVersion) {
-    activeRequests.delete(controller);
-    throw new DOMException("Request cancelled because the signed-in account or workspace changed.", "AbortError");
-  }
   let timedOut = false;
   const timeoutId = setTimeout(() => {
     timedOut = true;
@@ -224,13 +228,23 @@ async function request<T>(method: string, path: string, body?: any, opts?: Reque
   }
 
   try {
+    const token = await abortableRequest(controller.signal, getToken);
+    const multipart = typeof FormData !== "undefined" && body instanceof FormData;
+    const headers: Record<string, string> = multipart ? {} : { "Content-Type": "application/json" };
+    if (token) headers.Authorization = `Bearer ${token}`;
+    // Account restoration must not inherit a stale or newly revoked workspace.
+    const floorId = identityRead ? "" : opts?.floorId ?? await abortableRequest(controller.signal, getRequestFloorId);
+    if (floorId) headers["X-Floor-Id"] = floorId;
+    if (identityRead ? identityVersion !== identityContextVersion : contextVersion !== requestContextVersion) {
+      throw new DOMException("Request cancelled because the signed-in account or workspace changed.", "AbortError");
+    }
     const readTransport = async (retry: boolean): Promise<{ response: Response; text: string }> => {
       try {
-        const response = await fetch(`${BASE}/api${path}`, {
+        const response = await abortableRequest(controller.signal, () => fetch(`${BASE}/api${path}`, {
           method, headers, body: multipart ? body as FormData : body ? JSON.stringify(body) : undefined,
           signal: controller.signal,
-        });
-        return { response, text: await response.text() };
+        }));
+        return { response, text: await abortableRequest(controller.signal, () => response.text()) };
       } catch (error) {
         if (!retry || !(error instanceof TypeError) || controller.signal.aborted) throw error;
         // Recover one dropped Kitchen read within its original deadline. Writes

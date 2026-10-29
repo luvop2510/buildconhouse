@@ -23,19 +23,21 @@ function QuotationForm({ project, quote, disabled, command }: { project: Kitchen
   const source = JSON.stringify(quote || null);
   const savedDesign = project.design_versions?.find(row => row.id === quote?.design_version_id);
   const savedHistorical = Boolean(savedDesign && (savedDesign.workflow_cycle ?? 1) !== (project.workflow_cycle ?? 1));
+  const boundOrder = Boolean(quote && project.orders?.some(row => row.quotation_version_id === quote.id && !row.authorization_invalidated) && !project.commercial_basis_invalidated);
   const readOnly = project.stage !== "quotation" || Boolean(project.lifecycle_status) || kitchenProductionStarted(project) || savedHistorical || project.permissions?.can_update === false || quote?.response === "Approved" && !project.permissions?.can_approve_exceptions;
   const locked = disabled || readOnly;
   // An upload temporarily disables controls; it must not clear a proposed date.
   const defaultDate = readOnly ? "" : kitchenToday();
   const [draft, setDraft] = useKitchenDraft(prefix, { source, pdf_options: quote?.pdf_options || [] as KitchenPdfOption[], final_attachment_id: quote?.final_attachment_id || "", sent_status: quote?.sent_status === "No" ? "No" : quote?.sent_status === "Yes" || quote?.shared_date ? "Yes" : "No", shared_date: quote?.shared_date || defaultDate, response: quote?.response || "Pending" });
   const update = (key: "sent_status" | "shared_date" | "response", value: string) => setDraft(previous => ({ ...previous, [key]: value }));
-  const designId = quote?.design_version_id || project.final_design_version_id || "";
+  // A working quotation follows the explicit final design. Recorded order chains
+  // retain their original IDs until an authorized order change is confirmed.
+  const designId = boundOrder || savedHistorical || kitchenProductionStarted(project) ? quote?.design_version_id || "" : project.final_design_version_id || "";
   const design = project.design_versions?.find(row => row.id === designId);
   const historical = Boolean(design && (design.workflow_cycle ?? 1) !== (project.workflow_cycle ?? 1));
   const requirement = !design ? "Choose the finalized design in Design." : historical || project.design_revision_pending ? "Choose an approved design from the current work cycle." : !kitchenHasFinalDesign(design) ? "Select a finalized design PDF, record customer approval and choose Yes for Sent to company in Design." : null;
-  const boundOrder = Boolean(quote && project.orders?.some(row => row.quotation_version_id === quote.id && !row.authorization_invalidated) && !project.commercial_basis_invalidated);
   const stale = draft.source !== source;
-  const displayedDesign = boundOrder ? savedDesign : design;
+  const displayedDesign = design;
   const finalizedDesignFile = project.attachments?.find(file => file.id === displayedDesign?.final_attachment_id && file.content_type === "application/pdf");
   const finalOption = draft.pdf_options.find(option => option.attachment_id === draft.final_attachment_id);
   const finalFile = project.attachments?.find(file => file.id === finalOption?.attachment_id && file.content_type === "application/pdf");
@@ -45,6 +47,7 @@ function QuotationForm({ project, quote, disabled, command }: { project: Kitchen
   return <View style={{ gap: spacing.md }}>
     <Text style={type.bodyStrong}>Finalized design{displayedDesign ? ` · Design ${displayedDesign.number}` : ""}</Text>
     {finalizedDesignFile ? <KitchenPdfFile project={project} file={finalizedDesignFile} selected testID="kitchen-quotation-final-design" /> : <Text style={type.bodyMuted}>No finalized design PDF selected.</Text>}
+    {quote && !boundOrder && savedDesign?.id !== designId ? <Text style={type.caption}>This quotation was saved against Design {savedDesign?.number ?? "unavailable"}. Saving quotation details applies the current finalized design{design ? `, Design ${design.number}` : ""}.</Text> : null}
     {boundOrder ? <Text style={type.caption}>This finalized quotation is used by an order. Its recorded PDF and kitchen type are preserved.</Text> : null}
     {stale ? <><Text style={type.bodyMuted}>This quotation changed while you were editing. Your entries are kept.</Text><Button label="Replace draft with latest quotation details" variant="secondary" onPress={() => resetDraftValue(prefix)} testID="kitchen-quotation-edit-reload" /></> : null}
     {(["GI", "SS", "Mix"] as const).map(kitchenType => <KitchenPdfFiles key={kitchenType} project={project} attachmentIds={draft.pdf_options.filter(option => option.kitchen_type === kitchenType).map(option => option.attachment_id)} finalId={draft.final_attachment_id} onAdd={id => setDraft(previous => ({ ...previous, pdf_options: [...previous.pdf_options.filter(option => option.attachment_id !== id), { attachment_id: id, kitchen_type: kitchenType }] }))} onSelect={id => setDraft(previous => ({ ...previous, final_attachment_id: id }))} disabled={locked} selectionDisabled={boundOrder} label={kitchenType} testID={`kitchen-quotation-${kitchenType}-pdf`} draftKey={`${prefix}.pdf.${kitchenType}`} />)}

@@ -98,6 +98,20 @@ for (const quote of [undefined,{...finalQuote,final_attachment_id:null},{...fina
   assert.equal(find(tree,'kitchen-advance-order').props.disabled,quote!==finalQuote,'Quotation movement requires one final kitchen PDF and customer approval');
 }
 console.log('Kitchen PDF stage movement: missing file, No handoff and pending customer approval stay blocked.');
+const replacementFinalDesign = {...finalDesign, id:'d2'};
+const quotationProject = {...project, stage:'quotation', final_design_version_id:'d2', design_versions:[finalDesign,replacementFinalDesign], quotation_versions:[finalQuote]};
+const changedFinalDesign = render(detail.StageNavigation,{project:quotationProject,disabled:false});
+assert.equal(find(changedFinalDesign,'kitchen-advance-order').props.disabled,true,'Finalizing another design blocks Next until the working quotation is explicitly saved against it');
+assert.match(text(changedFinalDesign),/Save quotation details.*current finalized design/);
+const reboundQuotation = render(detail.StageNavigation,{project:{...quotationProject,quotation_versions:[{...finalQuote,design_version_id:'d2'}]},disabled:false});
+assert.equal(find(reboundQuotation,'kitchen-advance-order').props.disabled,false,'Saving the matching design basis enables Next again');
+const historicalOrder = {id:'o1',quotation_version_id:'q1',confirmed:true,status:'Confirmed'};
+const boundQuotation = render(detail.StageNavigation,{project:{...quotationProject,orders:[historicalOrder]},disabled:false});
+assert.equal(find(boundQuotation,'kitchen-advance-order').props.disabled,false,'Returning to an order-bound quotation retains its explicit historical design');
+for(const fields of [{commercial_basis_invalidated:true},{orders:[{...historicalOrder,authorization_invalidated:true}]}]){
+  const invalidatedBasis = render(detail.StageNavigation,{project:{...quotationProject,orders:[historicalOrder],...fields},disabled:false});
+  assert.equal(find(invalidatedBasis,'kitchen-advance-order').props.disabled,true,'An invalidated historical order cannot bypass the current design save requirement');
+}
 
 const notSelected=render(detail.StageNavigation,{project:{...project,stage:'design',design_versions:[finalDesign]},disabled:false});
 assert.equal(find(notSelected,'kitchen-advance-quotation').props.disabled,true,'An uploaded and approved design must also be explicitly finalized');

@@ -327,3 +327,14 @@ console.log('Kitchen immediate Next saves routine drafts before movement, rebase
   assert.equal(view.state.dirty, true);
 }
 console.log('Kitchen final-design reconciliation: selected-design identity rebases without overwriting pending edits.');
+
+for (const fails of [false, true]) {
+  const stageMove = await harness(source, { ...initial, stage: 'quotation' });
+  const pendingMove = stageMove.state.command('move_stage', { target_stage: 'order' });
+  assert.equal(stageMove.render().pendingStage, 'order', 'Stage handoff reports its destination while pending');
+  stageMove.settle(fails ? Error('Storage temporarily unavailable') : { ...initial, version: 8, stage: 'order' });
+  assert.equal(await pendingMove, !fails);
+  assert.equal(stageMove.render().pendingStage, null, 'Success and failure both release stage progress');
+  assert.equal(stageMove.state.backgroundSaving, false);
+}
+console.log('Kitchen stage progress identifies the destination and clears after success or failure.');

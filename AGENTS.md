@@ -1,5 +1,16 @@
 # AGENTS.md — BuildCon House ERP (forge2.0)
 
+## Kitchen save reliability and production entry — 2026-10-30
+
+The user's latest instruction removes Production entry manager approval from
+Order, including its backend transition requirement and pending-approval count.
+Closure still requires a selected manager. Preserve financial/order/design
+requirements and historical approval records; never reinstate a hidden production
+approval blocker. Current unbound quotations follow the current finalized design;
+confirmed orders retain their explicit historical quotation/design relationship.
+Private file checks fail closed with bounded provider verification and actionable
+retry responses. Failed saves retain draft entries and their idempotency key.
+
 ## Floor Today and owner reporting — 2026-10-29
 
 The latest user instruction supersedes the homepage analytics wording below.

@@ -92,6 +92,18 @@ try {
   assert.equal((workflow.match(/uses: actions\/upload-artifact@v4/g) || []).length, 4);
   assert.equal((workflow.match(/if-no-files-found: error/g) || []).length, 4);
   assert.match(workflow, /artifact-digest/); assert.match(workflow, /artifact-ids: \$\{\{ needs.prepare.outputs.export_id \}\}/);
+  const { packageManager } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+  assert.match(packageManager, /^npm@\d+\.\d+\.\d+$/, 'Dependency setup must use an exact npm version');
+  const verifyDependencySetup = job => {
+    const setup = job.match(/^\s+- run:\s*(npm install --global[^\n]+)$/m)?.[1];
+    assert.ok(setup, 'Pin npm before the clean dependency install');
+    assert.deepEqual(setup.trim().split(/\s*&&\s*/).map(command => command.trim().split(/\s+/)), [
+      ['npm', 'install', '--global', packageManager, '--ignore-scripts', '--no-audit', '--no-fund'],
+      ['npm', 'ci', '--ignore-scripts'],
+      ['npm', 'run', 'prepare:dependencies'],
+    ], 'Pinned npm, clean lockfile install and explicit dependency preparation must all succeed in order');
+  };
+  verifyDependencySetup(workflow.split('  prepare:\n')[1]?.split(/\n  [a-z]+:\n/)[0]);
   const browserChecks = [];
   const image = 'mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27';
   for (const phase of ['stability', 'timing']) {
@@ -100,7 +112,7 @@ try {
     assert.ok(job.includes(`image: ${image}`), 'Use the immutable matching official browser image');
     assert.match(job, /options: --ipc=host/);
     assert.match(job, /node-version: "22"/);
-    assert.match(job, /run: npm ci/);
+    verifyDependencySetup(job);
     assert.doesNotMatch(job, /playwright install|apt-get|apt install/, 'Browser jobs must not depend on OS mirror installs');
     assert.ok(job.includes(`--ci-phase=${phase}`));
     const check = job.match(/node <<'NODE'\n([\s\S]*?)\n          NODE/);

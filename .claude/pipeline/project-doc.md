@@ -1,5 +1,18 @@
 # BuildCon House project documentation
 
+## Kitchen saving and mobile editor follow-up — 30 October 2026
+
+Native fallback delta scan: captured Kitchen file-finalization failures originate
+in uncaught Cloudflare private-bucket visibility timeouts. Verification now runs
+both domain checks concurrently within five seconds, shares only in-flight proof,
+and returns retryable503 without exposing private bytes or losing staged parts.
+Production entry removes only its manager approval requirement; closure approval,
+financial checks and historical bindings remain. Current unbound quotation edits
+follow the finalized design. Mobile tile workflow actions reclaim their space
+during input. No dependency, framework, collection or database migration is added.
+See docs/audits/2026-10-30-kitchen-save-reliability.md. AGENTS records the explicit
+business-rule correction; architecture and authentication stay unchanged.
+
 ## Kitchen intake, Today and blue accents — 29 October 2026
 
 Native fallback delta scan: Kitchen intake reuses its existing form and service,

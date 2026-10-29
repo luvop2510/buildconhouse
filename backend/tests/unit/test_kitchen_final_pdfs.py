@@ -196,6 +196,31 @@ def test_each_pdf_creates_one_version_without_example_four_cap_and_older_design_
     assert project == before
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("navigation", ["move_stage", "advance_stage"])
+@pytest.mark.parametrize("bound_order", [False, True])
+async def test_quotation_next_requires_saved_current_design_except_preserved_order_basis(setup, navigation, bound_order):
+    database, service, owner = setup
+    project = await service.create(owner, create_request(customer_id="customer-a", idempotency_key="quotation-design-alignment"))
+    evidence = aggregate("order" if bound_order else "quotation")
+    if bound_order:
+        apply(evidence, "order_confirm", {"quotation_version_id": "q1", "order_date": "2026-10-25"}, owner)
+    evidence["quotation_versions"] = [evidence["quotation_versions"][0]]
+    evidence.update(stage="quotation", final_design_version_id="d2")
+    stored = database.kitchen_projects.rows[0]
+    stored.update({key: evidence[key] for key in ("stage", "design_versions", "quotation_versions", "attachments", "orders", "final_design_version_id")})
+    if not bound_order:
+        before = copy.deepcopy(stored)
+        with pytest.raises(HTTPException, match="Save quotation details.*current finalized design"):
+            await service.command(owner, project["id"], cmd(project["version"], navigation, {"target_stage": "order"}))
+        assert database.kitchen_projects.rows[0] == before
+        project = await service.command(owner, project["id"], cmd(project["version"], "quotation_update", {"version_id": "q1", "design_version_id": "d2"}))
+    advanced = await service.command(owner, project["id"], cmd(project["version"], navigation, {"target_stage": "order"}))
+    assert advanced["stage"] == "order"
+    assert advanced["quotation_versions"][0]["design_version_id"] == ("d1" if bound_order else "d2")
+    assert advanced["orders"] == evidence["orders"]
+
+
 def test_design_rejects_multiple_pdfs_duplicate_version_and_file_replacement(setup):
     _, _, owner = setup
     project = aggregate("design")

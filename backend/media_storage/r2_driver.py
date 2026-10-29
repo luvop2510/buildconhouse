@@ -20,6 +20,7 @@ from .base import MediaStorage, StoredObject, StorageError
 from services.product_image_variants import MIN_BYTES, PREFIX, WIDTHS, create_image_variants, variant_key
 
 logger = logging.getLogger(__name__)
+VISIBILITY_TIMEOUT_SECONDS = 5.0
 
 
 class R2StorageDriver(MediaStorage):
@@ -28,6 +29,7 @@ class R2StorageDriver(MediaStorage):
         self._variant_slot = asyncio.Semaphore(1)
         self._variant_jobs: set[asyncio.Task] = set()
         self._variant_sources: dict[asyncio.Task, tuple[str, str]] = {}
+        self._private_checks: dict[str, asyncio.Task] = {}
         self._client = client or boto3.client(
             "s3", endpoint_url=f"https://{self.cfg.r2_account_id}.r2.cloudflarestorage.com",
             aws_access_key_id=self.cfg.r2_access_key_id,
@@ -53,6 +55,8 @@ class R2StorageDriver(MediaStorage):
             raise StorageError(f"R2 {operation} failed ({type(exc).__name__})") from exc
 
     async def close(self):
+        if self._private_checks:
+            await asyncio.gather(*self._private_checks.values(), return_exceptions=True)
         if self._variant_jobs:
             await asyncio.gather(*self._variant_jobs, return_exceptions=True)
         await asyncio.to_thread(self._client.close)
@@ -207,25 +211,59 @@ class R2StorageDriver(MediaStorage):
         self._scope(bucket)
         root = (f"https://api.cloudflare.com/client/v4/accounts/{self.cfg.r2_account_id}"
                 f"/r2/buckets/{quote(bucket, safe='')}/domains")
-        result = []
-        async with httpx.AsyncClient(timeout=10) as client:
-            for suffix in ("managed", "custom"):
-                response = await client.get(root + "/" + suffix,
-                    headers={"Authorization": f"Bearer {self.cfg.r2_api_token}"})
-                if response.status_code != 200:
-                    raise StorageError("R2 bucket visibility check failed")
-                payload = response.json()
-                if payload.get("success") is not True or not isinstance(payload.get("result"), dict):
-                    raise StorageError("Malformed R2 visibility response")
-                result.append(payload["result"])
-        return result
+        try:
+            # Both independent domain surfaces must be verified. One shared
+            # deadline prevents sequential control-plane stalls from consuming
+            # the ordinary save/download request's entire transport budget.
+            async with asyncio.timeout(VISIBILITY_TIMEOUT_SECONDS):
+                async with httpx.AsyncClient(timeout=VISIBILITY_TIMEOUT_SECONDS) as client:
+                    async def check(suffix):
+                        response = await client.get(root + "/" + suffix,
+                            headers={"Authorization": f"Bearer {self.cfg.r2_api_token}"})
+                        if response.status_code != 200:
+                            raise StorageError("R2 bucket visibility check failed")
+                        payload = response.json()
+                        if (not isinstance(payload, dict) or payload.get("success") is not True
+                                or not isinstance(payload.get("result"), dict)):
+                            raise StorageError("Malformed R2 visibility response")
+                        return payload["result"]
+                    # Settle both tasks before the HTTP client closes, including
+                    # failure/cancellation, without leaving an orphaned request.
+                    jobs = [asyncio.create_task(check(suffix)) for suffix in ("managed", "custom")]
+                    try:
+                        return await asyncio.gather(*jobs)
+                    finally:
+                        for job in jobs:
+                            if not job.done():
+                                job.cancel()
+                        await asyncio.gather(*jobs, return_exceptions=True)
+        except (httpx.HTTPError, TimeoutError, ValueError, TypeError) as exc:
+            # Provider URLs/headers/bodies may contain credentials. Expose only
+            # the error class through our storage abstraction, never its text.
+            raise StorageError(f"R2 bucket visibility unavailable ({type(exc).__name__})") from exc
 
     async def require_private_bucket(self, bucket):
         if bucket != self.cfg.supabase_private_bucket:
             raise StorageError("Not the configured private R2 bucket")
+        # Only simultaneous callers share a fresh proof. No completed result or
+        # stale success survives a provider outage or an external domain change.
+        job = self._private_checks.get(bucket)
+        if job is None or job.done():
+            job = asyncio.create_task(self._verify_private_bucket(bucket))
+            self._private_checks[bucket] = job
+            def settled(task):
+                if self._private_checks.get(bucket) is task:
+                    self._private_checks.pop(bucket, None)
+                if not task.cancelled():
+                    task.exception()  # Observe failures even if all callers left.
+            job.add_done_callback(settled)
+        # A cancelled HTTP caller must not cancel another caller's fresh check.
+        await asyncio.shield(job)
+
+    async def _verify_private_bucket(self, bucket):
         managed, custom = await self._domain_settings(bucket)
         if (managed.get("enabled") is not False or not isinstance(custom.get("domains"), list)
-                or any(row.get("enabled") is not False for row in custom["domains"])):
+                or any(not isinstance(row, dict) or row.get("enabled") is not False for row in custom["domains"])):
             raise StorageError("R2 private bucket has public or unverifiable domain access")
 
     async def ready(self):

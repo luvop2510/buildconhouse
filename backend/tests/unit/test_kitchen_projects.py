@@ -322,7 +322,7 @@ async def test_permission_scope_customer_floor_and_assignment(setup):
 async def test_unconfigured_policy_and_aggregate_bound_fail_without_writes(setup, monkeypatch):
     database, service, owner = setup
     policy = await service.public_policy(owner)
-    assert policy["production"]["require_manager_approval"] and policy["production"]["require_advance"]
+    assert not policy["production"]["require_manager_approval"] and policy["production"]["require_advance"]
     assert policy["closure"]["require_manager_approval"] and not policy["department_manager_user_ids"]
     assert policy["identity_timing"] == "creation" and policy["files"]["max_bytes"] == 25_000_000
     assert database.kitchen_configuration.rows == []
@@ -330,6 +330,20 @@ async def test_unconfigured_policy_and_aggregate_bound_fail_without_writes(setup
     with pytest.raises(HTTPException) as too_large:
         await service.create(owner, create_request(customer_id="customer-a", idempotency_key="creation-a"))
     assert too_large.value.status_code == 413 and not database.kitchen_projects.rows
+
+
+@pytest.mark.asyncio
+async def test_stored_production_approval_policy_resolves_without_migration_or_history_rewrite(setup):
+    database, service, owner = setup
+    stored = {"_id": kitchen_projects.POLICY_ID, "version": 7, "decision_contract": kitchen_projects.DECISION_CONTRACT,
+        "department_manager_user_ids": ["staff-a"], "production": {"require_manager_approval": True},
+        "activity": [{"id": "historical-adoption", "production": {"require_manager_approval": True}}]}
+    database.kitchen_configuration.rows = [copy.deepcopy(stored)]
+    policy = await service.public_policy(owner)
+    assert policy["version"] == 7 and not policy["production"]["require_manager_approval"]
+    assert policy["production"]["require_advance"] and policy["closure"]["require_manager_approval"]
+    assert policy["closure"]["manager_user_ids"] == ["staff-a"]
+    assert database.kitchen_configuration.rows == [stored]
 
 
 def test_strict_dates_money_and_command_fields():
@@ -698,7 +712,7 @@ async def test_approval_manager_choices_remain_available_to_owner_only(setup):
     assert (await service.assignees(owner))["rows"] == [{"id": "staff-a", "full_name": "Staff A", "role": "sales"}]
     assert (await service.assignees(staff))["rows"] == []
     policy = await service.public_policy(owner)
-    assert policy["production"]["require_manager_approval"] and policy["closure"]["require_manager_approval"]
+    assert not policy["production"]["require_manager_approval"] and policy["closure"]["require_manager_approval"]
 
 
 @pytest.mark.asyncio

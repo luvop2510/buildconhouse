@@ -71,7 +71,7 @@ def attention_expressions(policy, now=None):
     active = {"$and": [{"$ne": ["$stage", "completed"]},
         {"$not": [{"$in": [{"$ifNull": ["$status", None]}, ["Lost", "Cancelled", "On Hold"]]}]}]}
     pending = []
-    for scope, stage in (("production", "order"), ("closure", "installation")):
+    for scope, stage in (("closure", "installation"),):
         subject = {"$ifNull": [f"$approval_subjects.{scope}", None]}
         decision = f"$approval_decisions.{scope}"
         pending.append({"$and": [{"$eq": ["$stage", stage]}, {"$ne": [subject, None]},
@@ -116,7 +116,7 @@ def resolved_policy(policy):
         assignment_user_ids=[], unassigned_visibility="all_authorized",
         department_manager_user_ids=managers,
         production={"require_advance": True, "minimum_advance_amount": None, "minimum_advance_percent": None,
-                    "require_confirmation_document": False, "require_manager_approval": True, "manager_user_ids": managers},
+                    "require_confirmation_document": False, "require_manager_approval": False, "manager_user_ids": managers},
         closure={"require_manager_approval": True, "manager_user_ids": managers},
         exceptions={"allow_hold": True, "allow_cancel": True, "allow_reopen": True,
                     "allow_return_to_design": True, "manager_user_ids": []},
@@ -751,6 +751,7 @@ class KitchenProjectService:
                 workflow.finalized_design(project)
             if target == "order" and project["stage"] == "quotation":
                 quote = workflow.finalized_quotation(project, workflow.current(project, "quotation_versions"))
+                workflow.require_quotation_design_alignment(project, quote)
                 workflow.finalized_design(project, quote.get("design_version_id"))
                 if quote.get("response") != "Approved" or not quote.get("shared_date"):
                     raise HTTPException(422, "Confirm the selected quotation with customer approval first")

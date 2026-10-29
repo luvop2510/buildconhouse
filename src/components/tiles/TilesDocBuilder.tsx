@@ -1,5 +1,6 @@
 import { useAuth } from "@/src/state/auth";
 import { useActionAccess } from "@/src/hooks/use-permissions";
+import { useInputActive } from "@/src/hooks/use-input-active";
 import { canManageDestructiveData } from "@/src/constants/roles";
 import { referrerLabel } from "@/src/utils/referrer";
 import { ReferrerField, type ReferrerValue } from "@/src/components/customer/ReferrerField";
@@ -1959,8 +1960,8 @@ function MobileTilesEditor({
   // phone layout inflated the product photo and hid editable fields.
   const fieldColumns = workspaceWidth >= 720 ? 3 : workspaceWidth >= 480 ? 2 : 1;
   const insets = useSafeAreaInsets();
+  const inputActive = useInputActive();
   const [pickerRow, setPickerRow] = useState<string | null>(null);
-  const [footerHeight, setFooterHeight] = useState(176 + insets.bottom);
   const isSelection = docType === "tiles_selection";
   const title = isSelection ? "Tiles Selection" : "Tiles Quotation";
   const itemCount = doc.rows.filter((r) => r.productId).length;
@@ -1990,7 +1991,7 @@ function MobileTilesEditor({
       : null;
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.surfaceSecondary }} edges={isPhone ? [] : ["top"]}>
+    <SafeAreaView style={{ flex: 1, minHeight: 0, overflow: "hidden", backgroundColor: colors.surfaceSecondary }} edges={isPhone ? [] : ["top"]}>
       <View style={mobileStyles.header}>
         <Pressable accessibilityRole="button" accessibilityLabel="Back" onPress={() => router.back()} hitSlop={10} style={shellStyles.backBtn} testID="tiles-back">
           <Feather name="chevron-left" size={20} color={colors.onSurface} />
@@ -2018,9 +2019,11 @@ function MobileTilesEditor({
           <ActivityIndicator color={colors.brand} />
         </View>
       ) : (
-        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={Platform.OS === "ios" ? 8 : 0}>
+        <KeyboardAvoidingView style={{ flex: 1, minHeight: 0 }} behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={Platform.OS === "ios" ? 8 : 0}>
           <ScrollView
-            contentContainerStyle={{ padding: spacing.lg, gap: spacing.lg, paddingBottom: footerHeight + spacing.lg }}
+            testID="tiles-mobile-editor-scroll"
+            style={{ flex: 1, minHeight: 0 }}
+            contentContainerStyle={{ padding: spacing.lg, gap: spacing.lg }}
             keyboardShouldPersistTaps="handled"
           >
             <SaveStatusPill state={doc.saveState} onRetry={() => void doc.retrySave()} />
@@ -2080,7 +2083,18 @@ function MobileTilesEditor({
         </KeyboardAvoidingView>
       )}
 
-      <View onLayout={(event) => setFooterHeight(event.nativeEvent.layout.height)} style={[mobileStyles.bottomBar, { paddingBottom: Math.max(spacing.lg, insets.bottom + spacing.sm) }]}>
+      {/* Keep actions mounted, but reclaim their entire height while editing.
+          The shared focus hook also waits for blur-triggering presses to settle.
+          Android already resizes the app for its keyboard; another height
+          adjustment or a measured absolute footer would shrink/cover the form. */}
+      <View
+        testID="tiles-mobile-workflow-dock"
+        pointerEvents={inputActive ? "none" : "auto"}
+        accessibilityElementsHidden={inputActive}
+        importantForAccessibility={inputActive ? "no-hide-descendants" : "auto"}
+        aria-hidden={inputActive}
+        style={[mobileStyles.bottomBar, { paddingBottom: Math.max(spacing.md, insets.bottom + spacing.sm) }, inputActive && mobileStyles.bottomBarHidden]}
+      >
         <Button label="Share PDF" icon="message-circle" onPress={doc.prepareWhatsApp} loading={doc.busy === "whatsapp"} disabled={!!doc.busy} variant="secondary" testID="tiles-mobile-whatsapp-draft" />
         <View style={{ flexDirection: "row", gap: spacing.sm }}>
           <Button
@@ -2180,9 +2194,13 @@ const mobileStyles = StyleSheet.create({
   summaryValue: { fontSize: 13, color: colors.onSurface, fontVariant: ["tabular-nums"] },
   summaryBold: { fontWeight: "700", color: colors.onSurface, fontSize: 14 },
   bottomBar: {
-    position: "absolute", left: 0, right: 0, bottom: 0, gap: spacing.sm,
+    flexShrink: 0, gap: spacing.sm,
     padding: spacing.md, paddingBottom: spacing.lg, backgroundColor: colors.surface,
     borderTopWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
+  },
+  bottomBarHidden: {
+    opacity: 0, position: "absolute", top: "100%", left: 0, right: 0,
+    ...(Platform.OS === "web" ? { visibility: "hidden" } as ViewStyle : {}),
   },
   suggestPanel: {
     marginTop: 8, zIndex: 300,
@@ -2223,7 +2241,7 @@ export function TilesDocBuilder({ docType, initialProductId, initialQuotationId 
   // it with an unmeasured loading View can leave the hydrated tablet editor
   // at width zero, permanently selecting its one-column phone geometry.
   return (
-    <View style={{ flex: 1 }} onLayout={(event) => setWorkspaceWidth(event.nativeEvent.layout.width)}>
+    <View style={{ flex: 1, minWidth: 0, minHeight: 0 }} onLayout={(event) => setWorkspaceWidth(event.nativeEvent.layout.width)}>
       <ConfirmDialog visible={!!deleteTargetId && deleteTargetId === currentDeleteId} onClose={() => { if (doc.busy !== "delete") setDeleteTargetId(null); }}
         onConfirm={() => { if (deleteTargetId === currentDeleteId && canDelete) void doc.deleteDocument().then(deleted => { if (deleted) setDeleteTargetId(null); }); }}
         title={`Delete this ${isSelection ? "selection" : "quotation"}?`}
