@@ -60,11 +60,11 @@ export function KitchenProjectDetail({ page = "stage" }: { page?: ProjectPage })
     ]}><View style={{ minHeight: 44, minWidth: 44, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 8 }}><Text style={type.body}>Actions</Text><Feather name="more-horizontal" size={20} color={colors.onSurfaceSecondary} /></View></Menu> : undefined;
   if (parameter && !kitchenStage(parameter)) return <KitchenFloor><KitchenPage title="Kitchen" back={back}><ErrorState title="Stage unavailable" subtitle="Choose one of the nine Kitchen stages." /></KitchenPage></KitchenFloor>;
   return <KitchenFloor><KitchenPage title={STAGE_LABELS[selected]} back={back}
-    compactHeader right={project ? <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>{projectActions}<Pressable accessibilityRole="button" accessibilityLabel="Project details" accessibilityState={{ expanded: detailsExpanded }} aria-expanded={detailsExpanded} testID="kitchen-project-details-toggle" onPress={() => setDetailsExpanded(value => !value)} style={{ minHeight: 44, minWidth: 44, flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 8 }}><Text style={type.body}>Details</Text><Feather name={detailsExpanded ? "chevron-up" : "chevron-down"} size={16} color={colors.onSurfaceSecondary} /></Pressable></View> : undefined}
+    compactHeader right={project ? <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>{projectActions}<Pressable accessibilityRole="button" accessibilityLabel="Project details" accessibilityState={{ expanded: detailsExpanded }} aria-expanded={detailsExpanded} testID="kitchen-project-details-toggle" onPress={() => setDetailsExpanded(value => !value)} style={{ minHeight: 44, minWidth: 44, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 8 }}><Text style={type.body}>Details</Text><Feather name={detailsExpanded ? "chevron-up" : "chevron-down"} size={16} color={colors.onSurfaceSecondary} /></Pressable></View> : undefined}
     contentStyle={{ width: "100%", maxWidth: 1000, alignSelf: "center" }}>
     {failure ? <ErrorState title="Project unavailable" subtitle={failure} onRetry={reload} /> : null}
     {loading && !project ? <LoadingState label="Loading project…" /> : null}
-    {project ? <View style={{ gap: spacing.lg }} testID="kitchen-project-detail">
+    {project ? <View style={{ gap: spacing.md }} testID="kitchen-project-detail">
       <View testID={!loading && !failure ? "kitchen-project-ready" : "kitchen-project-loading"} style={{ position: "absolute", width: 0, height: 0 }} />
       {detailsExpanded ? <View testID="kitchen-project-details" style={{ gap: spacing.sm }}>
         <Text style={type.overline}>{project.project_reference || project.reference}{project.is_legacy ? " · Legacy project" : ""}</Text>
@@ -86,7 +86,7 @@ export function KitchenProjectDetail({ page = "stage" }: { page?: ProjectPage })
       {retainedDraft ? <Alert tone="info" title="Drafts retained" description="The latest saved record is loaded. Your unsaved entries are kept for review." /> : null}
       <ErrorNotice error={submission.error} stale={submission.stale} onReload={reload} />
       {held ? <Alert tone="warning" title={`Project ${project.lifecycle_status}`} description="The owner must resume the project before routine work can continue." /> : null}
-      <View testID="kitchen-current-task-region" style={{ gap: spacing.lg, width: "100%", minWidth: 0 }}>
+      <View testID="kitchen-current-task-region" style={{ gap: spacing.md, width: "100%", minWidth: 0 }}>
         {selected !== project.stage ? <Alert tone="info" title="Stage records" description={future ? `Preview of ${STAGE_LABELS[selected]}. Open the current stage to move this project.` : `This project is now in ${STAGE_LABELS[project.stage]}. Earlier records are read only.`} action={<Button label={actionLabel} variant="secondary" onPress={() => router.replace(path(`/stages/${project.stage}`) as any)} testID="kitchen-open-current-stage" />} /> : null}
         {!canUpdate ? <View testID="kitchen-read-only-notice"><Alert tone="info" title="View only" description="Changes and uploads require permission for this project's current stage." /></View> : null}
         {project.commercial_basis_invalidated ? <Alert tone="warning" title="Fresh commercial approvals required" description="Create and approve a new design version, then renew the quotation and order approvals. Earlier records remain in History." /> : null}
@@ -230,7 +230,7 @@ function ProjectExceptions({ project, disabled }: { project: KitchenProject; dis
   const [status, setStatus] = useKitchenDraft("exception.status", "On Hold");
   if (!project.permissions?.can_approve_exceptions) return <ErrorState title="Owner access required" subtitle="Only the owner can record exceptional project or commercial changes." />;
   const act = (name: "order_status" | "exception", payload: Record<string, unknown>) => { void command(name, payload).then(saved => { if (saved) setReason(""); }); };
-  return <View style={{ gap: spacing.lg, width: "100%", maxWidth: 780, alignSelf: "center" }}>
+  return <View style={{ gap: spacing.md, width: "100%", maxWidth: 780, alignSelf: "center" }}>
     <Alert tone="warning" title="Owner actions" description="These changes affect the project workflow. Every change requires a reason and remains in its history." />
     <KitchenPanel title="Change project status">
       <TextField label="Reason for change" value={reason} onChangeText={setReason} editable={!disabled} multiline testID="kitchen-exception-reason" />
@@ -286,7 +286,7 @@ function ProjectHistory({ project }: { project: KitchenProject }) {
     if (project.duplicate_review?.reason) entries.push({ id: "duplicate-review", title: `Duplicate review · ${project.duplicate_review.status}`, lines: [project.duplicate_review.reason, `${actor(project.duplicate_review.reviewed_by)} · ${displayDate(project.duplicate_review.reviewed_at)}`] });
   }
   const recordCount = category === "activity" ? project.activity?.length || 0 : entries.length;
-  return <View style={{ gap: spacing.lg, width: "100%", maxWidth: 860, alignSelf: "center" }}>
+  return <View style={{ gap: spacing.md, width: "100%", maxWidth: 860, alignSelf: "center" }}>
     <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: spacing.md }}>
       <Menu triggerLabel="Choose history category" triggerTestID="kitchen-history-category" align="left" items={Object.entries(historyCategories).map(([key, label]) => ({ label, onPress: () => { setLimit(30); setCategory(key as keyof typeof historyCategories); } }))}><Text style={type.titleMd}>{historyCategories[category]} ▾</Text></Menu><Text style={type.caption}>{recordCount} records</Text>
     </View>

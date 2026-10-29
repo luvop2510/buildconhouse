@@ -29,6 +29,7 @@ export function DesignStage({ project, disabled, command }: { project: KitchenPr
     try {
       const saved = await command("design_present", { attachment_ids: [id], final_attachment_id: id, handoff_status: "No" });
       if (saved) setSelected(`file:${id}`);
+      return saved;
     } finally { adding.current = false; setAddingPdf(false); }
   };
   return <KitchenPanel>

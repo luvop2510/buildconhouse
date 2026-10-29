@@ -73,8 +73,7 @@ function render(stage, fields = {}, values = {}, command = async (...args) => { 
 }
 let view = render('quotation', { design_versions: [] });
 assert.equal(view.control('kitchen-quotation-receive').props.disabled, true);
-await view.control('kitchen-complete-design').props.onPress();
-assert.deepEqual(calls.pop(), ['move_stage', { target_stage: 'design' }]);
+assert.equal(view.control('kitchen-complete-design'), undefined);
 assert.equal(view.nodes.some(node => node.type === 'document'), false);
 function chooseQuotation(view, kitchenType = 'GI', id = 'file') {
   view.control(`kitchen-quotation-${kitchenType}-pdf`).props.onAdd(id);
@@ -209,26 +208,16 @@ assert.equal(view.control('kitchen-design-version').props.value,'numbered-design
 assert.equal(view.control('kitchen-design-new-version'),undefined);
 assert.equal(view.control('kitchen-design-present'),undefined);
 view = render('quotation', { design_versions: [design, design2], quotation_versions: [quotation, quote2] });
-assert.match(view.text, /Quotation 7/);
+assert.doesNotMatch(view.text, /New quotation|Unsaved/);
 assert.match(view.text, /Finalized design · Design 2/, 'An existing quotation keeps its saved design association');
 assert.equal(view.control('kitchen-quotation-final-design').props.file.id, design2.final_attachment_id);
 for (const retired of ['kitchen-quotation-revision', 'kitchen-quotation-design-version']) assert.equal(view.control(retired), undefined);
 assert.doesNotMatch(view.text, /Saved quotation|Related design/);
 assert.equal(calls.length, 0, 'Opening the latest quotation changes no association');
-view.control('kitchen-quotation-new-version').props.onPress();
-view = view.refresh();
-assert.ok(view.control('kitchen-quotation-receive'));
-assert.match(view.text, /Finalized design · Design 1/, 'A new quotation uses the project’s finalized design automatically');
-view = chooseQuotation(view);
-await view.control('kitchen-quotation-receive').props.onPress();
-assert.equal(calls.pop()[1].design_version_id, design.id, 'A new quotation saves the finalized design ID');
-view.control('kitchen-quotation-cancel-new').props.onPress();
-view = view.refresh();
-assert.match(view.text, /Quotation 7/, 'Cancelling a new quotation returns to the latest saved quotation');
-assert.match(view.text, /Finalized design · Design 2/);
+assert.equal(view.control('kitchen-quotation-new-version'),undefined);
+assert.equal(view.control('kitchen-complete-design'),undefined);
 view = render('quotation', { workflow_cycle: 2, final_design_version_id: design2.id, design_versions: [design, { ...design2, workflow_cycle: 2 }], quotation_versions: [quotation] });
-view.control('kitchen-quotation-new-version').props.onPress();
-view = view.refresh();
+
 assert.match(view.text, /Finalized design · Design 2/, 'A new quotation after Return to Design uses the current work cycle');
 view = chooseQuotation(view);
 assert.equal(view.control('kitchen-quotation-receive').props.disabled, false, 'Historical quotation viewing cannot trap new current-cycle quotation entry');
@@ -243,7 +232,7 @@ view = chooseQuotation(view);
 view.control('kitchen-quotation-shared-date').props.onChange('2026-10-26');
 view = view.refresh();
 assert.equal(view.control('kitchen-quotation-receive').props.disabled, true, 'A missing final design blocks a new quotation');
-assert.ok(view.control('kitchen-complete-design'));
+assert.equal(view.control('kitchen-complete-design'), undefined);
 view = view.refresh({ final_design_version_id: design.id });
 assert.equal(view.control('kitchen-quotation-receive').props.disabled, false, 'Returning from finalizing a design restores a new quotation without a removed picker');
 view = view.refresh({ final_design_version_id: design2.id });

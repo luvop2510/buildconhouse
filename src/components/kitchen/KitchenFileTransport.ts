@@ -1,6 +1,6 @@
 import { Platform } from "react-native";
 import type { DocumentPickerAsset } from "expo-document-picker";
-import { kitchenProjectsApi, type KitchenAttachment, type KitchenProject } from "@/src/api/kitchenProjects";
+import { kitchenProjectsApi, type KitchenAttachment, type KitchenFileTransfer, type KitchenProject } from "@/src/api/kitchenProjects";
 import { createPreparedNativeFile, savePreparedFile, sharePreparedNativeFile } from "@/src/utils/downloadFile";
 import type { File as NativeFile, FileHandle } from "expo-file-system";
 
@@ -29,35 +29,35 @@ async function digest(bytes: Uint8Array) {
 }
 
 export async function uploadKitchenFile(project: KitchenProject, file: DocumentPickerAsset, key: string,
-  progress: (percent: number) => void, transferStarted: (id: string) => void) {
+  progress: (percent: number) => void, transferStarted: (id: string, transfer?: KitchenFileTransfer) => void) {
   const maximum = /\.pdf$/i.test(file.name) || file.mimeType === "application/pdf" ? KITCHEN_MAX_PDF_BYTES : KITCHEN_MAX_FILE_BYTES;
   if (!file.size || file.size > maximum) throw new Error(`Choose a nonempty file up to ${maximum === KITCHEN_MAX_PDF_BYTES ? "10 MB (10,000,000 bytes) for PDFs" : "25 MB (25,000,000 bytes)"}.`);
   if (Platform.OS === "web" && !file.file) throw new Error("The original selected file is unavailable. Choose it again.");
+  progress(0);
   const nativeFile = Platform.OS === "web" ? null : new (await import("expo-file-system")).File(file.uri);
-  let native: FileHandle | undefined;
-  try {
-    const source = Platform.OS === "web" ? new Uint8Array(await file.file!.arrayBuffer()) : await nativeFile!.bytes();
-    if (source.length !== file.size) throw new Error("The selected file changed. Choose it again.");
-    const sha256 = await digest(source);
-    native = nativeFile?.open();
-    const transfer = await kitchenProjectsApi.beginTransfer(project.id, { expected_version: project.version,
-      idempotency_key: key, filename: file.name, content_type: file.mimeType || "application/octet-stream", size_bytes: file.size, ...(sha256 ? { sha256 } : {}) });
-    transferStarted(transfer.transfer_id);
-    if (transfer.chunk_bytes !== PART_BYTES || transfer.size_bytes !== file.size) throw new Error("File transfer limits changed. Choose the file again.");
-    if (transfer.state !== "completed") {
-      for (let index = 0; index < transfer.part_count; index += 1) {
-        const offset = index * PART_BYTES;
-        let bytes: Uint8Array;
-        if (Platform.OS === "web") bytes = new Uint8Array(await file.file!.slice(offset, Math.min(offset + PART_BYTES, file.size)).arrayBuffer());
-        else { native!.offset = offset; bytes = native!.readBytes(Math.min(PART_BYTES, file.size - offset)); }
-        await kitchenProjectsApi.uploadPart(project.id, transfer.transfer_id, index, encoded(bytes));
-        progress(Math.floor((index + 1) * 95 / transfer.part_count));
-      }
+  const source = Platform.OS === "web" ? new Uint8Array(await file.file!.arrayBuffer()) : await nativeFile!.bytes();
+  if (source.length !== file.size) throw new Error("The selected file changed. Choose it again.");
+  const sha256 = await digest(source);
+  const transfer = await kitchenProjectsApi.beginTransfer(project.id, { expected_version: project.version,
+    idempotency_key: key, filename: file.name, content_type: file.mimeType || "application/octet-stream", size_bytes: file.size, sha256 });
+  transferStarted(transfer.transfer_id, transfer);
+  if (transfer.chunk_bytes !== PART_BYTES || transfer.size_bytes !== file.size || transfer.part_count !== Math.ceil(file.size / PART_BYTES)) throw new Error("File transfer limits changed. Choose the file again.");
+  // A lost finish response can leave the same transfer finishing or completed.
+  // Its immutable parts are already present; only the exact finish receipt can
+  // resolve it. PUT would reject that state and permanently block this retry.
+  if (transfer.state === "open") {
+    for (let index = 0; index < transfer.part_count; index += 1) {
+      const offset = index * PART_BYTES;
+      // Send the bytes that were hashed, even if the selected native file is
+      // replaced while the network request is pending.
+      await kitchenProjectsApi.uploadPart(project.id, transfer.transfer_id, index, encoded(source.subarray(offset, Math.min(offset + PART_BYTES, file.size))));
+      progress(Math.floor((index + 1) * 95 / transfer.part_count));
     }
-    const saved = await kitchenProjectsApi.finishTransfer(project.id, transfer.transfer_id, project.version);
-    progress(100);
-    return saved;
-  } finally { native?.close(); }
+  }
+  progress(95);
+  const saved = await kitchenProjectsApi.finishTransfer(project.id, transfer.transfer_id, project.version);
+  progress(100);
+  return saved;
 }
 
 export async function downloadKitchenFile(projectId: string, attachment: KitchenAttachment, progress: (percent: number) => void, preview?: Window) {

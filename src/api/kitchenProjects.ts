@@ -77,7 +77,8 @@ export type KitchenQuery = {
   search?: string; stage?: string; status?: string; assignee?: string; date_from?: string; date_to?: string;
   date_field?: string; sort?: string; direction?: "asc" | "desc"; page?: number; limit?: number; completed?: string; duplicate_review?: "pending";
 };
-export type KitchenFileTransfer = { transfer_id: string; size_bytes: number; chunk_bytes: number; part_count: number; state: "open" | "finishing" | "completed"; expires_at: string };
+export type KitchenFileTransfer = { transfer_id: string; filename?: string; size_bytes: number; chunk_bytes: number; part_count: number; state: "open" | "finishing" | "completed"; expires_at: string };
+export type KitchenOwnFileTransfer = KitchenFileTransfer & { project_id: string };
 export type KitchenCreate = { assigned_to?: string | null; customer_id?: string; customer?: Omit<KitchenCustomer, "id"> & { phone: string }; idempotency_key: string; lead: KitchenLead };
 export type KitchenCommand = "assign" | "move_stage" | "review_duplicate" | "edit_lead" | "convert" | "save_visit" | "save_cad" | "advance_stage" | "metadata" | "design_present" | "design_update" | "design_share" | "design_response" | "design_revision" | "design_handoff" | "quotation_receive" | "quotation_update" | "quotation_share" | "quotation_response" | "order_confirm" | "order_confirmation" | "order_update" | "order_document" | "order_advance" | "order_amend" | "order_status" | "exception" | "production_update" | "installation_update" | "site_visit" | "approval";
 const options = { floorId: KITCHEN_FLOOR_ID, cacheMs: 0 };
@@ -93,7 +94,7 @@ export const kitchenProjectsApi = {
   configure: (body: { decision_contract: typeof KITCHEN_DECISION_CONTRACT; department_manager_user_ids: string[]; expected_version: number }) => api.put<KitchenPolicy>("/kitchen-projects/configuration", body, options),
   dashboard: (signal?: AbortSignal) => api.get<KitchenDashboard>("/kitchen-projects/dashboard", { ...options, signal }),
   upload: (id: string, form: FormData) => api.upload<KitchenProject>(`/kitchen-projects/${encodeURIComponent(id)}/attachments`, form, options),
-  ownTransfer: (id: string) => api.get<{ transfer: (KitchenFileTransfer & { project_id: string }) | null }>(`/kitchen-projects/${encodeURIComponent(id)}/file-transfers`, options),
+  ownTransfer: (id: string, signal?: AbortSignal) => api.get<{ transfer: KitchenOwnFileTransfer | null }>(`/kitchen-projects/${encodeURIComponent(id)}/file-transfers`, { ...options, signal }),
   beginTransfer: (id: string, body: { expected_version: number; idempotency_key: string; filename: string; content_type: string; size_bytes: number; sha256?: string }) => api.post<KitchenFileTransfer>(`/kitchen-projects/${encodeURIComponent(id)}/file-transfers`, body, options),
   uploadPart: (id: string, transfer: string, index: number, data_base64: string) => api.put<{ index: number; sha256: string }>(`/kitchen-projects/${encodeURIComponent(id)}/file-transfers/${encodeURIComponent(transfer)}/parts/${index}`, { data_base64 }, options),
   finishTransfer: (id: string, transfer: string, expected_version: number) => api.post<KitchenProject>(`/kitchen-projects/${encodeURIComponent(id)}/file-transfers/${encodeURIComponent(transfer)}/finish`, { expected_version }, options),

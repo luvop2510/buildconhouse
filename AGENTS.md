@@ -1,5 +1,25 @@
 # AGENTS.md — BuildCon House ERP (forge2.0)
 
+## Owner interface and Kitchen refinements — 2026-10-29
+
+The shared mobile-first interface contract is `src/design/README.md`: platform
+system text throughout (San Francisco on Apple), Feather icons, graphite actions,
+consistent spacing/targets and neutral surfaces. Overall/floor/homepage/report
+sales content shares AnalyticsDashboard with source-backed interactive charts.
+Preserve all existing workflow actions and data; the user explicitly limited
+unrelated functional changes. Furniture RNB stays in its own analysis/dedicated
+overview ledger; currency drilldowns clear on overview/floor navigation.
+
+Latest Kitchen instruction removes manual New quotation/unsaved-number controls
+and the redundant Choose finalized design/Go to Design prompt. Edit the latest
+current-cycle quotation using explicit GI/SS/Mix final PDF selection; preserve
+prior cycles, stored versions, order binding and approval checks. Kitchen follows
+the shared palette; compact Actions/Details/search alignment and smaller mobile
+panels replace the oversized layout. PDF retries preserve original bytes and
+acknowledged attachment identity; show preparation/upload/verification/discard
+progress and preserve entries on failures. No unrelated records are removed.
+
+
 ## Unified Sales Analytics specification — 2026-10-29
 
 The supplied Complete Sales Analytics specification supersedes the historical

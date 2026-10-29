@@ -37,6 +37,14 @@ test('Kitchen panels keep padded fields and every stage reachable in a short vie
   expect(created.ok()).toBe(true);
   const project = await created.json();
   await page.goto(`/kitchen/${project.id}/stages/lead`);
+  if (page.viewportSize()!.width < 768) {
+    const actions=await page.getByTestId('kitchen-project-actions').boundingBox();
+    const details=await page.getByTestId('kitchen-project-details-toggle').boundingBox();
+    const search=await page.getByTestId('kitchen-universal-search-open').boundingBox();
+    expect(Math.abs(actions!.y-details!.y)).toBeLessThan(2);
+    expect(Math.abs(actions!.y-search!.y)).toBeLessThan(2);
+    expect(search!.x+search!.width).toBeLessThanOrEqual(page.viewportSize()!.width-8);
+  }
   await (await projectControl(page, 'kitchen-project-actions')).click();
   await page.getByRole('menuitem', { name: 'Stage history', exact: true }).click();
   await page.getByTestId('kitchen-stage-completed').scrollIntoViewIfNeeded();

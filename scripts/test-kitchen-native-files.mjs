@@ -64,11 +64,13 @@ assert.equal(files.size, 1, 'small native download removes its private cache cop
 let selected = source;
 let corruptPart = false;
 let corruptFull = false;
+let transferState = 'open';
+let finishCalls = 0;
 const uploads = [];
 modules['@/src/api/kitchenProjects'] = { kitchenProjectsApi: {
-  beginTransfer: async (_project, value) => { assert.equal(value.sha256, sha(selected)); uploads.push({ ...value, parts: [] }); return { transfer_id: `transfer-${uploads.length}`, size_bytes: selected.length, chunk_bytes: 524288, part_count: Math.ceil(selected.length / 524288), state: 'open' }; },
+  beginTransfer: async (_project, value) => { assert.equal(value.sha256, sha(selected)); uploads.push({ ...value, parts: [] }); return { transfer_id: `transfer-${uploads.length}`, size_bytes: selected.length, chunk_bytes: 524288, part_count: Math.ceil(selected.length / 524288), state: transferState }; },
   uploadPart: async (_project, _transfer, index, base64) => { uploads.at(-1).parts[index] = Buffer.from(base64, 'base64'); },
-  finishTransfer: async () => { assert.deepEqual(Buffer.concat(uploads.at(-1).parts), selected); return { id: 'project', version: 2 }; },
+  finishTransfer: async () => { finishCalls++; if (transferState === 'open') assert.deepEqual(Buffer.concat(uploads.at(-1).parts), selected); return { id: 'project', version: 2 }; },
   downloadPart: async (_project, _attachment, index) => {
     const bytes = source.subarray(index * 524288, (index + 1) * 524288);
     return { index, size_bytes: source.length, data_base64: bytes.toString('base64'), sha256: corruptPart ? '0'.repeat(64) : sha(bytes), file_sha256: corruptFull ? '1'.repeat(64) : sha(source) };
@@ -127,3 +129,15 @@ await assert.rejects(transport.uploadKitchenFile({id:'project',version:1},{...as
 await assert.rejects(transport.uploadKitchenFile({id:'project',version:1},{...asset,name:'renamed.bin',mimeType:'application/pdf',size:10_000_001},'renamed-big',()=>{},()=>{}),/10 MB/);
 assert.equal(transport.KITCHEN_MAX_FILE_BYTES,25_000_000,'Historical file downloads retain the original 25 MB support');
 console.log('Kitchen PDF upload cap: 10 MB by PDF filename or MIME; existing historical download limit retained.');
+
+modules['react-native'].Platform.OS = 'ios';
+for (const state of ['finishing', 'completed']) {
+  transferState = state;
+  const previousFinishes = finishCalls;
+  const progress = [];
+  await transport.uploadKitchenFile({ id: 'project', version: 2 }, asset, `retry-${state}`, value => progress.push(value), () => {});
+  assert.equal(uploads.at(-1).parts.length, 0, `An explicit retry of a ${state} transfer never resends immutable parts`);
+  assert.equal(finishCalls, previousFinishes + 1, 'The exact finalization endpoint resolves its existing attachment receipt');
+  assert.equal(progress.at(-1), 100);
+}
+console.log('Kitchen upload recovery: finishing/completed receipts reach finalization without resending parts.');

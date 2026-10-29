@@ -160,6 +160,9 @@ test('Quotations accept all three kitchen types while exactly one selected PDF b
   project = await command(context.request, project, 'move_stage', { target_stage: 'quotation' });
   await open(page, project, 'quotation');
   const health = captureRuntimeHealth(page);
+  await expect(page.getByTestId('kitchen-quotation-new-version')).toHaveCount(0);
+  await expect(page.getByTestId('kitchen-complete-design')).toHaveCount(0);
+  await expect(page.getByText(/New quotation.*Unsaved/)).toHaveCount(0);
   await expect(page.getByTestId('kitchen-quotation-receive')).toBeDisabled();
   for (const type of ['GI', 'SS', 'Mix']) await expect(page.getByTestId(`kitchen-quotation-${type}-pdf-existing`)).toHaveCount(0);
   await expect(page.getByText('Choose a PDF to add.', { exact: true })).toHaveCount(0);

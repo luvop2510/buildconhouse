@@ -95,7 +95,7 @@ class KitchenFileTransfers:
         return row
 
     def public(self, row):
-        return {"transfer_id": row["transfer_id"], "size_bytes": row["size_bytes"], "chunk_bytes": CHUNK_BYTES,
+        return {"transfer_id": row["transfer_id"], "filename": row["filename"], "size_bytes": row["size_bytes"], "chunk_bytes": CHUNK_BYTES,
                 "part_count": math.ceil(row["size_bytes"] / CHUNK_BYTES), "state": row["state"],
                 "expires_at": row["expires_at"].isoformat()}
 
@@ -247,12 +247,21 @@ class KitchenFileTransfers:
             return await self.projects.get(user, project_id)
         async with transfer_limit():
             content = bytearray()
-            for index in range(math.ceil(row["size_bytes"] / CHUNK_BYTES)):
-                part = await self.db.kitchen_file_parts.find_one({"_id": f"actor:{user.id}:{index}", "transfer_id": transfer_id})
-                if not part:
-                    # Read-only compatibility for an upload begun before the
-                    # fixed actor-slot transport was installed.
-                    part = await self.db.kitchen_file_parts.find_one({"_id": f"{transfer_id}:{index}"})
+            count = math.ceil(row["size_bytes"] / CHUNK_BYTES)
+            # Fetch the bounded, exact slots together. Per-part find_one calls
+            # added up to 48 serial database round trips before provider I/O,
+            # consuming the ordinary request deadline for large files.
+            # Include only exact legacy slots for an upload begun before the
+            # fixed actor-slot transport was installed, preferring current slots.
+            actor_slots = [f"actor:{user.id}:{index}" for index in range(count)]
+            legacy_slots = [f"{transfer_id}:{index}" for index in range(count)]
+            parts = await self.db.kitchen_file_parts.find({"$or": [
+                {"_id": {"$in": actor_slots}, "transfer_id": transfer_id},
+                {"_id": {"$in": legacy_slots}},
+            ]}).limit(count * 2).to_list(count * 2)
+            by_slot = {part["_id"]: part for part in parts}
+            for index in range(count):
+                part = by_slot.get(actor_slots[index]) or by_slot.get(legacy_slots[index])
                 if not part:
                     raise HTTPException(409, "File transfer is incomplete; retry the missing parts")
                 data = part["data"]
@@ -284,12 +293,16 @@ class KitchenFileTransfers:
         await access.require_capability(self.db, user, "view")
         row = await self.db.kitchen_file_transfers.find_one({"_id": user.id, "project_id": project_id, "transfer_id": transfer_id})
         if not row:
-            raise HTTPException(404, "File transfer not found")
+            # The exact actor/project/transfer is already absent after a lost
+            # acknowledgement. Do not touch another slot or any stored object.
+            return {"discarded": True}
         if row["state"] != "open":
             raise HTTPException(409, "A finishing or committed file cannot be discarded")
         removed = await self.db.kitchen_file_transfers.delete_one({"_id": user.id, "transfer_id": transfer_id, "state": "open"})
         if not removed.deleted_count:
-            raise HTTPException(409, "File transfer changed; retry")
+            current = await self.db.kitchen_file_transfers.find_one({"_id": user.id, "project_id": project_id, "transfer_id": transfer_id})
+            if current:
+                raise HTTPException(409, "File transfer changed; retry")
         await self.db.kitchen_file_parts.delete_many({"transfer_id": transfer_id})
         return {"discarded": True}
 

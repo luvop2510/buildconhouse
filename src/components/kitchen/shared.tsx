@@ -29,9 +29,9 @@ export function KitchenPage({ title, subtitle, overline, right, back, children, 
             {back ? <Pressable accessibilityRole="button" accessibilityLabel="Back" onPress={back} testID="kitchen-page-back" style={{ minWidth: 44, minHeight: 44, justifyContent: "center", alignItems: "center" }}><Feather name="arrow-left" size={20} color={colors.onSurface} /></Pressable> : null}
             <Text accessibilityRole="header" aria-level={1} numberOfLines={1} style={[type.titleMd, { flex: 1, minWidth: 0 }]}>{title}</Text>
           </View>
-          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 8 }}>
-            {customerSearch ? <KitchenCustomerSearch compact /> : null}
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: isPhone ? "space-between" : "flex-end", gap: 8 }}>
             {right}
+            {customerSearch ? <KitchenCustomerSearch compact /> : null}
           </View>
         </View> : <View style={{ gap: 16, borderBottomWidth: 1, borderBottomColor: colors.divider, paddingBottom: 24 }}>
           {back ? <Button label="Back" icon="arrow-left" variant="ghost" onPress={back} testID="kitchen-page-back" /> : null}
@@ -59,14 +59,14 @@ export function KitchenFloor({ children }: { children: ReactNode }) {
 }
 export function KitchenPanel({ title, children }: { title?: string; children: ReactNode }) {
   const { isPhone } = useBp();
-  return <View style={{ width: "100%", maxWidth: "100%", gap: isPhone ? 16 : 20, minWidth: 0, backgroundColor: colors.surfaceSecondary, padding: isPhone ? 16 : 24, borderRadius: 8, borderWidth: 1, borderColor: colors.border }}>
+  return <View style={{ width: "100%", maxWidth: "100%", gap: isPhone ? 12 : 16, minWidth: 0, backgroundColor: colors.surfaceSecondary, padding: isPhone ? 12 : 20, borderRadius: 8, borderWidth: 1, borderColor: colors.border }}>
     {title ? <View style={{ paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: colors.divider }}><Text accessibilityRole="header" aria-level={2} style={type.titleMd}>{title}</Text></View> : null}{children}
   </View>;
 }
 export function KitchenDetails({ items, testID }: { items: { label: string; value: string }[]; testID?: string }) {
   const { isPhone } = useBp();
   return <View testID={testID} style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
-    {items.map(({ label, value }) => <View key={label} style={{ flexBasis: isPhone ? "100%" : "30%", flexGrow: 1, minWidth: 0, padding: 12, borderWidth: 1, borderColor: colors.controlBorder, borderRadius: 6, backgroundColor: colors.surface }}>
+    {items.map(({ label, value }) => <View key={label} style={{ flexBasis: isPhone ? "45%" : "30%", flexGrow: 1, minWidth: 0, padding: 12, borderWidth: 1, borderColor: colors.controlBorder, borderRadius: 6, backgroundColor: colors.surface }}>
       <Text style={type.body}><Text style={type.caption}>{label}:</Text>{"\n"}<Text style={type.bodyStrong}>{value}</Text></Text>
     </View>)}
   </View>;

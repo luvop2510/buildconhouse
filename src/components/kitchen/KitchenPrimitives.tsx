@@ -6,15 +6,8 @@ import { Button, TextField } from "@/src/components/ui";
 import { colors as appColors, type as appType } from "@/src/theme/tokens";
 import { useBp } from "@/src/design/responsive";
 
-/** Kitchen owns its visual language; other floor workspaces retain their theme. */
-export const kitchenColors = {
-  ...appColors,
-  surface: "#F6F7F9", surfaceSecondary: "#FFFFFF", surfaceTertiary: "#EEF2F6",
-  surfaceSubtle: "#F6F7F9", onSurface: "#17232E", onSurfaceSecondary: "#354454",
-  onSurfaceMuted: "#53616F", onSurfaceSubtle: "#657483", border: "#D9E0E6",
-  borderStrong: "#A7B5C2", controlBorder: "#7E8B98", divider: "#D9E0E6", brand: "#0066CC", brandHover: "#0053A6",
-  brandTint: "#EDF5FF", brandBorder: "#B5D4F4", focusRing: "#0066CC",
-} as const;
+/** Kitchen follows the same mobile-first system as every floor. */
+export const kitchenColors = { ...appColors, controlBorder: appColors.borderStrong };
 export const kitchenType = {
   ...appType,
   titleLg: { ...appType.titleLg, color: kitchenColors.onSurface, fontSize: 28, lineHeight: 36 },

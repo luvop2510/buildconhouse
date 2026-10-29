@@ -1,4 +1,3 @@
-import { useState, type ReactNode } from "react";
 import { View } from "react-native";
 import { Text } from "@/src/components/AppText";
 import type { KitchenPdfOption, KitchenProject, KitchenVersion } from "@/src/api/kitchenProjects";
@@ -13,20 +12,12 @@ import { KitchenButton as Button, kitchenType as type } from "./KitchenPrimitive
 import { spacing } from "@/src/theme/tokens";
 
 export function QuotationStage({ project, disabled, command }: { project: KitchenProject; disabled: boolean; command: StageCommand }) {
-  const [creating, setCreating] = useState(false);
-  const versions = project.quotation_versions || [];
-  const quote = creating ? undefined : versions.at(-1);
-  const next = Math.max(0, ...versions.map(row => row.number)) + 1;
-  const active = project.stage === "quotation";
-  return <KitchenPanel>
-    <QuotationForm key={quote?.id || "new"} project={project} quote={quote} disabled={disabled} command={command} onCreated={() => setCreating(false)} header={<>
-      <Text style={type.bodyStrong}>{quote ? `Quotation ${quote.number}` : `New quotation ${next} · Unsaved`}</Text>
-      {active ? <Button label="New quotation" variant="secondary" disabled={disabled || kitchenProductionStarted(project)} onPress={() => setCreating(true)} testID="kitchen-quotation-new-version" /> : null}
-      {creating && versions.length ? <Button label="Back to saved quotation" variant="secondary" onPress={() => setCreating(false)} testID="kitchen-quotation-cancel-new" /> : null}
-    </>} />
-  </KitchenPanel>;
+  const latest = project.quotation_versions?.at(-1);
+  const basis = project.design_versions?.find(row=>row.id===latest?.design_version_id);
+  const quote = basis && (basis.workflow_cycle ?? 1) !== (project.workflow_cycle ?? 1) ? undefined : latest;
+  return <KitchenPanel><QuotationForm key={quote?.id || "new"} project={project} quote={quote} disabled={disabled} command={command} /></KitchenPanel>;
 }
-function QuotationForm({ project, quote, disabled, command, onCreated, header }: { project: KitchenProject; quote?: KitchenVersion; disabled: boolean; command: StageCommand; onCreated: () => void; header: ReactNode }) {
+function QuotationForm({ project, quote, disabled, command }: { project: KitchenProject; quote?: KitchenVersion; disabled: boolean; command: StageCommand }) {
   const prefix = `commercial.cycle.${project.workflow_cycle ?? 1}.quotation.${quote?.id || "new"}.edit`;
   const { resetDraftValue, documentSubmission } = useKitchenProject();
   const source = JSON.stringify(quote || null);
@@ -54,9 +45,7 @@ function QuotationForm({ project, quote, disabled, command, onCreated, header }:
   return <View style={{ gap: spacing.md }}>
     <Text style={type.bodyStrong}>Finalized design{displayedDesign ? ` · Design ${displayedDesign.number}` : ""}</Text>
     {finalizedDesignFile ? <KitchenPdfFile project={project} file={finalizedDesignFile} selected testID="kitchen-quotation-final-design" /> : <Text style={type.bodyMuted}>No finalized design PDF selected.</Text>}
-    {header}
-    {boundOrder ? <Text style={type.caption}>This quotation is used by an order. Create a new quotation to change its finalized PDF or kitchen type; then select that quotation in Order.</Text> : null}
-    {requirement ? <View style={{ gap: spacing.sm }}><Text style={type.bodyMuted}>{requirement}</Text>{project.stage === "quotation" ? <Button label="Go to Design" variant="secondary" disabled={disabled} onPress={() => command("move_stage", { target_stage: "design" })} testID="kitchen-complete-design" /> : null}</View> : null}
+    {boundOrder ? <Text style={type.caption}>This finalized quotation is used by an order. Its recorded PDF and kitchen type are preserved.</Text> : null}
     {stale ? <><Text style={type.bodyMuted}>This quotation changed while you were editing. Your entries are kept.</Text><Button label="Replace draft with latest quotation details" variant="secondary" onPress={() => resetDraftValue(prefix)} testID="kitchen-quotation-edit-reload" /></> : null}
     {(["GI", "SS", "Mix"] as const).map(kitchenType => <KitchenPdfFiles key={kitchenType} project={project} attachmentIds={draft.pdf_options.filter(option => option.kitchen_type === kitchenType).map(option => option.attachment_id)} finalId={draft.final_attachment_id} onAdd={id => setDraft(previous => ({ ...previous, pdf_options: [...previous.pdf_options.filter(option => option.attachment_id !== id), { attachment_id: id, kitchen_type: kitchenType }] }))} onSelect={id => setDraft(previous => ({ ...previous, final_attachment_id: id }))} disabled={locked} selectionDisabled={boundOrder} label={kitchenType} testID={`kitchen-quotation-${kitchenType}-pdf`} draftKey={`${prefix}.pdf.${kitchenType}`} />)}
     <KitchenDetails items={[{ label: "Final kitchen type", value: finalOption?.kitchen_type || "Select one finalized PDF" }, { label: "PDF upload date", value: uploadDate || "Recorded automatically on upload" }]} testID="kitchen-quotation-final-selection" />
@@ -66,6 +55,6 @@ function QuotationForm({ project, quote, disabled, command, onCreated, header }:
     <Choice label="Customer response" value={draft.response} values={["Pending", "Approved", "Changes Required"]} onChange={value => update("response", value)} disabled={locked} testID="kitchen-version-response" />
     {problem ? <Text accessibilityRole="alert" style={type.bodyMuted}>{problem}</Text> : null}
     {quote?.response === "Approved" && !project.permissions?.can_approve_exceptions ? <Text style={type.caption}>Only the owner can correct an approved quotation.</Text> : null}
-    {project.stage === "quotation" ? <Button label={quote ? "Save quotation details" : "Save new quotation"} disabled={locked || documentSubmission.busy || stale || Boolean(requirement) || Boolean(problem)} onPress={async () => { const { source: _source, ...fields } = draft; const saved = await command(quote ? "quotation_update" : "quotation_receive", { ...fields, design_version_id: designId, ...(quote ? { version_id: quote.id } : {}), shared_date: sharedDate || null }); if (saved && !quote) onCreated(); }} testID={quote ? "kitchen-quotation-edit-save" : "kitchen-quotation-receive"} /> : null}
+    {project.stage === "quotation" ? <Button label={"Save quotation details"} disabled={locked || documentSubmission.busy || stale || Boolean(requirement) || Boolean(problem)} onPress={async () => { const { source: _source, ...fields } = draft; await command(quote ? "quotation_update" : "quotation_receive", { ...fields, design_version_id: designId, ...(quote ? { version_id: quote.id } : {}), shared_date: sharedDate || null });  }} testID={quote ? "kitchen-quotation-edit-save" : "kitchen-quotation-receive"} /> : null}
   </View>;
 }
