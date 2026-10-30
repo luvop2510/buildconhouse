@@ -1,7 +1,6 @@
 import { referrerCode } from '../src/utils/referrer';
 import { expect, test } from '@playwright/test';
 import { captureRuntimeHealth } from './runtime-health';
-import { mockSalesSummary } from './sales-fixtures';
 import { analyticsDashboard, mockSalesAnalytics } from './sales-analytics-fixtures';
 import { analyticsChoice, analyticsCustomRange, analyticsExplore, analyticsExport, analyticsFitsViewport, analyticsFloor } from './sales-analytics-helpers';
 
@@ -104,6 +103,7 @@ test('critical late previous-floor reads cannot relabel the selected floor', asy
 test('critical project departments identify unavailable product attribution without inventing zero', async ({ page }) => {
   await mockSalesAnalytics(page);
   await page.goto('/sales-data/floor/second-floor?floor_id=second-floor');
+  await page.getByRole('button',{name:'Sales basis & sources',exact:true}).click();
   await expect(page.getByText('Product attribution unavailable for this workflow.', { exact: true })).toBeVisible();
   await expect(page.getByTestId('analytics-kpi-sales')).toContainText('₹0');
   await expect(page.getByTestId('analytics-kpi-aov')).toContainText('Unavailable');
@@ -123,7 +123,9 @@ test('critical all four departments preserve separate INR and RNB totals and cus
   await analyticsExplore(page, 'customers');
   await expect(page.getByTestId('analytics-entity-customer-a')).toContainText('Ananya Shah');
   await expect(page.getByTestId('analytics-entity-customer-c')).toContainText('Falguni Furniture Client');
-  await expect(page.getByTestId('analytics-entity-customer-c')).not.toContainText('RNB');
+  await expect(page.getByTestId('analytics-entity-customer-c')).toContainText('RNB 75,000.5');
+  await expect(page.getByText('Sales in RNB (separate scale)',{exact:true})).toBeVisible();
+  await expect(page.getByTestId('analytics-entity-customer-a')).not.toContainText('RNB');
   await analyticsFloor(page, 'third-floor');
   await expect(page.getByTestId('analytics-entity-customer-c')).toContainText('RNB 75,000.5');
   await analyticsFitsViewport(page);
@@ -159,7 +161,7 @@ test('critical floor and trend chart drills preserve the selected date basis and
 });
 
 test('critical reference search keeps pre-order clients and the chosen reporting period in its detail link', async ({ page }) => {
-  await mockSalesSummary(page);
+  await mockSalesAnalytics(page);
   await page.route('**/api/referrers/page?**', route => {
     const search = new URL(route.request().url()).searchParams.get('search')?.toLowerCase() || '';
     const rows = [{ id: 'real-reference', name: 'Nisha Shah', type: 'architect', company: 'Studio Line', shared_across_floors: true, updated_at: 'v1' }]
@@ -175,7 +177,10 @@ test('critical reference search keeps pre-order clients and the chosen reporting
   await expect(row).toContainText('Nisha Shah');
   await expect(row).toContainText('7');
   const link = row.getByRole('link');
-  await expect(link).toHaveAttribute('href', /preset=this_month/);
+  await expect(link).toHaveAttribute('href', /preset=custom/);
+  const target=new URL((await link.getAttribute('href'))!,'http://fixture.test');
+  expect(target.searchParams.get('dateFrom')).toBe(analyticsDashboard().period.start);
+  expect(target.searchParams.get('dateTo')).toBe(analyticsDashboard().period.end);
   await page.getByTestId('references-search').fill('no match');
   await expect(page.getByText(/No matching references/)).toBeVisible();
   await page.getByTestId('references-search').fill('Studio Line');
