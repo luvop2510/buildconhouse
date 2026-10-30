@@ -131,6 +131,12 @@ test('retired view bookmarks use the compact list through width changes', async 
     await expect(page.getByTestId('kitchen-compact-list')).toBeVisible();
     const geometry = await page.evaluate(() => ({ viewport: innerWidth, document: document.documentElement.scrollWidth }));
     expect(geometry.document, `${width}×${height} root fits`).toBeLessThanOrEqual(geometry.viewport + 1);
+    for (const id of ['kitchen-settings-open', 'kitchen-create']) {
+      await expect.poll(async () => {
+        const bounds = await page.getByTestId(id).boundingBox();
+        return bounds && bounds.x >= 8 && bounds.x + bounds.width <= width - 8 && bounds.height >= 44;
+      }, { message: `${width}×${height}: ${id} keeps its complete tap target inside the page` }).toBe(true);
+    }
     await page.screenshot({ path: testInfo.outputPath(`compact-list-${width}x${height}.png`) });
   }
   await page.goto('/kitchen/stages/lead?view=table');

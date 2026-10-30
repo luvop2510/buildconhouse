@@ -16,6 +16,7 @@ work is preserved.
 | Reloading reopened Installation erases unsaved entries | A Completed→In Progress saved-state effect replaced the entire draft. Rebase untouched saved fields while preserving locally edited notes/dates/status. | Actual form regression failed before repair; real API/browser scenario reloads externally reopened work and retains unsaved notes and dates. |
 | Ground stock commits without permanent movement history | Release, move-to-godown, both dispatch sources and Delivered wrote register rows after the stock transaction. Move register writes into that same session. Optional activity remains best effort. | Ten unit cases and ten real-Mongo success/failure cases; injected failure after the actual register insert rolls back all related records and counters. |
 | Ground brand queue grows with every page | Load more appended each page inside the page scroll owner. Retain one 30-row page, acknowledge page changes after success, coalesce requests and cancel obsolete scopes. Failed pages retain the acknowledged rows and retry their intended page. | Hook tests exercise coalescing, stale completions, failure/retry and effect replay; required four-device populated browser case verifies 30-row bounds and Previous/Next behavior. |
+| Kitchen Add lead is clipped on narrow phones | The nested toolbar kept its intrinsic width despite its parent's wrapping policy. Constrain the nested action group to the available width so complete buttons wrap instead of clipping. | Visual review found clipping at 320px while the document-overflow assertion still passed. A new full-tap-target bounds assertion failed on the original export and checks phone/tablet/landscape/desktop widths. |
 
 The implementation changes shared primitives or the failing workflow boundary.
 It preserves current floor/role restrictions, original document/version links,
@@ -42,6 +43,11 @@ receipt and follow-up verification below. The first browser gate attempt could
 not bind an already occupied local port 8099. The full unchanged gate was
 restarted with `FORGE_STABILITY_PORT=8129 FORGE_PERFORMANCE_PORT=8128`; no existing
 process was stopped and no budget, retry or error-reporting policy was changed.
+The standalone run was subsequently replaced by the identical mandatory pre-push
+gate. That partial pre-push attempt was stopped when visual review discovered the
+narrow-phone toolbar defect. Partial/interrupted runs are diagnostic evidence,
+not release acceptance; the final pre-push gate and Kitchen suite use the repaired
+export and must complete without retries or skips.
 
 Independent reviews covered shared keyboard/download handling and cross-reviewed
 the Kitchen and Ground fixes. Their reported issues were reproduced and resolved
