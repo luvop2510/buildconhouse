@@ -7,6 +7,10 @@ import ts from 'typescript';
 const compiled = ts.transpileModule(readFileSync(new URL('../src/components/quotation/sheets/CustomerSwitcherSheet.tsx', import.meta.url), 'utf8'), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
 }).outputText;
+const phone = {};
+vm.runInNewContext(ts.transpileModule(readFileSync(new URL('../src/utils/phone.ts', import.meta.url), 'utf8'), {
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+}).outputText, { exports: phone });
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
 const nodes = tree => !tree || typeof tree !== 'object' ? [] : Array.isArray(tree) ? tree.flatMap(nodes) : [tree, ...nodes(tree.props?.children)];
 const text = tree => tree == null || typeof tree === 'boolean' ? '' : typeof tree !== 'object' ? String(tree) : Array.isArray(tree) ? tree.map(text).join(' ') : text(tree.props?.children);
@@ -33,6 +37,7 @@ function fixture() {
   const modules = {
     react, 'react/jsx-runtime': { jsx, jsxs: jsx },
     'react-native': { Platform: { OS: 'web' }, View: 'View', Pressable: 'Pressable', StyleSheet: { create: value => value } },
+    '@/src/utils/phone': phone,
     '@/src/components/AppText': { Text: 'Text', TextInput: 'TextInput' },
     '@/src/components/BottomSheet': { BottomSheet: 'BottomSheet' }, '@/src/components/ui': { Button: 'Button' },
     '@/src/theme/tokens': { colors: {}, radius: {}, spacing: {}, type: {} }, '@/src/design/tokens': { color: {} },
