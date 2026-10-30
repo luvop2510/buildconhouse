@@ -571,6 +571,7 @@ export default function AdminLayout() {
   const inputActive = useInputActive();
   const hidePhoneHeader = inputActive && Platform.OS !== "web";
   const builderSegments = useResolvedFloorSegments();
+  const salesWorkspace = builderSegments.includes("sales-data");
   const focusedQuotation = builderSegments.includes("quotations") && builderSegments.includes("new");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
@@ -611,7 +612,7 @@ export default function AdminLayout() {
         >
           <ConnectionStatus />
           <FloorAccessGate><CustomAccessRouteGate>
-            {isPhone && !focusedQuotation ? <View
+            {isPhone && !focusedQuotation && !salesWorkspace ? <View
               testID="mobile-workspace-header"
               pointerEvents={hidePhoneHeader ? "none" : "auto"}
               accessibilityElementsHidden={hidePhoneHeader}

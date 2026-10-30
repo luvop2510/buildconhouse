@@ -47,8 +47,14 @@ test('critical Sales Data keeps product evidence and validates dates',async({pag
  await mockSalesAnalytics(page);
  await page.goto('/sales-data');
  await expect(page.getByTestId('analytics-kpis')).toContainText('3');
+ await page.getByTestId('analytics-navigation-open').click();
+ await page.getByTestId('analytics-nav-companies').click();
  await expect(page.getByTestId('analytics-entity-company-a')).toContainText('Hansgrohe');
+ await page.getByTestId('analytics-navigation-open').click();
+ await page.getByTestId('analytics-nav-products').click();
  await expect(page.getByTestId('analytics-entity-product-a')).toContainText('Talis basin mixer');
+ await page.getByTestId('analytics-nav-dashboard').click();
+ await expect(page.getByTestId('analytics-kpi-orders')).toContainText('3');
  await analyticsCustomRange(page, '2026-09-17', '2026-09-03');
  await page.getByTestId('analytics-filter-apply').click();
  await expect(page.getByRole('alert')).toContainText(/valid|after/i);

@@ -11,8 +11,14 @@ test('critical analytics presents confirmed sales and every shared entity destin
   await mockSalesAnalytics(page);
   await page.goto('/sales-data');
   await expect(page.getByTestId('analytics-kpi-orders')).toContainText('3');
+  await expect(page.getByTestId('analytics-sales-hero')).toContainText('Confirmed sales');
+  await expect(page.getByTestId('analytics-order-activity')).toBeVisible();
+  await analyticsExplore(page,'companies');
   await expect(page.getByTestId('analytics-entity-company-a')).toContainText('Hansgrohe');
+  await analyticsExplore(page,'products');
   await expect(page.getByTestId('analytics-entity-product-a')).toContainText('Talis basin mixer');
+  await page.getByTestId('analytics-nav-dashboard').click();
+  await expect(page.getByTestId('analytics-kpi-orders')).toContainText('3');
   await analyticsFitsViewport(page, [page.getByTestId('analytics-nav-dashboard'), page.getByTestId('analytics-navigation-open')]);
   await page.getByTestId('analytics-navigation-open').click();
   await analyticsFitsViewport(page, ['companies','products','architects','customers','reports'].map(name => page.getByTestId(`analytics-nav-${name}`)));

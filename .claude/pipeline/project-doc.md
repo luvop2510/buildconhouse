@@ -1,5 +1,20 @@
 # BuildCon House project documentation
 
+## Sales reference reconstruction delta — 30 October 2026
+
+The user-supplied Stitch HTML now specifies the sales layout, following the
+IMG_4104 dashboard direction: collection arc and revenue, visual KPIs,
+distribution, dated order matrix, paired time comparison and transactions.
+Prototype targets, dispatch/pace/allocation claims and sample figures are replaced
+by existing recorded metrics; INR/RNB remain separate. Existing blue/neutral
+theme only; phone headers/navigation scroll with data. Monetary cards measure
+their full values and expand when needed. Entity directories retain ledgers,
+profiles keep scoped tabs, and PDF uses rounded summaries, real collection-share
+arcs and exact-value charts while preserving selected attributed source rows.
+No dependency, framework, schema or auth layer changes. Native fallback delta
+scan covers source components, the existing PDF exporter/helper and regressions.
+AGENTS.md architectural regeneration is unnecessary. Coverage is not measured.
+
 ## Eight-reference interface delta — 30 October 2026
 
 The user's eight visual references extend the sales-only brief to Today and the

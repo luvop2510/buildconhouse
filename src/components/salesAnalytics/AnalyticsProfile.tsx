@@ -1,9 +1,10 @@
 import { useLocalSearchParams } from 'expo-router';
-import { Pressable, ScrollView, View } from 'react-native';
+import { Pressable, ScrollView, View, useWindowDimensions } from 'react-native';
 import { Text } from '@/src/components/AppText';
 import { AdminPage } from '@/src/components/AdminPage';
 import { Button } from '@/src/components/ui';
 import { colors, spacing, type } from '@/src/theme/tokens';
+import { useBp } from '@/src/design/responsive';
 import { analyticsQuery, salesAnalyticsApi, type AnalyticsFilters as FilterValues } from '@/src/api/salesAnalytics';
 import { Pagination } from './AnalyticsEntities';
 import { setSelectedFloorId } from '@/src/hooks/use-floor-access';
@@ -44,6 +45,8 @@ export function RecordTable({name,rows,total,go,floorId}:{name:string;rows:Recor
  }):<Empty text={`No permitted ${TABLE_NAMES[name]?.toLowerCase()||name.replace(/_/g,' ')} are available for this profile and filter state. Historical records may not contain these links.`}/>}{sourceError?<Text accessibilityRole="alert" style={type.bodySm}>{sourceError}</Text>:null}{total&&total>rows.length?<Text style={type.caption}>Showing {rows.length} of {total} related records. Export the filtered records for the complete result.</Text>:null}</Panel>;
 }
 export function AnalyticsProfilePage() {
+ const {isDesktop,isTabletLandscape}=useBp(); const {fontScale}=useWindowDimensions();
+ const paired=(isDesktop||isTabletLandscape)&&fontScale<=1.3;
  const params=useLocalSearchParams<{kind:string;id:string;tab?:string}>(); const {filters,update,go,router,floors,canView}=useAnalyticsScope(); const kind=params.kind; const id=params.id;
  const entityKey=`${kind==='companies'?'company':kind==='architects'?'architect':kind==='products'?'product':'customer'}_id`;
  const scopedGo=(path:string,next:FilterValues={})=>go(path,{[entityKey]:id,...next});
@@ -55,20 +58,23 @@ export function AnalyticsProfilePage() {
  const presentLabels=new Set(attributes.map(attribute=>attribute.label.toLowerCase()));
  const displayAttributes=[...attributes,...requiredAttributes.filter(label=>!presentLabels.has(label.toLowerCase())).map(label=>({label,value:null}))]; const tabs=['overview',...(PROFILE_TABLES[kind]||['orders'])];
  return <AdminPage title={read.data?.identity.name||'Entity profile'} header={false} contentStyle={{gap:spacing.s16,paddingTop:spacing.s16}}>
+ <View style={{width:'100%',maxWidth:1440,alignSelf:'center',gap:spacing.s16}}>
  <View style={{alignItems:'flex-start'}}><Button label="Back to analysis" icon="arrow-left" variant="secondary" onPress={()=>router.canGoBack()?router.back():go(`/(admin)/sales-data/${kind}`)}/></View>
  <ReadState loading={read.loading&&!read.data} error={read.error} retry={read.refresh}/>
  {read.data?<><View style={{flexDirection:'row',justifyContent:'space-between',alignItems:'flex-start',flexWrap:'wrap',gap:spacing.s12}}><View style={{flex:1,minWidth:160,gap:spacing.s4}}><Text accessibilityRole="header" aria-level={1} style={type.displayMd}>{read.data.identity.name}</Text><Text style={type.bodySm}>{read.data.identity.id} · {read.data.identity.status||'Status unavailable'}</Text><Text style={type.bodySm}>{read.data.identity.floor_ids.map(floor=>FLOOR_NAMES[floor]||floor).join(' · ')||'Business unit unavailable'}</Text></View><ExportMenu filters={filters} view="profile" kind={kind} entityId={id} tab={tab}/></View>
  <AnalyticsFilters filters={filters} update={update} floors={floors}/>
  <ScrollView horizontal showsHorizontalScrollIndicator={false} accessibilityRole="tablist" accessibilityLabel="Profile sections"><View style={{flexDirection:'row',borderBottomWidth:1,borderBottomColor:colors.border}}>{tabs.map(name=><Pressable key={name} accessibilityRole="tab" accessibilityState={{selected:tab===name}} testID={`analytics-profile-tab-${name}`} onPress={()=>router.setParams({tab:name,page:'1'})} style={({pressed})=>({minHeight:48,paddingHorizontal:spacing.s16,justifyContent:'center',borderBottomWidth:2,borderBottomColor:tab===name?colors.brand:'transparent',backgroundColor:pressed?colors.surfaceTertiary:'transparent'})}><Text style={tab===name?[type.bodyStrong,{color:colors.brand}]:type.bodyMuted}>{name==='overview'?'Overview':TABLE_NAMES[name]||name}</Text></Pressable>)}</View></ScrollView>
  {tab==='overview'?<><AnalyticsKpis data={read.data} go={metric=>go('/(admin)/sales-data/records',{[`${kind==='companies'?'company':kind==='architects'?'architect':kind==='products'?'product':'customer'}_id`]:id,metric})}/>
- <Panel title="Profile details"><View style={{flexDirection:'row',flexWrap:'wrap',gap:spacing.s16}}>{displayAttributes.map((attribute,index)=><View key={`${attribute.label}-${index}`} style={{flexGrow:1,flexBasis:180,gap:spacing.s4}}><Text style={type.caption}>{attribute.label}</Text><Text style={type.body}>{attribute.value==null?'Unavailable':typeof attribute.value==='number'&&/sales|price|balance/i.test(attribute.label)?analyticMoney(attribute.value,/RNB/.test(attribute.label)?'RNB':'INR'):String(attribute.value)}</Text></View>)}</View></Panel>
- <Panel title={kind==='customers'?'Purchase trend':'Attributed sales trend'}><SalesTrend points={read.data.trend} currency={currency} onPoint={point=>go('/(admin)/sales-data/records',{[`${kind==='companies'?'company':kind==='architects'?'architect':kind==='products'?'product':'customer'}_id`]:id,preset:'custom',date_from:point.start,date_to:point.end})}/></Panel>
- {kind==='products'?<Panel title="Quantity sold over time">{read.data.trend.some(point=>point.quantity!=null)&&new Set(read.data.trend.map(point=>point.unit).filter(Boolean)).size===1?<SalesTrend points={read.data.trend.filter(point=>point.quantity!=null).map(point=>({...point,sales:point.quantity!,previous_sales:null}))} unit={read.data.trend.find(point=>point.unit)?.unit||'units'} onPoint={point=>scopedGo('/(admin)/sales-data/records',{preset:'custom',date_from:point.start,date_to:point.end})}/>:<Empty text="Quantity history with a consistent recorded unit is unavailable. Incompatible units are not combined."/>}</Panel>:null}
+ <View style={{flexDirection:paired?'row':'column',alignItems:'stretch',gap:spacing.s16}}>
+ <View style={{flex:paired?7:undefined,minWidth:0}}><Panel title={kind==='customers'?'Purchase trend':'Attributed sales trend'}><SalesTrend initialMode="area" points={read.data.trend} currency={currency} floorId={filters.floor_id} onPoint={point=>go('/(admin)/sales-data/records',{[`${kind==='companies'?'company':kind==='architects'?'architect':kind==='products'?'product':'customer'}_id`]:id,preset:'custom',date_from:point.start,date_to:point.end})}/></Panel></View>
+ <View style={{flex:paired?4:undefined,minWidth:0}}><Panel title="Profile details"><View style={{flexDirection:'row',flexWrap:'wrap',gap:spacing.s16}}>{displayAttributes.map((attribute,index)=><View key={`${attribute.label}-${index}`} style={{flexGrow:1,flexBasis:180,minWidth:0,gap:spacing.s4}}><Text style={type.caption}>{attribute.label}</Text><Text style={type.body}>{attribute.value==null?'Unavailable':typeof attribute.value==='number'&&/sales|price|balance/i.test(attribute.label)?analyticMoney(attribute.value,/RNB/.test(attribute.label)?'RNB':'INR'):String(attribute.value)}</Text></View>)}</View></Panel></View>
+ </View>
+ {kind==='products'?<Panel title="Quantity sold over time">{read.data.trend.some(point=>point.quantity!=null)&&new Set(read.data.trend.map(point=>point.unit).filter(Boolean)).size===1?<SalesTrend floorId={filters.floor_id} points={read.data.trend.filter(point=>point.quantity!=null).map(point=>({...point,sales:point.quantity!,previous_sales:null}))} unit={read.data.trend.find(point=>point.unit)?.unit||'units'} onPoint={point=>scopedGo('/(admin)/sales-data/records',{preset:'custom',date_from:point.start,date_to:point.end})}/>:<Empty text="Quantity history with a consistent recorded unit is unavailable. Incompatible units are not combined."/>}</Panel>:null}
  <Panel title="Business unit contribution"><FloorContribution floors={read.data.floors} onFloor={floor=>update({floor_id:floor.floor_id})}/></Panel>
  {kind!=='products'?<EntityRanking title="Product / category preferences" kind="products" rows={read.data.products} go={scopedGo} floorId={filters.floor_id}/>:null}
  {kind!=='companies'?<EntityRanking title="Company / brand contribution" kind="companies" rows={read.data.companies} go={scopedGo} floorId={filters.floor_id}/>:null}
- {read.data.attribute_breakdowns?Object.entries(read.data.attribute_breakdowns).filter(([,rows])=>rows.length>0).map(([dimension,rows])=><Panel key={dimension} title={`${dimension[0].toUpperCase()+dimension.slice(1)} contribution`}>{rows.slice(0,10).map(row=><DataLink key={row.id} label={row.name} value={analyticMoney(row.sales)} onPress={()=>scopedGo('/(admin)/sales-data/records',{[dimension]:row.id,dimension})}/>)}</Panel>):null}
+ {read.data.attribute_breakdowns?Object.entries(read.data.attribute_breakdowns).filter(([,rows])=>rows.length>0).map(([dimension,rows])=><Panel key={dimension} title={`${dimension[0].toUpperCase()+dimension.slice(1)} contribution`}>{rows.slice(0,10).map(row=><DataLink key={row.id} label={row.name} value={analyticMoney(row.sales,currency)} onPress={()=>scopedGo('/(admin)/sales-data/records',{[dimension]:row.id,dimension})}/>)}</Panel>):null}
  {read.data.coverage.notes.map(note=><Text key={note} style={type.bodySm}>{note}</Text>)}
  </>:<><RecordTable name={tab} rows={read.data.tables[tab]?.items||[]} total={read.data.tables[tab]?.total} go={scopedGo} floorId={filters.floor_id}/><Pagination total={read.data.tables[tab]?.total||0} page={read.data.tables[tab]?.page||Number(filters.page)||1} size={read.data.tables[tab]?.page_size||Number(filters.page_size)||25} update={update}/></>}</>:null}
- </AdminPage>;
+ </View></AdminPage>;
 }

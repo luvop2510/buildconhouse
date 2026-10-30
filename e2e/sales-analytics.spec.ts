@@ -1,23 +1,36 @@
 import { expect, test } from '@playwright/test';
-import { analyticsDashboard, mockSalesAnalytics } from './sales-analytics-fixtures';
+import { analyticsDashboard, analyticsOrders, mockSalesAnalytics } from './sales-analytics-fixtures';
 import { analyticsExplore, analyticsExport, analyticsFitsViewport, analyticsFloor } from './sales-analytics-helpers';
 import { captureRuntimeHealth } from './runtime-health';
 
-test('overall dashboard charts and all floor destinations fit compact and regular widths', async ({ page }, info) => {
+test('Stitch visual dashboard and all floor destinations fit compact and regular widths', async ({ page }, info) => {
   const health = captureRuntimeHealth(page);
   await mockSalesAnalytics(page);
   await page.goto('/sales-data?date_basis=confirmation&preset=this_month');
   await expect(page.getByTestId('analytics-kpi-sales')).toContainText('₹3,00,000.5');
   await expect(page.getByTestId('analytics-trend')).toBeVisible();
-  for (const card of ['revenue', 'comparison', 'treemap', 'seasonality']) {
+  for (const card of ['revenue', 'contribution']) {
     await expect(page.getByTestId(`analytics-bento-${card}`)).toBeVisible();
+  }
+  await expect(page.getByTestId('analytics-bento-comparison')).toHaveCount(0);
+  await expect(page.getByTestId('analytics-bento-treemap')).toHaveCount(0);
+  await expect(page.getByTestId('analytics-bento-seasonality')).toHaveCount(0);
+  await expect(page.getByTestId('analytics-trend')).toHaveCount(1);
+  await expect(page.getByTestId('analytics-bento').locator('svg')).toHaveCount(2);
+  await expect(page.getByTestId('analytics-sales-hero').getByRole('progressbar')).toHaveAttribute('aria-valuenow','73');
+  await expect(page.getByTestId('analytics-order-activity')).toBeVisible();
+  await expect(page.getByText(/Quarterly Goal Pace|Live ERP Pace|Target Base|Dispatch Density|1.18x/)).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Sales basis & sources', exact: true })).toBeVisible();
+  await expect(page.getByText('Previous-period comparison unavailable: no reliable historical baseline.', { exact: true })).toBeVisible();
+  for (const metric of ['orders', 'customers', 'aov']) {
+    await expect(page.getByTestId(`analytics-kpi-${metric}`)).toBeVisible();
   }
   const viewport = page.viewportSize()!;
   const kpis = await page.getByTestId('analytics-kpis').boundingBox();
-  expect(kpis!.height, 'Sales metrics remain a compact group').toBeLessThan(viewport.width < 360 ? 320 : 240);
+  expect(kpis!.height, 'Visual metrics expand money cards when their full value needs room').toBeLessThan(viewport.width < 768 ? 650 : 580);
   const plot = page.getByTestId('analytics-trend').locator('svg').first();
   await expect(plot).toBeVisible();
-  expect((await plot.boundingBox())!.height, 'The primary plot leaves room for comparison content').toBeLessThanOrEqual(viewport.width < 768 ? 160 : 192);
+  expect((await plot.boundingBox())!.height, 'The primary plot leaves room for comparison content').toBeLessThanOrEqual(viewport.width < 768 ? 176 : 224);
   await expect(page.getByTestId('analytics-collection-balance')).toBeVisible();
   for (const floor of ['ground-floor', 'first-floor', 'second-floor', 'third-floor']) {
     await expect(page.getByTestId(`analytics-floor-${floor}`)).toBeVisible();
@@ -31,6 +44,15 @@ test('overall dashboard charts and all floor destinations fit compact and regula
     return range.getClientRects().length === 1;
   }), 'Exact currency amount keeps its decimal on the same line').toBe(true);
   expect(await page.getByTestId('analytics-kpi-aov').evaluate(root => { const text=Array.from(root.querySelectorAll('*')).find(node=>node.childElementCount===0&&node.textContent==='₹1,50,000.25'); if(!text)return false; const range=document.createRange(); range.selectNodeContents(text); return range.getClientRects().length===1; }), 'Average order amount stays on one line').toBe(true);
+  for (const id of ['analytics-kpi-aov','analytics-furniture']) {
+    expect(await page.getByTestId(id).evaluate(root=>{
+      const value=Array.from(root.querySelectorAll('*')).find(node=>node.childElementCount===0&&/^(₹|RNB )/.test(node.textContent||''));
+      if(!value)return false;
+      let parent=value.parentElement;
+      while(parent&&parent!==root){if(['auto','scroll'].includes(getComputedStyle(parent).overflowX))return value.getBoundingClientRect().width<=parent.clientWidth+1;parent=parent.parentElement;}
+      return false;
+    }), 'Ordinary money is fully visible without having to scroll').toBe(true);
+  }
   await health.assertHealthy();
   await page.screenshot({ path: info.outputPath('analytics-responsive.png'), fullPage: true });
   const trend = page.getByTestId('analytics-trend');
@@ -84,48 +106,61 @@ test('forbidden direct profile and export requests show recovery without protect
   await analyticsFitsViewport(page);
 });
 
-test('owner sales overview retains independently scoped team effort', async ({ page }) => {
+test('sales overview uses period sales and preserves exact architect attribution', async ({ page }) => {
   const health = captureRuntimeHealth(page);
   const requests: URL[] = [];
   await mockSalesAnalytics(page, { onRequest: url => requests.push(url) });
   await page.goto('/sales-data?preset=custom&date_from=2026-09-01&date_to=2026-09-30');
   await expect(page.getByRole('heading', { name: 'Company overview', exact: true })).toBeVisible();
   await expect(page.getByTestId('analytics-kpi-sales')).toContainText('₹3,00,000.5');
-  const operations = page.getByTestId('analytics-owner-operations');
-  await expect(operations.getByTestId('analytics-team-graphic')).toBeVisible();
-  await expect(operations).toContainText('Mira Patel');
-  await operations.getByRole('button', { name: 'View team details', exact: true }).click();
-  await expect(operations).toContainText('3 contacts');
-  await expect(operations).toContainText('last 30 days');
-  await expect(operations).toContainText('recorded completed');
-  await expect(operations.getByTestId('analytics-workflow-second-floor')).toContainText('7 projects · 4 active · 2 completed · 1 overdue');
-  await operations.getByRole('button',{name:'View workflow stages',exact:true}).click();
-  await expect(operations.getByText('Production',{exact:true})).toBeVisible();
-  expect(requests.filter(url => url.pathname.endsWith('/owner-operations')).at(-1)?.searchParams.has('date_from')).toBe(false);
-  await expect(page.getByText('Won this month', { exact: true })).toHaveCount(0);
+  await expect(page.getByTestId('analytics-owner-operations')).toHaveCount(0);
   await expect(page.getByTestId('analytics-kpis')).toHaveCount(1);
-  await analyticsFloor(page, 'ground-floor');
-  await expect(operations).toContainText('Arjun Shah');
-  await expect(operations).not.toContainText('Mira Patel');
-  await expect(page.getByTestId('analytics-page')).not.toContainText('RNB');
-  expect(requests.filter(url => url.pathname.endsWith('/owner-operations')).at(-1)?.searchParams.get('floor_id')).toBe('ground-floor');
+  await analyticsExplore(page, 'architects');
+  const architect = page.getByTestId('analytics-entity-architect-a');
+  await expect(architect).toContainText('Nisha Shah');
+  await expect(architect).toContainText('₹2,40,000');
+  expect(requests.filter(url => url.pathname.endsWith('/owner-operations'))).toHaveLength(0);
+  await architect.click();
+  await expect(page.getByRole('heading', { name: 'Nisha Shah', exact: true })).toBeVisible();
+  expect(new URL(page.url()).searchParams.get('date_from')).toBe('2026-09-01');
+  expect(new URL(page.url()).searchParams.get('date_to')).toBe('2026-09-30');
   await analyticsFitsViewport(page);
   await health.assertHealthy();
 });
 
-test('owner team read failure leaves sales usable and has an explicit recovery', async ({ page }) => {
-  let fail = true;
-  await mockSalesAnalytics(page, { operations: route => fail
-    ? route.fulfill({ status: 503, json: { detail: 'Team activity temporarily unavailable' } })
-    : route.fulfill({ json: { generated_at: '2026-10-29T06:30:00Z', floor_ids: ['first-floor'], period_label: 'Current follow-ups · contacts in the last 30 days', open_followups: 0, overdue_followups: 0, completed_followups: 0, dismissed_followups: 0, unassigned_followups: 0, team: [], notes: [] } }) });
+test('sales remains independent of unrelated team data and floor changes preserve currency scope', async ({ page }) => {
+  const requests: URL[] = [];
+  await mockSalesAnalytics(page, {
+    onRequest: url => requests.push(url),
+    operations: route => route.fulfill({ status: 503, json: { detail: 'Team activity temporarily unavailable' } }),
+  });
   await page.goto('/sales-data?floor_id=first-floor');
-  const operations = page.getByTestId('analytics-owner-operations');
-  await expect(operations.getByRole('alert')).toContainText('Team activity temporarily unavailable');
   await expect(page.getByTestId('analytics-kpi-sales')).toContainText('₹2,40,000');
-  fail = false;
-  await operations.getByTestId('analytics-retry').click();
-  await expect(operations).toContainText('No assigned follow-ups');
-  await expect(operations.getByRole('alert')).toHaveCount(0);
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  await expect(page.getByTestId('analytics-owner-operations')).toHaveCount(0);
+  await analyticsFloor(page, 'ground-floor');
+  await expect(page.getByTestId('analytics-kpi-sales')).toContainText('₹60,000.5');
+  await expect(page.getByTestId('analytics-page')).not.toContainText('RNB');
+  expect(requests.filter(url => url.pathname.endsWith('/owner-operations'))).toHaveLength(0);
+  await analyticsFitsViewport(page);
+});
+
+test('sales navigation scrolls with data and remains operable when returning to the top', async ({ page }) => {
+  await mockSalesAnalytics(page);
+  await page.goto('/sales-data');
+  await expect(page.getByTestId('analytics-kpi-sales')).toContainText('₹3,00,000.5');
+  const navigation = page.getByTestId('analytics-navigation');
+  await expect(navigation).toBeVisible();
+  if (page.viewportSize()!.width < 768) {
+    await expect(page.getByTestId('mobile-workspace-header')).toHaveCount(0);
+  }
+  await page.getByRole('heading', { name: 'Sales basis & sources', exact: true }).scrollIntoViewIfNeeded();
+  await expect.poll(() => navigation.evaluate(node => node.getBoundingClientRect().bottom),
+    { message: 'Sales navigation leaves the visible scrollport instead of covering the data' }).toBeLessThanOrEqual(0);
+  await navigation.scrollIntoViewIfNeeded();
+  await analyticsExplore(page, 'products');
+  await expect(page).toHaveURL(/\/sales-data\/products\?/);
+  await expect(page.getByTestId('analytics-entity-product-a')).toContainText('Talis basin mixer');
   await analyticsFitsViewport(page);
 });
 
@@ -341,6 +376,122 @@ test('currency drilldown cannot hide Furniture and customer segment links remain
  expect(new URL(page.url()).searchParams.get('currency')).toBeFalsy();
  await expect(page.getByTestId('analytics-kpi-sales')).toContainText('RNB 75,000.5');
  await page.goto('/sales-data');
- await page.getByRole('link',{name:/New customers: 3/}).click();
- expect(new URL(page.url()).searchParams.get('dimension')).toBe('new');
+ await analyticsExplore(page,'customers');
+ await expect(page.getByRole('heading',{name:'Customers',exact:true})).toBeVisible();
+});
+
+
+test('refresh updates both payment summaries and recent transaction values in the selected scope', async ({ page }) => {
+  let amount = 180000;
+  let dashboardReads = 0;
+  let transactionReads = 0;
+  await mockSalesAnalytics(page, { dashboard: route => {
+    dashboardReads++;
+    const dashboard = analyticsDashboard('first-floor', 'payment');
+    dashboard.kpis.sales = amount;
+    dashboard.kpis.collected = amount;
+    return route.fulfill({ json: dashboard });
+  } });
+  await page.route('**/api/sales-analytics/records?**', route => {
+    transactionReads++;
+    const query = new URL(route.request().url()).searchParams;
+    expect(query.get('floor_id')).toBe('first-floor');
+    expect(query.get('date_basis')).toBe('payment');
+    expect(query.get('page_size')).toBe('5');
+    expect(query.get('sort')).toBe('date_desc');
+    return route.fulfill({ json: { items: [{ ...analyticsOrders[0], sales: amount, collected: amount }], total: 1, page: 1, page_size: 5 } });
+  });
+  await page.goto('/sales-data?floor_id=first-floor&date_basis=payment&preset=this_month');
+  const transaction = page.getByTestId('analytics-recent-order-a');
+  await expect(page.getByTestId('analytics-kpi-sales')).toContainText('₹1,80,000');
+  await expect(transaction).toContainText('₹1,80,000');
+  if (page.viewportSize()!.width >= 1024) {
+    await expect(transaction.locator('..').getByText('Collected', { exact: true })).toBeVisible();
+    await expect(transaction.locator('..').getByText('Sales', { exact: true })).toHaveCount(0);
+  }
+  const previousDashboardReads = dashboardReads;
+  const previousTransactionReads = transactionReads;
+  amount = 190000;
+  await page.getByRole('button', { name: 'Refresh sales analytics', exact: true }).click();
+  await expect(page.getByTestId('analytics-kpi-sales')).toContainText('₹1,90,000');
+  await expect(transaction).toContainText('₹1,90,000');
+  expect(dashboardReads).toBeGreaterThan(previousDashboardReads);
+  expect(transactionReads).toBeGreaterThan(previousTransactionReads);
+  await analyticsFitsViewport(page);
+});
+
+test('visuals keep missing identities balances and currency counts unavailable', async ({ page }) => {
+  await mockSalesAnalytics(page, { dashboard: async route => {
+    const original=analyticsDashboard();
+    const data={...original,kpis:{...original.kpis,customers:null,collected:null},coverage:{...original.coverage,missing_customer_ids:1},trend:original.trend.map(({orders_inr,orders_rnb,...point})=>point)};
+    return route.fulfill({json:data});
+  } });
+  await page.goto('/sales-data?date_basis=confirmation');
+  await expect(page.getByTestId('analytics-kpi-customers')).toContainText('Repeat-customer comparison unavailable');
+  await expect(page.getByTestId('analytics-sales-hero').getByRole('progressbar')).not.toHaveAttribute('aria-valuenow',/.+/);
+  await expect(page.getByTestId('analytics-activity-INR-2026-10-10')).toHaveText('—');
+  await page.getByRole('button',{name:'Explore dates',exact:true}).click();
+  await expect(page.getByTestId('analytics-trend')).toContainText('Unavailable INR orders');
+  await analyticsFitsViewport(page);
+});
+
+test('activity cells open exact dated currency records by keyboard', async ({ page }) => {
+  const queries:URL[]=[];
+  await mockSalesAnalytics(page,{onRequest:url=>{if(url.pathname.endsWith('/records'))queries.push(url);}});
+  await page.goto('/sales-data?date_basis=confirmation');
+  const cell=page.getByTestId('analytics-activity-RNB-2026-10-23');
+  await expect(cell).toHaveText('1');
+  await cell.focus();await page.keyboard.press('Enter');
+  await expect(page).toHaveURL(/\/sales-data\/records\?/);
+  const selected=new URL(page.url()).searchParams;
+  for(const [key,value] of [['currency','RNB'],['preset','custom'],['dimension','2026-10-23'],['date_from',analyticsOrders[2].date],['date_to','2026-10-24T06:00:00Z']])expect(selected.get(key)).toBe(value);
+  await expect.poll(()=>queries.some(url=>url.searchParams.get('currency')==='RNB'&&url.searchParams.get('dimension')==='2026-10-23')).toBe(true);
+});
+
+test('comparison columns preserve negative values and missing previous buckets', async ({ page }) => {
+  await mockSalesAnalytics(page,{dashboard:async route=>{
+    const original=analyticsDashboard();
+    const data={...original,kpis:{...original.kpis,sales:45000.5},trend:original.trend.map((point,index)=>({...point,sales:index===0?-15000:point.sales,previous_sales:index===1?null:index===0?120000:0}))};
+    return route.fulfill({json:data});
+  }});
+  await page.goto('/sales-data?date_basis=confirmation');
+  const plot=page.getByTestId('analytics-trend');
+  await expect(plot.getByText('Previous period',{exact:true})).toBeVisible();
+  await expect(plot.locator('svg rect')).toHaveCount(5);
+  expect(await plot.locator('svg rect').evaluateAll(rects=>rects.every(rect=>Number(rect.getAttribute('height'))>=0))).toBe(true);
+  await plot.getByRole('button',{name:'Chart data',exact:true}).click();
+  await expect(plot).toContainText('₹-15,000');
+  await analyticsFitsViewport(page);
+});
+
+test('enlarged transaction text retains readable identity and complete money', async ({page})=>{
+  await mockSalesAnalytics(page);
+  await page.goto('/sales-data');
+  const row=page.getByTestId('analytics-recent-order-c');
+  await row.scrollIntoViewIfNeeded();
+  await page.addStyleTag({content:'[data-testid="analytics-recent-order-c"] [dir="auto"] {font-size:24px !important;line-height:32px !important;}'});
+  const name=row.getByText('Falguni Furniture Client',{exact:true});
+  await expect(name).toBeVisible();
+  expect((await name.boundingBox())!.width).toBeGreaterThanOrEqual(145);
+  expect(await row.evaluate(root=>{
+    const value=Array.from(root.querySelectorAll('*')).find(node=>node.childElementCount===0&&node.textContent==='RNB 75,000.5');
+    if(!value)return false;const range=document.createRange();range.selectNodeContents(value);return range.getClientRects().length===1;
+  })).toBe(true);
+  await analyticsFitsViewport(page);
+});
+
+test('crore-sized collection balances remain fully visible at phone width',async({page})=>{
+ await mockSalesAnalytics(page,{dashboard:async route=>{const original=analyticsDashboard();return route.fulfill({json:{...original,kpis:{...original.kpis,collected:14285600.5,outstanding:14285600.5}}});}});
+ await page.goto('/sales-data');
+ const hero=page.getByTestId('analytics-sales-hero');
+ await expect(hero.getByText('₹1,42,85,600.5',{exact:true})).toHaveCount(2);
+ await expect.poll(()=>hero.evaluate(root=>{
+  const amounts=Array.from(root.querySelectorAll('*')).filter(node=>node.childElementCount===0&&node.textContent==='₹1,42,85,600.5');
+  return amounts.length===2&&amounts.every(value=>{
+   let parent=value.parentElement;
+   while(parent&&parent!==root){if(['auto','scroll'].includes(getComputedStyle(parent).overflowX))return value.getBoundingClientRect().width<=parent.clientWidth+1;parent=parent.parentElement;}
+   return false;
+  });
+ })).toBe(true);
+ await analyticsFitsViewport(page);
 });

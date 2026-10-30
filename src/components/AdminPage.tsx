@@ -6,12 +6,15 @@
 // Also exposes IconAction for right-cluster buttons (unchanged API for callers).
 import Feather from "@expo/vector-icons/Feather";
 import { Pressable, ScrollView, StyleSheet, View, ViewStyle } from "react-native";
-import type { Ref } from "react";
+import { createContext, useContext, type Ref, type ReactNode } from "react";
 import { Text } from "@/src/components/AppText";
 
 import { PageHeader } from "@/src/components/ui";
 import { useBp } from "@/src/design/responsive";
 import { color, font, layout, radius, space } from "@/src/design/tokens";
+
+export const AdminPageCanvas = createContext<string | undefined>(undefined);
+export const AdminPageScrollHeader = createContext<ReactNode>(null);
 
 export function AdminPage({
   title,
@@ -37,12 +40,14 @@ export function AdminPage({
   /** @deprecated — header now always uses a subtle divider */
   headerBorder?: boolean;
 }) {
+  const canvas = useContext(AdminPageCanvas);
+  const scrollHeader = useContext(AdminPageScrollHeader);
   const Container: any = scroll ? ScrollView : View;
   const { gutter, isPhone, isDesktop } = useBp();
   const horizontalPadding = gutter;
 
   return (
-    <View style={{ flex: 1, minHeight: 0, backgroundColor: color.canvas }}>
+    <View style={{ flex: 1, minHeight: 0, backgroundColor: canvas || color.canvas }}>
       {header && !isPhone ? <PageHeader
         title={title}
         subtitle={subtitle || undefined}
@@ -76,6 +81,7 @@ export function AdminPage({
               ],
             })}
       >
+        {scrollHeader}
         {header && isPhone ? <PageHeader
           title={title}
           subtitle={subtitle || undefined}

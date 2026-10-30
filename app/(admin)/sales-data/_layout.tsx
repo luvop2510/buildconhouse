@@ -3,6 +3,8 @@ import { View } from "react-native";
 
 import { useAuth } from "@/src/state/auth";
 import { AnalyticsNavigation } from "@/src/components/salesAnalytics/AnalyticsNavigation";
+import { AdminPageCanvas, AdminPageScrollHeader } from "@/src/components/AdminPage";
+import { useSalesTheme } from "@/src/components/salesAnalytics/salesTheme";
 import { SalesScopeProvider } from "@/src/components/salesData/SalesScope";
 
 /**
@@ -11,17 +13,12 @@ import { SalesScopeProvider } from "@/src/components/salesData/SalesScope";
  */
 export default function SalesDataLayout() {
   const { staff } = useAuth();
+  const theme = useSalesTheme();
   if (!staff) return null;
   if (staff.role !== "owner") return <Redirect href="/(admin)/dashboard" />;
   return (
-    // No gap: the switcher now owns its own vertical padding and closes with
-    // a hairline rule, so an extra gap here would float that rule in dead
-    // space instead of seating it against the page below.
-    <SalesScopeProvider><View style={{ flex: 1, minHeight: 0 }}>
-      <AnalyticsNavigation />
-      <View style={{ flex: 1, minHeight: 0 }}>
-        <Slot />
-      </View>
-    </View></SalesScopeProvider>
+    <SalesScopeProvider><AdminPageCanvas.Provider value={theme.canvas}><AdminPageScrollHeader.Provider value={<AnalyticsNavigation />}>
+      <View style={{ flex: 1, minHeight: 0 }}><Slot /></View>
+    </AdminPageScrollHeader.Provider></AdminPageCanvas.Provider></SalesScopeProvider>
   );
 }

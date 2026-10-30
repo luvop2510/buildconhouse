@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 from io import BytesIO
-from math import ceil, isfinite
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from xml.sax.saxutils import escape
 
 from fastapi import HTTPException
@@ -12,19 +13,19 @@ from openpyxl.styles import Font, PatternFill
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-from reportlab.graphics.shapes import Circle, Drawing, Group, Line, PolyLine, Rect, String
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 
+from services.analytics.unified import FLOORS
+from services.analytics.unified_pdf_graphics import numeric, trend, ranking, cell_bar, collection_arc
 from services.export import spreadsheet_cell
 from services.money import format_indian_money
 from pdf_generator import RUPEE_FONT
 
 MAX_EXPORT_ROWS = 10_000
-ACCENT = "22766D"
+ACCENT = "0066CC"
 MONEY_FIELDS = {"sales", "sales_rnb", "average_order_value", "average_order_value_rnb", "collected", "outstanding", "collected_rnb", "outstanding_rnb", "unit_price", "line_total", "amount", "subtotal", "total", "discount", "tax", "taxes"}
 
 PDF_MONEY_FIELDS = MONEY_FIELDS | {"previous_sales", "previous_sales_rnb"}
-PDF_BAR_FIELDS = (PDF_MONEY_FIELDS - {"unit_price"}) | {"orders", "orders_inr", "orders_rnb", "customers", "known_customers", "products", "change_pct", "change_pct_rnb", "discount_pct", "tax_pct"}
 
 
 def display(value, key="", currency="INR"):
@@ -32,76 +33,16 @@ def display(value, key="", currency="INR"):
         if key in PDF_MONEY_FIELDS:
             return f"{'RNB' if key.endswith('_rnb') or currency == 'RNB' else 'INR'} {format_indian_money(value)}"
         if key.endswith("_pct") or key.endswith("_pct_rnb"):
-            return f"{value:g}%"
+            return f"{value:.1f}%"
     return str(cell(value))
 
 
-# PDF colors follow the app's semantic surface/content/chart roles.
-PDF_BLUE = colors.HexColor("#0066CC")
+# PDF colors follow the app's semantic surface and content roles.
 PDF_INK = colors.HexColor("#1D1D1F")
 PDF_SECONDARY = colors.HexColor("#545458")
 PDF_LINE = colors.HexColor("#E2E2E7")
 PDF_WASH = colors.HexColor("#F5F5F7")
 PDF_WIDTH = A4[0] - 72
-
-
-def numeric(value):
-    return isinstance(value, (int, float)) and not isinstance(value, bool) and isfinite(value)
-
-
-def compact(value):
-    if abs(value) >= 10_000_000:
-        return f"{value / 10_000_000:.2f} Cr"
-    if abs(value) >= 100_000:
-        return f"{value / 100_000:.2f} L"
-    if abs(value) >= 1000:
-        return f"{value / 1000:.1f}k"
-    return f"{value:g}"
-
-
-def trend_drawing(rows, currency, width=PDF_WIDTH, metric_label="Sales"):
-    """Same source rows as the readable table; gaps never become zeroes."""
-    key = "sales_rnb" if currency == "RNB" else "sales"
-    prior_key = "previous_sales_rnb" if currency == "RNB" else "previous_sales"
-    if not rows or not any(numeric(row.get(key)) for row in rows):
-        return None
-    drawing = Drawing(width, 175)
-    face = RUPEE_FONT or "Helvetica"
-    left, bottom, plot_width, height = 48, 28, width - 65, 112
-    values = [row[key] for row in rows if numeric(row.get(key))]
-    values += [row[prior_key] for row in rows if numeric(row.get(prior_key))]
-    maximum = max(0, *values)
-    magnitude = 10 ** max(0, len(str(int(maximum))) - 1)
-    upper = max(1, ceil(maximum / magnitude) * magnitude)
-    lower = min(0, *values)
-    span = upper - lower
-    drawing.add(String(0, 159, f"{currency} sales trend", fontName=face, fontSize=10, fillColor=PDF_INK))
-    drawing.add(String(width, 159, metric_label, textAnchor="end", fontName=face, fontSize=8, fillColor=PDF_SECONDARY))
-    for part in (0, .5, 1):
-        y = bottom + height * part
-        drawing.add(Line(left, y, left + plot_width, y, strokeColor=PDF_LINE, strokeWidth=.5))
-        drawing.add(String(left - 8, y - 3, compact(lower + span * part), textAnchor="end", fontName=face, fontSize=8, fillColor=PDF_SECONDARY))
-    for field, tone, dashed in ((prior_key, PDF_SECONDARY, True), (key, PDF_BLUE, False)):
-        segment = []
-        for index, row in enumerate(rows):
-            value = row.get(field)
-            if numeric(value):
-                x = left + plot_width * index / max(1, len(rows) - 1)
-                y = bottom + height * (value - lower) / span
-                segment.extend([x, y])
-                if not dashed:
-                    drawing.add(Circle(x, y, 2, fillColor=tone, strokeColor=colors.white, strokeWidth=.5))
-            else:
-                if len(segment) >= 4:
-                    drawing.add(PolyLine(segment, strokeColor=tone, strokeWidth=1 if dashed else 2, strokeDashArray=[3, 3] if dashed else None))
-                segment = []
-        if len(segment) >= 4:
-            drawing.add(PolyLine(segment, strokeColor=tone, strokeWidth=1 if dashed else 2, strokeDashArray=[3, 3] if dashed else None))
-    for index in sorted({0, len(rows) // 2, len(rows) - 1}):
-        drawing.add(String(left + plot_width * index / max(1, len(rows) - 1), 12, str(rows[index].get("label", ""))[:26], textAnchor="middle", fontName=face, fontSize=8, fillColor=PDF_SECONDARY))
-    if any(numeric(row.get(prior_key)) for row in rows):
-        drawing.add(String(left, 0, "Solid + dots: selected period   /   Dashed: preceding equal period", fontName=face, fontSize=7.5, fillColor=PDF_SECONDARY))
-    return drawing
 
 
 def cell(value):
@@ -124,11 +65,12 @@ def report_sections(report, records=None, *, view="dashboard", scope="full", tab
         return not (furniture and aggregate and key in inr_fields)
 
     summary = report.get("kpis") or report.get("summary")
-    if scope != "records" and summary:
+    overview = view not in {"companies", "products", "architects", "customers", "records"} and (scope == "full" or scope == "current" and tab == "overview")
+    if overview and summary:
         result.append(("Summary", [{"metric": key.replace("_", " "), "value": value} for key, value in summary.items() if visible(key, "sales_rnb" in summary)]))
         if not furniture and any(floor.get("currency") == "RNB" for floor in report.get("floors", [])):
             result.append(("Furniture ledger", [{"metric": key.replace("_", " "), "value": value} for key, value in summary.items() if key.endswith("_rnb")]))
-    if "identity" in report and scope != "records":
+    if "identity" in report and overview:
         identity = report["identity"]
         result.append(("Identity", [{"field": "Stable ID", "value": identity["id"]}, {"field": "Name", "value": identity["name"]}, *[{"field": a["label"], "value": a["value"]} for a in identity.get("attributes", [])]]))
     if report.get("tables") and scope == "current" and tab == "overview":
@@ -166,7 +108,11 @@ def report_sections(report, records=None, *, view="dashboard", scope="full", tab
             result.append(("Source Details", records))
     # Aggregate columns follow the visible currency; actual source records keep
     # their explicit currency, including Furniture rows in company-wide reports.
-    result = [(name, [{key: value for key, value in row.items() if visible(key, "sales_rnb" in row)} for row in rows]) for name, rows in result]
+    def selected_currency(row):
+        if row.get("floor_ids") == ["third-floor"] and "sales_rnb" in row:
+            row = {**row, "sales": row["sales_rnb"], "currency": "RNB"}
+        return {key: value for key, value in row.items() if visible(key, "sales_rnb" in row)}
+    result = [(name, [selected_currency(row) for row in rows]) for name, rows in result]
     if sum(len(rows) for _, rows in result) > MAX_EXPORT_ROWS:
         raise HTTPException(422, "Export exceeds 10,000 rows; narrow the period, floor or entity filters")
     return result
@@ -230,122 +176,54 @@ def workbook(report, sections, metadata):
 
 
 def _label(key):
-    return key.replace("_rnb", " (RNB)").replace("_", " ").capitalize()
+    label = key.replace("_rnb", " (RNB)").replace("_", " ").capitalize()
+    return "ID" if key == "id" else label.replace("(rnb)", "(RNB)").replace(" id", " ID")
 
 
-def _fit_label(value, width, size=8):
-    from reportlab.pdfbase.pdfmetrics import stringWidth
-    value = str(value)
-    face = RUPEE_FONT or "Helvetica"
-    if stringWidth(value, face, size) <= width:
-        return value
-    while value and stringWidth(value + "...", face, size) > width:
-        value = value[:-1]
-    return value + "..."
+def _pdf_date(value):
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        return (parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)).astimezone(ZoneInfo("Asia/Kolkata")).strftime("%d %b %Y")
+    except (TypeError, ValueError):
+        return str(value or "Date unavailable")
 
 
-def _bar(value, lower, upper, width):
-    drawing = Drawing(width, 7)
-    drawing.add(Rect(0, 1, width, 4, rx=2, ry=2, fillColor=PDF_LINE, strokeColor=None))
-    if numeric(value) and upper > lower:
-        zero = width * (0 - lower) / (upper - lower)
-        point = width * (value - lower) / (upper - lower)
-        drawing.add(Rect(min(zero, point), 1, abs(point - zero), 4, rx=2, ry=2, fillColor=PDF_BLUE, strokeColor=None))
-        if lower < 0:
-            drawing.add(Line(zero, 0, zero, 7, strokeColor=PDF_SECONDARY, strokeWidth=.5))
-    return drawing
-
-
-def _ledger(row, key):
-    return "RNB" if key.endswith("_rnb") else row.get("currency", "INR")
-
-
-def _comparison(rows, key, currency, width=PDF_WIDTH):
-    selected = [row for row in rows if numeric(row.get(key)) and (key not in PDF_MONEY_FIELDS or _ledger(row, key) == currency)]
-    selected = sorted(selected, key=lambda row: -abs(row[key]))[:6]
-    if not selected:
-        return None
-    face = RUPEE_FONT or "Helvetica"
-    drawing = Drawing(width, 36 + len(selected) * 32)
-    heading = f"{currency} / {_label(key)}" if key in PDF_MONEY_FIELDS else _label(key)
-    drawing.add(String(0, drawing.height - 12, heading, fontName=face, fontSize=10, fillColor=PDF_INK))
-    drawing.add(String(width, drawing.height - 12, "Largest recorded values - independent scale", textAnchor="end", fontName=face, fontSize=7.5, fillColor=PDF_SECONDARY))
-    lower, upper = min(0, *(row[key] for row in selected)), max(0, *(row[key] for row in selected))
-    for index, row in enumerate(selected):
-        y = drawing.height - 34 - index * 32
-        name = next((row.get(k) for k in ("name", "label", "number", "customer_name", "id") if row.get(k)), "Recorded item")
-        drawing.add(String(0, y, _fit_label(name, width - 165), fontName=face, fontSize=8.5, fillColor=PDF_INK))
-        drawing.add(String(width, y, display(row[key], key, currency), textAnchor="end", fontName=face, fontSize=8.5, fillColor=PDF_INK))
-        rail = _bar(row[key], lower, upper, width)
-        group = Group(*rail.contents)
-        group.translate(0, y - 11)
-        drawing.add(group)
-    return drawing
-
-
-def _treemap(rows, name, currency, width=PDF_WIDTH):
-    selected = sorted((row for row in rows if numeric(row.get("sales")) and row["sales"] > 0 and _ledger(row, "sales") == currency), key=lambda row: -row["sales"])[:6]
-    if not selected:
-        return None
-    face = RUPEE_FONT or "Helvetica"
-    drawing = Drawing(width, 176)
-    drawing.add(String(0, 163, f"{name} / {currency} sales mix", fontName=face, fontSize=10, fillColor=PDF_INK))
-    palette = [(PDF_BLUE, colors.white), (colors.HexColor("#EAF2FF"), PDF_INK), (colors.HexColor("#E5E5EA"), PDF_INK), (colors.HexColor("#004F9F"), colors.white), (colors.HexColor("#BED6F7"), PDF_INK), (PDF_WASH, PDF_INK)]
-    def split(items, x, y, w, h):
-        if len(items) == 1:
-            index, row = items[0]
-            background, foreground = palette[index % len(palette)]
-            drawing.add(Rect(x + 1, y + 1, max(0, w - 2), max(0, h - 2), rx=5, ry=5, fillColor=background, strokeColor=colors.white, strokeWidth=1))
-            if w > 30 and h > 28:
-                drawing.add(String(x + 8, y + h - 17, _fit_label(row.get("name", row.get("id", "Recorded item")), w - 16), fontName=face, fontSize=8, fillColor=foreground))
-                drawing.add(String(x + 8, y + h - 31, _fit_label(compact(row["sales"]), w - 16, 10), fontName=face, fontSize=10, fillColor=foreground))
-            return
-        total = sum(row["sales"] for _, row in items)
-        cut = min(range(1, len(items)), key=lambda n: abs(sum(row["sales"] for _, row in items[:n]) - total / 2))
-        ratio = sum(row["sales"] for _, row in items[:cut]) / total
-        if w >= h:
-            split(items[:cut], x, y, w * ratio, h)
-            split(items[cut:], x + w * ratio, y, w * (1 - ratio), h)
-        else:
-            split(items[:cut], x, y, w, h * ratio)
-            split(items[cut:], x, y + h * ratio, w, h * (1 - ratio))
-    split(list(enumerate(selected)), 0, 20, width, 130)
-    drawing.add(String(0, 5, "Area = positive recorded sales among the top six shown. Unknown and nonpositive amounts are unplotted.", fontName=face, fontSize=7, fillColor=PDF_SECONDARY))
-    return drawing
-
-
-def _ledger_card(summary, currency, width, metric_label):
-    face = RUPEE_FONT or "Helvetica"
-    suffix = "_rnb" if currency == "RNB" else ""
-    drawing = Drawing(width, 154)
-    drawing.add(Rect(0, 0, width, 154, rx=12, ry=12, fillColor=PDF_WASH, strokeColor=None))
-    drawing.add(String(14, 133, f"{currency} / {metric_label}", fontName=face, fontSize=9, fillColor=PDF_SECONDARY))
-    sales = summary.get("sales" + suffix)
-    drawing.add(String(14, 105, compact(sales) if numeric(sales) else "Unavailable", fontName=face, fontSize=24, fillColor=PDF_INK))
-    if numeric(sales):
-        drawing.add(String(14, 89, display(sales, "sales" + suffix), fontName=face, fontSize=8.5, fillColor=PDF_SECONDARY))
-    received, balance = summary.get("collected" + suffix), summary.get("outstanding" + suffix)
-    valid = numeric(received) and numeric(balance) and min(received, balance) >= 0 and received + balance > 0
-    drawing.add(String(14, 69, "Recorded receipts / current balance", fontName=face, fontSize=8, fillColor=PDF_SECONDARY))
-    drawing.add(Rect(14, 54, width - 28, 6, rx=3, ry=3, fillColor=PDF_LINE, strokeColor=None))
-    if valid:
-        drawing.add(Rect(14, 54, (width - 28) * received / (received + balance), 6, rx=3, ry=3, fillColor=PDF_BLUE, strokeColor=None))
-    drawing.add(String(14, 37, f"Received: {compact(received) if numeric(received) else 'Unavailable'}", fontName=face, fontSize=8.5, fillColor=PDF_INK))
-    drawing.add(String(14, 22, f"Balance: {compact(balance) if numeric(balance) else 'Unavailable'}", fontName=face, fontSize=8.5, fillColor=PDF_INK))
-    drawing.add(String(14, 8, "Bar = receipt / (receipt + balance)" if valid else "Mix unavailable for these recorded values", fontName=face, fontSize=6.8, fillColor=PDF_SECONDARY))
-    return drawing
-
-
-def _summary_scale(summary, key):
-    if key not in {"collected", "outstanding", "collected_rnb", "outstanding_rnb"}:
-        return None
-    suffix = "_rnb" if key.endswith("_rnb") else ""
-    receipts, balance = summary.get("collected" + suffix), summary.get("outstanding" + suffix)
-    if numeric(receipts) and numeric(balance) and min(receipts, balance) >= 0:
-        total = receipts + balance
-        if numeric(total) and total > 0:
-            return 0, total
-    return None
+def _pdf_rows(name, rows):
+    """Drop duplicate transport fields, retaining source identity and useful data."""
+    if name == "Trend":
+        fields = {"label", "sales", "sales_rnb", "previous_sales", "previous_sales_rnb", "orders", "quantity", "unit"}
+    elif name == "Floors":
+        fields = {"name", "sales", "orders", "customers", "contribution_pct"}
+    elif name in {"Companies", "Architects", "Products", "Customers"}:
+        fields = {"name", "sales", "sales_rnb", "orders", "customers", "quantity", "unit", "sku", "company_name", "outstanding", "outstanding_rnb"}
+    elif name == "Customer Segments":
+        fields = {"name", "customers"}
+    elif name in {"Source Details", "Orders", "Records"}:
+        fields = {"number", "sales", "collected", "outstanding"}
+    else:
+        return rows
+    result = []
+    for source in rows:
+        row = {key: value for key, value in source.items() if key in fields}
+        row["currency"] = source.get("currency", "RNB" if source.get("floor_ids") == ["third-floor"] else "INR")
+        if name in {"Companies", "Architects", "Products", "Customers"} and source.get("id"):
+            row["name"] = f"{source.get('name', 'Recorded identity')}\n{source['id']}"
+        if name in {"Source Details", "Orders", "Records"}:
+            stamp = _pdf_date(source.get("date"))
+            row["number"] = "\n".join(filter(None, [
+                " · ".join(str(value) for value in (source.get("number") or source.get("id"), source.get("customer_name") or source.get("name")) if value),
+                " · ".join(str(value) for value in (source.get("floor_name") or FLOORS.get(source.get("floor_id"), source.get("floor_id")), source.get("status"), stamp) if value),
+                " · ".join(str(value) for value in (source.get("architect_name"), source.get("source"), source.get("id") if source.get("number") and source.get("number") != source.get("id") else None) if value),
+                f"Confirmed: {_pdf_date(source['confirmation_date'])}" if source.get("confirmation_date") and _pdf_date(source['confirmation_date']) != stamp else "",
+            ]))
+        if "quantity" in row and "unit" in row:
+            row["quantity"] = f"{row['quantity']} {row.pop('unit') or ''}" if row['quantity'] is not None else None
+        if name == "Products" and row.get("sku"):
+            row["name"] = f"{row.get('name', '')} / {row.pop('sku')}"
+        if name == "Customers":
+            row.pop("customers", None)
+        result.append(row)
+    return result
 
 
 def pdf(report, sections, metadata):
@@ -354,141 +232,187 @@ def pdf(report, sections, metadata):
     face = RUPEE_FONT or "Helvetica"
     for style in styles.byName.values():
         style.fontName = face
-    styles.add(ParagraphStyle("ReportTitle", fontName=face, fontSize=25, leading=30, textColor=PDF_INK, spaceAfter=10))
-    styles.add(ParagraphStyle("SectionTitle", fontName=face, fontSize=14, leading=18, textColor=PDF_INK, spaceBefore=15, spaceAfter=8, keepWithNext=True))
+    styles.add(ParagraphStyle("ReportTitle", fontName=face, fontSize=22, leading=27, textColor=PDF_INK, spaceAfter=10))
+    styles.add(ParagraphStyle("SectionTitle", fontName=face, fontSize=12, leading=16, textColor=PDF_INK, spaceBefore=10, spaceAfter=6, keepWithNext=True))
     styles.add(ParagraphStyle("SmallReport", fontName=face, fontSize=8, leading=11, textColor=PDF_SECONDARY, spaceAfter=3, wordWrap="CJK"))
     styles.add(ParagraphStyle("DetailCaption", parent=styles["SmallReport"], keepWithNext=True))
-    styles.add(ParagraphStyle("CellReport", fontName=face, fontSize=8, leading=11, textColor=PDF_INK, wordWrap="CJK"))
+    styles.add(ParagraphStyle("CellReport", fontName=face, fontSize=8, leading=10, textColor=PDF_INK, wordWrap="CJK"))
+    styles.add(ParagraphStyle("NumberReport", parent=styles["CellReport"], alignment=2))
     small, body = styles["SmallReport"], styles["CellReport"]
-    para = lambda value, style=body: Paragraph(escape(str(value)), style)
+    para = lambda value, style=body: Paragraph(escape(str(value)).replace("\n", "<br/>"), style)
     title = report.get("title") or "Sales analytics"
-    summary = {row.get("metric", "").replace(" ", "_"): row.get("value") for name, rows in sections if name in {"Summary", "Furniture ledger"} for row in rows}
     story = [para(title, styles["ReportTitle"])]
-    context = [str(metadata[key]) for key in ("Period", "Date basis", "Export view", "Export scope") if metadata.get(key)]
-    if context:
-        story.extend([para(" / ".join(context), small), Spacer(1, 10)])
-    currencies = [currency for currency, key in (("INR", "sales"), ("RNB", "sales_rnb")) if key in summary]
-    if currencies:
-        gap = 10
-        width = (PDF_WIDTH - gap * (len(currencies) - 1)) / len(currencies)
-        cards = [_ledger_card(summary, currency, width, report.get("metric_label", "Confirmed sales")) for currency in currencies]
-        contents = []
-        widths = []
-        for card in cards:
-            if contents:
-                contents.append("")
-                widths.append(gap)
-            contents.append(card)
-            widths.append(width)
-        table = Table([contents], colWidths=widths)
-        table.setStyle(TableStyle([("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0), ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0)]))
-        story.extend([table, Spacer(1, 10)])
-    # The overview uses only sections requested by the caller; record-only and
-    # current-tab exports never gain hidden dashboard totals or charts.
-    trend_rows = next((rows for name, rows in sections if name == "Trend"), [])
-    for currency in currencies or ["INR", "RNB"]:
-        key = "sales_rnb" if currency == "RNB" else "sales"
-        if currency == "RNB" and not any(numeric(row.get(key)) and row[key] != 0 for row in trend_rows):
-            continue
-        chart = trend_drawing(trend_rows, currency, metric_label=report.get("metric_label", "Confirmed sales"))
-        if chart:
-            story.extend([chart, Spacer(1, 12)])
-    for name in ("Companies", "Floors", "Products"):
-        mix_rows = next((rows for section, rows in sections if section == name), [])
-        currency = "RNB" if report.get("filters", {}).get("floor_id") == "third-floor" else "INR"
-        mix = _treemap(mix_rows, name, currency)
-        if mix:
-            story.extend([mix, Spacer(1, 10)])
-            break
-    for insight in report.get("insights", []):
-        story.append(para(insight, small))
+    for key in ("Period", "Date basis", "Date from", "Date to (exclusive)", "Directory"):
+        if metadata.get(key) is not None:
+            story.append(para(f"{key}: {metadata[key]}", small))
+    filters = metadata.get("Filters") or report.get("filters") or {}
+    # Presets and presentation settings repeat the dates or affect ordering only.
+    active = {key: value for key, value in filters.items() if value is not None and value != "" and key not in {"preset", "date_basis", "date_from", "date_to", "sort", "granularity", "page", "page_size"}}
+    if metadata.get("Floor") is not None:
+        active.setdefault("floor_id", metadata["Floor"])
+    selected_id = metadata.get("Selected entity ID")
+    if selected_id and selected_id not in active.values() and selected_id != report.get("identity", {}).get("id"):
+        active["selected_entity_id"] = selected_id
+    if "floor_id" in active:
+        floor = active.pop("floor_id")
+        active = {"department": "All departments" if floor == "all" else FLOORS.get(floor, floor), **active}
+    if active:
+        story.append(para(" / ".join(f"{_label(key)}: {value}" for key, value in active.items()), small))
+    story.append(Spacer(1, 8))
     empty_sections = []
+    table_style = [("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 5), ("RIGHTPADDING", (0, 0), (-1, -1), 5)]
+    pending = []
+    def flush_panels():
+        if not pending:
+            return
+        cells = pending[:]
+        if len(cells) == 1:
+            cells.append("")
+        grid = Table([cells], colWidths=[PDF_WIDTH / 2] * 2, hAlign="LEFT")
+        grid.setStyle(TableStyle(table_style + [("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 5)]))
+        story.append(grid)
+        pending.clear()
     for name, rows in sections:
+        rows = _pdf_rows(name, rows)
         if not rows:
             empty_sections.append(name)
             continue
-        story.append(para(name, styles["SectionTitle"]))
+        paired = name in {"Floors", "Companies", "Architects", "Products", "Customers", "Customer Segments"} and len(rows) <= 8
+        if not paired:
+            flush_panels()
+        section_width = PDF_WIDTH / 2 - 14 if paired else PDF_WIDTH
+        block = [para(name, styles["SectionTitle"])]
+        if not paired:
+            story.extend(block)
         if name in {"Summary", "Furniture ledger"}:
-            cards = []
+            tiles = []
+            metrics = {row.get("metric", "").replace(" ", "_"): row.get("value") for row in rows}
+            ledger = "RNB" if name == "Furniture ledger" or filters.get("floor_id") == "third-floor" else "INR"
+            suffix = "_rnb" if ledger == "RNB" else ""
+            arc = collection_arc(metrics.get(f"collected{suffix}", metrics.get("collected")), metrics.get(f"outstanding{suffix}", metrics.get("outstanding")), ledger, 150)
             for row in rows:
-                key, value = row.get("metric", "").replace(" ", "_"), row.get("value")
-                content = [para(_label(key), small), para(display(value, key))]
-                scale = _summary_scale(summary, key)
-                if scale:
-                    content.append(_bar(value, *scale, PDF_WIDTH / 3 - 20))
-                cards.append(content)
-            grid = [cards[index:index + 3] for index in range(0, len(cards), 3)]
-            grid[-1] += [""] * (3 - len(grid[-1]))
-            tiles = Table(grid, colWidths=[PDF_WIDTH / 3] * 3, hAlign="LEFT")
-            tiles.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), PDF_WASH), ("BOX", (0, 0), (-1, -1), .5, colors.white), ("INNERGRID", (0, 0), (-1, -1), 4, colors.white), ("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 10), ("RIGHTPADDING", (0, 0), (-1, -1), 10), ("TOPPADDING", (0, 0), (-1, -1), 8), ("BOTTOMPADDING", (0, 0), (-1, -1), 8)]))
-            story.append(tiles)
+                metric = row.get("metric", "").replace(" ", "_")
+                if metric.startswith("change_pct") and row.get("value") is None:
+                    continue
+                tiles.append([para(_label(metric), small), para(display(row.get("value"), metric), styles["CellReport"])])
+            if not tiles:
+                story.append(para("Comparable growth unavailable", small))
+                continue
+            columns = 3 if arc else 4
+            card_width = PDF_WIDTH - 174 if arc else PDF_WIDTH
+            grid = [tiles[i:i + columns] + [""] * (columns - len(tiles[i:i + columns])) for i in range(0, len(tiles), columns)]
+            cards = Table(grid, colWidths=[card_width / columns] * columns, hAlign="LEFT", cornerRadii=[10] * 4)
+            cards.setStyle(TableStyle(table_style + [("BACKGROUND", (0, 0), (-1, -1), PDF_WASH), ("TOPPADDING", (0, 0), (-1, -1), 7), ("BOTTOMPADDING", (0, 0), (-1, -1), 6)]))
+            if arc:
+                summary = Table([[arc, cards]], colWidths=[164, PDF_WIDTH - 164], hAlign="LEFT", cornerRadii=[10] * 4)
+                summary.setStyle(TableStyle(table_style + [("BACKGROUND", (0, 0), (-1, -1), PDF_WASH), ("BOX", (0, 0), (-1, -1), .5, PDF_LINE), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("TOPPADDING", (0, 0), (-1, -1), 8), ("BOTTOMPADDING", (0, 0), (-1, -1), 8)]))
+                story.append(summary)
+            else:
+                story.append(cards)
             continue
-        keys = list(dict.fromkeys(key for row in rows for key in row))
-        if name not in {"Summary", "Furniture ledger", "Identity", "Trend"}:
-            measure = next((key for key in ("sales", "line_total", "amount", "total", "orders", "customers") if key in keys), None)
-            if measure:
-                for currency in ("INR", "RNB") if measure in MONEY_FIELDS else ("INR",):
-                    chart = _comparison(rows, measure, currency)
-                    if chart:
-                        story.append(chart)
-                if "sales_rnb" in keys and any(numeric(row.get("sales_rnb")) and row["sales_rnb"] != 0 for row in rows):
-                    chart = _comparison(rows, "sales_rnb", "RNB")
-                    if chart:
-                        story.append(chart)
+        keys = [key for key in dict.fromkeys(key for row in rows for key in row) if key != "currency"]
+        if not keys:
+            continue
         identity = next((key for key in ("name", "number", "label", "metric", "field", "id", "review_id") if key in keys), keys[0])
+        if paired:
+            metric = "sales" if any("sales" in row for row in rows) else "sales_rnb" if any("sales_rnb" in row for row in rows) else "customers"
+            values = []
+            for row in rows:
+                currency = row.get("currency", "INR")
+                extras = " · ".join(f"{_label(key)}: {display(value, key, currency)}" for key, value in row.items() if key not in {identity, metric, "currency"})
+                label = [para(row.get(identity, "Recorded row")), para(extras, small)]
+                raw = row.get(metric)
+                peers = [item.get(metric) for item in rows if numeric(item.get(metric)) and item.get("currency", "INR") == currency]
+                value = [para(display(raw, metric, currency), styles["NumberReport"])]
+                if numeric(raw) and peers:
+                    value.append(cell_bar(raw, min(0, *peers), max(0, *peers), section_width * .4 - 10))
+                values.append([label, value])
+            compact_table = Table(values, colWidths=[section_width * .6, section_width * .4], hAlign="LEFT", splitInRow=1)
+            compact_table.setStyle(TableStyle(table_style + [("LINEBELOW", (0, 0), (-1, -1), .3, PDF_LINE), ("BOTTOMPADDING", (0, 0), (-1, -1), 7), ("TOPPADDING", (0, 0), (-1, -1), 7)]))
+            block.append(compact_table)
+            height = sum(flow.wrap(section_width, 100000)[1] for flow in block)
+            if height > 580:
+                flush_panels()
+                story.extend(block)
+            else:
+                pending.append(block)
+                if len(pending) == 2:
+                    flush_panels()
+            continue
         rest = [key for key in keys if key != identity]
-        bands = [[identity, *rest[offset:offset + 3]] for offset in range(0, len(rest), 3)] or [[identity]]
+        graphics = []
+        if name == "Trend":
+            currencies = ["RNB"] if filters.get("floor_id") == "third-floor" else ["INR"]
+            if any("sales_rnb" in row and numeric(row.get("sales_rnb")) and row["sales_rnb"] != 0 for row in rows) and "RNB" not in currencies:
+                currencies.append("RNB")
+            graphics = [graphic for currency in currencies if (graphic := trend(rows, currency, (section_width - 12) / len(currencies), "Collections over time" if filters.get("date_basis") == "payment" or metadata.get("Date basis") == "payment" else "Sales over time"))]
+        elif name not in {"Source Details", "Orders", "Records"}:
+            for field, currency in (("sales", "INR"), ("sales_rnb", "RNB"), ("sales", "RNB")):
+                if any(numeric(row.get(field)) for row in rows):
+                    graphic = ranking(rows, field, currency, (section_width - 12) / 2, name)
+                    if graphic:
+                        graphics.append(graphic)
+            if not graphics and any(numeric(row.get("customers")) for row in rows):
+                graphic = ranking(rows, "customers", None, (section_width - 12) / 2, name)
+                if graphic:
+                    graphics.append(graphic)
+        if graphics:
+            chart_grid = Table([graphics[i:i + 2] for i in range(0, len(graphics), 2)], colWidths=[section_width / min(2, len(graphics))] * min(2, len(graphics)), hAlign="LEFT")
+            chart_grid.setStyle(TableStyle(table_style + [("BOTTOMPADDING", (0, 0), (-1, -1), 6)]))
+            story.append(chart_grid)
+        bands = [[identity, *rest[offset:offset + 5]] for offset in range(0, len(rest), 5)] or [[identity]]
+        scales = {}
+        for row in rows:
+            for key, value in row.items():
+                if numeric(value) and key in PDF_MONEY_FIELDS | {"orders", "customers", "quantity"}:
+                    ledger = "RNB" if key.endswith("_rnb") else row.get("currency", "INR")
+                    scale_key = (key, ledger, str(row.get("unit")) if key == "quantity" else None)
+                    lower, upper = scales.get(scale_key, (0, 0))
+                    scales[scale_key] = min(lower, value), max(upper, value)
         for index, band in enumerate(bands):
             if len(bands) > 1:
                 story.append(para(f"{name} / detail columns {index + 1} of {len(bands)} / {len(rows)} recorded rows", styles["DetailCaption"]))
-            widths = [PDF_WIDTH / len(band)] * len(band)
-            bounds = {}
-            for key in band:
-                if key not in PDF_BAR_FIELDS:
-                    continue
-                for currency in ("INR", "RNB"):
-                    amounts = [row[key] for row in rows if numeric(row.get(key)) and (key not in PDF_MONEY_FIELDS or _ledger(row, key) == currency)]
-                    if amounts:
-                        bounds[key, currency] = (min(0, *amounts), max(0, *amounts))
-            values = [[para(_label(key)) for key in band]]
+            widths = [section_width / len(band)] * len(band)
+            if name in {"Source Details", "Orders", "Records"} and len(band) > 1:
+                widths = [section_width * .46] + [section_width * .54 / (len(band) - 1)] * (len(band) - 1)
+            values = [[para("Orders (all selected currencies)" if name == "Trend" and key == "orders" else _label(key), styles["NumberReport"] if any(isinstance(row.get(key), (int, float)) and not isinstance(row.get(key), bool) for row in rows) else body) for key in band]]
             for row in rows:
                 cells = []
-                for column, key in enumerate(band):
+                for key in band:
                     effective = row.get("metric", "").replace(" ", "_") if key == "value" else key
-                    value = row.get(key)
-                    content = para(display(value, effective, row.get("currency", "INR")))
-                    # Embedded bars carry magnitude through continuation pages;
-                    # each column is scaled independently, with exact text kept.
-                    scale = bounds.get((key, _ledger(row, key)))
-                    if key != identity and scale and numeric(value) and key != "value":
-                        content = [content, _bar(value, *scale, widths[column] - 14)]
+                    value = _label(row.get("metric", "").replace(" ", "_")) if key == "metric" and name in {"Summary", "Furniture ledger"} else row.get(key)
+                    is_number = numeric(value)
+                    content = para(display(value, effective, row.get("currency", "INR")), styles["NumberReport"] if is_number else body)
+                    if numeric(value) and key in PDF_MONEY_FIELDS | {"orders", "customers", "quantity"}:
+                        currency = "RNB" if key.endswith("_rnb") else row.get("currency", "INR")
+                        unit = row.get("unit") if key == "quantity" else None
+                        lower, upper = scales[(key, currency, str(unit) if key == "quantity" else None)]
+                        content = [content, cell_bar(value, lower, upper, widths[band.index(key)] - 12)]
                     cells.append(content)
                 values.append(cells)
             table = Table(values, repeatRows=1, colWidths=widths, hAlign="LEFT", splitInRow=1)
-            table.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, 0), PDF_WASH), ("VALIGN", (0, 0), (-1, -1), "TOP"), ("LINEBELOW", (0, 0), (-1, 0), .6, PDF_LINE), ("LINEBELOW", (0, 1), (-1, -1), .3, PDF_LINE), ("BOTTOMPADDING", (0, 0), (-1, -1), 6), ("TOPPADDING", (0, 0), (-1, -1), 6), ("LEFTPADDING", (0, 0), (-1, -1), 7), ("RIGHTPADDING", (0, 0), (-1, -1), 7)]))
-            story.extend([table, Spacer(1, 8)])
-    if empty_sections:
+            table.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, 0), PDF_WASH), ("VALIGN", (0, 0), (-1, -1), "TOP"), ("LINEBELOW", (0, 0), (-1, 0), .6, PDF_LINE), ("LINEBELOW", (0, 1), (-1, -1), .3, PDF_LINE), ("BOTTOMPADDING", (0, 0), (-1, -1), 4), ("TOPPADDING", (0, 0), (-1, -1), 4), ("LEFTPADDING", (0, 0), (-1, -1), 7), ("RIGHTPADDING", (0, 0), (-1, -1), 7)]))
+            story.extend([table, Spacer(1, 5)])
+    flush_panels()
+    if empty_sections and not any(rows for _, rows in sections):
         story.append(para("No matching recorded data: " + ", ".join(empty_sections) + ".", small))
     notes = report.get("coverage", {}).get("notes", report.get("notes", []))
-    story.append(para("Scope and data coverage", styles["SectionTitle"]))
-    story.append(para("Bars compare recorded values within each column or chart. INR and Furniture RNB are independent ledgers. Unavailable values are never plotted as zero.", small))
+    if notes:
+        story.append(para("Data notes", styles["SectionTitle"]))
     for note in notes:
         story.append(para(note, small))
-    for key, value in metadata.items():
-        story.append(para(f"{key}: {cell(value)}", small))
     def page_chrome(canvas, doc):
         canvas.saveState()
         canvas.setTitle(str(title))
         canvas.setAuthor("Buildcon House")
         canvas.setFont(face, 8)
         canvas.setFillColor(PDF_SECONDARY)
-        canvas.drawString(36, A4[1] - 25, "BUILDCON HOUSE / SALES INTELLIGENCE")
-        canvas.drawRightString(A4[0] - 36, A4[1] - 25, "A4 / Authorized report")
+        canvas.drawString(36, A4[1] - 25, "Buildcon House · Sales data")
         canvas.setStrokeColor(PDF_LINE)
         canvas.line(36, A4[1] - 34, A4[0] - 36, A4[1] - 34)
         canvas.line(36, 34, A4[0] - 36, 34)
         canvas.setFont(face, 7)
-        canvas.drawString(36, 22, "INR / RNB shown separately. Unavailable is not zero.")
+        canvas.drawString(36, 22, "Amounts show their currency. Unavailable is not zero.")
         canvas.drawRightString(A4[0] - 36, 22, f"Page {doc.page}")
         canvas.restoreState()
     SimpleDocTemplate(blob, pagesize=A4, rightMargin=36, leftMargin=36, topMargin=48, bottomMargin=46, allowSplitting=True).build(story, onFirstPage=page_chrome, onLaterPages=page_chrome)
