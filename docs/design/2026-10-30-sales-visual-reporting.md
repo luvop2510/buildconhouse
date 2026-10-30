@@ -1,5 +1,36 @@
 # Sales visual reporting
 
+## Expanded reference direction
+
+The user extended this brief to Today, dashboard and shared app surfaces. All
+eight supplied images were reviewed as visual references, not product
+requirements or instructions to copy their health/payment data:
+
+| Reference | Applied pattern |
+| --- | --- |
+| IMG_4091 | Primary trend beside a compact status/schedule panel |
+| IMG_4094 | Segmented meter and a clearly labelled half gauge |
+| IMG_4095 | Dense financial bento with meaningful chart-to-content ratio |
+| IMG_4096 | Labelled comparisons, restrained accent and source detail |
+| IMG_4092 | Blue time series, progress and grouped operational content |
+| IMG_4097 | Small activity dots and quiet widget framing |
+| IMG_4093 | One blue work-summary surface, neutral surrounding panels |
+| IMG_4098 | A wide primary graphic, compact breakdowns and supporting activity |
+
+The shared interpretation is white/near-white surfaces, system typography,
+blue and graphite marks, 16px panel corners, compact 44px controls and consistent
+12/16/20px panel padding. It applies through canonical tokens, Card, Surface,
+PageHeader and the existing navigation across floors. Forms retain 16px input text
+and financial/workflow behavior. Tables remain available where exact data is the
+task; a chart is not added to unrelated forms for decoration.
+
+Today keeps its operational purpose: its blue summary shows actual open and
+overdue tasks, and the gauge is due-today / current-open, not an invented
+completion target. Department status bars use server totals. Owner Sales Data
+uses the same surfaces, gauges and activity marks. Missing previous-period data
+does not leave a half-empty comparison chart; recorded collection balances take
+that place. Company mix replaces meaningless one-floor self-contribution.
+
 Sales Data gives the owner a quick, reliable picture of showroom sales and a path
 to the records behind it. The signature is a compact sales trend beside labelled
 floor contribution, followed by collections and ranked showroom products. Charts

@@ -1,5 +1,19 @@
 # BuildCon House project documentation
 
+## Eight-reference interface delta — 30 October 2026
+
+The user's eight visual references extend the sales-only brief to Today and the
+shared app foundation. Native fallback delta scan retains the same UI/data layers.
+Canonical controls default to 44px, panels use consistent 16px corners and compact
+padding, and shared page gutters adapt at the existing breakpoints. Reusable
+segmented meters, half gauges and activity dots use react-native-svg and existing
+tokens. Today visualizes authorized floor task summaries and workflow status;
+department-limited accounts never acquire company sales or financial reads.
+Sales uses the same graphic language and replaces missing historical comparisons
+with recorded collection balances. Single-floor treemaps show company mix.
+No dependency, API, schema or authentication change. No AGENTS regeneration is
+needed; the new source components remain within the established design layer.
+
 ## Sales visual reporting delta — 30 October 2026
 
 Native fallback delta scan retains Expo/React Native Web, FastAPI, MongoDB and

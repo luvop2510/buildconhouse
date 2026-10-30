@@ -21,7 +21,7 @@ import {
   spacing,
   type,
 } from "@/src/theme/tokens";
-import { color as ds, statusTone, toneColor } from "@/src/design/tokens";
+import { color as ds, radius as sharedRadius, statusTone, toneColor } from "@/src/design/tokens";
 // The single breakpoint authority. `layout` above comes from theme/tokens,
 // which carries no `bp` — reading layout.bp there yields undefined and every
 // comparison against it silently returns false.
@@ -123,7 +123,7 @@ export function Card({
   padding?: number;
   onPress?: () => void;
 }) {
-  const { isDesktop } = useBp();
+  const { isPhone, isDesktop } = useBp();
   const skin = {
     flat:     { bg: colors.surfaceSecondary, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, shadow: null as any },
     elevated: { bg: colors.surfaceSecondary, borderWidth: 0,                        borderColor: "transparent",  shadow: elevation.low },
@@ -134,10 +134,10 @@ export function Card({
     <View testID={testID} style={[
       {
         backgroundColor: skin.bg,
-        borderRadius: radius.lg,
+        borderRadius: sharedRadius.lg,
         borderWidth: skin.borderWidth,
         borderColor: skin.borderColor,
-        padding: padding ?? (isDesktop ? spacing.lg : spacing.md),
+        padding: padding ?? (isDesktop ? spacing.s20 : isPhone ? spacing.s12 : spacing.s16),
         minWidth: 0,
       },
       skin.shadow,

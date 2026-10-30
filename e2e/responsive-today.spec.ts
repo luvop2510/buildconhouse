@@ -18,7 +18,10 @@ for (const role of ['owner','manager','worker']) test(`Today shows the correct $
   await page.goto('/dashboard');
   await expect(page.getByText('Scheduled work & tasks', {exact:true})).toBeVisible();
   await expect(page.getByText('First fixture customer', {exact:true})).toBeVisible();
+  await expect(page.getByTestId('today-urgency-meter')).toHaveAttribute('aria-valuenow', '50');
+  await expect(page.getByTestId('today-task-summary')).toContainText('Completed today');
   await expect(page.getByTestId('today-floor-overview')).toHaveCount(role === 'worker' ? 0 : 1);
+  if (role !== 'worker') await expect(page.getByTestId('today-workflow-quotations')).toContainText('ordered');
   const salesNav = page.getByTestId('nav-sales-data');
   if (role !== 'owner') await expect(salesNav).toHaveCount(0);
   expect(paths.some(path => /sales-analytics|sales-data|dashboard\/stats/.test(path))).toBe(false);

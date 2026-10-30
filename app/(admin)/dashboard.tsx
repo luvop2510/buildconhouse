@@ -14,6 +14,7 @@ import { useActionAccess } from "@/src/hooks/use-permissions";
 import { useFloorAccess } from "@/src/hooks/use-floor-access";
 import { KITCHEN_FLOOR_ID } from "@/src/constants/floors";
 import type { TodayData, TodayOverview, TodayTask } from "@/src/api/today";
+import { TodaySummary, WorkflowDistribution } from "@/src/components/today/TodayGraphics";
 
 const DEPARTMENTS: Record<string, string> = {
   payments: "Payments", godown_stock: "Godown stock", orders: "Orders & dispatches", followups: "Follow-ups", walkins: "Walk-ins", quotations: "Quotations", tiles: "Tiles",
@@ -32,7 +33,7 @@ function TaskRow({ task, open, complete }: { task: TodayTask; open: () => void; 
   return <View style={{ flexDirection: "row", alignItems: "center", gap: space.x2 }}>
     <Pressable accessibilityRole="button" accessibilityLabel={`${task.title}. ${task.status}. Open task`}
       testID={`today-task-${task.resource}-${task.id}`} onPress={open}
-      style={({ pressed, hovered }: any) => ({ flex: 1, minWidth: 0, minHeight: 72, paddingVertical: space.x3,
+      style={({ pressed, hovered }: any) => ({ flex: 1, minWidth: 0, minHeight: 64, paddingVertical: space.x2,
         paddingHorizontal: space.x2, borderRadius: radius.md, gap: space.x1, backgroundColor: pressed || hovered ? color.hoverWash : "transparent" })}>
       <Txt v="rowTitle">{task.title}</Txt>
       <Txt v="sub" tone="soft">{DEPARTMENTS[task.resource] || task.resource.replace(/_/g, " ")} · {task.status}</Txt>
@@ -54,7 +55,8 @@ export default function Today() {
   const router = useRouter();
   const { staff } = useAuth();
   const { selectedFloorId, floors } = useFloorAccess();
-  const { isPhone, isDesktop, gutter } = useBp();
+  const { isPhone, isDesktop, isTabletLandscape, gutter } = useBp();
+  const regular = isDesktop || isTabletLandscape;
   const canUpdateFollowups = useActionAccess("followups", "update");
   const assignedKitchenWork = selectedFloorId === KITCHEN_FLOOR_ID && !["owner", "admin", "manager"].includes(staff?.role || "");
   const accessVersion = JSON.stringify([staff?.role, staff?.custom_access, staff?.access_profile, staff?.access_grants]);
@@ -155,21 +157,15 @@ export default function Today() {
     <View style={{ width: "100%", maxWidth: 1200, alignSelf: "center", gap: space.x4 }}>
       <View style={{ flexDirection: "row", alignItems: "center", gap: space.x3 }}>
         <View style={{ flex: 1, minWidth: 0, gap: space.x1 }}>
-          <Txt v="heading" style={{ fontSize: isPhone ? 24 : 28, lineHeight: isPhone ? 32 : 36 }}>Today</Txt>
+          <Txt v="heading" style={{ fontSize: isPhone ? 20 : 24, lineHeight: isPhone ? 28 : 32 }}>Today</Txt>
           <Txt v="sub" tone="soft">{floorName} · {new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", weekday: "short", day: "numeric", month: "short" }).format(new Date())}</Txt>
         </View>
         <RefreshButton icon="refresh-cw" accessibilityLabel={refreshing ? "Updating floor work" : "Refresh floor work"} disabled={refreshing} onPress={() => void load(true)} />
       </View>
       {error ? <Surface><View accessibilityRole="alert" style={{ gap: space.x2 }}><Txt v="bodyMid">{error}</Txt>{data ? <Txt v="sub" tone="soft">Showing the last loaded work. Refresh to check the latest status.</Txt> : null}<Button label="Retry floor work" variant="secondary" onPress={() => void load(true)} /></View></Surface> : null}
-      <Surface pad={0}>
-        <View testID="today-task-summary" style={{ flexDirection: "row", flexWrap: "wrap" }}>
-          {([['Open tasks', summary?.open], ['Due today', summary?.due_today], ['Overdue', summary?.overdue], ['Completed today', summary?.completed_today]] as const).map(([label, value], i) => <View key={label} style={{ width: isPhone ? "50%" : "25%", padding: space.x4, gap: space.x1, borderLeftWidth: i % (isPhone ? 2 : 4) ? 1 : 0, borderTopWidth: isPhone && i > 1 ? 1 : 0, borderColor: color.line }}>
-            <Txt v="caption" tone="soft">{label}</Txt>{value == null ? error ? <Txt v="sub" tone="soft">Unavailable</Txt> : <Skeleton w={48} h={28} /> : <Txt v="moneyLg">{value.toLocaleString("en-IN")}</Txt>}
-          </View>)}
-        </View>
-      </Surface>
-      <View style={{ flexDirection: isDesktop && data?.full_floor_access ? "row" : "column", alignItems: "stretch", gap: space.x4 }}>
-        <View style={{ flex: isDesktop ? 2 : undefined, minWidth: 0 }}><Surface style={{ gap: space.x3 }}>
+      <TodaySummary summary={summary} unavailable={!!error&&!data}/>
+      <View style={{ flexDirection: regular && data?.full_floor_access ? "row" : "column", alignItems: "stretch", gap: space.x4 }}>
+        <View style={{ flex: regular ? 2 : undefined, minWidth: 0 }}><Surface style={{ gap: space.x3 }}>
           <Txt v="heading">Scheduled work & tasks</Txt>
           <Txt v="sub" tone="soft">{assignedKitchenWork ? "Your assigned Kitchen tasks and recorded progress" : data?.full_floor_access ? "Current work across this floor’s departments" : "Tasks and progress for your departments"}</Txt>
           {pendingIds.length ? <View accessibilityLiveRegion="polite"><Txt v="sub" tone="soft">Saving {pendingIds.length} follow-up{pendingIds.length === 1 ? "" : "s"}…</Txt></View> : null}
@@ -177,7 +173,7 @@ export default function Today() {
           {(queue && queue.length > visibleTasks.length) || data?.truncated ? <Txt v="sub" tone="soft">Showing the next {visibleTasks.length} tasks. Open a department below for its complete list.</Txt> : null}
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space.x2 }}>{data?.resources.filter(resource => DESTINATIONS[resource]).map(resource => <Button key={resource} label={`Open ${DEPARTMENTS[resource] || resource.replace(/_/g, " ")}`} variant="ghost" size="sm" onPress={() => router.push(DESTINATIONS[resource] as never)} />)}</View>
         </Surface></View>
-        {data?.full_floor_access ? <View testID="today-floor-overview" style={{ flex: isDesktop ? 1 : undefined, minWidth: 0, gap: space.x4 }}>
+        {data?.full_floor_access ? <View testID="today-floor-overview" style={{ flex: regular ? 1 : undefined, minWidth: 0, gap: space.x4 }}>
           {overviewState.scope === scope && overviewState.loading ? <Surface><Txt v="sub" tone="soft">Updating floor totals…</Txt></Surface> : null}
           {overviewState.scope === scope && overviewState.error ? <Surface><Txt v="sub" tone="soft">{overviewState.error}</Txt><Button label="Retry floor totals" variant="ghost" onPress={() => void load(true)} /></Surface> : null}
           {data.unavailable_sections?.length ? <Surface><Txt v="sub" tone="soft">Some floor totals are unavailable. Your tasks remain ready.</Txt><Button label="Retry floor totals" variant="ghost" onPress={() => void load(true)} /></Surface> : null}
@@ -188,7 +184,7 @@ export default function Today() {
             <Button label="Open payments" variant="secondary" onPress={() => router.push("/(admin)/payments" as never)} />
           </Surface> : null}
           {data.workflows.length ? <Surface style={{ gap: space.x3 }}><Txt v="heading">Department progress</Txt>
-            {data.workflows.map((workflow, i) => <View key={workflow.resource} style={{ gap: space.x2 }}>{i ? <Hairline /> : null}<View style={{ flexDirection: "row", justifyContent: "space-between", gap: space.x2 }}><Txt v="rowTitle" style={{ flex: 1 }}>{workflow.label}</Txt><Txt v="num">{workflow.total.toLocaleString("en-IN")}</Txt></View>{workflow.statuses.map(row => <View key={row.status} style={{ flexDirection: "row", justifyContent: "space-between", gap: space.x2 }}><Txt v="sub" tone="soft" style={{ flex: 1 }}>{row.status}</Txt><Txt v="num">{row.count.toLocaleString("en-IN")}</Txt></View>)}</View>)}
+            {data.workflows.map((workflow, i) => <View key={workflow.resource} style={{ gap: space.x2 }}>{i ? <Hairline /> : null}<WorkflowDistribution workflow={workflow}/></View>)}
           </Surface> : null}
         </View> : null}
       </View>

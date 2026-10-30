@@ -44,10 +44,10 @@ export function Avatar({ name, size = 34 }: { name?: string | null; size?: numbe
 export function Surface({
   children, pad, style,
 }: { children: React.ReactNode; pad?: number; style?: StyleProp<ViewStyle> }) {
-  const { isDesktop } = useBp();
+  const { isPhone, isDesktop } = useBp();
   return (
     <View style={[{
-      backgroundColor: color.surface, borderRadius: radius.lg, padding: pad ?? (isDesktop ? space.x6 : space.x4), minWidth: 0,
+      backgroundColor: color.surface, borderRadius: radius.lg, padding: pad ?? (isDesktop ? space.x5 : isPhone ? space.x3 : space.x4), minWidth: 0,
       borderWidth: layout.hairline, borderColor: color.line,
     }, style]}
     >

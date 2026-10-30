@@ -11,7 +11,7 @@ Use `src/design/tokens.ts` as the canonical source. `src/theme/tokens.ts` adapts
 - Canvas `#F5F5F7`, surface `#FFFFFF`, primary text `#1D1D1F`, secondary text `#545458`, supporting text `#626267`, separators `#E2E2E7`. Text against white has contrast approximately 16.8:1, 7.6:1 and 6.1:1 respectively. Action/chart/focus blue `#0066CC` is 5.57:1 on white; pressed/hover blue `#004F9F` is 8.02:1. Use blue tint `#EAF2FF` and border `#BED6F7` for selected controls. Use roles rather than raw colors in components.
 - Semantic status colors retain their own labels/icons. A zero or unavailable value is neutral. Color alone never conveys a state or identifies a series.
 - Use the existing Feather outline family consistently. Typical sizes are 16px for inline affordances, 18px for controls, 20px for navigation. Hide decorative glyphs from accessibility; name icon-only controls. Avoid emoji, tinted icon tiles and competing icon families.
-- Spacing follows 4/8px increments. Phone gutters 16px, inter-control gaps at least 8px, panel padding 16px, regular panel padding 24px, section gap 16–24px. Use shared token aliases. Keep equal metrics aligned with equal padding and radius; use a 12px panel radius and an 8px inset/control radius.
+- Spacing follows 4/8px increments. Gutters are 16px on phones, 20px on tablets and 24px on desktop. Inter-control gaps stay at least 8px. Panel padding is 12/16/20px across these sizes; section gaps are 12–16px. Use shared token aliases. Keep equal metrics aligned with equal padding and radius; use a 16px panel radius and a 12px inset/control radius.
 
 ## Mobile structure
 

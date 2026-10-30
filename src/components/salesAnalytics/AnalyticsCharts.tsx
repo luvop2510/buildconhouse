@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useBp } from '@/src/design/responsive';
 import { collectionProgress } from './visualMetrics';
+import { HalfGauge } from '@/src/design/graphics';
 import { Pressable, View } from 'react-native';
 import Svg, { Circle, Rect } from 'react-native-svg';
 import { Text } from '@/src/components/AppText';
@@ -55,15 +56,11 @@ export function CustomerMix({segments,onSegment}:{segments:{id:string;name:strin
 
 export function CollectionBalance({collected,outstanding,currency,onRecords}:{collected:number|null|undefined;outstanding:number|null|undefined;currency:string;onRecords:()=>void}) {
  const share=collectionProgress(collected,outstanding);
- const circumference=2*Math.PI*37;
  return <View testID="analytics-collection-balance" style={{gap:spacing.s12}}>
   <View style={{flexDirection:'row',alignItems:'center',gap:spacing.s16}}>
-   <View accessible accessibilityLabel={share==null?'Collection share unavailable':`${Math.round(share*100)} percent of recorded balances collected`} style={{width:96,height:96,alignItems:'center',justifyContent:'center'}}>
-    <Svg width={96} height={96} viewBox="0 0 96 96" aria-hidden><Circle cx={48} cy={48} r={37} stroke={colors.surfaceTertiary} strokeWidth={10} fill="none"/>{share!=null?<Circle cx={48} cy={48} r={37} stroke={chartColors.primary} strokeWidth={10} fill="none" strokeDasharray={`${share*circumference} ${circumference}`} rotation={-90} origin="48,48" strokeLinecap="round"/>:null}</Svg>
-    <View pointerEvents="none" style={{position:'absolute',alignItems:'center'}}><Text style={type.numeric}>{share==null?'—':`${Math.round(share*100)}%`}</Text><Text style={type.caption}>collected</Text></View>
-   </View>
+   <HalfGauge ratio={share} label="Collected share of receipts plus outstanding balance" value={share==null?'Unavailable':`${Math.round(share*100)}%`}/>
    <View style={{flex:1,minWidth:0}}><DataLink label="Collected" value={analyticMoney(collected,currency)} onPress={onRecords}/><DataLink label="Outstanding" value={analyticMoney(outstanding,currency)} onPress={onRecords}/></View>
   </View>
-  <Text style={type.caption}>{share==null?'A share is shown only when complete, positive recorded balances are available.':'Share of collected + outstanding balances on matching orders. Balances reflect the latest source update.'}</Text>
+  <Text style={type.caption}>{share==null?'Balance mix unavailable.':'Collected / (collected + outstanding). Current recorded balances.'}</Text>
  </View>;
 }

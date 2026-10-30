@@ -49,7 +49,7 @@ These are acceptance surfaces, not a request to add removed pages or controls. N
 - [ ] Use Feather outline icons at consistent 16/18/20 sizes. Decorative icons are hidden from accessibility; icon controls have names and selected/expanded state.
 - [ ] Keep blue actions, selected navigation and data/focus accents with white surfaces, black/graphite text and a cool neutral canvas. Status color always has a word or meaningful icon.
 - [ ] Keep 4/8px spacing, 16px phone gutters and shared regular gutters. Related controls align; equal metrics have equal padding.
-- [ ] Use 12px panel / 8px control radii from the contract. Quiet borders separate resting panels; shadows belong to floating overlays.
+- [ ] Use 16px panel / 12px control radii from the contract. Quiet borders separate resting panels; shadows belong to floating overlays.
 - [ ] Remove accessory surfaces: no tinted icon squares, glow, gradient chart decoration, nested card around every row or fabricated delta.
 - [ ] Labels describe the next action. Dates use India calendar boundaries; money uses Indian grouping and an explicit currency where ambiguous.
 

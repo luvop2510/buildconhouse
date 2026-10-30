@@ -7,8 +7,9 @@ import { useBp } from '@/src/design/responsive';
 import { colors, spacing, type } from '@/src/theme/tokens';
 import type { AnalyticsDashboardData, AnalyticsFilters, AnalyticsFloor, AnalyticsTrend } from '@/src/api/salesAnalytics';
 import { analyticMoney, analyticNumber, chartColors, Choice, DataLink, Empty, Panel } from '@/src/components/salesAnalytics/AnalyticsParts';
-import { FloorBars, SalesTrend } from '@/src/components/salesAnalytics/AnalyticsCharts';
-import { analyticsCurrency } from '@/src/components/salesAnalytics/currencyScope';
+import { CollectionBalance, FloorBars, SalesTrend } from '@/src/components/salesAnalytics/AnalyticsCharts';
+import { analyticEntityAmount, analyticsCurrency } from '@/src/components/salesAnalytics/currencyScope';
+import { ActivityDots } from '@/src/design/graphics';
 import { squarify } from './analytics-bento-layout';
 
 export type AnalyticsBentoProps = {
@@ -18,25 +19,28 @@ export type AnalyticsBentoProps = {
  onPoint: (point: AnalyticsTrend) => void;
  onFloor: (floor: AnalyticsFloor) => void;
  revenueFooter?: ReactNode;
+ onRecords: () => void;
+ onCompany: (id:string) => void;
+ onActivityPoint: (point:AnalyticsTrend) => void;
 };
 
 /** Adapted from the user-supplied Analytics Bento by vasnev.art: revenue, comparison, treemap and radial pattern. */
-export function AnalyticsBento({data,filters,update,onPoint,onFloor,revenueFooter}:AnalyticsBentoProps) {
+export function AnalyticsBento({data,filters,update,onPoint,onFloor,revenueFooter,onRecords,onCompany,onActivityPoint}:AnalyticsBentoProps) {
  const {isDesktop,isTabletLandscape}=useBp();
  const {fontScale}=useWindowDimensions();
  const paired=(isDesktop||isTabletLandscape)&&fontScale<=1.3;
  const currency=analyticsCurrency(filters.floor_id);
  const floors=data.floors.filter(floor=>floor.currency===currency);
+ const companyTiles=data.companies.map(company=>({id:company.id,name:company.name,currency,sales:analyticEntityAmount(company,filters.floor_id)??null}));
+ const comparison=data.trend.some(point=>(currency==='RNB'?point.previous_sales_rnb:point.previous_sales)!=null);
  const row=(children:ReactNode[],weights:number[])=><View style={{flexDirection:paired?'row':'column',gap:spacing.s12,alignItems:'stretch'}}>{children.map((child,i)=><View key={i} style={{flex:paired?weights[i]:undefined,minWidth:0}}>{child}</View>)}</View>;
+ const revenue=<Panel title={filters.date_basis==='payment'?'Collections over time':'Sales over time'} description={data.period.label} testID="analytics-bento-revenue" action={<Choice label="Time scale" value={filters.granularity} options={['day','month','quarter','year'].map(value=>({value,label:value[0].toUpperCase()+value.slice(1)}))} onChange={granularity=>update({granularity})} testID="analytics-granularity"/>}><SalesTrend points={data.trend} currency={currency} onPoint={onPoint}/>{revenueFooter}</Panel>;
+ const contribution=<Panel title={filters.floor_id==='all'?'Business contribution':'Company sales mix'} description={`Recorded ${currency} sales · area represents share`} testID="analytics-bento-treemap"><Treemap floors={filters.floor_id==='all'?floors:companyTiles}/>{filters.floor_id==='all'?<FloorBars floors={floors} onFloor={onFloor}/>:companyTiles.slice(0,4).map(company=><DataLink key={company.id} label={company.name} value={analyticMoney(company.sales,currency)} onPress={()=>onCompany(company.id)}/>)}</Panel>;
+ const balance=<Panel title={comparison?'Current & previous period':'Collections & balances'} description={comparison?`Matching time buckets · ${currency}`:'Recorded payments on matching orders'} testID="analytics-bento-comparison">{comparison?<PeriodWaves points={data.trend} currency={currency} onPoint={onPoint}/>:<CollectionBalance collected={currency==='RNB'?data.kpis.collected_rnb:data.kpis.collected} outstanding={currency==='RNB'?data.kpis.outstanding_rnb:data.kpis.outstanding} currency={currency} onRecords={onRecords}/>}</Panel>;
+ const activity=<Panel title="Order activity" description="Recorded orders across the selected time range" testID="analytics-bento-seasonality"><ActivityPattern points={data.trend} currency={currency} onPoint={onPoint} onActivityPoint={onActivityPoint}/></Panel>;
  return <View testID="analytics-bento" style={{gap:spacing.s12}}>
-  {row([
-   <Panel title={filters.date_basis==='payment'?'Collections over time':'Sales over time'} description={data.period.label} testID="analytics-bento-revenue" action={<Choice label="Time scale" value={filters.granularity} options={['day','month','quarter','year'].map(value=>({value,label:value[0].toUpperCase()+value.slice(1)}))} onChange={granularity=>update({granularity})} testID="analytics-granularity"/>}><SalesTrend points={data.trend} currency={currency} onPoint={onPoint}/>{revenueFooter}</Panel>,
-   <Panel title="Current & previous period" description={`Matching time buckets · ${currency}`} testID="analytics-bento-comparison"><PeriodWaves points={data.trend} currency={currency} onPoint={onPoint}/></Panel>
-  ],[5,7])}
-  {row([
-   <Panel title="Business contribution" description={`Recorded ${currency} sales · area represents share`} testID="analytics-bento-treemap"><Treemap floors={floors}/><FloorBars floors={floors} onFloor={onFloor}/></Panel>,
-   <Panel title="Sales pattern" description="Distribution across the selected time range" testID="analytics-bento-seasonality"><Radar points={data.trend} currency={currency} onPoint={onPoint}/></Panel>
-  ],[7,5])}
+  {row([revenue,contribution],[7,5])}
+  {row([balance,activity],[7,5])}
  </View>;
 }
 
@@ -75,7 +79,7 @@ function PeriodWaves({points,currency,onPoint}:{points:AnalyticsTrend[];currency
  </View>;
 }
 
-function Treemap({floors}:{floors:AnalyticsFloor[]}) {
+function Treemap({floors}:{floors:Pick<AnalyticsFloor,'id'|'name'|'currency'|'sales'>[]}) {
  const {isPhone}=useBp();
  const [width,setWidth]=useState(300);
  const complete=floors.every(floor=>floor.sales!=null&&Number.isFinite(floor.sales)&&floor.sales>=0);
@@ -86,6 +90,14 @@ function Treemap({floors}:{floors:AnalyticsFloor[]}) {
  const tones=[{fill:colors.brand,ink:colors.onBrand},{fill:colors.onSurface,ink:colors.surfaceSecondary},{fill:colors.brandTint,ink:colors.onSurface}];
  return <View style={{gap:spacing.s8}} onLayout={event=>setWidth(event.nativeEvent.layout.width)}>
   {rects.length?<View accessible accessibilityLabel={`Sales treemap. ${floors.map(floor=>`${floor.name}: ${analyticMoney(floor.sales,floor.currency)}, ${analyticNumber(floor.sales!/total*100)} percent`).join('. ')}. Use the business-unit controls below for details.`} style={{height,position:'relative'}}>{rects.map((rect,i)=>{const tone=tones[i%tones.length];return <View key={rect.group} aria-hidden style={{position:'absolute',left:rect.x+2,top:rect.y+2,width:Math.max(0,rect.w-4),height:Math.max(0,rect.h-4),borderRadius:8,backgroundColor:tone.fill,padding:spacing.s8,justifyContent:'space-between',overflow:'hidden'}}>{rect.w>=84&&rect.h>=52?<><Text style={[type.captionStrong,{color:tone.ink}]}>{rect.name}</Text><Text style={[type.numeric,{color:tone.ink}]}>{Math.round(rect.v/total*100)}%</Text></>:null}</View>;})}</View>:<Empty text={complete?'No positive sales to plot in this range.':'Sales share unavailable because one or more business amounts are missing.'}/>}
+ </View>;
+}
+
+function ActivityPattern({points,currency,onPoint,onActivityPoint}:{points:AnalyticsTrend[];currency:string;onPoint:(point:AnalyticsTrend)=>void;onActivityPoint:(point:AnalyticsTrend)=>void}) {
+ const [radial,setRadial]=useState(false);const [table,setTable]=useState(false);
+ return <View style={{gap:spacing.s12}}>
+  {radial?<Radar points={points} currency={currency} onPoint={onPoint}/>:<><ActivityDots label="Recorded orders per time bucket" items={points.map(point=>({id:point.id,label:point.label,value:point.orders}))}/><Text style={type.caption}>Dots compare activity; exact order counts appear below each column.</Text><Button size="sm" label={table?'Hide activity data':'View activity data'} variant="ghost" onPress={()=>setTable(!table)}/>{table?points.slice(-12).map(point=><DataLink key={point.id} label={point.label} value={`${analyticNumber(point.orders)} orders`} onPress={()=>onActivityPoint(point)}/>):null}</>}
+  <Button size="sm" label={radial?'Show order activity':'View radial sales pattern'} variant="ghost" onPress={()=>setRadial(!radial)}/>
  </View>;
 }
 

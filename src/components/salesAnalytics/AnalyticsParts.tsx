@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react';
 import Feather from '@expo/vector-icons/Feather';
 import { useBp } from '@/src/design/responsive';
 import { Platform, Pressable, View, useWindowDimensions } from 'react-native';
+import { radius } from '@/src/design/tokens';
 import { Text } from '@/src/components/AppText';
 import { Button, SkeletonCard } from '@/src/components/ui';
 import { Sheet } from '@/src/design/components';
@@ -19,7 +20,7 @@ export const BASIS_NAMES: Record<string, string> = { confirmation: 'Order confir
 export const chartColors = { primary: colors.brand, tint: colors.brandTint, secondary: colors.onSurfaceMuted, tertiary: '#A3A3AA' };
 export function Panel({ title, description, children, action, testID }: { title: string; description?: string; children: ReactNode; action?: ReactNode; testID?: string }) {
  const { isPhone, isDesktop } = useBp();
- return <View testID={testID} style={{ flexGrow: 1, minWidth: 0, padding: isPhone ? spacing.s12 : isDesktop ? spacing.s20 : spacing.s16, gap: spacing.s12, borderWidth: 1, borderColor: colors.border, borderRadius: 12, backgroundColor: colors.surfaceSecondary }}>
+ return <View testID={testID} style={{ flexGrow: 1, minWidth: 0, padding: isPhone ? spacing.s12 : isDesktop ? spacing.s20 : spacing.s16, gap: spacing.s12, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, backgroundColor: colors.surfaceSecondary }}>
   <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: spacing.s8 }}><View style={{flex:1,minWidth:120,gap:spacing.s4}}><Text accessibilityRole="header" aria-level={2} style={isPhone?type.titleSm:type.titleMd}>{title}</Text>{description ? <Text style={type.bodySm}>{description}</Text> : null}</View>{action}</View>{children}
  </View>;
 }

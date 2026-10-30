@@ -132,14 +132,14 @@ export const space = {
 
 // ── Shared controls — touch-first dimensions across both component adapters ──
 export const control = {
-  height: { sm: 44, md: 48, lg: 52 },
+  height: { sm: 44, md: 44, lg: 48 },
   inset: { sm: 12, md: 16, lg: 20 },
   label: { sm: 13, md: 14, lg: 15 },
   icon: { sm: 16, md: 18, lg: 20 },
 } as const;
 
 // ── Radii ───────────────────────────────────────────────────────────────────
-export const radius = { sm: 6, md: 8, lg: 12, xl: 16, pill: 999 } as const;
+export const radius = { sm: 6, md: 12, lg: 16, xl: 20, pill: 999 } as const;
 
 // ── Elevation — exactly two levels. Everything else is hairlines. ───────────
 export const shadow = {
@@ -171,7 +171,7 @@ export const layout = {
   sidebar: 240,
   rail: 64,
   bottomBar: 62,
-  gutter: { phone: 16, tablet: 24, desktop: 32 },
+  gutter: { phone: 16, tablet: 20, desktop: 24 },
   content: 1120,          // default page max width
   contentNarrow: 760,     // reading / form pages
   // One responsive contract. Components must consume this through `useBp()`
