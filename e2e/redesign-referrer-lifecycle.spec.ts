@@ -1,3 +1,4 @@
+import { referrerCode } from '../src/utils/referrer';
 import { expect, test } from '@playwright/test';
 import { mockSession } from './audit-fixtures';
 
@@ -25,13 +26,15 @@ test('critical referrer picker: accessible choices and a delayed add preserve th
   await page.keyboard.press('Enter');
   const sheet = page.getByTestId('customer-referrer-sheet');
   await expect(sheet).toBeVisible();
-  await expect(sheet.getByText(/ARC-EXISTING-PARTNER/)).toBeVisible();
+  await expect(sheet.getByText(/ARC-EXISTING-EXISTING/)).toBeVisible();
   await expect(sheet.getByText(/7 customers brought/)).toBeVisible();
   await expect(sheet.getByRole('button', { name: 'No referrer', exact: true })).toBeVisible();
   const existing = sheet.getByRole('button', { name: 'Existing architect', exact: true });
   expect((await existing.boundingBox())!.height).toBeGreaterThanOrEqual(44);
   await sheet.getByRole('button', { name: 'Architect', exact: true }).click();
-  await sheet.getByRole('textbox', { name: 'Designer / architect name' }).fill('Pending architect');
+  await sheet.getByRole('textbox', { name: 'Designer / architect name (required)' }).fill('Pending architect');
+  await expect(sheet.getByRole('button', { name: 'Add and select', exact: true })).toBeDisabled();
+  await sheet.getByTestId('lead-interior-phone').fill('9909955755');
   await sheet.getByRole('button', { name: 'Add and select', exact: true }).click();
   await expect.poll(() => started).toBe(true);
   // Choosing an existing result dismisses this attempt. Reopen the picker
@@ -62,7 +65,7 @@ test('customer detail retains architect NTS name, stable reference ID and floor 
   await page.goto('/customers/referral-customer');
   const card = page.getByTestId('customer-referrer-detail');
   await expect(card).toBeVisible();
-  await expect(card).toContainText('NTS · ARC-ARCHITECT-NTS');
+  await expect(card).toContainText('NTS · ARC-NTS-ARCHITEC');
   await expect(card).toContainText('NTS Studio');
   await expect(card).toContainText('12 customers brought to this floor');
 });
@@ -93,7 +96,7 @@ for (const selected of directoryReferences) {
     await expect(sheet.getByRole('button', { name: 'All references', exact: true })).toBeVisible();
     for (const reference of directoryReferences) await expect(sheet.getByRole('button', { name: reference.name, exact: true })).toBeVisible();
     await expect(sheet.getByRole('button', { name: 'Add and select', exact: true })).toHaveCount(0);
-    const code = `${selected.type === 'architect' ? 'ARC' : 'INT'}-${selected.id.toUpperCase()}`;
+    const code = referrerCode(selected.id, selected.type, selected.name);
     const search = sheet.getByRole('textbox', { name: 'Search references', exact: true });
     for (const term of [selected.name.toLowerCase(), selected.company.toUpperCase(), code]) {
       await search.fill(term);
@@ -141,7 +144,7 @@ test('critical reference directory failure offers retry and preserves existing c
   await sheet.getByRole('button', { name: 'Retry references', exact: true }).click();
   for (const reference of directoryReferences) await expect(sheet.getByRole('button', { name: reference.name, exact: true })).toBeVisible();
   await sheet.getByRole('button', { name: 'Ishita Interiors', exact: true }).click();
-  await expect(trigger).toContainText('INT-SAVED-INTERIOR');
+  await expect(trigger).toContainText('INT-ISHITA-SAVED-IN');
   expect(reads).toBe(2);
   expect(creates).toBe(0);
 });

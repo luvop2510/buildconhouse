@@ -1,3 +1,4 @@
+import { referrerCode } from '../src/utils/referrer';
 import { expect, test } from '@playwright/test';
 import { captureRuntimeHealth } from './runtime-health';
 import { mockSalesSummary } from './sales-fixtures';
@@ -162,7 +163,7 @@ test('critical reference search keeps pre-order clients and the chosen reporting
   await page.route('**/api/referrers/page?**', route => {
     const search = new URL(route.request().url()).searchParams.get('search')?.toLowerCase() || '';
     const rows = [{ id: 'real-reference', name: 'Nisha Shah', type: 'architect', company: 'Studio Line', shared_across_floors: true, updated_at: 'v1' }]
-      .filter(row => [row.name, row.company, `ARC-${row.id}`].some(value => value.toLowerCase().includes(search)));
+      .filter(row => [row.name, row.company, referrerCode(row.id, row.type, row.name)].some(value => value.toLowerCase().includes(search)));
     return route.fulfill({ json: { rows, total: rows.length, offset: 0, limit: 25 } });
   });
   await page.route('**/api/analytics/workspaces/relationships?**', route => route.fulfill({ json: {

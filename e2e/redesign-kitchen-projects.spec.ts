@@ -1,3 +1,4 @@
+import { referrerCode } from '../src/utils/referrer';
 import { prepareKitchenFixtureCommand, prepareKitchenFixtureTransition, kitchenIndiaToday, uploadKitchenPdfInForm } from './kitchen-pdf-fixtures';
 import { projectControl, expandProjectDetails, openProjectTool } from './kitchen-controls';
 import { expect, test, type Page, type APIRequestContext } from '@playwright/test';
@@ -1066,8 +1067,10 @@ test('Kitchen lead references create a directory entry and retain required custo
   await page.getByRole('button', { name: 'Architect / Interior designer', exact: true }).click();
   const name = `Kitchen architect ${info.project.name} ${Date.now()}`;
   await page.getByTestId('customer-referrer-sheet').getByRole('button', { name: 'Architect', exact: true }).click();
-  await page.getByLabel('Designer / architect name', { exact: true }).click();
-  await page.getByLabel('Designer / architect name', { exact: true }).pressSequentially(name);
+  await page.getByLabel('Designer / architect name (required)', { exact: true }).click();
+  await page.getByLabel('Designer / architect name (required)', { exact: true }).pressSequentially(name);
+  await expect(page.getByRole('button', { name: 'Add and select', exact: true })).toBeDisabled();
+  await page.getByTestId('lead-interior-phone').fill('9909955755');
   await expect(page.getByRole('button', { name: 'Add and select', exact: true })).toBeEnabled();
   await page.getByTestId('lead-interior-company').fill('Synthetic studio');
   const referenceSaved = page.waitForResponse(response => response.url().endsWith('/api/referrers') && response.request().method() === 'POST');
@@ -1094,7 +1097,7 @@ for (const referenceType of ['architect', 'interior_designer'] as const) {
     const references = [];
     for (const type of ['architect', 'interior_designer'] as const) {
       const response = await context.request.post('/api/referrers', { headers, data: {
-        name: `Existing Kitchen ${type} ${suffix}`, type, company: `Kitchen studio ${type} ${suffix}`,
+        name: `Existing Kitchen ${type} ${suffix}`, type, phone: "9909955755", company: `Kitchen studio ${type} ${suffix}`,
       } });
       expect(response.ok(), await response.text()).toBeTruthy();
       references.push(await response.json());
@@ -1121,7 +1124,7 @@ for (const referenceType of ['architect', 'interior_designer'] as const) {
     // Company search narrows a populated directory without selecting a category.
     await search.fill(reference.company);
     await expect(sheet.getByRole('button', { name: reference.name, exact: true })).toBeVisible();
-    const code = `${referenceType === 'architect' ? 'ARC' : 'INT'}-${reference.id.toUpperCase()}`;
+    const code = referrerCode(reference.id, referenceType, reference.name);
     await search.fill(code);
     await expect(sheet.getByRole('button', { name: reference.name, exact: true })).toBeVisible();
     await sheet.getByRole('button', { name: reference.name, exact: true }).click();

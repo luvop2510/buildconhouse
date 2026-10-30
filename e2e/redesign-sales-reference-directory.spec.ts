@@ -1,3 +1,4 @@
+import { referrerCode } from '../src/utils/referrer';
 import { expect, test } from '@playwright/test';
 import { mockSession } from './audit-fixtures';
 
@@ -28,6 +29,7 @@ test('critical sales reference directory creates, edits and reuses one identity 
   const directory = page.getByTestId('sales-reference-directory');
   await directory.getByRole('button', { name: 'Add reference', exact: true }).click();
   await page.getByTestId('reference-name').fill('Shared Architect');
+  await expect(page.getByRole('dialog').getByRole('button', { name: 'Save reference', exact: true })).toBeDisabled();
   await page.getByTestId('reference-company').fill('One Studio');
   await page.getByTestId('reference-phone').fill('9876543210');
   await page.getByRole('dialog').getByRole('button', { name: 'Save reference', exact: true }).click();
@@ -68,7 +70,7 @@ test('critical reference directory pages and searches the server while preservin
     const limit = Number(url.searchParams.get('limit'));
     expect(limit).toBe(25);
     const matches = contacts.filter(row => (row.shared_across_floors || floors.includes(row.floor_id))
-      && (!kind || kind === row.type) && [row.name, `ARC-${row.id}`].some(value => value.toLowerCase().includes(search)))
+      && (!kind || kind === row.type) && [row.name, referrerCode(row.id, row.type, row.name)].some(value => value.toLowerCase().includes(search)))
       .sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
     return route.fulfill({ json: { rows: matches.slice(offset, offset + limit), total: matches.length, offset, limit } });
   });
@@ -89,12 +91,12 @@ test('critical reference directory pages and searches the server while preservin
   await directory.getByRole('button', { name: 'Show more (25 of 52)', exact: true }).click();
   await expect(directory.getByTestId('reference-row-r-48')).toBeVisible();
   expect(reads.map(url => Number(url.searchParams.get('offset')))).toEqual([0, 25]);
-  await page.getByTestId('references-search').fill('ARC-R-50');
+  await page.getByTestId('references-search').fill('ARC-ARCHITECT-R-50');
   await expect(directory.getByTestId('reference-row-r-50')).toBeVisible();
   await expect(directory.getByTestId('reference-row-r-50')).toContainText('7');
   await expect(directory.getByTestId('reference-row-r-00')).toHaveCount(0);
   await expect(directory.getByTestId('sales-historical-references')).toHaveCount(0);
-  expect(reads.at(-1)!.searchParams.get('search')).toBe('arc-r-50');
+  expect(reads.at(-1)!.searchParams.get('search')).toBe('arc-architect-r-50');
   await page.getByTestId('references-search').fill('Archived');
   await expect(directory.getByTestId('reference-row-archived')).toBeVisible();
   await expect(directory).toContainText('0 active references');

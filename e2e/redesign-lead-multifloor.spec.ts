@@ -176,7 +176,7 @@ test('critical shared Furniture follow-up Interested supports multiple floors wi
   await page.goto('/followups');
   await page.getByTestId('interested-scope-lead').click();
   const dialog = page.getByRole('dialog', { name: 'Interested floors & team assignment', exact: true });
-  await expect(dialog.getByText('Design Studio · INT-STUDIO', { exact: true })).toBeVisible();
+  await expect(dialog.getByText('Design Studio · INT-DESIGN-STUDIO', { exact: true })).toBeVisible();
   await dialog.getByTestId('lead-floor-first-floor').click();
   await dialog.getByTestId('lead-assign-first-floor-worker-b').click();
   expect(assigneeReads.at(-1)?.get('source_id')).toBe('scope-lead');

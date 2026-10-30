@@ -1,3 +1,4 @@
+import { referrerCode } from '../src/utils/referrer';
 import { expect, test, type Page } from '@playwright/test';
 import { mockSession } from './audit-fixtures';
 
@@ -76,7 +77,7 @@ test('critical sanitary quotation selects both existing reference types from All
     await expect(sheet.getByTestId('referrer-row-interior-directory-id')).toBeVisible();
     await sheet.getByTestId('referrer-search').fill(reference.company);
     await expect(sheet.getByTestId(`referrer-row-${reference.id}`)).toBeVisible();
-    const code = `${reference.type === 'architect' ? 'ARC' : 'INT'}-${reference.id.toUpperCase()}`;
+    const code = referrerCode(reference.id, reference.type, reference.name);
     await sheet.getByTestId('referrer-search').fill(code);
     await sheet.getByTestId(`referrer-row-${reference.id}`).click();
     await expect(sheet).toBeHidden();
@@ -101,7 +102,7 @@ test('critical tile quotation selects both existing reference types from All and
     await expect(sheet.getByRole('button', { name: references[1].name, exact: true })).toBeVisible();
     await sheet.getByLabel('Search references', { exact: true }).fill(reference.company);
     await expect(sheet.getByRole('button', { name: reference.name, exact: true })).toBeVisible();
-    const code = `${reference.type === 'architect' ? 'ARC' : 'INT'}-${reference.id.toUpperCase()}`;
+    const code = referrerCode(reference.id, reference.type, reference.name);
     await sheet.getByLabel('Search references', { exact: true }).fill(code);
     await sheet.getByRole('button', { name: reference.name, exact: true }).click();
     await expect(sheet).toBeHidden();

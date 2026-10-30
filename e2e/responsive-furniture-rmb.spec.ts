@@ -156,7 +156,7 @@ test('furniture quotations save the selected architect identity and show studio 
   await page.getByRole('button', { name: 'Referred By', exact: true }).click();
   await expect(page.getByTestId('customer-referrer-sheet')).toContainText('NTS Studio');
   await page.getByRole('button', { name: 'Nilesh', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Referred By', exact: true })).toContainText('ARC-ARCHITECT-NTS');
+  await expect(page.getByRole('button', { name: 'Referred By', exact: true })).toContainText('ARC-NILESH-ARCHITEC');
   await page.getByRole('button', { name: 'Save quotation', exact: true }).click();
   await expect(page.getByText('4 customers brought', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Referred By', exact: true })).toContainText('NTS Studio');
