@@ -8,6 +8,8 @@ batches, dispatch/chalan records and counters. Register failures roll back the
 whole command; optional activity remains best effort. Brand release queues retain
 one 30-row page, acknowledge paging after success, preserve rows during errors
 and retry the intended page. Coalesce reads and cancel obsolete brand scopes.
+Dispatch labour charges must be finite and nonnegative at HTTP admission,
+including numeric overflow and numeric strings, before any transaction starts.
 
 Shared keyboard reveal resolves local clipping before moving outer scrollports;
 descendant bounds must not block an entirely offscreen nested form. Preserve

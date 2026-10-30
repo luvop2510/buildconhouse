@@ -67,3 +67,20 @@ PYTHON_DOTENV_DISABLED=1 TILE_DRAFT_TEST_MONGO_URL=mongodb://127.0.0.1:28176 .ve
 
 The existing pytest-asyncio unset-default-loop-scope deprecation appears before
 these runs; it is unchanged by this work.
+
+## Dispatch labour cost admission follow-up
+
+Both Ground dispatch request models accepted positive infinity from either the
+JSON string `"Infinity"` or the valid JSON number `1e309`. The financial write
+helper also accepted it, constructing infinite quotation/payment/customer-rollup
+amounts; formatting the note as zero did not sanitize those writes. The two
+request fields now require finite nonnegative values through their existing
+Pydantic validation. No persisted-record model or serialization policy changes.
+
+Six real HTTP regressions cover both encodings across generic dispatch, dispatch
+from released and dispatch from godown. Before the fix every request reached the
+mutation handler; afterward all return the production handler's sanitized 422,
+`Cache-Control: no-store`, and a bounded `labor_cost` field error before any
+session starts. Six additional model cases preserve zero, ordinary decimals and
+finite decimal strings. The labour, dispatch and movement-transaction subset
+passes 44 tests. The parent reruns its full final gate for this backend change.

@@ -17,6 +17,7 @@ work is preserved.
 | Ground stock commits without permanent movement history | Release, move-to-godown, both dispatch sources and Delivered wrote register rows after the stock transaction. Move register writes into that same session. Optional activity remains best effort. | Ten unit cases and ten real-Mongo success/failure cases; injected failure after the actual register insert rolls back all related records and counters. |
 | Ground brand queue grows with every page | Load more appended each page inside the page scroll owner. Retain one 30-row page, acknowledge page changes after success, coalesce requests and cancel obsolete scopes. Failed pages retain the acknowledged rows and retry their intended page. | Hook tests exercise coalescing, stale completions, failure/retry and effect replay; required four-device populated browser case verifies 30-row bounds and Previous/Next behavior. |
 | Kitchen Add lead is clipped on narrow phones | The nested toolbar kept its intrinsic width despite its parent's wrapping policy. Constrain the nested action group to the available width so complete buttons wrap instead of clipping. | Visual review found clipping at 320px while the document-overflow assertion still passed. A new full-tap-target bounds assertion failed on the original export and checks phone/tablet/landscape/desktop widths. |
+| Ground API accepts infinite labour charges | Positive infinity passed the two dispatch request models and could enter quotation/payment/customer totals. Require finite nonnegative labour costs at request validation, preserving normal decimal input. | Six real HTTP regressions reject string `Infinity` and numeric overflow `1e309` with sanitized 422 before any transaction starts; six finite zero/decimal compatibility cases remain accepted. |
 
 The implementation changes shared primitives or the failing workflow boundary.
 It preserves current floor/role restrictions, original document/version links,
@@ -28,6 +29,8 @@ used as a proxy for hardening.
 
 The starting backend unit suite passed 4,005 tests. The repaired source passed
 4,015 backend unit tests, zero-warning lint, TypeScript and Expo Doctor 20/20.
+After the finite labour-cost follow-up, the full backend unit suite passed
+4,027 tests.
 All 55 frontend commands in the existing CI contract step passed; changed
 contracts were rerun after the final edits. The isolated Ground/Kitchen Mongo
 suite passed 76 cases, and the expanded Ground lifecycle suite then passed
@@ -48,6 +51,10 @@ gate. That partial pre-push attempt was stopped when visual review discovered th
 narrow-phone toolbar defect. Partial/interrupted runs are diagnostic evidence,
 not release acceptance; the final pre-push gate and Kitchen suite use the repaired
 export and must complete without retries or skips.
+The API admission follow-up changes only Ground backend request fields; Kitchen
+and frontend source bytes remain identical to the `440f7c00` export used by its
+full persistence suite. The final backend unit suite and complete pre-push gate
+are rerun after that follow-up.
 
 Independent reviews covered shared keyboard/download handling and cross-reviewed
 the Kitchen and Ground fixes. Their reported issues were reproduced and resolved

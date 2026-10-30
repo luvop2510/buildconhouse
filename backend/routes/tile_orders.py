@@ -198,7 +198,7 @@ class DispatchBody(BaseModel):
     reference_number: Optional[str] = None
     receiver_name: Optional[str] = None
     sender_name: Optional[str] = None
-    labor_cost: float = Field(default=0, ge=0)
+    labor_cost: float = Field(default=0, ge=0, allow_inf_nan=False)
 
 
 async def _resolve_dispatch_lines(po: dict, body: DispatchBody, session=None) -> tuple[list[dict], list[str]]:
@@ -555,7 +555,7 @@ class SimpleDispatchBody(BaseModel):
     # actually knows the truck.
     vehicle_number: Optional[str] = None
     driver_name: Optional[str] = None
-    labor_cost: float = Field(default=0, ge=0)
+    labor_cost: float = Field(default=0, ge=0, allow_inf_nan=False)
 
 
 async def _apply_dispatch_labor_cost(po: dict, dispatch: dict, labor_cost: float, session) -> None:
