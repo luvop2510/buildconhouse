@@ -24,6 +24,7 @@ ACCENT = "22766D"
 MONEY_FIELDS = {"sales", "sales_rnb", "average_order_value", "average_order_value_rnb", "collected", "outstanding", "collected_rnb", "outstanding_rnb", "unit_price", "line_total", "amount", "subtotal", "total", "discount", "tax", "taxes"}
 
 PDF_MONEY_FIELDS = MONEY_FIELDS | {"previous_sales", "previous_sales_rnb"}
+PDF_BAR_FIELDS = (PDF_MONEY_FIELDS - {"unit_price"}) | {"orders", "orders_inr", "orders_rnb", "customers", "known_customers", "products", "change_pct", "change_pct_rnb", "discount_pct", "tax_pct"}
 
 
 def display(value, key="", currency="INR"):
@@ -335,6 +336,18 @@ def _ledger_card(summary, currency, width, metric_label):
     return drawing
 
 
+def _summary_scale(summary, key):
+    if key not in {"collected", "outstanding", "collected_rnb", "outstanding_rnb"}:
+        return None
+    suffix = "_rnb" if key.endswith("_rnb") else ""
+    receipts, balance = summary.get("collected" + suffix), summary.get("outstanding" + suffix)
+    if numeric(receipts) and numeric(balance) and min(receipts, balance) >= 0:
+        total = receipts + balance
+        if numeric(total) and total > 0:
+            return 0, total
+    return None
+
+
 def pdf(report, sections, metadata):
     blob = BytesIO()
     styles = getSampleStyleSheet()
@@ -399,10 +412,10 @@ def pdf(report, sections, metadata):
             cards = []
             for row in rows:
                 key, value = row.get("metric", "").replace(" ", "_"), row.get("value")
-                comparable = [other["value"] for other in rows if numeric(other.get("value")) and ((other.get("metric", "").replace(" ", "_") in PDF_MONEY_FIELDS) == (key in PDF_MONEY_FIELDS)) and other.get("metric", "").endswith("rnb") == key.endswith("rnb")]
                 content = [para(_label(key), small), para(display(value, key))]
-                if numeric(value) and comparable:
-                    content.append(_bar(value, min(0, *comparable), max(0, *comparable), PDF_WIDTH / 3 - 20))
+                scale = _summary_scale(summary, key)
+                if scale:
+                    content.append(_bar(value, *scale, PDF_WIDTH / 3 - 20))
                 cards.append(content)
             grid = [cards[index:index + 3] for index in range(0, len(cards), 3)]
             grid[-1] += [""] * (3 - len(grid[-1]))
@@ -412,7 +425,7 @@ def pdf(report, sections, metadata):
             continue
         keys = list(dict.fromkeys(key for row in rows for key in row))
         if name not in {"Summary", "Furniture ledger", "Identity", "Trend"}:
-            measure = next((key for key in ("sales", "line_total", "amount", "total", "orders", "customers", "quantity") if key in keys), None)
+            measure = next((key for key in ("sales", "line_total", "amount", "total", "orders", "customers") if key in keys), None)
             if measure:
                 for currency in ("INR", "RNB") if measure in MONEY_FIELDS else ("INR",):
                     chart = _comparison(rows, measure, currency)
@@ -431,6 +444,8 @@ def pdf(report, sections, metadata):
             widths = [PDF_WIDTH / len(band)] * len(band)
             bounds = {}
             for key in band:
+                if key not in PDF_BAR_FIELDS:
+                    continue
                 for currency in ("INR", "RNB"):
                     amounts = [row[key] for row in rows if numeric(row.get(key)) and (key not in PDF_MONEY_FIELDS or _ledger(row, key) == currency)]
                     if amounts:

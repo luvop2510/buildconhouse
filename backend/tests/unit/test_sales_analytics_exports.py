@@ -121,3 +121,15 @@ def test_single_point_trend_is_visible_and_prior_comparison_is_distinct():
     drawing = trend_drawing([{"label": "Sep", "sales": 100, "previous_sales": 80}, {"label": "Oct", "sales": 200, "previous_sales": 120}], "INR")
     lines = [shape for shape in drawing.contents if isinstance(shape, PolyLine)]
     assert len(lines) == 2 and lines[0].strokeDashArray == [3, 3] and not lines[1].strokeDashArray
+
+
+def test_summary_bars_only_compare_complete_balances_in_their_own_currency():
+    from services.analytics.unified_exports import _summary_scale, PDF_BAR_FIELDS
+    summary = {"collected": 75, "outstanding": 25, "collected_rnb": 20, "outstanding_rnb": 30}
+    assert _summary_scale(summary, "collected") == (0, 100)
+    assert _summary_scale(summary, "outstanding_rnb") == (0, 50)
+    for key in ("sales", "orders", "customers", "average_order_value", "change_pct", "change_pct_rnb"):
+        assert _summary_scale(summary, key) is None
+    for invalid in ({"collected": None, "outstanding": 25}, {"collected": 0, "outstanding": 0}, {"collected": -1, "outstanding": 25}, {"collected": 1e308, "outstanding": 1e308}):
+        assert _summary_scale(invalid, "collected") is None
+    assert "quantity" not in PDF_BAR_FIELDS and "unit_price" not in PDF_BAR_FIELDS
