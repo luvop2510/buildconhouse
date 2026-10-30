@@ -77,3 +77,47 @@ def test_large_workbook_formats_without_scanning_all_existing_cells_per_cell(mon
     assert sheet["C3001"].value == 3099.25 and '"INR "' in sheet["C3001"].number_format
     assert sheet["L3001"].value == 10 and sheet["L3001"].number_format == '0.00"%"'
     assert sheet.freeze_panes == "A2" and sheet.auto_filter.ref == "A1:L3001"
+
+
+def test_pdf_is_portrait_a4_and_keeps_every_continuation_row():
+    from reportlab.lib.pagesizes import A4
+    rows = [{"id": f"order-{index}", "name": "Recorded customer", "sales": 1000 + index, "currency": "INR", "orders": 1} for index in range(55)]
+    reader = PdfReader(BytesIO(export_bytes({"title": "Selected sales"}, [("Orders", rows)], "pdf", {"Period": "October 2026"})))
+    assert len(reader.pages) > 1
+    for page in reader.pages:
+        assert float(page.mediabox.width) == pytest.approx(A4[0], abs=.01)
+        assert float(page.mediabox.height) == pytest.approx(A4[1], abs=.01)
+        assert "INR / RNB shown separately" in page.extract_text()
+    text = "\n".join(page.extract_text() for page in reader.pages)
+    assert all(f"order-{index}" in text for index in range(55))
+    assert "Largest recorded values" in text
+
+
+def test_comparison_charts_never_duplicate_inr_as_rnb():
+    from services.analytics.unified_exports import _comparison
+    rows = [{"id": "catalog", "sales": 100}, {"id": "furniture", "sales": 90000, "currency": "RNB"}]
+    inr = _comparison(rows, "sales", "INR")
+    rnb = _comparison(rows, "sales", "RNB")
+    inr_text = [shape.text for shape in inr.contents if hasattr(shape, "text")]
+    rnb_text = [shape.text for shape in rnb.contents if hasattr(shape, "text")]
+    assert "catalog" in inr_text and "furniture" not in inr_text
+    assert "furniture" in rnb_text and "catalog" not in rnb_text
+    assert _comparison(rows[:1], "sales", "RNB") is None
+
+
+def test_records_only_pdf_does_not_add_unselected_dashboard_totals():
+    report = {"kpis": {"sales": 987654321}, "trend": [{"label": "Hidden month", "sales": 987654321}],
+              "tables": {"orders": {"items": [{"id": "selected-record", "sales": None}], "total": 1}}}
+    sections = report_sections(report, view="profile", scope="records")
+    text = "\n".join(page.extract_text() for page in PdfReader(BytesIO(export_bytes(report, sections, "pdf", {}))).pages)
+    assert "selected-record" in text and "Unavailable" in text
+    assert "98,76,54,321" not in text and "Hidden month" not in text
+
+
+def test_single_point_trend_is_visible_and_prior_comparison_is_distinct():
+    from reportlab.graphics.shapes import Circle, PolyLine
+    drawing = trend_drawing([{"label": "October", "sales": 100}], "INR")
+    assert any(isinstance(shape, Circle) for shape in drawing.contents)
+    drawing = trend_drawing([{"label": "Sep", "sales": 100, "previous_sales": 80}, {"label": "Oct", "sales": 200, "previous_sales": 120}], "INR")
+    lines = [shape for shape in drawing.contents if isinstance(shape, PolyLine)]
+    assert len(lines) == 2 and lines[0].strokeDashArray == [3, 3] and not lines[1].strokeDashArray

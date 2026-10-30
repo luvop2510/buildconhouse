@@ -9,18 +9,28 @@ test('overall dashboard charts and all floor destinations fit compact and regula
   await page.goto('/sales-data?date_basis=confirmation&preset=this_month');
   await expect(page.getByTestId('analytics-kpi-sales')).toContainText('₹3,00,000.5');
   await expect(page.getByTestId('analytics-trend')).toBeVisible();
+  for (const card of ['revenue', 'comparison', 'treemap', 'seasonality']) {
+    await expect(page.getByTestId(`analytics-bento-${card}`)).toBeVisible();
+  }
+  const viewport = page.viewportSize()!;
+  const kpis = await page.getByTestId('analytics-kpis').boundingBox();
+  expect(kpis!.height, 'Sales metrics remain a compact group').toBeLessThan(viewport.width < 360 ? 320 : 240);
+  const plot = page.getByTestId('analytics-trend').locator('svg').first();
+  await expect(plot).toBeVisible();
+  expect((await plot.boundingBox())!.height, 'The primary plot leaves room for comparison content').toBeLessThanOrEqual(viewport.width < 768 ? 160 : 192);
+  await expect(page.getByTestId('analytics-collection-balance')).toBeVisible();
   for (const floor of ['ground-floor', 'first-floor', 'second-floor', 'third-floor']) {
     await expect(page.getByTestId(`analytics-floor-${floor}`)).toBeVisible();
   }
   await analyticsFitsViewport(page, [page.getByTestId('analytics-filter-open'), page.getByTestId('analytics-export')]);
   expect(await page.getByTestId('analytics-kpi-sales').evaluate(root => {
-    const text = Array.from(root.querySelectorAll('*')).find(node => node.textContent === '₹3,00,000.5');
+    const text = Array.from(root.querySelectorAll('*')).find(node => node.childElementCount === 0 && node.textContent === '₹3,00,000.5');
     if (!text) return false;
     const range = document.createRange();
     range.selectNodeContents(text);
     return range.getClientRects().length === 1;
   }), 'Exact currency amount keeps its decimal on the same line').toBe(true);
-  expect(await page.getByTestId('analytics-kpi-aov').evaluate(root => { const text=Array.from(root.querySelectorAll('*')).find(node=>node.textContent==='₹1,50,000.25'); if(!text)return false; const range=document.createRange(); range.selectNodeContents(text); return range.getClientRects().length===1; }), 'Average order amount stays on one line').toBe(true);
+  expect(await page.getByTestId('analytics-kpi-aov').evaluate(root => { const text=Array.from(root.querySelectorAll('*')).find(node=>node.childElementCount===0&&node.textContent==='₹1,50,000.25'); if(!text)return false; const range=document.createRange(); range.selectNodeContents(text); return range.getClientRects().length===1; }), 'Average order amount stays on one line').toBe(true);
   await health.assertHealthy();
   await page.screenshot({ path: info.outputPath('analytics-responsive.png'), fullPage: true });
   const trend = page.getByTestId('analytics-trend');
@@ -82,9 +92,12 @@ test('owner sales overview retains independently scoped team effort', async ({ p
   await expect(page.getByRole('heading', { name: 'Company overview', exact: true })).toBeVisible();
   await expect(page.getByTestId('analytics-kpi-sales')).toContainText('₹3,00,000.5');
   const operations = page.getByTestId('analytics-owner-operations');
+  await expect(operations.getByTestId('analytics-team-graphic')).toBeVisible();
   await expect(operations).toContainText('Mira Patel');
+  await operations.getByRole('button', { name: 'View team details', exact: true }).click();
   await expect(operations).toContainText('3 contacts');
   await expect(operations).toContainText('last 30 days');
+  await expect(operations).toContainText('recorded completed');
   await expect(operations.getByTestId('analytics-workflow-second-floor')).toContainText('7 projects · 4 active · 2 completed · 1 overdue');
   await operations.getByRole('button',{name:'View workflow stages',exact:true}).click();
   await expect(operations.getByText('Production',{exact:true})).toBeVisible();
@@ -297,10 +310,11 @@ test('chart modes, exact values and keyboard controls use the same recorded data
   await page.goto('/sales-data?floor_id=first-floor');
   await expect(page.getByTestId('analytics-kpi-sales')).toContainText('₹2,40,000');
   const chart = page.getByTestId('analytics-trend');
+  await chart.getByRole('button', { name: 'Explore dates', exact: true }).click();
   await expect(chart).toContainText('₹2,40,000');
   await chart.getByRole('button', { name: 'Bars', exact: true }).click();
   await expect(chart.getByRole('button', { name: 'Bars', exact: true })).toHaveAttribute('aria-pressed', 'true');
-  await chart.getByRole('button', { name: 'View chart data', exact: true }).click();
+  await chart.getByRole('button', { name: 'Chart data', exact: true }).click();
   await expect(chart.getByRole('link', { name: '10 Oct: ₹2,40,000. Open details', exact: true })).toBeVisible();
   await chart.getByRole('button', { name: 'View supporting orders', exact: true }).focus();
   await page.keyboard.press('Enter');

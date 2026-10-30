@@ -12,8 +12,8 @@ export function PageHeader({ title, subtitle, actions, back, overline, testID, d
 }) {
   const { isPhone, isDesktop, gutter } = useBp();
   return <View testID={testID} style={{ paddingHorizontal: embedded ? 0 : gutter,
-    paddingTop: dense ? space.x3 : isPhone ? space.x4 : space.x6,
-    paddingBottom: dense ? space.x3 : isPhone ? space.x4 : space.x5,
+    paddingTop: dense || !isDesktop ? space.x3 : space.x6,
+    paddingBottom: dense || !isDesktop ? space.x3 : space.x5,
     borderBottomWidth: embedded ? 0 : layout.hairline,
     borderBottomColor: color.line, backgroundColor: color.canvas, flexShrink: 0 }}>
     <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start', gap: space.x3 }}>
@@ -27,10 +27,10 @@ export function PageHeader({ title, subtitle, actions, back, overline, testID, d
         <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
           {overline ? <Text style={{ fontFamily: font.medium, fontWeight: "500", fontSize: 13, lineHeight: 20, color: color.inkMid }}>{overline}</Text> : null}
           <Text accessibilityRole="header" aria-level={1} style={{ fontFamily: font.semibold, fontWeight: '600',
-            fontSize: dense ? 20 : 24, lineHeight: dense ? 28 : 32,
+            fontSize: dense || !isDesktop ? 20 : 24, lineHeight: dense || !isDesktop ? 28 : 32,
             letterSpacing: isPhone ? -0.5 : -0.9, color: color.ink }}>{title}</Text>
-          {subtitle ? <Text style={{ fontFamily: font.regular, fontSize: isPhone ? 16 : 15,
-            lineHeight: 22, color: color.inkMid, maxWidth: 680 }}>{subtitle}</Text> : null}
+          {subtitle ? <Text style={{ fontFamily: font.regular, fontSize: isDesktop ? 15 : 14,
+            lineHeight: isDesktop ? 22 : 20, color: color.inkMid, maxWidth: 680 }}>{subtitle}</Text> : null}
         </View>
       </View>
       {actions ? <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.x2,

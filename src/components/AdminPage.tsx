@@ -38,7 +38,7 @@ export function AdminPage({
   headerBorder?: boolean;
 }) {
   const Container: any = scroll ? ScrollView : View;
-  const { gutter, isPhone } = useBp();
+  const { gutter, isPhone, isDesktop } = useBp();
   const horizontalPadding = gutter;
 
   return (
@@ -58,10 +58,10 @@ export function AdminPage({
               style: { flex: 1, minHeight: 0 },
               contentContainerStyle: {
                 paddingHorizontal: horizontalPadding,
-                paddingTop: isPhone ? 0 : space.x8,
+                paddingTop: isPhone ? 0 : isDesktop ? space.x8 : space.x4,
                 // AppScaffold reserves navigation/safe-area space outside this scroll.
                 paddingBottom: isPhone ? space.x6 : space.x16,
-                gap: isPhone ? space.x4 : space.x5,
+                gap: isDesktop ? space.x5 : space.x4,
                 ...contentStyle,
               },
             }
@@ -70,7 +70,7 @@ export function AdminPage({
                 {
                   flex: 1,
                   paddingHorizontal: horizontalPadding,
-                  paddingTop: isPhone ? space.x4 : space.x8,
+                  paddingTop: isDesktop ? space.x8 : space.x4,
                 },
                 contentStyle,
               ],

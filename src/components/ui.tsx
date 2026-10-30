@@ -123,7 +123,7 @@ export function Card({
   padding?: number;
   onPress?: () => void;
 }) {
-  const { isPhone } = useBp();
+  const { isDesktop } = useBp();
   const skin = {
     flat:     { bg: colors.surfaceSecondary, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, shadow: null as any },
     elevated: { bg: colors.surfaceSecondary, borderWidth: 0,                        borderColor: "transparent",  shadow: elevation.low },
@@ -137,7 +137,7 @@ export function Card({
         borderRadius: radius.lg,
         borderWidth: skin.borderWidth,
         borderColor: skin.borderColor,
-        padding: padding ?? (isPhone ? spacing.md : spacing.lg),
+        padding: padding ?? (isDesktop ? spacing.lg : spacing.md),
         minWidth: 0,
       },
       skin.shadow,

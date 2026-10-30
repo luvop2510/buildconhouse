@@ -1,5 +1,20 @@
 # BuildCon House project documentation
 
+## Sales visual reporting delta — 30 October 2026
+
+Native fallback delta scan retains Expo/React Native Web, FastAPI, MongoDB and
+the existing owner-only sales reporting model. Compact shared page headings and
+tablet surfaces reclaim vertical space. Sales uses smaller interactive vector
+charts, labelled customer pictograms, collection progress and regular-width
+comparison panels. The existing PDF exporter becomes a portrait A4 vector
+infographic report with scoped graphical summaries and complete supporting tables;
+Excel remains tabular. No framework, dependency, schema, authentication or
+architectural layer is added. AGENTS.md needs no architectural regeneration.
+Changed areas: shared page/surface primitives, sales dashboard/chart components,
+report PDF rendering and focused numerical/export/responsive regressions.
+Coverage percentage is not measured. Design contract:
+docs/design/2026-10-30-sales-visual-reporting.md.
+
 ## Tiles responsive workspace delta — 30 October 2026
 
 Native fallback scan of the Tiles Order workspace and shared controls retains

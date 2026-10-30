@@ -83,7 +83,8 @@ function quotationDownloadFilename(path: string, disposition: string | null | un
   } catch { return null; }
 }
 
-async function fetchApiBlob(path: string, errorLabel: string, floorId: string | undefined, operation: IdentityOperation, onFilename?: (name: string) => void): Promise<Blob | null> {
+async function fetchApiBlob(path: string, errorLabel: string, floorId: string | undefined, operation: IdentityOperation, onFilename?: (name: string) => void, onError?: (message: string) => void): Promise<Blob | null> {
+  const failure = (message: string) => { toast.show(message); onError?.(message); };
   const controller = new AbortController();
   let timedOut = false;
   const cancel = () => controller.abort();
@@ -109,7 +110,7 @@ async function fetchApiBlob(path: string, errorLabel: string, floorId: string | 
     const [token, requestFloorId] = await wait(Promise.all([Promise.resolve().then(getToken), floor]));
     if (!operation.isCurrent()) return null;
     if (!token && Platform.OS !== "web") {
-      toast.show("Please sign in again");
+      failure("Please sign in again");
       return null;
     }
     const res = await wait(fetch(`${api.base}/api${path}`, {
@@ -121,7 +122,7 @@ async function fetchApiBlob(path: string, errorLabel: string, floorId: string | 
       try { detail = String((await wait(res.json()))?.detail || ""); }
       catch (error) { if (controller.signal.aborted) throw error; /* non-JSON gateway response */ }
       if (!operation.isCurrent()) return null;
-      toast.show(detail || (res.status === 404 ? `That ${errorLabel} isn't available` : `Couldn't download the ${errorLabel}`));
+      failure(detail || (res.status === 404 ? `That ${errorLabel} isn't available` : `Couldn't download the ${errorLabel}`));
       return null;
     }
     const blob = await wait(res.blob());
@@ -130,7 +131,7 @@ async function fetchApiBlob(path: string, errorLabel: string, floorId: string | 
     if (filename) onFilename?.(filename);
     return blob;
   } catch {
-    if (operation.isCurrent()) toast.show(timedOut
+    if (operation.isCurrent()) failure(timedOut
       ? `Downloading the ${errorLabel} timed out — try again`
       : `Couldn't download the ${errorLabel} — check your connection`);
     return null;
@@ -244,10 +245,10 @@ function saveMobileBrowserFile(blob: Blob, filename: string, errorLabel: string,
 // Quotation names come from the authenticated response; other files keep the
 // caller's name. Blob URLs lose Content-Disposition, so retain the chosen name
 // through the browser download and native file-sharing paths.
-export async function downloadApiFile(path: string, filename: string, errorLabel = "file", floorId?: string): Promise<boolean> {
+export async function downloadApiFile(path: string, filename: string, errorLabel = "file", floorId?: string, onError?: (message: string) => void): Promise<boolean> {
   const operation = beginIdentityOperation();
   try {
-    const blob = await fetchApiBlob(path, errorLabel, floorId, operation, name => { filename = name; });
+    const blob = await fetchApiBlob(path, errorLabel, floorId, operation, name => { filename = name; }, onError);
     return blob && operation.isCurrent() ? await savePreparedFile(blob, filename, errorLabel, operation) : false;
   } finally { operation.finish(); }
 }

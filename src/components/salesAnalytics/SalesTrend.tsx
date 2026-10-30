@@ -4,11 +4,13 @@ import Svg, { Circle, Line, Polygon, Polyline, Rect } from 'react-native-svg';
 import { Text } from '@/src/components/AppText';
 import { Button, IconButton } from '@/src/components/ui';
 import { colors, spacing, type } from '@/src/theme/tokens';
+import { useBp } from '@/src/design/responsive';
 import type { AnalyticsTrend } from '@/src/api/salesAnalytics';
 import { analyticMoney, analyticNumber, chartColors, DataLink, Empty, linkActivation } from './AnalyticsParts';
 
 /** Gaps stay gaps. A missing historic amount must never turn into a zero. */
 export function SalesTrend({ points, currency = 'INR', unit, onPoint }: { points: AnalyticsTrend[]; currency?: string; unit?: string; onPoint: (point: AnalyticsTrend) => void }) {
+ const {isPhone}=useBp();
  const [width,setWidth]=useState(300);
  const [table,setTable]=useState(false);
  const [mode,setMode]=useState<'area'|'bars'>('area');
@@ -19,7 +21,7 @@ export function SalesTrend({ points, currency = 'INR', unit, onPoint }: { points
  const rawMax=Math.max(1,...values.map(value=>value??0),...previous.map(value=>value??0));
  const step=10**Math.floor(Math.log10(rawMax));
  const max=Math.ceil(rawMax/step)*step;
- const height=216, left=48, top=16, bottom=height-20, chartWidth=Math.max(40,width-left-12);
+ const height=isPhone?160:192, left=48, top=16, bottom=height-20, chartWidth=Math.max(40,width-left-12);
  const x=(index:number)=>left+(index+.5)/Math.max(1,points.length)*chartWidth;
  const y=(value:number)=>bottom-(value/max)*(bottom-top);
  const runs=(series:(number|null)[])=>{const result:{x:number;y:number}[][]=[];let run:{x:number;y:number}[]=[];series.forEach((value,index)=>{if(value==null){if(run.length)result.push(run);run=[];}else run.push({x:x(index),y:y(value)});});if(run.length)result.push(run);return result;};
@@ -28,10 +30,6 @@ export function SalesTrend({ points, currency = 'INR', unit, onPoint }: { points
  const labels=points.map((p,i)=>({p,i})).filter(({i})=>i===0||i===points.length-1||i===Math.floor(points.length/2));
  const compact=(value:number)=>value>=10000000?`${+(value/10000000).toFixed(1)}Cr`:value>=100000?`${+(value/100000).toFixed(1)}L`:value>=1000?`${+(value/1000).toFixed(1)}k`:analyticNumber(value);
  return <View testID="analytics-trend" style={{gap:spacing.s12}} onLayout={event=>setWidth(event.nativeEvent.layout.width)}>
-  <View style={{flexDirection:'row',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:spacing.s8}}>
-   <View style={{flexDirection:'row',alignItems:'center',gap:spacing.s8,flexWrap:'wrap'}}><View style={{width:16,height:3,backgroundColor:chartColors.primary}}/><Text style={type.caption}>Current · {unit||currency}</Text>{previous.some(v=>v!=null)?<><Text style={type.caption}>┄</Text><Text style={type.caption}>Previous period</Text></>:null}</View>
-   <View style={{flexDirection:'row',gap:spacing.s4}}>{(['area','bars'] as const).map(value=><Pressable key={value} accessibilityRole="button" accessibilityState={{selected:mode===value}} aria-pressed={mode===value} onPress={()=>setMode(value)} style={{minHeight:44,minWidth:56,paddingHorizontal:spacing.s8,alignItems:'center',justifyContent:'center',borderRadius:8,backgroundColor:mode===value?colors.surfaceTertiary:'transparent'}}><Text style={mode===value?type.bodyStrong:type.bodySm}>{value==='area'?'Trend':'Bars'}</Text></Pressable>)}</View>
-  </View>
   {!points.length?<Empty text="No dated sales in this range. Choose another period to compare performance."/>:<>
    <Pressable accessibilityRole="button" accessibilityLabel={`Explore ${mode==='bars'?'bar':'line'} chart in ${unit||currency}. Select a date using the previous and next controls below, or open chart data.`} onPress={event=>setSelected(Math.max(0,Math.min(points.length-1,Math.floor((event.nativeEvent.locationX-left)/chartWidth*points.length))))}>
     <View pointerEvents="none" style={{position:'absolute',left:0,top,width:40,height:bottom-top+8,zIndex:1,justifyContent:'space-between'}}>{[max,max*2/3,max/3,0].map((v,i)=><Text key={i} style={[type.caption,{textAlign:'right',fontSize:12,lineHeight:16}]}>{compact(v)}</Text>)}</View>
@@ -44,11 +42,15 @@ export function SalesTrend({ points, currency = 'INR', unit, onPoint }: { points
     </Svg>
    </Pressable>
    <View style={{flexDirection:'row',justifyContent:'space-between',gap:spacing.s4}}>{labels.map(({p})=><Pressable key={p.id} testID={`analytics-point-${p.id}`} accessibilityRole="link" {...linkActivation(()=>onPoint(p))} onPress={()=>onPoint(p)} accessibilityLabel={`${p.label}. Open supporting records`} style={{minHeight:44,justifyContent:'center',paddingHorizontal:spacing.s4}}><Text style={type.caption}>{p.label}</Text></Pressable>)}</View>
-   {point?<View style={{backgroundColor:colors.surfaceTertiary,borderRadius:8,padding:spacing.s12,gap:spacing.s8}}>
+   {point&&selected!=null?<View style={{backgroundColor:colors.surfaceTertiary,borderRadius:8,padding:spacing.s12,gap:spacing.s8}}>
     <View style={{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:spacing.s8}}><View style={{flex:1,minWidth:0,gap:spacing.s4}}><Text style={type.caption}>{point.label} · {analyticNumber((currency==='RNB'?point.orders_rnb:point.orders_inr)??point.orders)} orders</Text><Text style={[type.titleMd,{fontVariant:['tabular-nums']}]}>{format(values[index])}</Text></View><IconButton icon="chevron-left" accessibilityLabel="Previous chart date" disabled={index===0} onPress={()=>setSelected(index-1)} tone="ghost"/><IconButton icon="chevron-right" accessibilityLabel="Next chart date" disabled={index>=points.length-1} onPress={()=>setSelected(index+1)} tone="ghost"/></View>
     <Button label="View supporting orders" variant="ghost" onPress={()=>onPoint(point)}/>
    </View>:null}
-   <Button label={table?'Hide chart data':'View chart data'} variant="ghost" icon={table?'chevron-up':'list'} onPress={()=>setTable(!table)}/>
+  <View style={{flexDirection:'row',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:spacing.s8}}>
+   <View style={{flexDirection:'row',alignItems:'center',gap:spacing.s8,flexWrap:'wrap'}}><View style={{width:16,height:3,backgroundColor:chartColors.primary}}/><Text style={type.caption}>Current · {unit||currency}</Text>{previous.some(v=>v!=null)?<><Text style={type.caption}>┄</Text><Text style={type.caption}>Previous period</Text></>:null}</View>
+   <View style={{flexDirection:'row',gap:spacing.s4}}>{(['area','bars'] as const).map(value=><Pressable key={value} accessibilityRole="button" accessibilityState={{selected:mode===value}} aria-pressed={mode===value} onPress={()=>setMode(value)} style={{minHeight:44,minWidth:56,paddingHorizontal:spacing.s8,alignItems:'center',justifyContent:'center',borderRadius:8,backgroundColor:mode===value?colors.surfaceTertiary:'transparent'}}><Text style={mode===value?type.bodyStrong:type.bodySm}>{value==='area'?'Trend':'Bars'}</Text></Pressable>)}</View>
+  </View>
+   <View style={{flexDirection:'row',alignItems:'center',flexWrap:'wrap',justifyContent:'space-between',gap:spacing.s4}}><Button label={table?'Hide chart data':'Chart data'} variant="ghost" icon={table?'chevron-up':'list'} onPress={()=>setTable(!table)}/>{selected==null&&points.length?<Button label="Explore dates" variant="ghost" icon="crosshair" onPress={()=>setSelected(Math.max(0,points.length-1))}/>:null}{selected!=null?<Button label="Close selection" variant="ghost" onPress={()=>setSelected(null)}/>:null}</View>
    {values.some(value=>value==null)?<Text style={type.caption}>Gaps indicate unavailable amounts, not zero sales.</Text>:null}
    {table?points.map((p,i)=><DataLink key={p.id} label={p.label} detail={`${analyticNumber(p.orders)} orders${previous[i]!=null?` · Previous ${format(previous[i])}`:''}`} value={format(values[i])} onPress={()=>onPoint(p)}/>):null}
   </>}

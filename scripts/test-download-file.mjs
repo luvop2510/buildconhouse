@@ -114,7 +114,9 @@ for (const navigator of [
   elements.filter(element => element.textContent === "Cancel").at(-1).onclick();
   assert.equal(await cancelled, false);
   fail = true;
-  assert.equal(await module.exports.downloadApiFile(document.path, document.filename, document.label, "ground-floor"), false);
+  const inlineErrors = [];
+  assert.equal(await module.exports.downloadApiFile(document.path, document.filename, document.label, "ground-floor", message => inlineErrors.push(message)), false);
+  assert.deepEqual(inlineErrors, ["PDF generation failed"], "Export sheets retain the actual server failure inline");
   assert.deepEqual(errors, ["PDF generation failed"]);
   assert.equal(clicks, 1);
 }

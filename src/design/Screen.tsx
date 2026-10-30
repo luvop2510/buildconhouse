@@ -21,7 +21,7 @@ export function Screen({
   maxWidth?: number;
   header?: boolean;
 }) {
-  const { gutter } = useBp();
+  const { gutter, isDesktop } = useBp();
   const router = useRouter();
 
   const headerBlock = header && (title || actions) ? <PageHeader embedded
@@ -49,7 +49,7 @@ export function Screen({
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: color.canvas }}
-      contentContainerStyle={{ paddingBottom: space.x16, flexGrow: 1 }}
+      contentContainerStyle={{ paddingBottom: isDesktop ? space.x16 : space.x6, flexGrow: 1 }}
       keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}
     >
