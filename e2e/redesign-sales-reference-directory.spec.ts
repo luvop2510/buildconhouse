@@ -33,14 +33,15 @@ test('critical sales reference directory creates, edits and reuses one identity 
   await page.getByTestId('reference-company').fill('One Studio');
   await page.getByTestId('reference-phone').fill('9876543210');
   await page.getByRole('dialog').getByRole('button', { name: 'Save reference', exact: true }).click();
-  await expect(directory).toContainText('Shared Architect · One Studio');
+  await expect(directory).toContainText('Shared Architect');
+  await expect(directory).toContainText('One Studio');
   await directory.getByRole('button', { name: 'Edit Shared Architect', exact: true }).click();
   await page.getByTestId('reference-company').fill('Updated Studio');
   await page.getByRole('dialog').getByRole('button', { name: 'Save reference', exact: true }).click();
-  await expect(directory).toContainText('Shared Architect · Updated Studio');
+  await expect(directory).toContainText('Updated Studio');
   await page.evaluate(() => localStorage.setItem('forge.active-floor', JSON.stringify('ground-floor')));
   await page.reload();
-  await expect(page.getByTestId('sales-reference-directory')).toContainText('Shared Architect · Updated Studio');
+  await expect(page.getByTestId('sales-reference-directory')).toContainText('Updated Studio');
   await expect(page.getByTestId('sales-reference-directory')).toContainText('All floors');
   expect(floors.has('first-floor')).toBe(true);
   expect(floors.has('ground-floor')).toBe(true);
@@ -87,7 +88,7 @@ test('critical reference directory pages and searches the server while preservin
   await expect(directory.getByTestId('reference-row-r-50')).toHaveCount(0);
   await expect(directory.getByTestId('sales-historical-references')).toContainText('1 historical reference');
   await expect(directory.getByTestId('reference-row-archived')).toContainText('Historical reference');
-  await expect(directory.getByTestId('reference-row-archived').getByRole('link')).toHaveAttribute('href', /floorId=first-floor&preset=this_month/);
+  await expect(directory.getByTestId('reference-row-archived').getByRole('link')).toHaveAttribute('href', /floorId=all&preset=custom/);
   await directory.getByRole('button', { name: 'Show more (25 of 52)', exact: true }).click();
   await expect(directory.getByTestId('reference-row-r-48')).toBeVisible();
   expect(reads.map(url => Number(url.searchParams.get('offset')))).toEqual([0, 25]);

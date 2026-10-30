@@ -38,7 +38,7 @@ export function SalesTrend({ points, currency = 'INR', floorId='all', unit, onPo
    <Pressable accessibilityRole="button" accessibilityLabel={`Explore ${mode==='bars'?'bar':'line'} chart in ${unit||currency}. Select a date using the previous and next controls below, or open chart data.`} onPress={event=>setSelected(Math.max(0,Math.min(points.length-1,Math.floor((event.nativeEvent.locationX-left)/chartWidth*points.length))))}>
     <View pointerEvents="none" style={{position:'absolute',left:0,top,width:40,height:bottom-top+8,zIndex:1,justifyContent:'space-between'}}>{[1,2/3,1/3,0].map((v,i)=><Text key={i} style={[type.caption,{textAlign:'right',fontSize:12,lineHeight:16}]}>{compact(minimum+(max-minimum)*v)}</Text>)}</View>
     <Svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} aria-hidden>
-     {[0,1/3,2/3,1].map(ratio=><Line key={ratio} x1={left} x2={width-8} y1={y(minimum+(max-minimum)*ratio)} y2={y(minimum+(max-minimum)*ratio)} stroke={colors.border} strokeDasharray="3 5"/>)}
+     {[0,1/3,2/3,1].map(ratio=><Line key={ratio} x1={left} x2={width-8} y1={y(minimum+(max-minimum)*ratio)} y2={y(minimum+(max-minimum)*ratio)} stroke={colors.border}/>)}
      {mode==='area'?<>
       {runs(previous).map((run,i)=>run.length===1?<Circle key={`prev-${i}`} cx={run[0].x} cy={run[0].y} r={3} fill={chartColors.secondary}/>:<Polyline key={`prev-${i}`} points={run.map(p=>`${p.x},${p.y}`).join(' ')} fill="none" stroke={chartColors.secondary} strokeWidth={2} strokeDasharray="5 5"/>)}
       {runs(values).map((run,i)=>run.length===1?<Circle key={i} cx={run[0].x} cy={run[0].y} r={4} fill={theme.accent}/>:<Polyline key={i} points={run.map(p=>`${p.x},${p.y}`).join(' ')} fill="none" stroke={theme.accent} strokeWidth={2.5} strokeLinejoin="round"/>)}

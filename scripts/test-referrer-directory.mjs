@@ -37,7 +37,7 @@ function fixture() {
   };
   const modules = {
     react,
-    'react-native': { Platform: { OS: 'web' } },
+    'react-native': { Platform: { OS: 'web' }, useWindowDimensions: () => ({ fontScale: 1 }) },
     '@/src/api/client': { api: { get: (path, options) => new Promise((resolve, reject) => requests.push({ path, options, resolve, reject })) } },
     '@/src/hooks/use-floor-access': { useFloorAccess: () => ({ selectedFloorId: 'first-floor', floors: [{ id: 'first-floor' }, { id: 'ground-floor' }] }) },
     '@/src/state/auth': { useAuth: () => ({ staff: identity }) },

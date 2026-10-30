@@ -1,41 +1,34 @@
-import { useLocalSearchParams } from "expo-router";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Text } from "@/src/components/AppText";
-import { AdminPage } from "@/src/components/AdminPage";
-import { salesWorkspaceApi, type WorkspaceData } from "@/src/api/salesWorkspaces";
-import { spacing, type } from "@/src/theme/tokens";
-import { FLOOR_LABEL, SalesFilters } from "./SalesFilters";
-import { useSalesScope } from "./SalesScope";
-import { ReferrerDirectory } from "./ReferrerDirectory";
-import { SummaryError, ReportHeader } from "./SalesReportParts";
+import { useLocalSearchParams } from 'expo-router';
+import { View } from 'react-native';
+import { Text } from '@/src/components/AppText';
+import { AdminPage } from '@/src/components/AdminPage';
+import { salesWorkspaceApi } from '@/src/api/salesWorkspaces';
+import { salesAnalyticsApi, analyticsQuery } from '@/src/api/salesAnalytics';
+import { spacing, type } from '@/src/theme/tokens';
+import { ReferrerDirectory } from './ReferrerDirectory';
+import { Empty, ReadState } from '@/src/components/salesAnalytics/AnalyticsParts';
+import { AnalyticsFilters } from '@/src/components/salesAnalytics/AnalyticsFilters';
+import { useAnalyticsRead, useAnalyticsScope } from '@/src/components/salesAnalytics/useAnalytics';
+import { ReportHeader } from './SalesReportParts';
 
-export function ReferencesWorkspace() {
-  const params = useLocalSearchParams<{ kind?: string }>();
-  const { floorId, setFloorId, floors, period, choose, accessError, retryAccess } = useSalesScope();
-  const [result, setResult] = useState<{ key: string; data?: WorkspaceData; error?: string }>({ key: "" });
-  const version = useRef(0);
-  const controller = useRef<AbortController | null>(null);
-  const key = JSON.stringify([floorId, period?.preset, period?.dateFrom, period?.dateTo]);
-  const load = useCallback(() => {
-    if (!floorId || !period) return;
-    const current = ++version.current;
-    controller.current?.abort();
-    const request = new AbortController(); controller.current = request;
-    setResult({ key });
-    void salesWorkspaceApi.get("relationships", { floorId, preset: period.preset, dateFrom: period.dateFrom || undefined, dateTo: period.dateTo || undefined }, { signal: request.signal }).then(
-      data => { if (version.current === current) setResult({ key, data }); },
-      (cause: unknown) => { if (version.current === current && !request.signal.aborted) setResult({ key, error: typeof (cause as { detail?: unknown })?.detail === "string" ? (cause as { detail: string }).detail : "Reference performance could not load. The contact directory is still available." }); },
-    );
-  }, [floorId, period, key]);
-  useEffect(() => { load(); return () => { version.current += 1; controller.current?.abort(); }; }, [load]);
-  const current = result.key === key ? result : null;
-  return <AdminPage title="References" header={false} contentStyle={{ gap: spacing.s16, paddingTop: spacing.s16 }}>
-    <ReportHeader title="References" subtitle={[FLOOR_LABEL[floorId] || floors.find(floor => floor.id === floorId)?.name || (floorId === "all" ? "All business units" : ""), period?.label].filter(Boolean).join(" · ")} refresh={load} />
-    {period ? <SalesFilters floors={floors} floorId={floorId} onFloorChange={setFloorId} period={period} onPeriodChange={choose} /> : null}
-    {accessError ? <SummaryError error={accessError} retry={() => void retryAccess()} /> : null}
-    {current?.error ? <SummaryError error={current.error} retry={load} /> : null}
-    {!current?.data && !current?.error ? <Text style={type.caption}>Loading referral performance…</Text> : null}
-    {current?.data?.relationships_truncated ? <Text style={type.bodySm}>Showing performance for up to 2,000 references. The complete contact directory remains searchable.</Text> : null}
-    {floorId ? <ReferrerDirectory floorId={floorId} period={period} kind={params.kind === "architect" || params.kind === "interior_designer" ? params.kind : undefined} performance={current?.data?.relationships} onSaved={load} /> : null}
-  </AdminPage>;
+export function ReferencesWorkspace(){
+ const params=useLocalSearchParams<{kind?:string}>();
+ const {filters,update,floors,canView,accessError,retryAccess}=useAnalyticsScope();
+ // Acquisitions use referral dates; reference sales retain order-confirmation dates.
+ const selected={floor_id:filters.floor_id,preset:filters.preset,date_from:filters.date_from||'',date_to:filters.date_to||'',granularity:filters.granularity,date_basis:'confirmation'};
+ const periodRead=useAnalyticsRead(`dashboard:${analyticsQuery(selected)}`,signal=>salesAnalyticsApi.dashboard(selected,signal),canView);
+ const bounds=periodRead.data?.period;
+ const period=bounds?{preset:bounds.start&&bounds.end?'custom':'all',dateFrom:bounds.start,dateTo:bounds.end,label:bounds.label}:null;
+ const key=analyticsQuery(selected)+':'+(period?.dateFrom||'')+':'+(period?.dateTo||'');
+ const read=useAnalyticsRead(`reference-performance:${key}`,signal=>salesWorkspaceApi.get('relationships',{floorId:selected.floor_id,preset:period!.preset,dateFrom:period!.dateFrom||undefined,dateTo:period!.dateTo||undefined},{signal}),canView&&!!period);
+ return <AdminPage title="Reference variety" header={false} contentStyle={{gap:spacing.s16,paddingTop:spacing.s16}}><View style={{width:'100%',maxWidth:1280,alignSelf:'center',gap:spacing.s16}}>
+ <ReportHeader title="Reference variety" subtitle={bounds?.label||'Selected sales period'} updating={read.refreshing||periodRead.refreshing} refresh={()=>{periodRead.refresh();read.refresh();}}/>
+ {!canView?<Empty text="Your account does not have permission to view Sales Data."/>:<>
+ <AnalyticsFilters filters={selected} showDateBasis={false} update={next=>update({...next,date_basis:'confirmation'})} floors={floors}/>
+ <Text style={type.caption}>Clients use referral dates. Sales use order confirmation dates in the same India calendar period.</Text>
+ <ReadState loading={false} refreshing={read.refreshing} error={accessError||periodRead.error||read.error} retry={accessError?()=>void retryAccess():()=>{periodRead.refresh();read.refresh();}}/>
+ {read.data?.relationships_truncated?<Text style={type.bodySm}>Performance covers up to 2,000 references. Search the directory for every contact.</Text>:null}
+ <ReferrerDirectory floorId={selected.floor_id} period={period} kind={params.kind==='architect'||params.kind==='interior_designer'?params.kind:undefined} performance={read.data?.relationships} performanceLoading={!period||read.loading&&!read.data} onSaved={read.refresh}/>
+ </>}
+ </View></AdminPage>;
 }

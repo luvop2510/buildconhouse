@@ -1,5 +1,20 @@
 # BuildCon House project documentation
 
+## Sales Data simplification delta — 31 October 2026
+
+Native fallback delta scan retains the existing Expo/React Native Web, FastAPI
+and MongoDB layers. Sales overview replaces collection gauges/repeat rings/KPI
+sparklines with a large primary trend, explicit balance bars, dated column summaries and ranked source-record graphs, following the latest three supplied layouts. Shared ledgers,
+section selectors, disclosures and shaped skeletons cover directories and deep
+pages. Legacy brand bookmarks resolve to the current company profile. A bounded
+memory preview cache subscribes to existing API write/session/floor invalidation;
+access denial clears all previews and rejects late responses. Saved company-line
+attribution survives product reassignment. PDF financial summaries use uniform
+cells and measured columns. No dependency, schema or authentication architecture
+changes; AGENTS.md regeneration is unnecessary. See
+`docs/design/sales-visual-directory.md` for surfaces and source attribution.
+Coverage percentage is not measured.
+
 ## Historical Kitchen dates and contact entry delta — 30 October 2026
 
 Native fallback delta scan retains the existing Expo, FastAPI, MongoDB and private

@@ -1,10 +1,11 @@
 import { useState, type ReactNode } from 'react';
 import Feather from '@expo/vector-icons/Feather';
 import { useBp } from '@/src/design/responsive';
-import { Platform, Pressable, ScrollView, View, useWindowDimensions } from 'react-native';
+import { Platform, Pressable, View, useWindowDimensions } from 'react-native';
 import { useSalesTheme } from './salesTheme';
+import { RankedBars } from './SalesGraphs';
 import { Text } from '@/src/components/AppText';
-import { Button, SkeletonCard } from '@/src/components/ui';
+import { Button, Skeleton, SkeletonCard } from '@/src/components/ui';
 import { Sheet } from '@/src/design/components';
 import { colors, spacing, type } from '@/src/theme/tokens';
 import { downloadApiFile } from '@/src/utils/downloadFile';
@@ -25,9 +26,21 @@ export function Panel({ title, description, children, action, testID }: { title:
  </View>;
 }
 export function Empty({ text = 'No confirmed orders match these filters. Try another date range or business unit.' }: { text?: string }) { return <Text testID="analytics-empty" style={[type.bodyMuted, { paddingVertical: spacing.s16 }]}>{text}</Text>; }
-export function ReadState({ loading, error, retry }: { loading: boolean; error: string | null; retry: () => void }) {
+export function ReadState({ loading, error, retry, refreshing=false, variant='dashboard' }: { loading: boolean; error: string | null; retry: () => void; refreshing?:boolean; variant?:'dashboard'|'list'|'profile'|'order'|'quality' }) {
+ const theme=useSalesTheme(); const {isPhone}=useBp();
  if (error) return <View accessibilityRole="alert" style={{ gap: spacing.s8 }}><Text style={type.body}>{error}</Text><Button label="Try again" testID="analytics-retry" onPress={retry} variant="secondary" /></View>;
- return loading ? <View aria-busy accessibilityLabel="Loading analytics" style={{ gap: spacing.s16 }}><SkeletonCard height={104} /><SkeletonCard height={224} /></View> : null;
+ if (refreshing) return <Text testID="analytics-refreshing" role="status" accessibilityLiveRegion="polite" style={type.caption}>Updating recorded data…</Text>;
+ if (!loading) return null;
+ const rows=<View style={{gap:16}}>{Array.from({length:variant==='order'?3:5},(_,index)=><View key={index} style={{gap:8,paddingVertical:12,borderBottomWidth:1,borderBottomColor:theme.line}}><View style={{flexDirection:'row',justifyContent:'space-between',gap:16}}><Skeleton w="48%" h={16}/><Skeleton w="24%" h={20}/></View><Skeleton w="64%" h={12}/></View>)}</View>;
+ return <View testID={`analytics-skeleton-${variant}`} aria-busy role="status" accessibilityLabel="Loading recorded data" style={{gap:16}}>
+  {variant==='dashboard'||variant==='profile'?<><View style={{flexDirection:isPhone?'column':'row',gap:12}}><View style={{flex:isPhone?undefined:2}}><SkeletonCard height={320}/></View><View style={{flex:isPhone?undefined:1}}><SkeletonCard height={260}/></View></View><SkeletonCard height={260}/></>:null}
+  {variant==='list'||variant==='order'||variant==='quality'?rows:null}
+ </View>;
+}
+/** Secondary information stays available without competing with the main task. */
+export function Disclosure({label,children,initiallyOpen=false,testID}:{label:string;children:ReactNode;initiallyOpen?:boolean;testID?:string}) {
+ const [open,setOpen]=useState(initiallyOpen); const theme=useSalesTheme();
+ return <View style={{gap:open?12:0,minWidth:0}}><Pressable testID={testID} accessibilityRole="button" accessibilityState={{expanded:open}} aria-expanded={open} onPress={()=>setOpen(value=>!value)} style={({pressed,hovered}:any)=>({minHeight:44,flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:12,paddingVertical:8,backgroundColor:pressed||hovered?theme.tint:'transparent'})}><Text style={[type.bodySm,{fontWeight:'500',color:theme.accent,flex:1}]}>{label}</Text><Feather aria-hidden name={open?'chevron-up':'chevron-down'} size={18} color={theme.accent}/></Pressable>{open?children:null}</View>;
 }
 export function Choice({ label, value, options, onChange, testID }: { label: string; value: string; options: { value: string; label: string }[]; onChange: (value: string) => void; testID?: string }) {
  const [open, setOpen] = useState(false);
@@ -45,9 +58,9 @@ export function DataLink({ label, detail, value, secondary, onPress, testID, pro
  const rowText=isPhone?type.bodySm:type.bodyStrong;
  const content=<><View style={{flexDirection:'row',alignItems:'center',gap:spacing.s8,minWidth:0}}>
   <View style={{flex:1,minWidth:0,gap:spacing.s4}}><View style={{flexDirection:'row',alignItems:'center',gap:8}}>{markerColor?<View aria-hidden style={{width:8,height:8,borderRadius:2,backgroundColor:markerColor}}/>:null}<Text style={[rowText,{flexShrink:1,fontWeight:'500',color: theme.ink}]}>{label}</Text></View>{detail ? <Text style={isPhone?type.caption:type.bodySm}>{detail}</Text>:null}
-   {stacked && value ? <><ScrollView horizontal showsHorizontalScrollIndicator style={{flexGrow:0,maxWidth:'100%'}}><Text style={[type.bodyStrong,{fontVariant:['tabular-nums'],...(Platform.OS==='web'?{whiteSpace:'nowrap'} as never:{})}]}>{value}</Text></ScrollView>{secondary?<Text style={type.caption}>{secondary}</Text>:null}</>:null}
+   {stacked && value ? <><Text style={[type.bodyStrong,{fontVariant:['tabular-nums'],flexShrink:1}]}>{value}</Text>{secondary?<Text style={type.caption}>{secondary}</Text>:null}</>:null}
   </View>
-  {!stacked && value ? <View style={{maxWidth:'44%',alignItems:'flex-end',gap:spacing.s4}}><ScrollView horizontal showsHorizontalScrollIndicator style={{flexGrow:0,maxWidth:'100%'}}><Text style={[rowText,{fontVariant:['tabular-nums'],fontWeight:'500',textAlign:'right',...(Platform.OS==='web'?{whiteSpace:'nowrap'} as never:{})}]}>{value}</Text></ScrollView>{secondary?<Text style={type.caption}>{secondary}</Text>:null}</View>:null}
+  {!stacked && value ? <View style={{maxWidth:'44%',alignItems:'flex-end',gap:spacing.s4}}><Text style={[rowText,{fontVariant:['tabular-nums'],fontWeight:'500',textAlign:'right',flexShrink:1}]}>{value}</Text>{secondary?<Text style={type.caption}>{secondary}</Text>:null}</View>:null}
   {onPress?<Feather name="chevron-right" size={16} color={theme.muted} aria-hidden accessibilityElementsHidden/>:null}
  </View>{proportion!==undefined?<View aria-hidden accessibilityElementsHidden style={{height:6,backgroundColor:colors.surfaceTertiary,marginTop:spacing.s8,borderRadius:3,overflow:'hidden'}}><View style={{height:6,width:`${Math.max(0,Math.min(1,proportion))*100}%`,backgroundColor:chartColors.primary}}/></View>:null}</>;
  const style={minWidth:0,minHeight:44,paddingVertical:spacing.s8,borderBottomWidth:1,borderBottomColor:theme.line};
@@ -77,24 +90,9 @@ export function ExportMenu({ filters, view, kind, entityId, tab, title, compact 
  </View></Sheet></>;
 }
 
-export function EntityLedger({rows,onRow,testPrefix='analytics-entity',valueLabel='Sales'}:{rows:{id:string;name:string;detail:string;value:string;orders?:string;customers?:string;customer?:string;department?:string;status?:string}[];onRow:(id:string)=>void;testPrefix?:string;valueLabel?:string}) {
- const {isPhone,isTabletPortrait}=useBp(); const {fontScale}=useWindowDimensions(); const theme=useSalesTheme();
- const compact=isPhone||isTabletPortrait||fontScale>1.3;
- const transactions=rows.some(row=>row.customer!==undefined);
- const hasMetrics=rows.some(row=>row.orders!==undefined||row.customers!==undefined);
- if(transactions&&compact) return <View style={{gap:8}}>{rows.map(row=><Pressable key={row.id} testID={`${testPrefix}-${row.id}`} accessibilityRole="link" {...linkActivation(()=>onRow(row.id))} accessibilityLabel={`${row.name}. ${row.customer}. ${row.department}. ${row.status}. ${valueLabel}: ${row.value}. Open details`} onPress={()=>onRow(row.id)} style={({pressed,hovered}:any)=>({minHeight:80,padding:12,borderWidth:1,borderColor:theme.line,borderRadius:12,backgroundColor:pressed||hovered?theme.tint:theme.surface,gap:8})}>
-  <View style={{flexDirection:fontScale>1.3?'column':'row',alignItems:'flex-start',gap:8}}><View aria-hidden style={{width:32,height:32,borderRadius:10,backgroundColor:theme.tint,alignItems:'center',justifyContent:'center'}}><Text style={[type.caption,{fontWeight:'600',color:theme.accent}]}>{row.customer?.split(/\s+/).slice(0,2).map(part=>part[0]).join('')}</Text></View><View style={{flex:fontScale>1.3?undefined:1,minWidth:0,gap:4}}><Text style={[type.bodyStrong,{fontSize:14}]}>{row.customer}</Text><Text style={type.caption}>{row.name} · {row.department}</Text><Text style={[type.caption,{alignSelf:'flex-start',color:theme.accent,backgroundColor:theme.tint,borderRadius:6,padding:4}]}>{row.status}</Text></View></View>
-  <View style={{flexDirection:fontScale>1.3?'column':'row',flexWrap:'wrap',alignItems:fontScale>1.3?'stretch':'center',gap:8}}><ScrollView horizontal showsHorizontalScrollIndicator style={{flexGrow:fontScale>1.3?0:1,flexBasis:fontScale>1.3?undefined:140,minWidth:0,maxWidth:'100%'}}><Text style={[type.bodyStrong,{fontSize:16,color:theme.ink,fontVariant:['tabular-nums'],...(Platform.OS==='web'?{whiteSpace:'nowrap'} as never:{})}]}>{row.value}</Text></ScrollView><Text style={type.caption}>{row.detail}</Text><Feather name="arrow-up-right" size={14} color={theme.muted} aria-hidden/></View>
- </Pressable>)}</View>;
- return <View style={{gap:0}}>
-  {!compact?<View aria-hidden style={{flexDirection:'row',gap:12,paddingVertical:10,paddingHorizontal:8,backgroundColor:theme.canvas}}><Text style={[type.caption,{flex:transactions?1:3}]}>{transactions?'Order':'Name'}</Text>
-   {transactions?<><Text style={[type.caption,{flex:2}]}>Customer</Text><Text style={[type.caption,{flex:1.5}]}>Department</Text><Text style={[type.caption,{flex:1}]}>Status</Text></>:hasMetrics?<><Text style={[type.caption,{flex:1,textAlign:'right'}]}>Orders</Text><Text style={[type.caption,{flex:1,textAlign:'right'}]}>Customers</Text></>:null}
-   <Text style={[type.caption,{flex:2,textAlign:'right'}]}>{valueLabel}</Text>
-  </View>:null}
-  {rows.map(row=><Pressable key={row.id} testID={`${testPrefix}-${row.id}`} accessibilityRole="link" {...linkActivation(()=>onRow(row.id))} accessibilityLabel={`${row.name}: ${row.value}. Open details`} onPress={()=>onRow(row.id)} style={({pressed,hovered}:any)=>({minHeight:64,paddingVertical:12,paddingHorizontal:8,borderBottomWidth:1,borderBottomColor:theme.line,backgroundColor:pressed||hovered?theme.tint:theme.surface,flexDirection:compact?'column':'row',alignItems:compact?'stretch':'center',gap:compact?6:12})}>
-   <View style={{flex:compact?undefined:transactions?1:3,minWidth:0,gap:4}}><Text style={[type.bodyStrong,{fontSize:14,color:theme.ink}]}>{row.name}</Text><Text style={type.caption}>{row.detail}</Text></View>
-   {transactions?compact?<Text style={type.bodySm}>{row.customer} · {row.department} · {row.status}</Text>:<><Text style={[type.bodySm,{flex:2}]}>{row.customer}</Text><Text style={[type.bodySm,{flex:1.5}]}>{row.department}</Text><Text style={[type.bodySm,{flex:1}]}>{row.status}</Text></>:!compact&&hasMetrics?<><Text style={[type.bodySm,{flex:1,textAlign:'right',fontVariant:['tabular-nums']}]}>{row.orders||'—'}</Text><Text style={[type.bodySm,{flex:1,textAlign:'right',fontVariant:['tabular-nums']}]}>{row.customers||'—'}</Text></>:null}
-   <View style={{flex:compact?undefined:2,minWidth:transactions&&!compact?145:0,flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:8}}><ScrollView horizontal showsHorizontalScrollIndicator style={{flex:1,minWidth:0}} contentContainerStyle={{flexGrow:1,justifyContent:compact?'flex-start':'flex-end'}}><Text style={[type.bodyStrong,{fontSize:14,textAlign:compact?'left':'right',fontVariant:['tabular-nums'],color:theme.ink,...(Platform.OS==='web'?{whiteSpace:'nowrap'} as never:{})}]}>{row.value}</Text></ScrollView><Feather name="arrow-up-right" size={14} color={theme.muted}/></View>
-  </Pressable>)}
+export function EntityLedger({rows,onRow,testPrefix='analytics-entity',valueLabel='Sales'}:{rows:{id:string;name:string;detail:string;value:string;amount?:number|null;currency?:string;orders?:string;customers?:string;customer?:string;department?:string;status?:string}[];onRow:(id:string)=>void;testPrefix?:string;valueLabel?:string}) {
+ const currencies=[...new Set(rows.map(row=>row.currency||'INR'))];
+ return <View style={{gap:20}}>{currencies.map(currency=><View key={currency} style={{gap:12}}><Text style={type.caption}>{valueLabel} in {currency}{currencies.length>1?' (separate scale)':''}</Text><RankedBars label={`${valueLabel} by record in ${currency}`} rows={rows.filter(row=>(row.currency||'INR')===currency).map(row=>({id:row.id,label:row.customer||row.name,value:row.amount,formatted:row.value,detail:[row.customer?row.name:'',row.customer?row.detail:'',row.department,row.status].filter(Boolean).join(', '),testID:`${testPrefix}-${row.id}`,onPress:()=>onRow(row.id)}))}/></View>)}
+ <Disclosure label="Source data and record details">{rows.map(row=><DataLink key={row.id} label={row.name} detail={row.detail} value={row.value} onPress={()=>onRow(row.id)}/>)}</Disclosure>
  </View>;
 }

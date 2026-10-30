@@ -23,6 +23,14 @@ type SharedGet = { key: string; promise: Promise<unknown>; controller: AbortCont
 const inflightGets = new Map<string, SharedGet>();
 const responseCache = new Map<string, { expiresAt: number; value: unknown }>();
 const MAX_RESPONSE_CACHE_ENTRIES = 64;
+type CacheInvalidation = "identity" | "workspace" | "mutation";
+const cacheInvalidationListeners = new Set<(scope: CacheInvalidation) => void>();
+
+/** View caches follow the same mutation, workspace and session boundaries. */
+export function subscribeApiCacheInvalidation(listener: (scope: CacheInvalidation) => void) {
+  cacheInvalidationListeners.add(listener);
+  return () => { cacheInvalidationListeners.delete(listener); };
+}
 
 // Brief navigation reuse; mutations, floor changes and logout invalidate all entries.
 // Editable details and authorization reads stay fresh. Callers can force cacheMs: 0.
@@ -145,16 +153,17 @@ export function setRequestFloorId(floorId: string) {
   if (floorCache !== undefined && floorCache !== floorId) invalidateApiRequests("workspace");
   floorCache = floorId;
 }
-export function clearApiResponseCache() {
+export function clearApiResponseCache(scope: CacheInvalidation = "mutation") {
   readCacheVersion += 1;
   responseCache.clear();
   inflightGets.clear();
+  cacheInvalidationListeners.forEach(listener => listener(scope));
 }
 /** A workspace change preserves account validation; identity changes cancel all work. */
 export function invalidateApiRequests(scope: "identity" | "workspace" = "identity") {
   requestContextVersion += 1;
   if (scope === "identity") identityContextVersion += 1;
-  clearApiResponseCache();
+  clearApiResponseCache(scope);
   activeRequests.forEach((identityRead, controller) => {
     if (scope === "identity" || !identityRead) {
       controller.abort();

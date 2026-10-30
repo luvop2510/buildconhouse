@@ -3,14 +3,14 @@ import { STAGE_LABELS, type KitchenStage } from "@/src/api/kitchenProjects";
 import { referrerCode } from "@/src/utils/referrer";
 import { MobileFilterSection } from "@/src/components/MobileFilterSection";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { View } from "react-native";
 import { Text } from "@/src/components/AppText";
 
 import { AdminPage } from "@/src/components/AdminPage";
 import { api } from "@/src/api/client";
 import {
-  Button, EmptyState, ErrorState, LoadingState, PillTabs, Table, TableCell, TableHeader, TableRow,
+  Button, EmptyState,
 } from "@/src/components/ui";
 import { useBp } from "@/src/design/responsive";
 import { colors, spacing, type } from "@/src/theme/tokens";
@@ -22,7 +22,10 @@ import { SalesFilters } from "@/src/components/salesData/SalesFilters";
 import { useFloorAccess } from "@/src/hooks/use-floor-access";
 import type { Granularity } from "@/src/components/salesData/salesDataApi";
 
-const fmtMoney = (value: number) => value.toLocaleString("en-IN", { maximumFractionDigits: 2 });
+import { RankedBars } from '@/src/components/salesAnalytics/SalesGraphs';
+import { Choice, Disclosure, ReadState } from '@/src/components/salesAnalytics/AnalyticsParts';
+import { useAnalyticsRead, useAnalyticsScope } from '@/src/components/salesAnalytics/useAnalytics';
+const fmtMoney = (value: number | null | undefined) => value == null ? 'Unavailable' : value.toLocaleString("en-IN", { maximumFractionDigits: 2 });
 
 type ReferrerDetailResponse = {
   referrer: { id: string; name: string; type: string; phone?: string | null; company?: string | null };
@@ -45,25 +48,13 @@ export default function ReferrerDetail() {
   const { floors } = useFloorAccess();
   const [peopleOffset, setPeopleOffset] = useState(0);
   useEffect(() => { setPeopleOffset(0); }, [id, periodQuery]);
-  const generation = useRef(0);
-  const controller = useRef<AbortController | null>(null);
   const [granularity, setGranularity] = useState<Granularity>("month");
-  const [data, setData] = useState<ReferrerDetailResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { canView } = useAnalyticsScope();
   const { isPhone, isTabletPortrait } = useBp();
   const compact = isPhone || isTabletPortrait;
 
-  const load = useCallback(() => {
-    if (!id || !periodQuery) return;
-    const version = ++generation.current;
-    controller.current?.abort();
-    const request = new AbortController(); controller.current = request;
-    setError(null); setData(null);
-    api.get<ReferrerDetailResponse>(`/sales-data/referrers/${encodeURIComponent(id)}?${periodQuery}&granularity=${granularity}&people_offset=${peopleOffset}`, { signal: request.signal })
-      .then(value => { if (version === generation.current) setData(value); })
-      .catch((cause: unknown) => { if (version === generation.current && !request.signal.aborted) setError(typeof (cause as { detail?: unknown })?.detail === "string" ? (cause as { detail: string }).detail : "Could not load reference"); });
-  }, [id, granularity, periodQuery, peopleOffset]);
-  useEffect(() => { load(); return () => { generation.current += 1; controller.current?.abort(); }; }, [load]);
+  const read=useAnalyticsRead(`referrer:${id}:${periodQuery}:${granularity}:${peopleOffset}`,signal=>api.get<ReferrerDetailResponse>(`/sales-data/referrers/${encodeURIComponent(id)}?${periodQuery}&granularity=${granularity}&people_offset=${peopleOffset}`,{signal}),canView&&!!id&&!!periodQuery);
+  const data=read.data;
 
   const exportData = (section: string, rows: (string | number | null)[][]) => {
     if (!data) return;
@@ -73,42 +64,36 @@ export default function ReferrerDetail() {
   return (
     <AdminPage
       title={data?.referrer.name || "Referrer"}
-      subtitle={data ? `${floorId === "third-floor" ? "" : `₹${fmtMoney(data.total_revenue)} sales · `}${data.total_revenue_rnb || floorId === "third-floor" ? `RNB ${fmtMoney(data.total_revenue_rnb || 0)} Furniture sales · ` : ""}${periodLabel}` : undefined}
+      subtitle={data ? `${reportFloor === "third-floor" ? "" : `₹${fmtMoney(data.total_revenue)} sales · `}${data.total_revenue_rnb || reportFloor === "third-floor" ? `RNB ${fmtMoney(data.total_revenue_rnb)} Furniture sales · ` : ""}${periodLabel}` : undefined}
+      contentStyle={{gap:spacing.s16,width:"100%",maxWidth:1280,alignSelf:"center"}}
     >
       {period ? <SalesFilters floors={floors} floorId={reportFloor} onFloorChange={floorId => router.setParams({ floorId })} period={period}
         onPeriodChange={next => router.setParams({ preset: next.preset, dateFrom: next.dateFrom || "", dateTo: next.dateTo || "", date_from: "", date_to: "" })} /> : null}
       <MobileFilterSection testID="referrer-filters">
-      <PillTabs
-        testID="referrer-detail-granularity"
-        value={granularity}
-        onChange={setGranularity}
-        options={[
-          { value: "day", label: "Day" }, { value: "month", label: "Month" },
-          { value: "quarter", label: "Quarter" }, { value: "year", label: "Year" },
-        ]}
-      />
+      <Choice label="Time scale" value={granularity} onChange={value=>setGranularity(value as Granularity)} options={[{value:'day',label:'Day'},{value:'month',label:'Month'},{value:'quarter',label:'Quarter'},{value:'year',label:'Year'}]} testID="referrer-detail-granularity"/>
       </MobileFilterSection>
-      {error ? <ErrorState subtitle={error} onRetry={load} /> : null}
-      {!error && !data ? <LoadingState label="Loading…" /> : null}
+      {!canView?<EmptyState title="Your account does not have permission to view Sales Data."/>:<ReadState variant="profile" loading={read.loading&&!data} refreshing={read.refreshing} error={read.error} retry={read.refresh}/>}
       {data ? (
         <View style={{ gap: spacing.lg }}>
-          <Text style={type.body}>{[data.referrer.company, referrerCode(data.referrer.id, data.referrer.type, data.referrer.name)].filter(Boolean).join(" · ")}</Text>
+          <Text style={type.body}>{[data.referrer.company, referrerCode(data.referrer.id, data.referrer.type, data.referrer.name)].filter(Boolean).join(", ")}</Text>
           {data.referred_people ? <View testID="referrer-clients" style={{ gap: spacing.s12, minWidth: 0 }}>
             <Text accessibilityRole="header" aria-level={2} style={type.titleSm}>Clients brought · {(data.customers_acquired || 0).toLocaleString("en-IN")}</Text>
             <Text style={type.bodySm}>Walk-ins and confirmed or non-confirmed customers, counted once per person in {periodLabel}. Sales below use order confirmation dates.</Text>
-            {data.referred_people.map((person, index) => <View key={index} testID={`referrer-client-${index}`} style={{ gap: spacing.s4, paddingVertical: spacing.s12, borderBottomWidth: 1, borderBottomColor: colors.border, minWidth: 0 }}>
+            <RankedBars label="Confirmed and not-confirmed clients on this page" rows={[{id:'confirmed',label:'Confirmed clients',value:data.referred_people.filter(person=>person.confirmed).length,formatted:String(data.referred_people.filter(person=>person.confirmed).length)},{id:'other',label:'Clients without confirmed orders',value:data.referred_people.filter(person=>!person.confirmed).length,formatted:String(data.referred_people.filter(person=>!person.confirmed).length)}]}/>
+            <Disclosure label="Referred people and source history">{data.referred_people.map((person, index) => <View key={index} testID={`referrer-client-${index}`} style={{ gap: spacing.s4, paddingVertical: spacing.s12, borderBottomWidth: 1, borderBottomColor: colors.border, minWidth: 0 }}>
               <Text style={type.bodyStrong}>{person.customer_name || "Unnamed customer"}</Text>
               <Text style={type.bodySm}>{person.confirmed ? "Confirmed customer" : person.sources.includes("walkins") ? "Walk-in · Not confirmed" : "Not confirmed"}{person.first_referred_at ? ` · ${new Date(person.first_referred_at).toLocaleDateString("en-IN", { timeZone: "UTC", day: "numeric", month: "short", year: "numeric" })}` : ""}</Text>
             </View>)}
+            </Disclosure>
             {!data.customers_acquired ? <Text style={type.body}>No referred people in this range.</Text> : <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.s8, alignItems: "center" }}>
               <Text style={type.bodySm}>Showing {peopleOffset + 1}–{peopleOffset + data.referred_people.length} of {data.customers_acquired}</Text>
               {peopleOffset ? <Button label="Previous clients" variant="secondary" onPress={() => setPeopleOffset(offset => Math.max(0, offset - 100))} /> : null}
               {peopleOffset + data.referred_people.length < data.customers_acquired! ? <Button label="More clients" variant="secondary" onPress={() => setPeopleOffset(offset => offset + 100)} /> : null}
             </View>}
           </View> : null}
-          {data.furniture_quotations?.length ? <View style={{ gap: spacing.s12 }}>
+          {data.furniture_quotations?.length ? <Disclosure label="Furniture final ledgers">
             <Text accessibilityRole="header" aria-level={2} style={type.titleSm}>Furniture final ledgers</Text>
-            <Text style={type.bodySm}>{data.furniture_quotations_total || data.furniture_quotations.length} final ledgers · RNB {fmtMoney(data.total_revenue_rnb || 0)} sales</Text>
+            <Text style={type.bodySm}>{data.furniture_quotations_total || data.furniture_quotations.length} final ledgers · RNB {fmtMoney(data.total_revenue_rnb)} sales</Text>
             <Button label="Export Furniture ledgers" variant="secondary" icon="download" onPress={() => exportData("Furniture final ledgers", [["Ledger ID", "Customer", "Sales (RNB)", "Received (RNB)", "Balance (RNB)", "Finalized"], ...data.furniture_quotations!.map(row => [row.id, row.customer_name, row.total_payable_rmb, row.total_received_rmb, row.balance_rmb, row.finalized_at])])} />
             {data.furniture_quotations.map(row => <View key={row.id} testID={`referrer-furniture-row-${row.id}`} style={{ gap: spacing.s8, paddingVertical: spacing.s12, borderTopWidth: 1, borderTopColor: colors.border }}>
               <Text style={type.bodyStrong}>{row.customer_name}</Text>
@@ -120,36 +105,17 @@ export default function ReferrerDetail() {
               </View>
             </View>)}
             {(data.furniture_quotations_total || 0) > data.furniture_quotations.length ? <Text style={type.bodySm}>Showing the latest {data.furniture_quotations.length} ledgers. Narrow the reporting period to see earlier records.</Text> : null}
-          </View> : null}
-          {data.kitchen_projects?.length ? <View style={{ gap: spacing.md }}><Text style={type.titleSm}>Kitchen leads and projects</Text>{data.kitchen_projects.map(project => <NavigationLink key={project.id} href={`/kitchen/${project.id}/stages/${project.kitchen_stage}` as any} accessibilityLabel={`Open ${project.number}`} style={{ minHeight: 56, padding: spacing.md, borderWidth: 1, borderColor: colors.border, borderRadius: 8 }}><Text style={type.bodyStrong}>{project.customer_name} · {project.number}</Text><Text style={type.body}>{STAGE_LABELS[project.kitchen_stage]}{project.status === "ordered" ? ` · Confirmed sale ₹${fmtMoney(project.grand_total)}` : ""}</Text></NavigationLink>)}</View> : null}
+          </Disclosure> : null}
+          {data.kitchen_projects?.length ? <Disclosure label="Kitchen leads and projects"><Text style={type.titleSm}>Kitchen leads and projects</Text>{data.kitchen_projects.map(project => <NavigationLink key={project.id} href={`/kitchen/${project.id}/stages/${project.kitchen_stage}` as any} accessibilityLabel={`Open ${project.number}`} style={{ minHeight: 56, padding: spacing.md, borderWidth: 1, borderColor: colors.border, borderRadius: 8 }}><Text style={type.bodyStrong}>{project.customer_name} · {project.number}</Text><Text style={type.body}>{STAGE_LABELS[project.kitchen_stage]}{project.status === "ordered" ? ` · Confirmed sale ₹${fmtMoney(project.grand_total)}` : ""}</Text></NavigationLink>)}</Disclosure> : null}
           {data.trend.length ? <Button testID="referrer-detail-trend-export-xlsx" label="Export revenue trend" icon="download" variant="secondary" onPress={() => exportData("Revenue trend", [["Period", "Revenue"], ...data.trend.map(point => [point.bucket, point.revenue])])} /> : null}
-          {floorId !== "third-floor" ? <TrendChart points={data.trend} /> : null}
+          {reportFloor !== "third-floor" ? <TrendChart points={data.trend} /> : null}
           {data.quotations.length === 0 ? (
             data.furniture_quotations?.length ? null : <EmptyState title="No confirmed sales in this range" />
           ) : (
             <View style={{ gap: spacing.sm }}>
             <Button testID="referrer-detail-orders-export-xlsx" label="Export orders" icon="download" variant="secondary" onPress={() => exportData("Confirmed orders", [["Order", "Customer", "Value", "Confirmed at"], ...data.quotations.map(quote => [quote.number, quote.customer_name, quote.grand_total, quote.updated_at])])} />
-            {compact ? (
-              <View style={{ gap: spacing.xs }}>
-                {data.quotations.map((q) => (
-                  <View key={q.id} testID={`referrer-quote-row-${q.id}`} style={{ minHeight: 56, paddingVertical: spacing.xs, borderBottomWidth: 1, borderBottomColor: colors.border, flexDirection: "row", alignItems: "center", gap: spacing.md }}>
-                    <View style={{ flex: 1, minWidth: 0, gap: 2 }}><Text style={type.bodyStrong} numberOfLines={2}>{q.customer_name}</Text><Text style={[type.caption, { color: colors.onSurfaceMuted }]} numberOfLines={1}>{q.number}</Text></View>
-                    <Text style={[type.bodyStrong, { flexShrink: 1, minWidth: 0, textAlign: "right", fontVariant: ["tabular-nums"] }]}>₹{fmtMoney(q.grand_total)}</Text>
-                  </View>
-                ))}
-              </View>
-            ) : <Table>
-              <TableHeader columns={[
-                { label: "Number", flex: 1 }, { label: "Customer", flex: 2 }, { label: "Amount", align: "right" },
-              ]} />
-              {data.quotations.map((q, i) => (
-                <TableRow key={q.id} isLast={i === data.quotations.length - 1} testID={`referrer-quote-row-${q.id}`}>
-                  <TableCell flex={1}>{q.number}</TableCell>
-                  <TableCell flex={2}>{q.customer_name}</TableCell>
-                  <TableCell align="right">₹{fmtMoney(q.grand_total)}</TableCell>
-                </TableRow>
-              ))}
-            </Table>}
+            <RankedBars label="Confirmed referred orders in INR" rows={data.quotations.map(quote=>({id:quote.id,label:quote.customer_name,value:quote.grand_total,formatted:`₹${fmtMoney(quote.grand_total)}`,detail:quote.number,testID:`referrer-quote-row-${quote.id}`}))}/>
+
             </View>
           )}
         </View>

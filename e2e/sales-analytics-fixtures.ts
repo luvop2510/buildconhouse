@@ -70,6 +70,12 @@ export function analyticsOwnerOperations(floorId = 'all') {
 type Options = { floorId?: string; operations?: (route: Route) => Promise<unknown>; dashboard?: (route: Route) => Promise<unknown>; onRequest?: (url: URL) => void };
 export async function mockSalesAnalytics(page: Page, options: Options = {}) {
   await mockSession(page, '/sales-data', false, { floorId: options.floorId, seedStorageOnce: true });
+  const reference={id:'architect-a',name:'Nisha Shah',type:'architect',company:'Studio Line',phone:'9876543210',floor_id:'first-floor',shared_across_floors:true,updated_at:'v1'};
+  await page.route('**/api/referrers/page?**',route=>route.fulfill({json:{rows:[reference],total:1,offset:0,limit:25}}));
+  await page.route('**/api/analytics/workspaces/relationships?**',route=>route.fulfill({json:{workspace:'relationships',period:'October 2026',kpis:{revenue:240000,orders:1,outstanding:60000},brands:[],products:[],customers:[],floors:[],relationships:[{...reference,revenue:240000,revenue_rnb:0,orders:1,customers:1,customers_acquired:3}]}}));
+  await page.route('**/api/analytics/default-period?**',route=>route.fulfill({json:{preset:'this_month',date_from:null,date_to:null,label:'This month',fallback_applied:false,latest_order_at:null}}));
+  await page.route('**/api/sales-data/referrers/*?**',route=>route.fulfill({json:{referrer:reference,customers_acquired:3,referred_people:[{customer_name:'Ananya Shah',confirmed:1,sources:['quotations'],floor_ids:['first-floor'],first_referred_at:'2026-10-10T06:00:00Z'},{customer_name:'Example walk-in',confirmed:0,sources:['walkins'],floor_ids:['first-floor'],first_referred_at:'2026-10-12T06:00:00Z'}],total_revenue:240000,total_revenue_rnb:0,trend:[{bucket:'October',revenue:240000}],quotations:[{id:'order-a',number:'SO-1001',customer_name:'Ananya Shah',grand_total:240000,updated_at:'2026-10-10T06:00:00Z'}]}}));
+  await page.route('**/api/executive-analytics/**',route=>route.fulfill({json:{salesperson:{full_name:'Example salesperson'},kpis:{revenue:240000,orders:1,aov:240000,customers:1},brands:[{brand_id:'company-a',brand_name:'Hansgrohe',revenue:240000}],products:[],customers:[]}}));
   let review: Record<string, unknown> | null = null;
   await page.route('**/api/sales-analytics/**', async route => {
     const url = new URL(route.request().url());

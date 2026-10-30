@@ -1,0 +1,11 @@
+/* Hallmark · v2.0.0 · shape: app screen · genre: modern-minimal · theme: Buildcon locked system · signature: recorded sales ledger · scope: app · redesign: full */
+/* Hallmark · pre-emit critique: P4 H4 E4 S4 R5 V3 · weakest: V, shared system retained while directories, profiles and trends use task-specific compositions */
+:root { --interface-focus: var(--forge-focus); }
+html, body { overflow-x: clip; }
+:is(button, a, input, textarea, select, [role="button"], [role="link"], [role="tab"], [role="checkbox"], [tabindex]):focus-visible {
+  outline: 3px solid var(--interface-focus);
+  outline-offset: 3px;
+}
+:is(button, [role="button"], [role="link"]):active { cursor: pointer; }
+:is(button:disabled, [aria-disabled="true"]) { cursor: default; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto; } }

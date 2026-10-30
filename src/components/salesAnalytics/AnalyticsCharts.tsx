@@ -1,6 +1,4 @@
 import { useState } from 'react';
-import { HalfGauge } from '@/src/design/graphics';
-import { collectionProgress } from './visualMetrics';
 import { Pressable, View } from 'react-native';
 import { Text } from '@/src/components/AppText';
 import { colors, spacing, type } from '@/src/theme/tokens';
@@ -37,11 +35,9 @@ export function CustomerMix({segments,onSegment}:{segments:{id:string;name:strin
 }
 
 export function CollectionBalance({collected,outstanding,currency,onRecords}:{collected:number|null|undefined;outstanding:number|null|undefined;currency:string;onRecords:()=>void}) {
- const ratio=collectionProgress(collected,outstanding);
  return <View testID="analytics-collection-balance" style={{gap:spacing.s12}}>
-  <View style={{alignItems:'center',paddingVertical:8}}><HalfGauge ratio={ratio} size={180} label="Collected share of receipts plus outstanding balance" value={ratio==null?'Unavailable':`${Math.round(ratio*100)}%`}/></View>
   <DataLink label="Collected" value={analyticMoney(collected,currency)} onPress={onRecords}/>
   <DataLink label="Outstanding" value={analyticMoney(outstanding,currency)} onPress={onRecords}/>
-  <Text style={type.caption}>Collected ÷ (collected + outstanding). Current recorded balance; not a sales target.</Text>
+  <Text style={type.caption}>Current recorded balances on the selected orders</Text>
  </View>;
 }

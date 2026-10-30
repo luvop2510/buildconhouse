@@ -1,10 +1,11 @@
+import { RankedBars } from '@/src/components/salesAnalytics/SalesGraphs';
 import { formatPhone } from "@/src/utils/phone";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Platform, View } from "react-native";
+import { Platform, Pressable, View, useWindowDimensions } from "react-native";
 
 import { api } from "@/src/api/client";
 import { Text } from "@/src/components/AppText";
-import { Button, Card, ErrorState, IconButton, LoadingState, PillTabs, TextField } from "@/src/components/ui";
+import { Button, Card, ErrorState, IconButton, PillTabs, Skeleton, TextField } from "@/src/components/ui";
 import { NavigationLink } from "@/src/design/NavigationLink";
 import { useBp } from "@/src/design/responsive";
 import { money } from "./SalesReportParts";
@@ -16,17 +17,18 @@ import { ReferencesEditor } from "./ReferencesEditor";
 import { mergeReferences, referenceDestination, type ReferenceContact, type ReferenceKind, type ReferencePerformance, type ReferenceRow } from "./ReferencesModel";
 import type { SelectedPeriod } from "./useSalesPeriod";
 
-export function ReferrerDirectory({ kind, floorId: reportFloor, period, performance, onSaved }: {
+export function ReferrerDirectory({ kind, floorId: reportFloor, period, performance, performanceLoading=false, onSaved }: {
   kind?: ReferenceKind; floorId?: string; period?: SelectedPeriod | null;
-  performance?: ReferencePerformance[]; onSaved?: () => void;
+  performance?: ReferencePerformance[]; performanceLoading?: boolean; onSaved?: () => void;
 }) {
   const { staff } = useAuth();
   const { selectedFloorId, floors } = useFloorAccess();
   const { isPhone, isTabletPortrait } = useBp();
-  const compact = isPhone || isTabletPortrait;
+  const {fontScale}=useWindowDimensions();
+  const compact = isPhone || isTabletPortrait || fontScale>1.3;
   const floorId = reportFloor || selectedFloorId;
   const floorKey = floorId === "all" ? floors.map(floor => floor.id).sort().join(",") : floorId;
-  const scopeKey = JSON.stringify([staff?.id, floorKey]);
+  const scopeKey = JSON.stringify([staff?.id, staff?.role, staff?.active, staff?.custom_access, staff?.access_profile, staff?.access_grants, staff?.floor_ids, floorKey]);
   const scopeRef = useRef(scopeKey); scopeRef.current = scopeKey;
   const onSavedRef = useRef(onSaved); onSavedRef.current = onSaved;
   const mounted = useRef(true);
@@ -90,50 +92,48 @@ export function ReferrerDirectory({ kind, floorId: reportFloor, period, performa
   const active = rows.filter(row => !row.historical);
   const historical = rows.filter(({ contact, historical }) => historical && (filter === "all" || contact.type === filter)
     && [contact.name, contact.company, contact.phone, referrerCode(contact.id, contact.type, contact.name)].some(value => value?.toLocaleLowerCase().includes(needle)));
+  const maxima={clients:Math.max(0,...rows.map(row=>row.performance?.customers_acquired??0)),inr:Math.max(0,...rows.map(row=>row.performance?.revenue??0)),rnb:Math.max(0,...rows.map(row=>row.performance?.revenue_rnb??0))};
   const startEditing = (contact: ReferenceContact | null) => { setEditorScope(scopeKey); setEditing(contact); };
   const editorFloor = floorId !== "all" ? floorId : selectedFloorId || floorKey.split(",")[0];
-  const saved = () => {
+  const saved = (contact: ReferenceContact) => {
     if (!mounted.current || editorScope !== scopeRef.current) return;
     setEditing(undefined);
+    setDirectory(current=>current.scope===queryRef.current?{...current,contacts:current.contacts.map(row=>row.id===contact.id?contact:row)}:current);
     setRevision(value => value + 1);
     onSavedRef.current?.();
   };
   return <Card variant="flat" padding={spacing.s16}><View style={{ gap: spacing.s16 }} testID="sales-reference-directory">
     <View style={{ flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: spacing.s8 }}>
-      <Text accessibilityRole="header" aria-level={2} style={type.titleSm}>Reference directory</Text>
+      <Text accessibilityRole="header" aria-level={2} style={type.titleSm}>Architects & interior designers</Text>
       {staff?.role === "owner" ? <Button label="Add reference" icon="plus" disabled={!editorFloor} onPress={() => startEditing(null)} /> : null}
     </View>
     <PillTabs value={filter} onChange={setFilter} testID="references-type" options={[
       { value: "all", label: "All" }, { value: "interior_designer", label: "Interior designers" }, { value: "architect", label: "Architects" },
     ]} />
     <TextField placeholderTextColor={colors.onSurfaceMuted} label="Search references" placeholder="Name, studio, phone or reference code" maxLength={200} value={search} onChangeText={setSearch} testID="references-search" />
-    {!current ? currentError ? <ErrorState subtitle={currentError.detail} onRetry={() => load(currentError.offset)} /> : <LoadingState label="Loading references…" /> : <>
+    {!current ? currentError ? <ErrorState subtitle={currentError.detail} onRetry={() => load(currentError.offset)} /> : <View accessibilityLabel="Loading references" aria-busy style={{gap:spacing.s16}}>{[0,1,2,3].map(index=><View key={index} style={{gap:spacing.s8,paddingVertical:spacing.s12}}><Skeleton w="52%" h={18}/><Skeleton w="72%" h={14}/></View>)}</View> : <>
       {currentError ? <ErrorState subtitle={currentError.detail} onRetry={() => load(currentError.offset)} /> : null}
       <Text style={[type.bodySm, { color: colors.onSurfaceMuted }]}>{directory.total.toLocaleString("en-IN")} active {directory.total === 1 ? "reference" : "references"}{search || filter !== "all" ? " matching your filters" : ""}</Text>
       {!active.length && !historical.length ? <Text style={type.body}>{search ? "No matching references. Try a name, studio or reference code." : "No references yet. Add an architect or interior designer to start tracking referrals."}</Text> : null}
-      {!compact && active.length ? <View style={{ flexDirection: "row", gap: spacing.s16, alignItems: "center" }}>
-        <Text style={[type.bodySm, { flex: 3, minWidth: 0, color: colors.onSurfaceMuted }]}>Reference</Text>
-        {performance ? <><Text style={[type.bodySm, { flex: 1, textAlign: "right", color: colors.onSurfaceMuted }]}>Clients brought</Text><Text style={[type.bodySm, { flex: 1, textAlign: "right", color: colors.onSurfaceMuted }]}>Sales</Text></> : null}
-        {staff?.role === "owner" ? <View style={{ width: 44 }} /> : null}
-      </View> : null}
-      <View>{active.map(row => <DirectoryRow key={row.contact.id} row={row} compact={compact} showPerformance={performance !== undefined} canEdit={staff?.role === "owner"} floorId={floorId} period={period} onEdit={() => startEditing(row.contact)} />)}</View>
+      <View>{active.map(row => <DirectoryRow key={row.contact.id} row={row} maxima={maxima} compact={compact} showPerformance={performance !== undefined||performanceLoading} performanceLoading={performanceLoading} canEdit={staff?.role === "owner"} floorId={floorId} period={period} onEdit={() => startEditing(row.contact)} />)}</View>
       {directory.nextOffset < directory.total ? <Button label={loading ? "Loading references…" : `Show more (${directory.nextOffset} of ${directory.total})`} disabled={loading} variant="secondary" onPress={() => load(directory.nextOffset)} /> : null}
     </>}
     {historical.length ? <View testID="sales-historical-references" style={{ gap: spacing.s8 }}>
       <Text accessibilityRole="header" aria-level={3} style={type.titleSm}>Historical references</Text>
       <Text style={[type.bodySm, { color: colors.onSurfaceMuted }]}>{historical.length.toLocaleString("en-IN")} {historical.length === 1 ? "historical reference" : "historical references"}{search || filter !== "all" ? " matching your filters" : ""} in {period?.label || "the selected period"}</Text>
-      {historical.slice(0, historicalCount).map(row => <DirectoryRow key={row.contact.id} row={row} compact={compact} showPerformance canEdit={false} floorId={floorId} period={period} onEdit={() => {}} />)}
+      {historical.slice(0, historicalCount).map(row => <DirectoryRow key={row.contact.id} row={row} maxima={maxima} compact={compact} showPerformance performanceLoading={performanceLoading} canEdit={false} floorId={floorId} period={period} onEdit={() => {}} />)}
       {historical.length > historicalCount ? <Button label={`Show more historical references (${historicalCount} of ${historical.length})`} variant="secondary" onPress={() => setHistoricalCount(count => count + 25)} /> : null}
     </View> : null}
-    {performance ? <Text style={[type.bodySm, { color: colors.onSurfaceMuted }]}>Clients brought includes people referred before an order. Figures cover {period?.label || "the selected period"}. Furniture sales stay in RNB; — means a figure is unavailable.</Text> : null}
+    {performance ? <Text style={type.caption}>Clients brought includes people without orders. Sales cover {period?.label || "the selected period"}; Furniture uses its separate RNB ledger. Unavailable figures appear as —.</Text> : null}
     {editing !== undefined && editorScope === scopeKey && editorFloor ? <ReferencesEditor key={`${floorKey}:${editing?.id || "new"}`} item={editing} initialKind={filter === "all" ? "interior_designer" : filter} floorId={editorFloor} onSaved={saved} onClose={() => setEditing(undefined)} /> : null}
   </View></Card>;
 }
 
-function DirectoryRow({ row: { contact, performance, historical }, compact, showPerformance, canEdit, floorId, period, onEdit }: {
-  row: ReferenceRow; compact: boolean; showPerformance: boolean; canEdit: boolean; floorId: string;
+function DirectoryRow({ row: { contact, performance, historical }, compact, showPerformance, performanceLoading=false, canEdit, floorId, period, onEdit, maxima }: {
+  row: ReferenceRow; maxima:{clients:number;inr:number;rnb:number}; compact: boolean; showPerformance: boolean; performanceLoading?: boolean; canEdit: boolean; floorId: string;
   period?: SelectedPeriod | null; onEdit: () => void;
 }) {
+  const [details,setDetails]=useState(false);
   const count = performance?.customers_acquired;
   const clients = count == null ? "—" : count.toLocaleString("en-IN");
   const revenue = performance ? money(performance.revenue) : "—";
@@ -143,20 +143,29 @@ function DirectoryRow({ row: { contact, performance, historical }, compact, show
   const furnitureSales = furnitureRevenue === undefined ? "RNB —" : `RNB ${furnitureRevenue.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const scope = historical ? "Historical reference" : contact.shared_across_floors ? "All floors" : "This floor";
   const identity = <View style={{ flex: 3, minWidth: 0, gap: spacing.s4 }}>
-    <Text style={type.bodyStrong}>{[contact.name, contact.company].filter(Boolean).join(" · ")}</Text>
-    <Text style={[type.bodySm, { color: colors.onSurfaceMuted }, Platform.OS === "web" ? { overflowWrap: "anywhere" } as never : null]}>{[contact.type === "architect" ? "Architect" : "Interior designer", referrerCode(contact.id, contact.type, contact.name)].join(" · ")}</Text>
-    <Text style={[type.bodySm, { color: colors.onSurfaceMuted }]}>{[scope, formatPhone(contact.phone)].filter(Boolean).join(" · ")}</Text>
+    <Text style={type.bodyStrong}>{contact.name}</Text>
+    {contact.company?<Text style={type.bodySm}>{contact.company}</Text>:null}
+    <Text style={type.caption}>{contact.type === "architect" ? "Architect" : "Interior designer"}, {scope}</Text>
   </View>;
   return <View testID={`reference-row-${contact.id}`} style={{ paddingVertical: spacing.s12, borderTopWidth: 1, borderTopColor: colors.border, gap: spacing.s8 }}>
     <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.s16 }}>
       <NavigationLink href={referenceDestination(contact.id, floorId, period) as never} accessibilityLabel={`View clients referred by ${contact.name}`} style={({ pressed, hovered }) => ({ flex: 1, minWidth: 0, minHeight: 44, flexDirection: compact ? "column" : "row", alignItems: compact ? "stretch" : "center", gap: spacing.s16, opacity: pressed ? 0.8 : 1, backgroundColor: hovered ? colors.surfaceTertiary : "transparent" })}>
         {identity}
-        {showPerformance ? compact ? <View style={{ gap: spacing.s4 }}><Text style={[type.body, { fontVariant: ["tabular-nums"] }]}>{clients} clients brought{showInr ? ` · ${revenue} sales` : ""}</Text>{showFurniture ? <Text style={[type.body, { fontVariant: ["tabular-nums"] }]}>{furnitureSales} Furniture sales</Text> : null}</View> : <>
-          <Text style={[type.body, { flex: 1, textAlign: "right", fontVariant: ["tabular-nums"] }]}>{clients}</Text>
-          <View style={{ flex: 1, gap: spacing.s4 }}>{showInr ? <Text style={[type.bodyStrong, { textAlign: "right", fontVariant: ["tabular-nums"] }]}>{revenue}</Text> : null}{showFurniture ? <Text style={[type.bodyStrong, { textAlign: "right", fontVariant: ["tabular-nums"] }]}>{furnitureSales}</Text> : null}</View>
-        </> : null}
+        {showPerformance ? performanceLoading ? <View style={{gap:spacing.s8,flex:compact?undefined:2}} accessibilityLabel="Loading referral figures" aria-busy><Skeleton w={96} h={16}/><Skeleton w={120} h={16}/></View> : <View style={{flex:compact?undefined:2,gap:12,minWidth:0}}>
+          <RankedBars compact maxValue={maxima.clients} label="Clients brought compared with shown references" rows={[{id:'clients',label:'Clients brought',value:count,formatted:clients}]}/>
+          {showInr?<RankedBars compact maxValue={maxima.inr} label="INR sales compared with shown references" rows={[{id:'sales',label:'Sales (INR)',value:performance?.revenue,formatted:revenue}]}/>:null}
+          {showFurniture?<RankedBars compact maxValue={maxima.rnb} label="RNB sales compared with shown references" rows={[{id:'furniture',label:'Furniture sales (RNB)',value:furnitureRevenue,formatted:furnitureSales}]}/>:null}
+        </View> : null}
       </NavigationLink>
       {canEdit ? <IconButton icon="edit-2" accessibilityLabel={`Edit ${contact.name}`} tone="ghost" onPress={onEdit} testID={`reference-edit-${contact.id}`} /> : null}
     </View>
+    <Pressable accessibilityRole="button" accessibilityState={{expanded:details}} onPress={()=>setDetails(value=>!value)} style={{minHeight:44,justifyContent:'center',alignSelf:'flex-start'}}><Text style={[type.bodySm,{color:colors.brand}]}>{details?'Hide contact details':'Contact details'}</Text></Pressable>
+    {details?<View style={{gap:spacing.s4}}>
+      <Text style={[type.bodySm,Platform.OS==='web'?{overflowWrap:'anywhere'} as never:null]}>{referrerCode(contact.id,contact.type,contact.name)}</Text>
+      <Text style={type.bodySm}>{scope}</Text>
+      {contact.phone?<Text style={type.bodySm}>{formatPhone(contact.phone)}</Text>:null}
+      {contact.email?<Text style={type.bodySm}>{contact.email}</Text>:null}
+      {contact.address?<Text style={type.bodySm}>{contact.address}</Text>:null}
+    </View>:null}
   </View>;
 }

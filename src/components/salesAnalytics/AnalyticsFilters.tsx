@@ -10,7 +10,7 @@ import { analyticsDateDisplay, validAnalyticsRange } from './dateBounds';
 import { BASIS_NAMES, Choice, FLOOR_NAMES } from './AnalyticsParts';
 import type { AnalyticsFilters as FilterValues } from '@/src/api/salesAnalytics';
 
-export function AnalyticsFilters({ filters, update, floors }: { filters: FilterValues; update: (values: FilterValues) => void; floors: {id:string;name:string}[] }) {
+export function AnalyticsFilters({ filters, update, floors, showDateBasis=true }: { showDateBasis?:boolean; filters: FilterValues; update: (values: FilterValues) => void; floors: {id:string;name:string}[] }) {
  const { isPhone } = useBp(); const [open, setOpen] = useState(false);
  const [draft, setDraft] = useState(filters); const [error, setError] = useState('');
  const appliedKey=JSON.stringify(filters);
@@ -23,7 +23,7 @@ export function AnalyticsFilters({ filters, update, floors }: { filters: FilterV
  const form = <View testID="analytics-filters" style={{ gap: spacing.s16 }}>
   <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.s12 }}>
    <Choice label="Business unit" testID="analytics-floor-picker" value={draft.floor_id} options={[{value:'all',label:'All accessible business units'},...floors.map(floor=>({value:floor.id,label:FLOOR_NAMES[floor.id] || floor.name}))]} onChange={floor_id=>setDraft({...draft,floor_id,currency:''})} />
-   <Choice label="Date basis" testID="analytics-date-basis" value={draft.date_basis} options={Object.entries(BASIS_NAMES).map(([value,label])=>({value,label}))} onChange={date_basis=>setDraft({...draft,date_basis})} />
+   {showDateBasis?<Choice label="Date basis" testID="analytics-date-basis" value={draft.date_basis} options={Object.entries(BASIS_NAMES).map(([value,label])=>({value,label}))} onChange={date_basis=>setDraft({...draft,date_basis})} />:null}
    <Choice label="Date range · India" testID="analytics-period" value={draft.preset} options={[{value:'this_month',label:'This month'},{value:'last_month',label:'Last month'},{value:'this_quarter',label:'This quarter'},{value:'this_year',label:'This year'},{value:'all_time',label:'All time'},{value:'custom',label:'Custom range'}]} onChange={preset=>setDraft({...draft,preset,date_from:'',date_to:''})} />
   </View>
   {draft.preset === 'custom' ? <View style={{ flexDirection: 'row', flexWrap:'wrap',gap:spacing.s12 }}><View style={{flex:1,minWidth:120}}><KitchenDateField defaultToToday={false} label="From date" value={analyticsDateDisplay(draft.date_from)} onChange={date_from=>setDraft({...draft,date_from})} testID="analytics-date-from" /></View><View style={{flex:1,minWidth:120}}><KitchenDateField defaultToToday={false} label="To date" value={analyticsDateDisplay(draft.date_to,true)} min={analyticsDateDisplay(draft.date_from)} onChange={date_to=>setDraft({...draft,date_to})} testID="analytics-date-to" /></View></View> : null}

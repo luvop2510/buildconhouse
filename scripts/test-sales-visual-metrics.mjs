@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { graphScale } from '../src/components/salesAnalytics/graphScale.ts';
 import { averageForBucket, collectionProgress, currencyOrders, distributionTotal } from '../src/components/salesAnalytics/visualMetrics.ts';
 assert.equal(collectionProgress(75,25),.75);
 assert.equal(collectionProgress(0,100),0);
@@ -15,3 +16,11 @@ for(const pair of [[null,3],[120,null],[120,0],[Infinity,3]])assert.equal(averag
 assert.equal(distributionTotal([80,20,0]),100);
 for(const values of [[80,null],[80,undefined],[0,0],[-1,2],[Infinity,1],[],[Number.MAX_VALUE,Number.MAX_VALUE]])assert.equal(distributionTotal(values),null);
 console.log('Sales visuals: truthful balances, complete distributions, currency-specific orders and averages; unknown values remain unavailable.');
+
+for(const values of [[0,10,20],[-10,0,30],[null,undefined,NaN,Infinity],[0,0],[-Number.MAX_VALUE,Number.MAX_VALUE]]){
+ const scale=graphScale(values);assert.ok(Number.isFinite(scale.zero)&&scale.zero>=0&&scale.zero<=100);
+ for(const value of values.filter(Number.isFinite)){const position=scale.position(value);assert.ok(Number.isFinite(position)&&position>=0&&position<=100);}
+}
+assert.equal(graphScale([0,50],100).position(50),50);
+assert.equal(graphScale([-10,30]).zero,25);
+console.log('Graph scales: shared zero, signed values, unknown values, explicit comparison maximum and finite extreme geometry passed.');

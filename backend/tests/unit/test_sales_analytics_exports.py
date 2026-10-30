@@ -176,14 +176,14 @@ def test_payment_report_chart_labels_cash_as_collections():
     assert "INR / collections over time" in text and "INR / sales over time" not in text
 
 
-def test_pdf_collection_arcs_use_only_complete_selected_currency_balances():
+def test_pdf_summary_shows_explicit_balances_in_separate_currency_ledgers():
     report = {"filters": {"floor_id": "all"}, "kpis": {"sales": 400, "collected": 300, "outstanding": 100,
               "sales_rnb": 100, "collected_rnb": 25, "outstanding_rnb": 75}, "floors": [{"currency": "RNB"}]}
     reader = PdfReader(BytesIO(export_bytes(report, report_sections(report), "pdf", {})))
     text = "\n".join(page.extract_text() for page in reader.pages)
-    assert "INR collected share" in text and "75.0%" in text
-    assert "RNB collected share" in text and "25.0%" in text
-    assert "Receipts / (receipts + outstanding)" in text and "target" not in text.lower()
+    assert "INR 300.00" in text and "INR 100.00" in text
+    assert "RNB 25.00" in text and "RNB 75.00" in text
+    assert "collected share" not in text and "Receipts /" not in text
     assert len(reader.pages) == 1
     scoped = {**report, "tables": {"orders": {"items": [{"id": "only-order", "sales": 400}], "total": 1}}}
     text = "\n".join(page.extract_text() for page in PdfReader(BytesIO(export_bytes(scoped, report_sections(scoped, view="profile", scope="records"), "pdf", {}))).pages)

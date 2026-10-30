@@ -3,7 +3,7 @@ import { analyticsDashboard, analyticsOrders, mockSalesAnalytics } from './sales
 import { analyticsExplore, analyticsExport, analyticsFitsViewport, analyticsFloor } from './sales-analytics-helpers';
 import { captureRuntimeHealth } from './runtime-health';
 
-test('Stitch visual dashboard and all floor destinations fit compact and regular widths', async ({ page }, info) => {
+test('Simplified sales overview and all floor destinations fit compact and regular widths', async ({ page }, info) => {
   const health = captureRuntimeHealth(page);
   await mockSalesAnalytics(page);
   await page.goto('/sales-data?date_basis=confirmation&preset=this_month');
@@ -16,18 +16,23 @@ test('Stitch visual dashboard and all floor destinations fit compact and regular
   await expect(page.getByTestId('analytics-bento-treemap')).toHaveCount(0);
   await expect(page.getByTestId('analytics-bento-seasonality')).toHaveCount(0);
   await expect(page.getByTestId('analytics-trend')).toHaveCount(1);
-  await expect(page.getByTestId('analytics-bento').locator('svg')).toHaveCount(2);
-  await expect(page.getByTestId('analytics-sales-hero').getByRole('progressbar')).toHaveAttribute('aria-valuenow','73');
+  await expect(page.getByTestId('analytics-bento-revenue').getByTestId('analytics-trend').locator('svg')).toHaveCount(1);
+  expect(await page.getByTestId('analytics-bento-contribution').locator('svg').count()).toBeGreaterThan(0);
+  await expect(page.getByTestId('analytics-sales-hero').getByRole('progressbar')).toHaveCount(0);
+  await expect(page.getByText('Repeat share',{exact:true})).toHaveCount(0);
   await expect(page.getByTestId('analytics-order-activity')).toBeVisible();
   await expect(page.getByText(/Quarterly Goal Pace|Live ERP Pace|Target Base|Dispatch Density|1.18x/)).toHaveCount(0);
-  await expect(page.getByRole('heading', { name: 'Sales basis & sources', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Sales basis & sources', exact: true }).click();
   await expect(page.getByText('Previous-period comparison unavailable: no reliable historical baseline.', { exact: true })).toBeVisible();
   for (const metric of ['orders', 'customers', 'aov']) {
     await expect(page.getByTestId(`analytics-kpi-${metric}`)).toBeVisible();
   }
   const viewport = page.viewportSize()!;
   const kpis = await page.getByTestId('analytics-kpis').boundingBox();
-  expect(kpis!.height, 'Visual metrics expand money cards when their full value needs room').toBeLessThan(viewport.width < 768 ? 650 : 580);
+  expect(kpis!.height, 'Visual metrics expand money cards when their full value needs room').toBeLessThan(viewport.width < 360 ? 1250 : viewport.width < 1024 ? 1050 : 650);
+  const metricBottom=await page.getByTestId('analytics-kpis').evaluate(root=>Math.max(...Array.from(root.children).map(node=>node.getBoundingClientRect().bottom)));
+  const comparisonTop=await page.getByTestId('analytics-bento').evaluate(node=>node.getBoundingClientRect().top);
+  expect(comparisonTop).toBeGreaterThanOrEqual(metricBottom);
   const plot = page.getByTestId('analytics-trend').locator('svg').first();
   await expect(plot).toBeVisible();
   expect((await plot.boundingBox())!.height, 'The primary plot leaves room for comparison content').toBeLessThanOrEqual(viewport.width < 768 ? 176 : 224);
@@ -70,6 +75,7 @@ test('source orders open complete details with lines payments history and export
   expect(new URL(page.url()).searchParams.get('company_id')).toBe('company-a');
   await expect(page.getByText('Talis basin mixer', { exact: true })).toBeVisible();
   await expect(page.getByText(/60,000/).first()).toBeVisible();
+  await page.getByTestId('analytics-order-documents').click();
   await expect(page.getByText(/Supporting documents unavailable/)).toBeVisible();
   const download = await analyticsExport(page, 'pdf');
   expect(download.suggestedFilename()).toContain('order-a');
@@ -154,7 +160,7 @@ test('sales navigation scrolls with data and remains operable when returning to 
   if (page.viewportSize()!.width < 768) {
     await expect(page.getByTestId('mobile-workspace-header')).toHaveCount(0);
   }
-  await page.getByRole('heading', { name: 'Sales basis & sources', exact: true }).scrollIntoViewIfNeeded();
+  await page.getByRole('button', { name: 'Sales basis & sources', exact: true }).scrollIntoViewIfNeeded();
   await expect.poll(() => navigation.evaluate(node => node.getBoundingClientRect().bottom),
     { message: 'Sales navigation leaves the visible scrollport instead of covering the data' }).toBeLessThanOrEqual(0);
   await navigation.scrollIntoViewIfNeeded();
@@ -174,6 +180,7 @@ test('report preview and device history preserve the selected filter state', asy
   await expect(page.getByTestId('analytics-kpi-sales')).toContainText('₹1,80,000');
   await expect(page.getByTestId('analytics-kpi-sales')).toContainText('Collected amount');
   await page.reload();
+  await page.getByRole('button',{name:/Saved reports/}).click();
   const saved = page.getByRole('link', { name: 'October sanitary collections review. Open details', exact: true });
   await expect(saved).toBeVisible();
   await saved.click();
@@ -194,7 +201,9 @@ test('entity analysis tab export and browser Back retain profile and source cont
   const requests: URL[] = [];
   await mockSalesAnalytics(page, { onRequest: url => requests.push(url) });
   await page.goto('/sales-data/profile/companies/company-a?floor_id=first-floor&date_basis=confirmation&preset=custom&date_from=2026-10-01&date_to=2026-10-28&sort=date_desc');
-  await page.getByTestId('analytics-profile-tab-orders').click();
+  await page.getByTestId('analytics-profile-view').click();
+  await page.getByTestId('analytics-profile-view-orders').click();
+  await page.getByTestId('analytics-supporting-records').click();
   await expect(page.getByTestId('analytics-row-order-a')).toBeVisible();
   await page.getByTestId('analytics-export').click();
   await page.getByTestId('analytics-export-scope').click();
@@ -210,6 +219,8 @@ test('entity analysis tab export and browser Back retain profile and source cont
   await expect(page).toHaveURL(/\/sales-data\/order\/order-a\?/);
   expect(new URL(page.url()).searchParams.get('company_id')).toBe('company-a');
   await page.goBack();
+  const supporting=page.getByTestId('analytics-supporting-records');
+  if(await supporting.getAttribute('aria-expanded')!=='true')await supporting.click();
   await expect(page.getByTestId('analytics-row-order-a')).toBeVisible();
   expect(new URL(page.url()).searchParams.get('tab')).toBe('orders');
   expect(new URL(page.url()).searchParams.get('sort')).toBe('date_desc');
@@ -246,6 +257,7 @@ test('owner reviews duplicate stable identities with an explicit note and no aut
   });
   await page.goto('/sales-data/data-quality?floor_id=first-floor&kind=customers');
   const group = page.getByTestId('analytics-duplicate-duplicate-customers');
+  await page.getByTestId('analytics-duplicate-expand-duplicate-customers').click();
   await expect(group).toContainText('customer-a');
   await expect(group).toContainText('customer-review-b');
   await page.getByTestId('analytics-duplicate-save-duplicate-customers').click();
@@ -268,6 +280,7 @@ test('duplicate review conflicts retain the entered note for explicit recovery',
   await mockSalesAnalytics(page);
   await page.route('**/api/sales-analytics/duplicates/review?**', route => route.fulfill({ status: 409, json: { detail: 'Another owner updated this review. Refresh and compare the saved decision.' } }));
   await page.goto('/sales-data/data-quality?floor_id=first-floor&kind=customers');
+  await page.getByTestId('analytics-duplicate-expand-duplicate-customers').click();
   const note = page.getByTestId('analytics-duplicate-note-duplicate-customers');
   await note.fill('Keep this source comparison note while reviewing the conflict.');
   await page.getByTestId('analytics-duplicate-save-duplicate-customers').click();
@@ -285,6 +298,7 @@ for (const [tab, rowId, action, path, floor] of [
 ]) test(`profile ${tab} source ${rowId} opens its canonical workspace after selecting its floor`, async ({ page }) => {
   await mockSalesAnalytics(page);
   await page.goto(`/sales-data/profile/customers/customer-a?floor_id=all&tab=${tab}&preset=custom&date_from=2026-10-01&date_to=2026-10-28`);
+  await page.getByTestId('analytics-supporting-records').click();
   const identity = page.getByTestId(`analytics-row-${rowId}`);
   await expect(identity).toBeVisible();
   // The action shares the source row's outer record group with its stable ID.
@@ -406,8 +420,8 @@ test('refresh updates both payment summaries and recent transaction values in th
   await expect(page.getByTestId('analytics-kpi-sales')).toContainText('₹1,80,000');
   await expect(transaction).toContainText('₹1,80,000');
   if (page.viewportSize()!.width >= 1024) {
-    await expect(transaction.locator('..').getByText('Collected', { exact: true })).toBeVisible();
-    await expect(transaction.locator('..').getByText('Sales', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('Collected in INR', { exact: true })).toBeVisible();
+    await expect(page.getByText('Sales in INR', { exact: true })).toHaveCount(0);
   }
   const previousDashboardReads = dashboardReads;
   const previousTransactionReads = transactionReads;
@@ -427,9 +441,9 @@ test('visuals keep missing identities balances and currency counts unavailable',
     return route.fulfill({json:data});
   } });
   await page.goto('/sales-data?date_basis=confirmation');
-  await expect(page.getByTestId('analytics-kpi-customers')).toContainText('Repeat-customer comparison unavailable');
-  await expect(page.getByTestId('analytics-sales-hero').getByRole('progressbar')).not.toHaveAttribute('aria-valuenow',/.+/);
-  await expect(page.getByTestId('analytics-activity-INR-2026-10-10')).toHaveText('—');
+  await expect(page.getByTestId('analytics-kpi-customers')).toContainText('Unavailable');
+  await expect(page.getByTestId('analytics-collection-balance')).toContainText('Unavailable');
+  await expect(page.getByTestId('analytics-activity-INR-2026-10-10')).toHaveText('Unavailable');
   await page.getByRole('button',{name:'Explore dates',exact:true}).click();
   await expect(page.getByTestId('analytics-trend')).toContainText('Unavailable INR orders');
   await analyticsFitsViewport(page);
@@ -488,9 +502,9 @@ test('crore-sized collection balances remain fully visible at phone width',async
  await expect.poll(()=>hero.evaluate(root=>{
   const amounts=Array.from(root.querySelectorAll('*')).filter(node=>node.childElementCount===0&&node.textContent==='₹1,42,85,600.5');
   return amounts.length===2&&amounts.every(value=>{
-   let parent=value.parentElement;
-   while(parent&&parent!==root){if(['auto','scroll'].includes(getComputedStyle(parent).overflowX))return value.getBoundingClientRect().width<=parent.clientWidth+1;parent=parent.parentElement;}
-   return false;
+   const bounds=value.getBoundingClientRect();const rootBounds=root.getBoundingClientRect();
+   const range=document.createRange();range.selectNodeContents(value);
+   return bounds.left>=rootBounds.left&&bounds.right<=rootBounds.right&&range.getClientRects().length===1;
   });
  })).toBe(true);
  await analyticsFitsViewport(page);

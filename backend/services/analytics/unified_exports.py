@@ -17,7 +17,7 @@ from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 
 from services.analytics.unified import FLOORS
-from services.analytics.unified_pdf_graphics import numeric, trend, ranking, cell_bar, collection_arc
+from services.analytics.unified_pdf_graphics import numeric, trend, ranking, cell_bar
 from services.export import spreadsheet_cell
 from services.money import format_indian_money
 from pdf_generator import RUPEE_FONT
@@ -313,10 +313,6 @@ def pdf(report, sections, metadata):
             story.extend(block)
         if name in {"Summary", "Furniture ledger"}:
             tiles = []
-            metrics = {row.get("metric", "").replace(" ", "_"): row.get("value") for row in rows}
-            ledger = "RNB" if name == "Furniture ledger" or filters.get("floor_id") == "third-floor" else "INR"
-            suffix = "_rnb" if ledger == "RNB" else ""
-            arc = collection_arc(metrics.get(f"collected{suffix}", metrics.get("collected")), metrics.get(f"outstanding{suffix}", metrics.get("outstanding")), ledger, 150)
             for row in rows:
                 metric = row.get("metric", "").replace(" ", "_")
                 if metric.startswith("change_pct") and row.get("value") is None:
@@ -325,17 +321,12 @@ def pdf(report, sections, metadata):
             if not tiles:
                 story.append(para("Comparable growth unavailable", small))
                 continue
-            columns = 3 if arc else 4
-            card_width = PDF_WIDTH - 174 if arc else PDF_WIDTH
+            columns = 4
+            card_width = PDF_WIDTH
             grid = [tiles[i:i + columns] + [""] * (columns - len(tiles[i:i + columns])) for i in range(0, len(tiles), columns)]
             cards = Table(grid, colWidths=[card_width / columns] * columns, hAlign="LEFT", cornerRadii=[10] * 4)
             cards.setStyle(TableStyle(table_style + [("BACKGROUND", (0, 0), (-1, -1), PDF_WASH), ("TOPPADDING", (0, 0), (-1, -1), 7), ("BOTTOMPADDING", (0, 0), (-1, -1), 6)]))
-            if arc:
-                summary = Table([[arc, cards]], colWidths=[164, PDF_WIDTH - 164], hAlign="LEFT", cornerRadii=[10] * 4)
-                summary.setStyle(TableStyle(table_style + [("BACKGROUND", (0, 0), (-1, -1), PDF_WASH), ("BOX", (0, 0), (-1, -1), .5, PDF_LINE), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("TOPPADDING", (0, 0), (-1, -1), 8), ("BOTTOMPADDING", (0, 0), (-1, -1), 8)]))
-                story.append(summary)
-            else:
-                story.append(cards)
+            story.append(cards)
             continue
         keys = [key for key in dict.fromkeys(key for row in rows for key in row) if key != "currency"]
         if not keys:

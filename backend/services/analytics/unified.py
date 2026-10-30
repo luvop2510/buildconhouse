@@ -123,6 +123,11 @@ async def _bounded(cursor, label, limit=MAX_RECORDS):
     return docs
 
 
+def company_line_match(company_id, product_ids):
+    # Saved order attribution wins after a catalog product changes company.
+    return {"$or": [{"brand_id": company_id}, {"brand_id": {"$in": [None, ""]}, "product_id": {"$in": product_ids}}]}
+
+
 async def load_model(db, q, floors):
     """Filter source collections on the server before materializing a bounded model.
 
@@ -143,8 +148,8 @@ async def load_model(db, q, floors):
         match = {**scope, **common, "floor_id": {"$in": [f for f in selected if f in ("ground-floor", "first-floor")]}, "status": {"$in": ["ordered", "won"]}}
         if q.product_id:
             match["items.product_id"] = q.product_id
-        elif company_products is not None:
-            match["items.product_id"] = {"$in": [p["id"] for p in company_products]}
+        if company_products is not None:
+            match["items"] = {"$elemMatch": company_line_match(q.company_id, [p["id"] for p in company_products])}
         return [("catalog", d) for d in await _bounded(db.quotations.aggregate([{"$match": match}, _project("catalog"), {"$limit": MAX_RECORDS + 1}], maxTimeMS=8000), "Sales history")]
     async def kitchen():
         if q.source not in {None, "kitchen"} or "second-floor" not in selected or any((q.company_id, q.product_id, q.category, q.size, q.finish, q.series)):
@@ -168,7 +173,7 @@ async def load_model(db, q, floors):
         raise HTTPException(422, "Sales lines are too large; choose a department, company or product")
     products = await _bounded(db.products.find({"id": {"$in": product_ids}, "floor_id": {"$in": selected}}, {"_id": 0, "id": 1, "name": 1, "sku": 1, "brand_id": 1, "category_id": 1, "size": 1, "finish": 1, "series": 1, "floor_id": 1, "related_ids": 1}), "Products", MAX_LINES) if product_ids else []
     product_map = {p["id"]: p for p in products}
-    brand_ids = list({p["brand_id"] for p in products if p.get("brand_id")})
+    brand_ids = list({p["brand_id"] for p in products if p.get("brand_id")} | {item["brand_id"] for _, doc in raw for item in doc.get("items") or [] if item.get("brand_id")})
     brands = await _bounded(db.brands.find({"id": {"$in": brand_ids}, "floor_id": {"$in": selected}}, {"_id": 0, "id": 1, "name": 1}), "Companies") if brand_ids else []
     brand_map = {b["id"]: b.get("name") for b in brands}
     catalog_ids = [d["id"] for source, d in raw if source == "catalog"]

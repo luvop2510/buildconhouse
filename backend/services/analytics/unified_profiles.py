@@ -181,7 +181,7 @@ async def profile_history(db, q, floors):
     response. A draft can appear here without ever entering confirmed sales.
     """
     import asyncio
-    from services.analytics.unified import MAX_RECORDS, _bounded, stamp
+    from services.analytics.unified import MAX_RECORDS, _bounded, company_line_match, stamp
     scope = scope_for(q, floors)
     selected_floors = scope["floor_id"]["$in"]
     period = period_for(q)
@@ -203,7 +203,7 @@ async def profile_history(db, q, floors):
             if value:
                 conditions.append({key: value})
         if product_ids is not None:
-            conditions.append({"product_id": {"$in": product_ids}})
+            conditions.append(company_line_match(q.company_id, product_ids))
         if conditions:
             match["items"] = {"$elemMatch": {"$and": conditions}}
         docs = await _bounded(db.quotations.find(match, {"_id": 0, "id": 1, "number": 1, "customer_id": 1, "customer_name": 1, "referrer_id": 1, "referrer_name": 1, "floor_id": 1, "status": 1, "grand_total": 1, "created_at": 1}), "Quotation history", MAX_RECORDS)

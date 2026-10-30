@@ -6,7 +6,7 @@ import { WEB_SYSTEM_FONT_STACK } from "@/src/components/appTextFamily";
 
 export default function Root({ children }: PropsWithChildren) {
   return (
-    <html lang="en" style={{ height: "100%" }}>
+    <html lang="en" style={{ height: "100%", overflowX: "clip", "--forge-focus": color.focus }}>
       <head>
         <meta charSet="utf-8" />
         <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
@@ -20,6 +20,7 @@ export default function Root({ children }: PropsWithChildren) {
           set `overflow: auto` on the body style below.
         */}
         <ScrollViewStyleReset />
+        <link rel="stylesheet" href="/sales-interface.css" />
         <style
           dangerouslySetInnerHTML={{
             __html: `
@@ -59,6 +60,7 @@ export default function Root({ children }: PropsWithChildren) {
           margin: 0,
           height: "100%",
           overflow: "hidden",
+          overflowX: "clip",
           display: "flex",
           flexDirection: "column",
         }}
