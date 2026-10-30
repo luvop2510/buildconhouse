@@ -1,8 +1,8 @@
 import { expect, test } from '@playwright/test';
-import { mockSession } from './audit-fixtures';
+import { mockSalesAnalytics } from './sales-analytics-fixtures';
 
 test('critical Interior section displays acquired customers before an order is placed', async ({ page }) => {
-  await mockSession(page, '/sales-data/referrals/interior-designers', false);
+  await mockSalesAnalytics(page);
   await page.route('**/api/referrers/page?**', route => route.fulfill({json:{rows:[],total:0,offset:0,limit:25}}));
   await page.route('**/api/analytics/workspaces/relationships?**', route => route.fulfill({ json: {
     workspace: 'interior-designers', period: 'This month',
@@ -20,7 +20,7 @@ test('critical Interior section displays acquired customers before an order is p
 
 
 test('critical reference drilldown lists non-converted walk-ins and confirmed customers across a custom date range', async ({ page }, info) => {
-  await mockSession(page, '/sales-data/referrer/interior-acquisition', false);
+  await mockSalesAnalytics(page);
   const reads: URL[] = [];
   await page.route('**/api/sales-data/referrers/interior-acquisition?**', route => {
     const url = new URL(route.request().url()); reads.push(url);
@@ -36,6 +36,7 @@ test('critical reference drilldown lists non-converted walk-ins and confirmed cu
   });
   await page.goto('/sales-data/referrer/interior-acquisition?floorId=first-floor&preset=all');
   await expect(page.getByTestId('referrer-clients')).toContainText('Clients brought · 2');
+  await page.getByRole('button',{name:'Referred people and source history',exact:true}).click();
   await expect(page.getByTestId('referrer-clients')).toContainText('Non-converted walk-in');
   await expect(page.getByTestId('referrer-clients')).toContainText('Confirmed customer');
   const toggle = page.getByTestId('sales-data-filters-toggle');

@@ -106,7 +106,8 @@ test('critical keyboard viewport: staff drawer scrolls focused lower fields and 
   const panel = page.getByTestId('add-staff-sheet');
   await inVisibleArea(panel, 320, 60);
   await inVisibleArea(role, 320, 60);
-  await expect(page.getByTestId('add-staff-phone')).toHaveValue('9876543210');
+  await expect(page.getByTestId('add-staff-phone')).toHaveValue('987-654-32-10');
+  expect((await page.getByTestId('add-staff-phone').inputValue()).replace(/\D/g,'')).toBe('9876543210');
   await resizeKeyboard(page, 280, 0);
   await inVisibleArea(role, 280);
   await resizeKeyboard(page, 100, 10, 2);
@@ -116,7 +117,8 @@ test('critical keyboard viewport: staff drawer scrolls focused lower fields and 
   await page.setViewportSize({ width: originalViewport.height, height: originalViewport.width });
   await resizeKeyboard(page, originalViewport.width);
   await expect(role).toHaveValue('Ground Floor Sales');
-  await expect(page.getByTestId('add-staff-phone')).toHaveValue('9876543210');
+  await expect(page.getByTestId('add-staff-phone')).toHaveValue('987-654-32-10');
+  expect((await page.getByTestId('add-staff-phone').inputValue()).replace(/\D/g,'')).toBe('9876543210');
   await page.setViewportSize(originalViewport);
   await resizeKeyboard(page, originalViewport.height);
   await panel.getByRole('button', { name: 'Close', exact: true }).click();

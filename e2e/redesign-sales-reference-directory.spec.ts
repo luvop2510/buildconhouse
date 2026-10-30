@@ -1,9 +1,12 @@
 import { referrerCode } from '../src/utils/referrer';
 import { expect, test } from '@playwright/test';
+import { analyticsDashboard } from './sales-analytics-fixtures';
+import { analyticsFloor } from './sales-analytics-helpers';
 import { mockSession } from './audit-fixtures';
 
 test('critical sales reference directory creates, edits and reuses one identity across floors', async ({ page }) => {
   await mockSession(page, '/sales-data/referrals/architects', false, { seedStorageOnce: true });
+  await page.route('**/api/sales-analytics/dashboard?**',route=>route.fulfill({json:analyticsDashboard()}));
   let reference: any = null;
   const floors = new Set<string>();
   await page.route('**/api/referrers**', async route => {
@@ -56,6 +59,7 @@ test('critical reference directory pages and searches the server while preservin
   await mockSession(page, '/sales-data/relationships', false, {
     floorAccess: { all_floors: false, floors: accessibleFloors, floor_ids: accessibleFloors.map(floor => floor.id) },
   });
+  await page.route('**/api/sales-analytics/dashboard?**',route=>route.fulfill({json:analyticsDashboard()}));
   const contacts = [
     ...Array.from({ length: 51 }, (_, index) => ({ id: `r-${String(index).padStart(2, '0')}`, name: `Architect ${String(index).padStart(2, '0')}`, type: 'architect', floor_id: 'first-floor', shared_across_floors: false, updated_at: 'v1' })),
     { id: 'shared', name: 'A shared studio', type: 'architect', floor_id: 'second-floor', shared_across_floors: true, updated_at: 'v1' },
@@ -102,10 +106,7 @@ test('critical reference directory pages and searches the server while preservin
   await expect(directory.getByTestId('reference-row-archived')).toBeVisible();
   await expect(directory).toContainText('0 active references');
   await page.getByTestId('references-search').fill('');
-  const toggle = page.getByTestId('sales-data-filters-toggle');
-  if (await toggle.getAttribute('aria-expanded') === 'false') await toggle.click();
-  await page.getByTestId('sales-data-floor-picker').click();
-  await page.getByRole('dialog', { name: 'Business unit', exact: true }).getByRole('button', { name: 'All units', exact: true }).click();
+  await analyticsFloor(page,'all');
   await expect.poll(() => reads.at(-1)!.searchParams.get('floor_id')).toBe('first-floor,ground-floor');
   await expect(directory.getByTestId('reference-row-shared')).toHaveCount(1);
   await expect(directory.getByTestId('reference-row-private')).toHaveCount(0);
