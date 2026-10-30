@@ -93,7 +93,7 @@ def test_create_referrer_stamps_created_by(monkeypatch):
     fake_db = _FakeDb([])
     monkeypatch.setattr(referrer_routes, "db", fake_db)
 
-    body = ReferrerCreate(name="Studio Verve", type="interior_designer")
+    body = ReferrerCreate(name="Studio Verve", type="interior_designer", phone="9909955755")
     result = asyncio.run(referrer_routes.create_referrer(body, user=_user()))
 
     assert result.created_by == "user-1"
@@ -107,7 +107,7 @@ def test_create_referrer_with_new_name_creates_a_new_record(monkeypatch):
     ])
     monkeypatch.setattr(referrer_routes, "db", fake_db)
 
-    body = ReferrerCreate(name="Nikita Shah", type="architect")
+    body = ReferrerCreate(name="Nikita Shah", type="architect", phone="9909955755")
     result = asyncio.run(referrer_routes.create_referrer(body, user=_user()))
 
     assert result.id != "r1"
@@ -123,7 +123,7 @@ def test_create_referrer_same_name_and_type_returns_existing_record_not_a_duplic
     monkeypatch.setattr(referrer_routes, "db", fake_db)
 
     # Different case, same underlying name, same type.
-    body = ReferrerCreate(name="rakesh sharma", type="architect")
+    body = ReferrerCreate(name="rakesh sharma", type="architect", phone="9909955755")
     result = asyncio.run(referrer_routes.create_referrer(body, user=_user()))
 
     assert result.id == "r1"
@@ -136,7 +136,7 @@ def test_create_referrer_same_name_different_type_creates_a_separate_record(monk
     ])
     monkeypatch.setattr(referrer_routes, "db", fake_db)
 
-    body = ReferrerCreate(name="Rakesh Sharma", type="interior_designer")
+    body = ReferrerCreate(name="Rakesh Sharma", type="interior_designer", phone="9909955755")
     result = asyncio.run(referrer_routes.create_referrer(body, user=_user()))
 
     assert result.id != "r1"
@@ -168,7 +168,7 @@ def test_shared_reference_is_reused_across_floors_without_exposing_private_entri
     monkeypatch.setattr(referrer_routes, 'db', fake_db)
     result = asyncio.run(referrer_routes.list_referrers(type='architect', include_inactive=False, user=_user()))
     assert [row.id for row in result] == ['shared']
-    existing = asyncio.run(referrer_routes.create_referrer(ReferrerCreate(name='ONE STUDIO', type='architect'), user=_user()))
+    existing = asyncio.run(referrer_routes.create_referrer(ReferrerCreate(name='ONE STUDIO', type='architect', phone="9909955755"), user=_user()))
     assert existing.id == 'shared'
     assert fake_db.referrers.inserted is None
 
@@ -176,7 +176,7 @@ def test_shared_reference_is_reused_across_floors_without_exposing_private_entri
 def test_new_reference_is_shared_with_contact_details(monkeypatch):
     fake_db = _FakeDb([])
     monkeypatch.setattr(referrer_routes, 'db', fake_db)
-    result = asyncio.run(referrer_routes.create_referrer(ReferrerCreate(name='Studio', type='architect', company='Company', phone='123', email='studio@example.com', address='Address'), user=_user()))
+    result = asyncio.run(referrer_routes.create_referrer(ReferrerCreate(name='Studio', type='architect', company='Company', phone='9909955755', email='studio@example.com', address='Address'), user=_user()))
     assert result.shared_across_floors is True
     assert result.company == 'Company' and result.email == 'studio@example.com'
     assert result.floor_id == 'first-floor'
@@ -188,7 +188,7 @@ def test_owner_edits_and_shares_existing_identity_with_concurrency_guard(monkeyp
     doc = {'id': 'r1', 'name': 'Studio', 'type': 'architect', 'floor_id': 'first-floor', 'normalized_name': 'studio', 'updated_at': 'old', 'created_by': 'u'}
     fake_db = _FakeDb([doc])
     monkeypatch.setattr(referrer_routes, 'db', fake_db)
-    body = ReferrerUpdate(name='Studio updated', type='architect', company='Company', updated_at='old')
+    body = ReferrerUpdate(name='Studio updated', type='architect', company='Company', phone='9909955755', updated_at='old')
     result = asyncio.run(referrer_routes.update_referrer('r1', body, user=_user('owner')))
     assert result.id == 'r1' and result.shared_across_floors is True
     assert result.floor_id == 'first-floor' and result.name == 'Studio updated'
@@ -217,3 +217,16 @@ def test_shared_directory_requires_floor_access_and_owner_archive(monkeypatch):
         asyncio.run(referrer_routes.archive_referrer('r1', active=False, user=_user()))
     assert no_owner.value.status_code == 403
     assert fake_db.referrers.updated_selector is None
+
+
+def test_reference_write_requires_name_and_phone_with_optional_company_and_address():
+    import pytest
+    from pydantic import ValidationError
+    for values in ({"name": "Nikita", "type": "architect"}, {"name": "Nikita", "phone": "123", "type": "architect"}, {"name": "  ", "phone": "9909955755", "type": "interior_designer"}):
+        with pytest.raises(ValidationError):
+            ReferrerCreate(**values)
+    contact = ReferrerCreate(name=" Nikita Shah ", phone="990-995-57-55", type="architect")
+    assert contact.name == "Nikita Shah" and contact.phone == "990-995-57-55"
+    assert contact.company is None and contact.address is None
+    edit = ReferrerUpdate(**contact.model_dump(), updated_at="v1")
+    assert edit.phone == contact.phone

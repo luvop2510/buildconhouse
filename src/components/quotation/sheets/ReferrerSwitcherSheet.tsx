@@ -1,3 +1,4 @@
+import { validPhone } from "@/src/utils/phone";
 import { referrerCode } from "@/src/utils/referrer";
 // Referrer switcher — searchable list of architects/interior designers +
 // inline "create new" form. Opens from the topbar's "Referred By" field.
@@ -21,6 +22,8 @@ export function ReferrerSwitcherSheet() {
   const [tab, setTab] = useState<ReferrerType | "all">("all");
   const [q, setQ] = useState("");
   const [creating, setCreating] = useState(false);
+  const [phone, setPhone] = useState("");
+  const [address, setAddress] = useState("");
   const [company, setCompany] = useState("");
   const [visibleCount, setVisibleCount] = useState(25);
   const [name, setName] = useState("");
@@ -32,14 +35,14 @@ export function ReferrerSwitcherSheet() {
     if (saving) return;
     b.setReferrerSwitcherOpen(false);
     setCreating(false);
-    setQ(""); setName(""); setCompany("");
+    setQ(""); setName(""); setPhone(""); setAddress(""); setCompany("");
   };
 
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();
     const byType = b.referrers.filter((r) => tab === "all" || r.type === tab);
     if (!term) return byType;
-    return byType.filter((r) => [r.name, r.company, referrerCode(r.id, r.type)].some(value => value?.toLowerCase().includes(term)));
+    return byType.filter((r) => [r.name, r.company, referrerCode(r.id, r.type, r.name)].some(value => value?.toLowerCase().includes(term)));
   }, [b.referrers, tab, q]);
 
   const pick = (id: string, refName: string, kind: ReferrerType) => {
@@ -48,11 +51,11 @@ export function ReferrerSwitcherSheet() {
   };
 
   const save = async () => {
-    if (!name.trim() || !canCreateReferrer || saving || tab === "all") return;
+    if (!name.trim() || !validPhone(phone) || !canCreateReferrer || saving || tab === "all") return;
     setSaving(true);
-    const id = await b.createReferrer({ name: name.trim(), type: tab, company: company.trim() || undefined });
+    const id = await b.createReferrer({ name: name.trim(), phone: phone.trim(), address: address.trim() || undefined, type: tab, company: company.trim() || undefined });
     setSaving(false);
-    if (id) { b.setReferrerSwitcherOpen(false); setCreating(false); setName(""); setCompany(""); }
+    if (id) { b.setReferrerSwitcherOpen(false); setCreating(false); setName(""); setPhone(""); setAddress(""); setCompany(""); }
   };
 
   return (
@@ -65,7 +68,7 @@ export function ReferrerSwitcherSheet() {
         creating ? (
           <View style={{ flexDirection: "row", gap: 8, justifyContent: "flex-end" }}>
             <Button label="Cancel" variant="secondary" disabled={saving} onPress={() => setCreating(false)} />
-            <Button label={saving ? "Saving…" : "Create & select"} onPress={save} disabled={!name.trim() || saving} testID="save-new-referrer" />
+            <Button label={saving ? "Saving…" : "Create & select"} onPress={save} disabled={!name.trim() || !validPhone(phone) || saving} testID="save-new-referrer" />
           </View>
         ) : undefined
       }
@@ -82,6 +85,9 @@ export function ReferrerSwitcherSheet() {
               style={styles.input}
               autoFocus
             />
+            <Text style={type.overline}>Phone *</Text>
+            <TextInput testID="new-referrer-phone" accessibilityLabel="Phone (required)" value={phone} onChangeText={setPhone} keyboardType="phone-pad" placeholder="990-995-57-55" style={styles.input} />
+            <TextInput accessibilityLabel="Address (optional)" value={address} onChangeText={setAddress} placeholder="Address (optional)" style={styles.input} />
             <TextInput accessibilityLabel="Interior / studio name" value={company} onChangeText={setCompany} placeholder="Company / studio (optional)" style={styles.input} />
           </View>
         </View>
@@ -122,7 +128,7 @@ export function ReferrerSwitcherSheet() {
           </Pressable>
           {filtered.slice(0, visibleCount).map((r) => (
             <Pressable key={r.id} testID={`referrer-row-${r.id}`} accessibilityRole="button" onPress={() => pick(r.id, r.name, r.type)} style={styles.row}>
-              <Text style={type.body}>{[r.name, r.company].filter(Boolean).join(" · ")}</Text><Text style={type.caption}>{referrerCode(r.id, r.type)}{r.customers_acquired == null ? "" : ` · ${r.customers_acquired} customers brought`}</Text>
+              <Text style={type.body}>{[r.name, r.company].filter(Boolean).join(" · ")}</Text><Text style={type.caption}>{referrerCode(r.id, r.type, r.name)}{r.customers_acquired == null ? "" : ` · ${r.customers_acquired} customers brought`}</Text>
             </Pressable>
           ))}
           {filtered.length > visibleCount ? <Button label="Show more references" variant="secondary" onPress={() => setVisibleCount(count => count + 25)} /> : null}

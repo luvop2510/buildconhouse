@@ -29,7 +29,8 @@ def matches(doc, query):
         elif key == "$or":
             if not any(matches(doc, part) for part in value): return False
         elif key == "$expr":
-            code = ("ARC-" if doc.get("type") == "architect" else "INT-") + doc["id"].upper()
+            from services.referrer_identity import referrer_code
+            code = referrer_code(doc["id"], doc.get("type"), doc.get("name"))
             if not re.search(value["$regexMatch"]["regex"], code, re.I): return False
         elif isinstance(value, dict):
             if "$in" in value and doc.get(key) not in value["$in"]: return False
@@ -100,7 +101,7 @@ def test_authorized_union_deduplicates_shared_without_private_floor_leak(monkeyp
     assert no_access.value.status_code == 403
 
 
-@pytest.mark.parametrize("search,expected", [("Studio (A)+", ["one"]), ("98765", ["one"]), ("ARC-ONE", ["one"]), ("rc-on", ["one"]), ("INT-TWO", ["two"]), (".*", [])])
+@pytest.mark.parametrize("search,expected", [("Studio (A)+", ["one"]), ("98765", ["one"]), ("ARC-SAME-ONE", ["one"]), ("rc-same", ["one"]), ("INT-SAME-TWO", ["two"]), (".*", [])])
 def test_literal_name_phone_studio_and_full_reference_code_search(monkeypatch, search, expected):
     monkeypatch.setattr(routes, "db", SimpleNamespace(referrers=Collection([
         contact("one", company="Studio (A)+", phone="9876543210"), contact("two", type="interior_designer"),

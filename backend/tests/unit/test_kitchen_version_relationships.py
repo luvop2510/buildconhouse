@@ -340,7 +340,7 @@ def test_pdf_upload_derives_receipt_without_inventing_sharing(setup):
 @pytest.mark.parametrize("fields", [
     {"sent_status": "No", "shared_date": "2026-10-25"},
     {"response": "Approved", "sent_status": "Not recorded"},
-    {"received_date": "2026-10-25", "shared_date": "2026-10-23"},
+    {"received_date": "2026-10-25", "shared_date": "2026-10-22"},
 ])
 def test_editable_quotation_keeps_date_and_approval_validation(setup, fields):
     _, _, owner = setup

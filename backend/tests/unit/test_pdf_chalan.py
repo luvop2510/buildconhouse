@@ -112,7 +112,7 @@ def test_build_chalan_pdf_extracts_complete_contract_and_wraps_long_text():
         LONG_ADDRESS,
         "Rajkot, Gujarat, 360005",
         "PHONE",
-        "+91 98765 43210",
+        "+91 987-654-32-10",
         "BRAND",
         "Kerovit",
         "PRODUCT",

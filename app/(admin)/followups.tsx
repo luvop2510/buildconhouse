@@ -1,3 +1,4 @@
+import { formatPhone } from "@/src/utils/phone";
 import { referrerLabel } from "@/src/utils/referrer";
 // ═══════════════════════════════════════════════════════════════════════════
 // Follow-ups · Sales Command Center — Design System V2.
@@ -1794,7 +1795,7 @@ function ContextPanel({ detail, loading, embedded, compact }: { detail: Detail |
       <Panel overline="CONTEXT" title={customer.company || customer.name}>
         <View style={{ gap: spacing.sm }}>
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
-            {customer.phone ? <Badge label={customer.phone} tone="neutral" size="sm" icon="phone" /> : null}
+            {customer.phone ? <Badge label={formatPhone(customer.phone)} tone="neutral" size="sm" icon="phone" /> : null}
             {customer.email ? <Badge label={customer.email} tone="neutral" size="sm" icon="mail" /> : null}
             {customer.city ? <Badge label={customer.city} tone="neutral" size="sm" icon="map-pin" /> : null}
 
@@ -2065,7 +2066,7 @@ function NewFollowupSheet({ visible, onClose, customers, assignees, defaultAssig
                   <Pressable key={c.id} onPress={() => { setCustomerId(c.id); setChosenCustomer(c); setCustomerQuery(""); }}
                     style={{ padding: spacing.md, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.divider }}>
                     <Text style={type.bodySm}>{c.company || c.name}</Text>
-                    {c.phone ? <Text style={type.caption}>{c.phone}</Text> : null}
+                    {c.phone ? <Text style={type.caption}>{formatPhone(c.phone)}</Text> : null}
                   </Pressable>
                 ))}
               </View>

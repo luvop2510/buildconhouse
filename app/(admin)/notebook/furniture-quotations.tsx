@@ -1,3 +1,4 @@
+import { formatPhone } from "@/src/utils/phone";
 import { useEffect, useRef, useState } from "react";
 import { Platform, ScrollView, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -212,7 +213,7 @@ export default function FurnitureQuotations() {
           }} testID="share-furniture-quotation-pdf" /> : null}
         </View>
         {canExport ? <View style={styles.card}><TextField label="Accompanying WhatsApp message" multiline value={message} editable={!busy && !receipt} onChangeText={(value) => { setMessage(value); sendKey.current = ""; }} />
-          <Text style={type.bodyMuted}>{dirty ? "Save your changes before downloading or sending the PDF." : `PDF and message will be sent to ${saved?.customer_phone || "the customer"}.`}</Text>
+          <Text style={type.bodyMuted}>{dirty ? "Save your changes before downloading or sending the PDF." : `PDF and message will be sent to ${formatPhone(saved?.customer_phone) || "the customer"}.`}</Text>
           {configurationError ? <><Alert tone="error" title={configurationError} /><Button label="Retry WhatsApp availability" variant="secondary" onPress={() => setConfigurationAttempt((attempt) => attempt + 1)} /></> : whatsAppConfigured === false ? <Alert tone="info" title="Direct WhatsApp sending needs a WhatsApp Business sender configured in Railway. Use Share PDF file to send the attachment from your device." /> : null}
           {receipt ? <><Text style={type.body}>WhatsApp status: {receipt.status}{receipt.updated_at ? ` · ${date(receipt.updated_at)}` : ""}{receipt.error_code ? ` · ${receipt.error_code}` : ""}</Text><Button label="Refresh delivery status" variant="secondary" loading={busy === "receipt"} disabled={Boolean(busy)} onPress={() => void refreshReceipt()} />
             {receipt.status === "failed" ? <Button label="Prepare another send attempt" variant="secondary" disabled={Boolean(busy)} onPress={() => { sendKey.current = ""; setReceipt(null); setError(null); }} /> : null}</> : null}

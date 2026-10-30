@@ -1,3 +1,4 @@
+import { formatPhone } from "@/src/utils/phone";
 import { Menu } from "@/src/design/navigationControls";
 // ═══════════════════════════════════════════════════════════════════════════
 // BuildCon House · Design System V2 · Primitives
@@ -553,7 +554,7 @@ export function CustomerCard({
           <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm, flexWrap: "wrap" }}>
             {email ? <Text style={type.caption} numberOfLines={1}>{email}</Text> : null}
             {city ? <><Text style={type.caption}>·</Text><Text style={type.caption}>{city}</Text></> : null}
-            {phone ? <><Text style={type.caption}>·</Text><Text style={type.caption}>{phone}</Text></> : null}
+            {phone ? <><Text style={type.caption}>·</Text><Text style={type.caption}>{formatPhone(phone)}</Text></> : null}
           </View>
         </View>
         <View style={{ alignItems: "flex-end", gap: 6, flexShrink: 0 }}>

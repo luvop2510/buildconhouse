@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, View } from "react-native";
 import { Text, TextInput } from "@/src/components/AppText";
 
+import { validPhone } from "@/src/utils/phone";
 import { referrerCode } from "@/src/utils/referrer";
 import { api } from "@/src/api/client";
 import { Alert, Button, LoadingState, Sheet, TextField } from "@/src/components/ui";
@@ -21,6 +22,8 @@ export function ReferrerField({ value, onChange, floorId, label = "Referred By",
   const [retry, setRetry] = useState(0);
   const [visibleCount, setVisibleCount] = useState(25);
   const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [address, setAddress] = useState("");
   const [company, setCompany] = useState("");
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -33,7 +36,7 @@ export function ReferrerField({ value, onChange, floorId, label = "Referred By",
   disabledRef.current = disabled;
   useEffect(() => {
     lifecycle.current += 1;
-    setAdding(false); setName(""); setCompany(""); setError(null);
+    setAdding(false); setName(""); setPhone(""); setAddress(""); setCompany(""); setError(null);
     return () => { lifecycle.current += 1; };
   }, [floorId]);
 
@@ -47,7 +50,7 @@ export function ReferrerField({ value, onChange, floorId, label = "Referred By",
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
   }, [open, floorId, retry]);
-  const filtered = useMemo(() => items.filter((item) => (kind === "all" || item.type === kind) && [item.name, item.company, referrerCode(item.id, item.type)].some(text => text?.toLowerCase().includes(search.trim().toLowerCase()))), [items, kind, search]);
+  const filtered = useMemo(() => items.filter((item) => (kind === "all" || item.type === kind) && [item.name, item.company, referrerCode(item.id, item.type, item.name)].some(text => text?.toLowerCase().includes(search.trim().toLowerCase()))), [items, kind, search]);
   useEffect(() => { setVisibleCount(25); }, [kind, search, open]);
   const close = () => {
     // Creating a partner may finish after dismissal. Keep that response from
@@ -58,11 +61,11 @@ export function ReferrerField({ value, onChange, floorId, label = "Referred By",
   };
   const choose = (item: Referrer | null) => { if (!disabledRef.current) onChange(item); close(); };
   const add = async () => {
-    if (disabled || !allowCreate || pending.current || kind === "all" || !name.trim()) return;
+    if (disabled || !allowCreate || pending.current || kind === "all" || !name.trim() || !validPhone(phone)) return;
     const version = lifecycle.current;
     pending.current = true; setAdding(true); setError(null);
     try {
-      const created = await api.post<Referrer>("/referrers", { name: name.trim(), type: kind, company: company.trim() || null }, floorId ? { floorId } : undefined);
+      const created = await api.post<Referrer>("/referrers", { name: name.trim(), phone: phone.trim(), type: kind, company: company.trim() || null, address: address.trim() || null }, floorId ? { floorId } : undefined);
       if (version !== lifecycle.current) return;
       setItems((current) => [...current.filter(item => item.id !== created.id), created]);
       choose(created);
@@ -74,7 +77,7 @@ export function ReferrerField({ value, onChange, floorId, label = "Referred By",
   return <View style={{ gap: 6 }}>
     <Text style={type.label}>{label}</Text>
     <Pressable accessibilityRole="button" accessibilityLabel={label} disabled={disabled} accessibilityState={{ expanded: open, disabled }} aria-haspopup="dialog" onPress={() => { setSearch(""); setKind("all"); setOpen(true); }} style={{ minHeight: 48, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, paddingHorizontal: spacing.md, justifyContent: "center" }}>
-      <Text style={type.body}>{value ? [value.name, value.company, referrerCode(value.id, value.type)].filter(Boolean).join(" · ") : "Select architect or interior designer"}</Text>
+      <Text style={type.body}>{value ? [value.name, value.company, referrerCode(value.id, value.type, value.name)].filter(Boolean).join(" · ") : "Select architect or interior designer"}</Text>
     </Pressable>
     <Sheet visible={open} onClose={close} title="Referred By" variant="bottom" testID="customer-referrer-sheet">
       <ScrollView contentContainerStyle={{ padding: isPhone ? spacing.md : spacing.lg, gap: spacing.sm, paddingBottom: spacing.xxl }} keyboardShouldPersistTaps="handled">
@@ -86,14 +89,16 @@ export function ReferrerField({ value, onChange, floorId, label = "Referred By",
         <TextField label="Search references" placeholder="Name, studio or reference code" value={search} onChangeText={setSearch} />
         {loading ? <LoadingState label="Loading references…" /> : !error && !filtered.length ? <Text style={type.body}>{search.trim() ? "No matching references. Try another name, studio or reference code." : "No existing references in this category."}</Text> : null}
         <Pressable accessibilityRole="button" onPress={() => choose(null)} style={{ minHeight: 44, justifyContent: "center", paddingVertical: spacing.sm }}><Text style={type.body}>No referrer</Text></Pressable>
-        {filtered.slice(0, visibleCount).map((item) => <Pressable key={item.id} accessibilityRole="button" accessibilityLabel={item.name} onPress={() => choose(item)} style={{ minHeight: 44, justifyContent: "center", paddingVertical: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border }}><Text style={type.body}>{[item.name, item.company, referrerCode(item.id, item.type), item.customers_acquired == null ? null : `${item.customers_acquired} customers brought`].filter(Boolean).join(" · ")}</Text></Pressable>)}
+        {filtered.slice(0, visibleCount).map((item) => <Pressable key={item.id} accessibilityRole="button" accessibilityLabel={item.name} onPress={() => choose(item)} style={{ minHeight: 44, justifyContent: "center", paddingVertical: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border }}><Text style={type.body}>{[item.name, item.company, referrerCode(item.id, item.type, item.name), item.customers_acquired == null ? null : `${item.customers_acquired} customers brought`].filter(Boolean).join(" · ")}</Text></Pressable>)}
         {filtered.length > visibleCount ? <Button label="Show more references" variant="secondary" onPress={() => setVisibleCount(count => count + 25)} /> : null}
         {allowCreate && kind === "all" ? <Text style={type.caption}>To add a contact, choose Architect or Interior designer above.</Text> : null}
         {allowCreate && kind !== "all" ? <>
         <Text style={[type.label, { marginTop: spacing.md }]}>Add new {kind === "architect" ? "architect" : "interior designer"}</Text>
-        <TextInput value={name} onChangeText={setName} placeholder="Designer / architect name" accessibilityLabel="Designer / architect name" style={{ minHeight: 48, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, paddingHorizontal: spacing.md }} />
+        <TextInput value={name} onChangeText={setName} placeholder="Designer / architect name (required)" accessibilityLabel="Designer / architect name (required)" style={{ minHeight: 48, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, paddingHorizontal: spacing.md }} />
+        <TextField label="Phone (required)" value={phone} onChangeText={setPhone} keyboardType="phone-pad" placeholder="990-995-57-55" testID="lead-interior-phone" />
+        <TextField label="Address (optional)" value={address} onChangeText={setAddress} />
         <TextInput value={company} onChangeText={setCompany} placeholder="Interior / studio name (optional)" accessibilityLabel="Interior / studio name" style={{ minHeight: 48, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, paddingHorizontal: spacing.md }} testID="lead-interior-company" />
-        <Button label={adding ? "Adding…" : "Add and select"} disabled={adding || !name.trim()} onPress={add} />
+        <Button label={adding ? "Adding…" : "Add and select"} disabled={adding || !name.trim() || !validPhone(phone)} onPress={add} />
         </> : null}
       </ScrollView>
     </Sheet>

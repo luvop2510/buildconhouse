@@ -1,3 +1,4 @@
+import { formatPhone } from "@/src/utils/phone";
 import { referrerCode } from "@/src/utils/referrer";
 // QuotationPane V4 — the right pane in the V4 shell.
 // Renders: sticky header (number + save state + status), room chip row, canvas
@@ -130,7 +131,7 @@ function CustomerDetails() {
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text style={styles.summaryTitle} numberOfLines={1}>{customer?.company || customer?.name || "Customer & project details"}</Text>
           <Text style={styles.summarySubtitle} numberOfLines={1}>
-            {customer ? [b.s.header.projectName, b.s.header.phone, b.s.header.address].filter(Boolean).join(" · ") || "Add project, address & reference" : "Add customer, address, phone & reference"}
+            {customer ? [b.s.header.projectName, formatPhone(b.s.header.phone), b.s.header.address].filter(Boolean).join(" · ") || "Add project, address & reference" : "Add customer, address, phone & reference"}
           </Text>
         </View>
         <Text style={styles.editLabel}>{expanded ? "Hide" : "Edit"}</Text>
@@ -180,7 +181,7 @@ function CompactHeaderFields() {
       >
         <Text style={styles.fieldLabel}>Referred by</Text>
         <View style={styles.customerValueRow}>
-          <Text style={styles.fieldValue}>{[b.s.header.referrerName, referrerCode(b.s.header.referrerId, b.s.header.referrerType)].filter(Boolean).join(" · ") || "None"}</Text>
+          <Text style={styles.fieldValue}>{[b.s.header.referrerName, referrerCode(b.s.header.referrerId, b.s.header.referrerType, b.s.header.referrerName)].filter(Boolean).join(" · ") || "None"}</Text>
           <Feather name="chevron-down" size={12} color={colors.onSurfaceMuted} />
         </View>
       </Pressable>

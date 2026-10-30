@@ -1,3 +1,4 @@
+import { formatPhone } from "@/src/utils/phone";
 import { LeadScopeFields } from "@/src/components/leads/LeadScopeFields";
 import type { LeadScope } from "@/src/api/leads";
 import { referrerLabel } from "@/src/utils/referrer";
@@ -538,7 +539,7 @@ export default function CustomerDetail() {
               </View>
               <View style={{ gap: 6, marginTop: 4 }}>
                 <Row icon="mail" text={customer.email} />
-                {customer.phone ? <Row icon="phone" text={customer.phone} /> : null}
+                {customer.phone ? <Row icon="phone" text={formatPhone(customer.phone)} /> : null}
                 {customer.address ? <Row icon="map-pin" text={customer.address} /> : null}
               </View>
             </View>

@@ -1,3 +1,4 @@
+import { formatPhone } from "@/src/utils/phone";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Platform, View } from "react-native";
 
@@ -88,7 +89,7 @@ export function ReferrerDirectory({ kind, floorId: reportFloor, period, performa
   const rows = useMemo(() => mergeReferences(current ? directory.contacts : [], performance || []), [directory, current, performance]);
   const active = rows.filter(row => !row.historical);
   const historical = rows.filter(({ contact, historical }) => historical && (filter === "all" || contact.type === filter)
-    && [contact.name, contact.company, contact.phone, referrerCode(contact.id, contact.type)].some(value => value?.toLocaleLowerCase().includes(needle)));
+    && [contact.name, contact.company, contact.phone, referrerCode(contact.id, contact.type, contact.name)].some(value => value?.toLocaleLowerCase().includes(needle)));
   const startEditing = (contact: ReferenceContact | null) => { setEditorScope(scopeKey); setEditing(contact); };
   const editorFloor = floorId !== "all" ? floorId : selectedFloorId || floorKey.split(",")[0];
   const saved = () => {
@@ -143,8 +144,8 @@ function DirectoryRow({ row: { contact, performance, historical }, compact, show
   const scope = historical ? "Historical reference" : contact.shared_across_floors ? "All floors" : "This floor";
   const identity = <View style={{ flex: 3, minWidth: 0, gap: spacing.s4 }}>
     <Text style={type.bodyStrong}>{[contact.name, contact.company].filter(Boolean).join(" · ")}</Text>
-    <Text style={[type.bodySm, { color: colors.onSurfaceMuted }, Platform.OS === "web" ? { overflowWrap: "anywhere" } as never : null]}>{[contact.type === "architect" ? "Architect" : "Interior designer", referrerCode(contact.id, contact.type)].join(" · ")}</Text>
-    <Text style={[type.bodySm, { color: colors.onSurfaceMuted }]}>{[scope, contact.phone].filter(Boolean).join(" · ")}</Text>
+    <Text style={[type.bodySm, { color: colors.onSurfaceMuted }, Platform.OS === "web" ? { overflowWrap: "anywhere" } as never : null]}>{[contact.type === "architect" ? "Architect" : "Interior designer", referrerCode(contact.id, contact.type, contact.name)].join(" · ")}</Text>
+    <Text style={[type.bodySm, { color: colors.onSurfaceMuted }]}>{[scope, formatPhone(contact.phone)].filter(Boolean).join(" · ")}</Text>
   </View>;
   return <View testID={`reference-row-${contact.id}`} style={{ paddingVertical: spacing.s12, borderTopWidth: 1, borderTopColor: colors.border, gap: spacing.s8 }}>
     <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.s16 }}>

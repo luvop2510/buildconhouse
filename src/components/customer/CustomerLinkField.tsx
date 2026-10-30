@@ -1,3 +1,4 @@
+import { formatPhone } from "@/src/utils/phone";
 import { useEffect, useMemo, useState } from "react";
 import { View } from "react-native";
 import { api } from "@/src/api/client";
@@ -30,7 +31,7 @@ export function CustomerLinkField({ value, floorId, onChange }: {
         {loading ? <Text style={type.body}>Loading customers…</Text> : null}
         {error ? <Button label="Retry loading customers" onPress={() => setAttempt(current => current + 1)} /> : null}
         {!loading && !error && !filtered.length ? <Text style={type.body}>No matching customer profiles.</Text> : null}
-        {filtered.map(row => <Button key={row.id} label={`${row.name}${row.phone ? ` · ${row.phone}` : ""}`} variant="secondary" onPress={() => { onChange(row); setOpen(false); }} />)}
+        {filtered.map(row => <Button key={row.id} label={`${row.name}${row.phone ? ` · ${formatPhone(row.phone)}` : ""}`} variant="secondary" onPress={() => { onChange(row); setOpen(false); }} />)}
         {value ? <Button label="Remove profile link" variant="ghost" onPress={() => { onChange(null); setOpen(false); }} /> : null}
       </View>
     </Sheet>

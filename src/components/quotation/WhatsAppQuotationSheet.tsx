@@ -1,3 +1,4 @@
+import { formatPhone } from "@/src/utils/phone";
 import { useEffect, useRef, useState } from "react";
 import { View } from "react-native";
 
@@ -67,7 +68,7 @@ export function WhatsAppQuotationSheet({ draft, onClose }: {
   return <BottomSheet visible={!!draft} onClose={() => { if (!busy) onClose(); }} title="Share PDF" testID="quotation-whatsapp-sheet">
     <View style={{ gap: spacing.md, paddingBottom: spacing.lg }}>
       {error ? <Alert tone="error" title={error} /> : null}
-      <Text style={type.bodyStrong}>{draft?.customer_name}{draft?.phone ? ` · +${draft.phone}` : ""}</Text>
+      <Text style={type.bodyStrong}>{draft?.customer_name}{draft?.phone ? ` · ${formatPhone(draft.phone)}` : ""}</Text>
       <Text style={type.bodyMuted}>Share the PDF attachment with the customer.</Text>
       <Button label="Share PDF file" icon="share" variant="secondary" disabled={busy} onPress={async () => {
         if (!draft || busy) return;

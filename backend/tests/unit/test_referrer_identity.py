@@ -5,10 +5,11 @@ from routes import customer_routes
 from services.referrer_identity import acquired_counts, legacy_referrer_name, referrer_code, referrer_label
 
 
-def test_identity_preserves_complete_id_and_legacy_name_case():
+def test_identity_shortens_display_code_and_preserves_legacy_name_case():
     assert referrer_code('a1-b2', 'architect') == 'ARC-A1-B2'
+    assert referrer_code('4d2a6042-78a7-453b-a7be-97d60ed4571d', 'architect', 'Nikita Shah') == 'ARC-NIKITA-4D2A6042'
     assert referrer_code('a1-b2', 'interior_designer') == 'INT-A1-B2'
-    assert referrer_label({'referrer_id': 'a1-b2', 'referrer_type': 'architect', 'architect_interior_designer': 'NTS'}) == 'NTS · ARC-A1-B2'
+    assert referrer_label({'referrer_id': 'a1-b2', 'referrer_type': 'architect', 'architect_interior_designer': 'NTS'}) == 'NTS · ARC-NTS-A1-B2'
     assert legacy_referrer_name({'reference_source': 'Instagram'}) is None
 
 
@@ -69,7 +70,8 @@ def test_all_pdf_formats_include_reference_name_and_stable_identity():
     for data in documents:
         text = ''.join(page.extract_text() or '' for page in PdfReader(BytesIO(data)).pages).replace('\n', '')
         assert 'NTS' in text
-        assert 'ARC-4D2A6042-78A7-453B-A7BE-97D60ED4571D' in ''.join(text.split())
+        assert 'ARC-NTS-4D2A6042' in ''.join(text.split())
+        assert '78A7-453B-A7BE-97D60ED4571D' not in text
 
 
 def test_addressed_reference_preserves_accessible_floor_scope_and_shared_reuse():

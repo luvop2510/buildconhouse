@@ -92,7 +92,7 @@ export default function ReferrerDetail() {
       {!error && !data ? <LoadingState label="Loading…" /> : null}
       {data ? (
         <View style={{ gap: spacing.lg }}>
-          <Text style={type.body}>{[data.referrer.company, referrerCode(data.referrer.id, data.referrer.type)].filter(Boolean).join(" · ")}</Text>
+          <Text style={type.body}>{[data.referrer.company, referrerCode(data.referrer.id, data.referrer.type, data.referrer.name)].filter(Boolean).join(" · ")}</Text>
           {data.referred_people ? <View testID="referrer-clients" style={{ gap: spacing.s12, minWidth: 0 }}>
             <Text accessibilityRole="header" aria-level={2} style={type.titleSm}>Clients brought · {(data.customers_acquired || 0).toLocaleString("en-IN")}</Text>
             <Text style={type.bodySm}>Walk-ins and confirmed or non-confirmed customers, counted once per person in {periodLabel}. Sales below use order confirmation dates.</Text>

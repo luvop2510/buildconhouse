@@ -229,7 +229,7 @@ export type BuilderApi = {
   customerSwitcherOpen: boolean; setCustomerSwitcherOpen: (v: boolean) => void;
   setReferrer: (type: "architect" | "interior_designer", id: string, name: string) => void;
   clearReferrer: () => void;
-  createReferrer: (data: { name: string; type: "architect" | "interior_designer"; company?: string }) => Promise<string | null>;
+  createReferrer: (data: { name: string; phone: string; address?: string; type: "architect" | "interior_designer"; company?: string }) => Promise<string | null>;
   referrerSwitcherOpen: boolean; setReferrerSwitcherOpen: (v: boolean) => void;
   addFromProduct: (p: Product, variant?: ProductVariant, quantity?: number, notes?: string) => void;
   updateLine: (id: string, patch: Partial<Line>, coalesceKey?: string) => void;
@@ -1125,7 +1125,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
     }
   }, [history, quotationId, activeFloorId]);
 
-  const createReferrer = useCallback(async (data: { name: string; type: "architect" | "interior_designer"; company?: string }) => {
+  const createReferrer = useCallback(async (data: { name: string; phone: string; address?: string; type: "architect" | "interior_designer"; company?: string }) => {
     if (referrerCreatePending.current) return null;
     referrerCreatePending.current = true;
     const generation = documentGeneration.current;

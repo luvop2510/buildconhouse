@@ -1,3 +1,4 @@
+import { formatPhone } from "@/src/utils/phone";
 import { useEffect, useRef, useState } from "react";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Alert as NativeAlert, Platform, View } from "react-native";
@@ -114,7 +115,7 @@ function ProjectList({ page, stage, values, setValues, returnTo, search, setSear
           return { ...response, page_size: response.limit, has_more: hasMore, next_page: hasMore ? response.page + 1 : null };
         }, signal, onProgress);
         const columns = stageColumns(page === "projects" ? undefined : stage);
-        return [["Project", "Customer", "Phone", "Stage", "Status", "Assigned to", "Target completion", ...columns.map(column => column.label)], ...projects.map(project => [project.project_reference || project.reference, project.customer.name, project.customer.phone, STAGE_LABELS[project.stage], projectStatus(project), project.assigned_to_name || "Unassigned", project.target_completion_date, ...columns.map(column => column.value(project))])];
+        return [["Project", "Customer", "Phone", "Stage", "Status", "Assigned to", "Target completion", ...columns.map(column => column.label)], ...projects.map(project => [project.project_reference || project.reference, project.customer.name, formatPhone(project.customer.phone), STAGE_LABELS[project.stage], projectStatus(project), project.assigned_to_name || "Unassigned", project.target_completion_date, ...columns.map(column => column.value(project))])];
       }} /> : null}
       {page === "completed" && canExport ? <Button label="Export" icon="download" variant="secondary" loading={exporting} onPress={() => { setExporting(true); setExportError(null); void downloadApiFile(kitchenProjectsApi.exportPath({ search: values.search }), "kitchen-completed.csv", "completed projects CSV", KITCHEN_FLOOR_ID).catch(error => setExportError(errorText(error))).finally(() => setExporting(false)); }} testID="kitchen-completed-export" /> : null}
     </View>
@@ -136,7 +137,7 @@ function ProjectCard({ project, href }: { project: KitchenProject; href: string 
       <Feather name="chevron-right" size={20} color={colors.brand} />
     </View>
     <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: spacing.sm }}><Text style={type.bodyStrong}>{STAGE_LABELS[project.stage]}</Text><Text style={type.bodyMuted}>{projectStatus(project) !== STAGE_LABELS[project.stage] ? projectStatus(project) : ""}</Text></View>
-    {project.stage !== "lead" ? <Text style={type.body}>{project.customer.phone || "Phone not recorded"}</Text> : null}
+    {project.stage !== "lead" ? <Text style={type.body}>{formatPhone(project.customer.phone) || "Phone not recorded"}</Text> : null}
     {project.duplicate_review?.status === "pending" ? <Text style={[type.bodyStrong, { color: colors.warning }]}>Owner duplicate review pending</Text> : null}
     <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.lg, borderTopWidth: 1, borderColor: colors.border, paddingTop: spacing.md }}>
       {stageColumns(project.stage).map(column => <View key={column.label} style={{ flexGrow: 1, flexBasis: 150, minWidth: 0, gap: spacing.xs }}><Text style={type.caption}>{column.label}</Text><Text style={type.body}>{column.value(project)}</Text></View>)}
@@ -159,7 +160,7 @@ function stageColumns(stage?: KitchenStage): StageColumn[] {
   const date = (value?: string | null) => displayDate(value);
   const yes = (value?: boolean | null) => value == null ? "Not recorded" : value ? "Yes" : "No";
   switch (stage) {
-    case "lead": return [{ label: "Phone", value: p => p.customer.phone || "—" }, { label: "Architect / Interior", value: p => referrerLabel(p.lead) || "—" }, { label: "Kitchen type", value: p => p.lead.kitchen_type || "—" }, { label: "Lead date", value: p => date(p.lead.lead_date) }];
+    case "lead": return [{ label: "Phone", value: p => formatPhone(p.customer.phone) || "—" }, { label: "Architect / Interior", value: p => referrerLabel(p.lead) || "—" }, { label: "Kitchen type", value: p => p.lead.kitchen_type || "—" }, { label: "Lead date", value: p => date(p.lead.lead_date) }];
     case "visit": return [{ label: "Visit date", value: p => date(p.visit.visit_date) }, { label: "Display / model", value: p => p.visit.display_model || "—" }];
     case "cad": return [{ label: "CAD file received", value: p => yes(p.cad.received) }, { label: "Design progress", value: p => `${p.cad.progress}%` }, { label: "Design status", value: p => p.cad.status }];
     case "design": return [{ label: "Customer approval", value: p => currentDesign(p)?.response || "Pending" }, { label: "Design revisions", value: p => historicalCount(p.design_revision_count, p.known_design_revision_count) }, { label: "Sent to company", value: p => currentDesign(p)?.handoff_status || (currentDesign(p)?.handoff_date ? "Yes" : "Not recorded") }, { label: "Date sent", value: p => date(currentDesign(p)?.handoff_date) }];
@@ -233,10 +234,10 @@ function CreateLead({ onClose, onRegisterClose, onCreated }: { onClose: () => vo
       <Text style={type.bodyMuted}>Enter the customer once. Their details follow this project through all nine stages.</Text>
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}><KitchenOption label="New customer" active={!existingMode} disabled={submission.busy} onPress={() => { setExistingMode(false); setCustomer(null); }} testID="kitchen-new-customer" /><KitchenOption label="Existing customer" active={existingMode} disabled={submission.busy} onPress={() => setExistingMode(true)} testID="kitchen-existing-customer" /></View>
       {!existingMode ? <><TextField label="Customer name (required)" value={customerName} onChangeText={setCustomerName} editable={!submission.busy} testID="kitchen-customer-name" /><TextField label="Phone number (required)" value={customerPhone} onChangeText={setCustomerPhone} keyboardType="phone-pad" editable={!submission.busy} testID="kitchen-customer-phone" /><TextField label="Address (required)" value={customerAddress} onChangeText={setCustomerAddress} editable={!submission.busy} multiline testID="kitchen-customer-address" /><Text style={type.caption}>An existing Kitchen customer with the same phone is reused automatically; saved contact details are preserved.</Text></> : null}
-      {existingMode ? customer ? <KitchenPanel title={customer.name}><Text style={type.body}>{customer.phone || "No phone recorded"}</Text><Text style={type.body}>Address: {customer.address || "Not recorded"}</Text>{customer.referrer_id ? <Text style={type.body}>Architect / Interior: {referrerLabel(customer)}</Text> : null}<Button label="Choose another customer" variant="secondary" disabled={submission.busy} onPress={() => setCustomer(null)} /></KitchenPanel> : <>
+      {existingMode ? customer ? <KitchenPanel title={customer.name}><Text style={type.body}>{formatPhone(customer.phone) || "No phone recorded"}</Text><Text style={type.body}>Address: {customer.address || "Not recorded"}</Text>{customer.referrer_id ? <Text style={type.body}>Architect / Interior: {referrerLabel(customer)}</Text> : null}<Button label="Choose another customer" variant="secondary" disabled={submission.busy} onPress={() => setCustomer(null)} /></KitchenPanel> : <>
         <SearchField placeholder="Search customer name or phone" accessibilityLabel="Choose customer" value={query} onChangeText={value => { setQuery(value); setCustomerPage(1); }} testID="kitchen-customer" />
         {loading ? <LoadingState label="Loading customers…" /> : customerError ? <ErrorState title="Customer directory unavailable" subtitle={customerError} onRetry={() => setRetry(value => value + 1)} /> : !customers?.rows.length ? <Text style={type.bodyMuted}>No customers match. Choose New customer to record this enquiry here.</Text> : <>
-          {customers.rows.map(value => <Button key={value.id} label={`${value.name}${value.phone ? ` · ${value.phone}` : ""}`} variant="secondary" testID={`kitchen-customer-${value.id}`} onPress={() => setCustomer(value)} />)}
+          {customers.rows.map(value => <Button key={value.id} label={`${value.name}${value.phone ? ` · ${formatPhone(value.phone)}` : ""}`} variant="secondary" testID={`kitchen-customer-${value.id}`} onPress={() => setCustomer(value)} />)}
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}><Button label="Previous customers" variant="ghost" disabled={customerPage <= 1} onPress={() => setCustomerPage(value => value - 1)} /><Button label="More customers" variant="ghost" disabled={customerPage * 20 >= customers.total} onPress={() => setCustomerPage(value => value + 1)} /></View>
         </>}
       </> : null}

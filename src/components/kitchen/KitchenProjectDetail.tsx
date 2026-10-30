@@ -20,6 +20,7 @@ import { KitchenDocuments } from "./KitchenDocuments";
 import { kitchenProjectPath, kitchenStage, useKitchenDraft, useKitchenProject } from "./KitchenProjectState";
 import { useKitchenAutosave } from "./KitchenAutosave";
 import { kitchenHasFinalDesign, kitchenHasFinalQuotation } from "./KitchenVersions";
+import { formatPhone } from "@/src/utils/phone";
 
 type ProjectPage = "overview" | "stage" | "documents" | "history" | "assignments" | "exceptions";
 
@@ -68,7 +69,7 @@ export function KitchenProjectDetail({ page = "stage" }: { page?: ProjectPage })
       <View testID={!loading && !failure ? "kitchen-project-ready" : "kitchen-project-loading"} style={{ position: "absolute", width: 0, height: 0 }} />
       {detailsExpanded ? <View testID="kitchen-project-details" style={{ gap: spacing.sm }}>
         <Text style={type.overline}>{project.project_reference || project.reference}{project.is_legacy ? " · Legacy project" : ""}</Text>
-        <Text style={type.bodyStrong}>{[project.customer.name, project.customer.phone].filter(Boolean).join(" · ")}</Text>
+        <Text style={type.bodyStrong}>{[project.customer.name, formatPhone(project.customer.phone)].filter(Boolean).join(" · ")}</Text>
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
           <Button label="All stage records" icon="list" variant="secondary" onPress={() => setPanel("workflow")} testID="kitchen-customer-stage-records" />
           <Button label="Complete history" icon="clock" variant="secondary" onPress={() => setPanel("history")} testID="kitchen-customer-history" />

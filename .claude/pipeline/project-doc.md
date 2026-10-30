@@ -1,5 +1,19 @@
 # BuildCon House project documentation
 
+## Historical Kitchen dates and contact entry delta — 30 October 2026
+
+Native fallback delta scan retains the existing Expo, FastAPI, MongoDB and private
+file layers. Kitchen PDF upload timestamps describe archival receipt; entered
+sharing, approval and company dispatch dates remain separate business events.
+Past and future dates are editable, with business chronology and immutable order
+relationships preserved. Company dispatch date is now an explicit form field.
+Phone displays use shared 3-3-2-2 formatting; focused input drafts and dial links
+retain their existing values. Reference entry requires name and phone, with firm
+and address optional. Short named display codes retain stable UUID identities.
+No dependency, database migration, authentication or architectural change.
+AGENTS.md regeneration is unnecessary. Focused checks are recorded in the audit;
+coverage percentage and full release-gate completion are not claimed.
+
 ## Sales reference reconstruction delta — 30 October 2026
 
 The user-supplied Stitch HTML now specifies the sales layout, following the

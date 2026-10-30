@@ -267,3 +267,76 @@ def test_uploading_another_design_after_approval_does_not_replace_selection_or_n
         apply(project, "design_update", {"version_id": project["design_versions"][-1]["id"], "response": "Approved", "shared_date": "2026-10-21",
             "approval_date": "2026-10-22", "handoff_status": "Yes", "finalize": True, "reason": "Pick another"}, owner)
     assert project == before
+
+
+@pytest.mark.parametrize("year", [2024, 2025, 2027])
+def test_archived_or_future_business_dates_are_independent_of_pdf_uploads(setup, year):
+    _, _, owner = setup
+    project = aggregate("design")
+    project.update(design_versions=[], quotation_versions=[], final_design_version_id=None)
+    for attachment in project["attachments"]:
+        if attachment.get("content_type") == "application/pdf":
+            attachment["uploaded_at"] = NOW
+    shared, approved, handed_off, quote_sent = (f"{year}-01-{day:02d}" for day in (10, 11, 12, 13))
+    apply(project, "design_present", design_fields(response="Approved", shared_date=shared,
+        approval_date=approved, handoff_status="Yes", handoff_date=handed_off), owner)
+    design = project["design_versions"][0]
+    assert design["upload_date"] == "2026-10-27"
+    assert design["shared_date"] == shared and design["handoff_date"] == handed_off
+    assert workflow.transition(project, "quotation", {}) is None
+    project["stage"] = "quotation"
+    apply(project, "quotation_receive", quotation_fields(design_version_id=design["id"],
+        shared_date=quote_sent, sent_status="Yes", response="Approved"), owner)
+    quote = project["quotation_versions"][0]
+    assert quote["upload_date"] == "2026-10-27" and quote["shared_date"] == quote_sent
+    assert workflow.transition(project, "order", {}) is None
+    project["stage"] = "design"
+    apply(project, "design_update", {"version_id": design["id"], "response": "Approved",
+        "handoff_date": handed_off, "reason": "Preserve actual company dispatch date"}, owner)
+    assert design["handoff_date"] == handed_off
+    before = copy.deepcopy(project)
+    with pytest.raises(HTTPException, match="related quotation"):
+        apply(project, "design_update", {"version_id": design["id"], "response": "Approved",
+            "handoff_date": f"{year}-01-14", "reason": "Invalid chronology"}, owner)
+    assert project == before
+
+
+def test_archiving_first_pdf_preserves_existing_company_handoff_date(setup):
+    _, _, owner = setup
+    project = aggregate("design")
+    project["quotation_versions"] = []
+    design = project["design_versions"][0]
+    design.update(presentation_date="2025-01-10", shared_date="2025-01-11",
+        approval_date="2025-01-12", handoff_date="2025-01-13")
+    for field in ("attachment_ids", "final_attachment_id", "attachment_id"):
+        design.pop(field, None)
+    apply(project, "design_update", {"version_id": design["id"], "response": "Approved",
+        "attachment_ids": ["design-pdf"], "final_attachment_id": "design-pdf", "reason": "Archive original PDF"}, owner)
+    assert design["handoff_date"] == "2025-01-13"
+    assert design["shared_date"] == "2025-01-11" and design["approval_date"] == "2025-01-12"
+
+
+@pytest.mark.asyncio
+async def test_existing_customer_historical_pdfs_save_reload_replay_and_advance(setup):
+    database, service, owner = setup
+    project = await service.create(owner, create_request(customer_id="customer-a", idempotency_key="historical-customer-pdfs"))
+    stored = database.kitchen_projects.rows[0]
+    stored["stage"] = "design"
+    stored["attachments"] = [
+        {"id": identity, "content_type": "application/pdf", "uploaded_at": NOW}
+        for identity in ("design-pdf", "quote-pdf")]
+    request = cmd(project["version"], "design_present", design_fields(response="Approved",
+        shared_date="2025-01-10", approval_date="2025-01-11", handoff_status="Yes", handoff_date="2025-01-12"))
+    project = await service.command(owner, project["id"], request)
+    replay = await service.command(owner, project["id"], request)
+    assert replay["replayed"] and replay["version"] == project["version"]
+    design_id = project["final_design_version_id"]
+    project = await service.command(owner, project["id"], cmd(project["version"], "move_stage", {"target_stage": "quotation"}))
+    project = await service.command(owner, project["id"], cmd(project["version"], "quotation_receive",
+        quotation_fields(design_version_id=design_id, shared_date="2025-01-13", sent_status="Yes", response="Approved")))
+    project = await service.command(owner, project["id"], cmd(project["version"], "move_stage", {"target_stage": "order"}))
+    loaded = await service.get(owner, project["id"])
+    assert loaded["stage"] == "order" and loaded["customer_id"] == "customer-a"
+    assert loaded["design_versions"][0]["handoff_date"] == "2025-01-12"
+    assert loaded["quotation_versions"][0]["shared_date"] == "2025-01-13"
+    assert len(loaded["design_versions"]) == len(loaded["quotation_versions"]) == 1

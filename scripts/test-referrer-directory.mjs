@@ -147,7 +147,7 @@ test('historical search/type filters remain bounded independently of active cont
   const performance = [{ ...contact('archived'), name: 'Historical studio', customers_acquired: 4, historical: true }];
   let state = view.render({ performance }); view.start(); view.requests[0].resolve(page([])); await view.settle();
   state = view.render(); assert.equal(state.historical.length, 1);
-  state.setSearch('ARC-ARCHIVED'); state = view.render(); assert.equal(state.historical.length, 1);
+  state.setSearch('ARC-HISTORICAL-ARCHIVED'); state = view.render(); assert.equal(state.historical.length, 1);
   state.setFilter('interior_designer'); state = view.render(); assert.equal(state.historical.length, 0);
 });
 

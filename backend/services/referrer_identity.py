@@ -3,13 +3,14 @@ from services.analytics.filters import AnalyticsFilter
 from services.analytics.lead_referrals import acquisition_pipeline
 
 
-def referrer_code(referrer_id, kind=None):
-    return f"{'ARC' if kind == 'architect' else 'INT'}-{str(referrer_id).upper()}" if referrer_id else ""
+def referrer_code(referrer_id, kind=None, name=None):
+    first_name = f"-{str(name).split()[0][:12].upper()}" if name and str(name).strip() else ""
+    return f"{'ARC' if kind == 'architect' else 'INT'}{first_name}-{str(referrer_id)[:8].upper()}" if referrer_id else ""
 
 
 def referrer_label(document):
     name = document.get('referrer_name') or legacy_referrer_name(document)
-    return ' · '.join(filter(None, [name, referrer_code(document.get('referrer_id'), document.get('referrer_type'))]))
+    return ' · '.join(filter(None, [name, referrer_code(document.get('referrer_id'), document.get('referrer_type'), name)]))
 
 
 def legacy_referrer_name(document):

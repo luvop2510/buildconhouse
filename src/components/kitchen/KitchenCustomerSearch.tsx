@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { formatPhone } from "@/src/utils/phone";
 import { usePathname } from "expo-router";
 import { Pressable, View } from "react-native";
 import Feather from "@expo/vector-icons/Feather";
@@ -51,7 +52,7 @@ function SearchResults({ returnTo, onSelect }: { returnTo: string; onSelect?: ()
       {!result.rows.length ? <EmptyState title="No matching Kitchen customers" subtitle="Try a different name, phone number or project reference." /> : result.rows.map(project => <NavigationLink key={project.id} href={`/kitchen/${encodeURIComponent(project.id)}/stages/${project.stage}?details=1&returnTo=${encodeURIComponent(returnTo)}` as any} onPress={onSelect} testID={`kitchen-search-project-${project.id}`} accessibilityLabel={`View ${project.customer.name}, ${STAGE_LABELS[project.stage]}, ${project.project_reference || project.reference}`} style={({ hovered, pressed }) => ({ padding: 16, gap: 6, minHeight: 72, borderWidth: 1, borderColor: colors.border, borderRadius: 8, backgroundColor: hovered || pressed ? colors.surfaceTertiary : colors.surfaceSecondary })}>
         <Text style={type.bodyStrong}>{project.customer.name}</Text>
         <Text style={type.body}>{STAGE_LABELS[project.stage]} · {project.status || project.lifecycle_status || "In progress"}</Text>
-        <Text style={type.caption}>{[project.project_reference || project.reference, project.customer.phone, project.customer.property_name, project.customer.city].filter(Boolean).join(" · ")}</Text>
+        <Text style={type.caption}>{[project.project_reference || project.reference, formatPhone(project.customer.phone), project.customer.property_name, project.customer.city].filter(Boolean).join(" · ")}</Text>
       </NavigationLink>)}
       {result.total > 20 ? <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}><Button label="Previous results" variant="secondary" disabled={page <= 1} onPress={() => setPage(value => value - 1)} /><Button label="Next results" variant="secondary" disabled={page * 20 >= result.total} onPress={() => setPage(value => value + 1)} /></View> : null}
     </> : null}

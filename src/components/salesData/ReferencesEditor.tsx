@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Switch, View } from "react-native";
 
+import { validPhone } from "@/src/utils/phone";
 import { api } from "@/src/api/client";
 import { Text } from "@/src/components/AppText";
 import { Alert, Button, PillTabs, Sheet, TextField } from "@/src/components/ui";
@@ -20,7 +21,7 @@ export function ReferencesEditor({ item, initialKind, floorId, onSaved, onClose 
   const alive = useRef(true);
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   const save = async () => {
-    if (pending.current || !draft.name.trim()) return;
+    if (pending.current || !draft.name.trim() || !validPhone(draft.phone)) return;
     pending.current = true; setSaving(true); setError(null);
     const body = { ...draft, name: draft.name.trim(), email: draft.email.trim() || null, type: kind };
     try {
@@ -40,7 +41,7 @@ export function ReferencesEditor({ item, initialKind, floorId, onSaved, onClose 
         value={kind} onChange={value => { if (!saving) setKind(value); }} testID="reference-kind"
         options={[{ value: "interior_designer", label: "Interior designer" }, { value: "architect", label: "Architect" }]}
       />}
-      {([ ["name", "Name (required)"], ["company", "Company / studio"], ["phone", "Phone"], ["email", "Email"], ["address", "Address"] ] as const).map(([key, label]) => <TextField
+      {([ ["name", "Name (required)"], ["company", "Company / studio (optional)"], ["phone", "Phone (required)"], ["email", "Email (optional)"], ["address", "Address (optional)"] ] as const).map(([key, label]) => <TextField
         key={key} label={label} value={draft[key]} onChangeText={value => setDraft(current => ({ ...current, [key]: value }))}
         editable={!saving} maxLength={key === "address" ? 1000 : key === "company" ? 250 : key === "phone" ? 100 : 200}
         keyboardType={key === "phone" ? "phone-pad" : key === "email" ? "email-address" : "default"}
@@ -49,7 +50,7 @@ export function ReferencesEditor({ item, initialKind, floorId, onSaved, onClose 
       <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.s12 }}><Text style={[type.body, { flex: 1 }]}>Available across all floors</Text><Switch accessibilityLabel="Available across all floors" value={shared} disabled={saving || !item} onValueChange={setShared} /></View>
       <Text style={type.caption}>{item ? "Sharing changes apply only when you save." : "New references are shared across floors. Existing private contacts keep their current sharing setting."}</Text>
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.s8 }}>
-        <Button label="Save reference" loading={saving} disabled={saving || !draft.name.trim()} onPress={() => void save()} />
+        <Button label="Save reference" loading={saving} disabled={saving || !draft.name.trim() || !validPhone(draft.phone)} onPress={() => void save()} />
         <Button label="Cancel" variant="secondary" disabled={saving} onPress={onClose} />
       </View>
     </View>

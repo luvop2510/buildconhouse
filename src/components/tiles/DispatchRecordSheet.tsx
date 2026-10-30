@@ -1,3 +1,4 @@
+import { formatPhone } from "@/src/utils/phone";
 import { TILES_FLOOR_ID } from "@/src/constants/floors";
 // frontend/src/components/tiles/DispatchRecordSheet.tsx
 // The operational record behind one Dispatch — everything a warehouse
@@ -65,7 +66,7 @@ export function ChalanPreviewSheet({ chalanId, onClose }: { chalanId: string; on
               <Field label="Chalan no." value={chalan.number} />
               <Field label="Generated" value={`${(chalan.generated_at || "").slice(0, 16).replace("T", " ")} · ${chalan.generated_by_name}`} />
               <Field label="Brand / supplier" value={chalan.supplier_name} />
-              <Field label="Customer" value={`${chalan.customer_name}${chalan.customer_phone ? ` · ${chalan.customer_phone}` : ""}`} />
+              <Field label="Customer" value={`${chalan.customer_name}${chalan.customer_phone ? ` · ${formatPhone(chalan.customer_phone)}` : ""}`} />
               <Field label="Delivery address" value={[chalan.delivery_address, chalan.delivery_city].filter(Boolean).join(", ")} />
               <Field label="Vehicle / driver" value={[chalan.vehicle_number, chalan.driver_name].filter(Boolean).join(" · ")} />
               <Field label="Received by" value={chalan.receiver_name} />

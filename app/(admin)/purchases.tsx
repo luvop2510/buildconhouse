@@ -1,3 +1,4 @@
+import { formatPhone } from "@/src/utils/phone";
 import { CustomerNavigator, CustomerPurchasePanel, GodownStatus, PurchaseLoanStatus, fmtDate, customerStyles } from "@/src/components/purchases/CustomerPurchaseWorkspace";
 import { filterValues, matchesFilter, toggleFilterValue } from "@/src/utils/filters";
 // Purchases — Material Tracker
@@ -381,7 +382,7 @@ export default function PurchasesScreen() {
         await downloadSectionExcel({ resource: "purchases",
           page: "Purchases",
           section: "Customer workspaces",
-          rows: [["Customer", "Company", "Email", "Phone", "City"], ...customers.filter(customer => `${customer.name} ${customer.company || ""} ${customer.email || ""}`.toLowerCase().includes(q.trim().toLowerCase())).map(customer => [customer.name, customer.company, customer.email, customer.phone, customer.city])],
+          rows: [["Customer", "Company", "Email", "Phone", "City"], ...customers.filter(customer => `${customer.name} ${customer.company || ""} ${customer.email || ""}`.toLowerCase().includes(q.trim().toLowerCase())).map(customer => [customer.name, customer.company, customer.email, formatPhone(customer.phone), customer.city])],
           filename: "purchases-customers.xlsx",
           floorId: selectedFloorId,
         });

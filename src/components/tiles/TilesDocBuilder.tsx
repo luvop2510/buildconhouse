@@ -1,3 +1,4 @@
+import { formatPhone } from "@/src/utils/phone";
 import { useAuth } from "@/src/state/auth";
 import { useActionAccess } from "@/src/hooks/use-permissions";
 import { useInputActive } from "@/src/hooks/use-input-active";
@@ -976,14 +977,15 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
 // Small shared pieces
 // ---------------------------------------------------------------------------
 function CellInput({
-  value, onChangeText, style, placeholder, red, bold, serif, multiline, testID, align = "center",
+  value, onChangeText, style, placeholder, red, bold, serif, multiline, testID, keyboardType, align = "center",
 }: {
   value: string; onChangeText: (t: string) => void;
   style?: any; placeholder?: string; red?: boolean; bold?: boolean; serif?: boolean;
-  multiline?: boolean; testID?: string; align?: "left" | "center" | "right";
+  multiline?: boolean; testID?: string; keyboardType?: "phone-pad"; align?: "left" | "center" | "right";
 }) {
   return (
     <TextInput
+      keyboardType={keyboardType}
       value={value}
       onChangeText={onChangeText}
       placeholder={placeholder}
@@ -1172,7 +1174,7 @@ function CustomerNameField({
               style={({ hovered }: any) => [suggestStyles.row, hovered && { backgroundColor: colors.brandTint }]}
             >
               <Text style={suggestStyles.name}>{c.name}</Text>
-              <Text style={suggestStyles.phone}>{[c.phone, c.address].filter(Boolean).join(" · ") || "No contact details saved"}</Text>
+              <Text style={suggestStyles.phone}>{[formatPhone(c.phone), c.address].filter(Boolean).join(" · ") || "No contact details saved"}</Text>
             </Pressable>
           ))}
           </ScrollView>
@@ -1364,7 +1366,7 @@ function MetaGrid({ doc }: { doc: ReturnType<typeof useTilesDoc> }) {
         </View>
         <View style={metaStyles.cell}>
           <Text style={metaStyles.label}>CONTACT NO.</Text>
-          <CellInput value={doc.header.phone} onChangeText={(t) => doc.setHeaderField("phone", t)} style={metaStyles.value} testID="tiles-phone" />
+          <CellInput keyboardType="phone-pad" value={doc.header.phone} onChangeText={(t) => doc.setHeaderField("phone", t)} style={metaStyles.value} testID="tiles-phone" />
         </View>
         <View style={metaStyles.cell}>
           <Text style={metaStyles.label}>SELECTION / QUOTATION DATE</Text>

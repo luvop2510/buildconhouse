@@ -159,7 +159,8 @@ def validate_handoff_status(status, handoff_date):
 
 
 def validate_design_dates(project, row, *, presentation_date, shared_date, response, approval_date, handoff_date, approving=False, now=None):
-    if shared_date and presentation_date and shared_date < presentation_date:
+    # PDF presentation/receipt dates describe archival upload, not when business events occurred.
+    if not row.get("final_attachment_id") and shared_date and presentation_date and shared_date < presentation_date:
         reject("Sharing date cannot precede presentation")
     if response != "Pending" and not shared_date:
         reject("Record the sharing date before the customer response")
@@ -316,16 +317,18 @@ def apply(project, command, payload, policy, user, now, validate):
                 reject("This design is linked to quotations; create a new design version to attach its PDF")
             if handoff_status == "Not recorded":
                 reject("Choose Yes or No for Sent to company")
-            if handoff_status == "Yes" and (not handoff_date or "handoff_date" not in body.model_fields_set and row.get("final_attachment_id") != pdf_fields["final_attachment_id"]):
+            if handoff_status == "Yes" and not handoff_date and "handoff_date" not in body.model_fields_set:
                 handoff_date = recorded_day(now)
             handoff_status = handoff_status or ("Yes" if handoff_date else "No")
         handoff_status = validate_handoff_status(handoff_status, handoff_date)
         presentation_date = pdf_fields.get("presentation_date", body.presentation_date if "presentation_date" in body.model_fields_set else row.get("presentation_date"))
-        validate_design_dates(project, row, presentation_date=presentation_date, shared_date=shared_date,
+        validate_design_dates(project, {**row, **pdf_fields}, presentation_date=presentation_date, shared_date=shared_date,
             response=body.response, approval_date=approval_date, handoff_date=handoff_date,
             approving=body.response == "Approved" and row.get("response") != "Approved", now=now)
-        if handoff_date and any(q.get("design_version_id") == row["id"] and q.get("received_date") and q["received_date"] < handoff_date for q in project.get("quotation_versions", [])):
-            reject("Company handoff cannot follow a related quotation receipt")
+        for quote in project.get("quotation_versions", []):
+            business_date = quote.get("shared_date") if quote.get("final_attachment_id") else quote.get("received_date")
+            if quote.get("design_version_id") == row["id"] and handoff_date and business_date and business_date < handoff_date:
+                reject("Company handoff cannot follow a related quotation's sharing or receipt date")
         if body.revision_count is not None and body.revision_count != project.get("design_revision_count"):
             reject("Design revisions are counted from customer revision requests; record a revision request instead")
         if body.finalize:
@@ -361,10 +364,12 @@ def apply(project, command, payload, policy, user, now, validate):
         body = validate(VersionDate, payload)
         row = selected(project, "design_versions" if is_design else "quotation_versions", body.version_id)
         if not is_design:
-            approved_design(project, row.get("design_version_id"))
+            design = approved_design(project, row.get("design_version_id"))
         if is_design and row.get("workflow_cycle", 1) != project.get("workflow_cycle", 1):
             reject("Present the revised design before sharing or handoff")
         earliest = row.get("presentation_date") or row.get("received_date")
+        if row.get("final_attachment_id"):
+            earliest = None if is_design else design.get("handoff_date")
         if earliest and body.date < earliest:
             reject("Sharing/handoff date cannot precede presentation/receipt")
         if command == "design_handoff":
@@ -458,13 +463,13 @@ def apply(project, command, payload, policy, user, now, validate):
                 proposed[status] = "Yes" if proposed.get(date_field) else "Not recorded"
             if proposed.get(date_field) and proposed[status] != "Yes":
                 reject("A quotation date requires its corresponding status to be Yes; edit the date or status explicitly")
-        if proposed.get("received_date") and proposed["received_date"] < design["handoff_date"]:
+        if not pdf_workflow and proposed.get("received_date") and proposed["received_date"] < design["handoff_date"]:
             reject("Quotation receipt cannot precede design handoff")
         if proposed.get("shared_date") and proposed["shared_date"] < design["handoff_date"]:
             reject("Quotation sharing cannot precede design handoff")
         if proposed.get("shared_date") and any(proposed["shared_date"] > order["order_date"] for order in bound_orders):
             reject("Quotation sharing cannot follow an order linked to this quotation")
-        if proposed.get("shared_date") and proposed.get("received_date") and proposed["shared_date"] < proposed["received_date"]:
+        if not pdf_workflow and proposed.get("shared_date") and proposed.get("received_date") and proposed["shared_date"] < proposed["received_date"]:
             reject("Quotation sharing cannot precede receipt")
         if proposed.get("response", "Pending") != "Pending" and (proposed["sent_status"] != "Yes" or not proposed.get("shared_date")):
             reject("Record quotation sent to customer and its date before recording a customer response")

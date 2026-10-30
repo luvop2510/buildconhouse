@@ -1,3 +1,4 @@
+import { formatPhone } from "@/src/utils/phone";
 // Customers list — DS-aligned rebuild.
 // Uses PageHeader, HeroBanner stat row, filter chips, SearchField, and a
 // unified customer-card language shared with quotations/purchases/payments.
@@ -83,7 +84,7 @@ export default function Customers() {
         section: completed ? "100% completed customers" : "Active customer accounts",
         rows: [
           ["Name", "Company", "Status", "Email", "Phone", "City"],
-          ...filtered.map(customer => [customer.name, customer.company, completed ? "100% completed" : "Active", customer.email, customer.phone, customer.city]),
+          ...filtered.map(customer => [customer.name, customer.company, completed ? "100% completed" : "Active", customer.email, formatPhone(customer.phone), customer.city]),
         ],
         filename: `customers-${completed ? "completed" : "active"}.xlsx`,
         floorId: selectedFloorId,

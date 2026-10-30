@@ -119,6 +119,20 @@ view = view.refresh();
 assert.equal(view.control('kitchen-quotation-receive').props.disabled, false);
 await view.control('kitchen-quotation-receive').props.onPress();
 assert.equal(calls.pop()[1].shared_date, '2026-10-26', 'Saving the uploaded quotation preserves the automatic date without a redundant picker interaction');
+for (const year of ['2024', '2025', '2030']) {
+  view=render('quotation',{design_versions:[{...design,shared_date:`${year}-01-01`,approval_date:`${year}-01-02`,handoff_date:`${year}-01-03`}],quotation_versions:[]});
+  view=chooseQuotation(view);
+  view.control('kitchen-quotation-sent').props.onChange('Yes');
+  view.control('kitchen-quotation-shared-date').props.onChange(`${year}-01-04`);
+  view.control('kitchen-version-response').props.onChange('Approved');
+  view=view.refresh();
+  assert.equal(view.control('kitchen-quotation-receive').props.disabled,false,'Historical and future quotation sent dates are independent of archival upload dates');
+  await view.control('kitchen-quotation-receive').props.onPress();
+  assert.equal(calls.pop()[1].shared_date,`${year}-01-04`);
+  view.control('kitchen-quotation-shared-date').props.onChange(`${year}-01-02`);
+  view=view.refresh();
+  assert.equal(view.control('kitchen-quotation-receive').props.disabled,true,'Business-date chronology still rejects sending a quotation before company handoff');
+}
 for (const lifecycle_status of ['On Hold', 'Cancelled']) {
   view = render('quotation', { lifecycle_status, quotation_versions: [{ ...quotation, response: 'Pending', shared_date: null }] });
   assert.equal(view.control('kitchen-quotation-shared-date').props.value, '', 'Inactive records preserve an unknown historical date');
@@ -187,7 +201,25 @@ view.control('kitchen-design-sent').props.onChange('Yes');
 view=view.refresh();
 await view.control('kitchen-design-edit-save').props.onPress();
 assert.deepEqual([calls.at(-1)[0],calls.at(-1)[1].version_id,calls.at(-1)[1].finalize,calls.at(-1)[1].handoff_status],['design_update','design',true,'Yes']);
-assert.equal(calls.at(-1)[1].handoff_date,undefined,'Server records handoff date');
+assert.equal(calls.at(-1)[1].handoff_date,'2026-10-26','The proposed company sent date is submitted explicitly and remains editable');
+for (const year of ['2024', '2025', '2030']) {
+  view=render('design',{design_versions:[{...design,response:'Pending',approval_date:null,shared_date:null,handoff_status:'No',handoff_date:null}],final_design_version_id:null});
+  view.control('kitchen-design-edit-shared').props.onChange(`${year}-01-02`);
+  view.control('kitchen-design-edit-response').props.onChange('Approved');
+  view=view.refresh();
+  view.control('kitchen-design-edit-approval-date').props.onChange(`${year}-01-03`);
+  view.control('kitchen-design-sent').props.onChange('Yes');
+  view=view.refresh();
+  const sentDate=view.control('kitchen-design-sent-date');
+  assert.equal(sentDate.props.min,undefined,'Company date supports historical and future calendar entries');
+  assert.equal(sentDate.props.max,undefined);
+  sentDate.props.onChange(`${year}-01-04`);
+  view.control('kitchen-design-finalize').props.onPress();
+  view=view.refresh();
+  assert.equal(view.control('kitchen-design-edit-save').props.disabled,false);
+  await view.control('kitchen-design-edit-save').props.onPress();
+  assert.equal(calls.at(-1)[1].handoff_date,`${year}-01-04`,'Saving preserves the chosen business date regardless of PDF upload date');
+}
 calls.length=0;
 view=render('design',{design_versions:[design,design2],quotation_versions:[quotation,quote2]});
 view.control('kitchen-design-version').props.onChange(design.id);

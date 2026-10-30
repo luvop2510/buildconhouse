@@ -1,3 +1,4 @@
+import { formatPhone } from "@/src/utils/phone";
 import { LeadScopeFields } from "@/src/components/leads/LeadScopeFields";
 import type { LeadScope } from "@/src/api/leads";
 import { Disclosure } from "@/src/design/Disclosure";
@@ -263,7 +264,7 @@ export default function NewWalkIn() {
             {matches.medium.map((m) => (
               <Card key={m.id} variant="outlined" style={{ gap: spacing.xs, marginBottom: spacing.sm }}>
                 <Text style={type.bodyStrong}>{m.name}</Text>
-                <Text style={type.bodyMuted}>{[m.phone, m.city].filter(Boolean).join(" · ") || "No details on file"}</Text>
+                <Text style={type.bodyMuted}>{[formatPhone(m.phone), m.city].filter(Boolean).join(" · ") || "No details on file"}</Text>
                 <View style={{ flexDirection: "row", gap: spacing.sm, flexWrap: "wrap", marginTop: spacing.xs }}>
                   <Button label="Use Existing Customer" size="sm" onPress={() => linkExistingCustomer(m)} testID={`walkin-use-existing-${m.id}`} />
                   <Button

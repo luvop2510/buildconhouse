@@ -1,3 +1,4 @@
+import { formatPhone } from "@/src/utils/phone";
 import { hasMinimumPasswordLength } from "@/src/utils/passwordPolicy";
 // Team uses named floor/page/action delegations. Legacy role labels remain
 // readable until account migration; new allocations use owner or worker only.
@@ -130,7 +131,7 @@ export default function Team() {
                   }}>{u.full_name}{u.id === me?.id ? " · You" : ""}</Text>
                   {optionalContact(u.email) ? <Text testID={`team-email-${u.id}`} numberOfLines={1} style={type.caption}>{u.email}</Text> : null}
                   {optionalContact(u.login_id) ? <Text testID={`team-username-${u.id}`} numberOfLines={1} style={type.caption}>ID: {u.login_id}</Text> : null}
-                  {phone ? <Text testID={`team-phone-${u.id}`} numberOfLines={1} style={type.caption}>Phone: {phone}</Text> : null}
+                  {phone ? <Text testID={`team-phone-${u.id}`} numberOfLines={1} style={type.caption}>Phone: {formatPhone(phone)}</Text> : null}
                 </View>
                 <Feather name="chevron-right" size={16} color={colors.onSurfaceMuted} />
                 <View style={{ alignItems: isPhone ? "flex-start" : "flex-end", gap: 4, minWidth: 0, flexShrink: 1, ...(isPhone ? { width: "100%", paddingLeft: 44 + spacing.md } : { maxWidth: "40%" }) }}>

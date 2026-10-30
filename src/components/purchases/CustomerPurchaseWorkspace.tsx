@@ -1,3 +1,4 @@
+import { formatPhone } from "@/src/utils/phone";
 import Feather from "@expo/vector-icons/Feather";
 import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
 import { Text } from "@/src/components/AppText";
@@ -26,7 +27,7 @@ export function CustomerNavigator({ loading, customers, onOpen, completed = fals
         {customers.length === 0 ? <Text style={type.bodyMuted}>No customers found on this floor.</Text> : customers.map((customer, index) => (
           <Pressable key={customer.id} testID={`customer-workspace-${customer.id}`} onPress={() => onOpen(customer.id)} style={({ pressed }) => [customerStyles.customerNavRow, index > 0 && customerStyles.customerNavDivider, pressed && { backgroundColor: colors.surfaceTertiary }]}>
             <View style={customerStyles.customerAvatar}><Text style={customerStyles.customerAvatarText}>{customer.name.slice(0, 1).toUpperCase()}</Text></View>
-            <View style={{ flex: 1, minWidth: 0 }}><Text style={customerStyles.actionTitle} numberOfLines={1}>{customer.name}</Text>{completed ? <Text style={[type.caption, { color: colors.success }]}>100% completed</Text> : null}<Text style={type.caption} numberOfLines={1}>{customer.company || customer.phone || customer.email || customer.city || "Customer lifecycle"}</Text></View>
+            <View style={{ flex: 1, minWidth: 0 }}><Text style={customerStyles.actionTitle} numberOfLines={1}>{customer.name}</Text>{completed ? <Text style={[type.caption, { color: colors.success }]}>100% completed</Text> : null}<Text style={type.caption} numberOfLines={1}>{customer.company || formatPhone(customer.phone) || customer.email || customer.city || "Customer lifecycle"}</Text></View>
             <Feather name="chevron-right" size={16} color={colors.onSurfaceMuted} />
           </Pressable>
         ))}
@@ -52,7 +53,7 @@ export function CustomerPurchasePanel({ visible, loading, workspace, onClose, on
           <View style={customerStyles.customerPanelHero}>
             <View style={{ flex: 1, gap: 3 }}>
               <Text style={customerStyles.actionTitle}>{workspace.customer.company || workspace.customer.name}</Text>
-              <Text style={type.caption}>{[workspace.customer.phone, workspace.customer.email, workspace.customer.city].filter(Boolean).join(" · ") || "Customer purchase workspace"}</Text>
+              <Text style={type.caption}>{[formatPhone(workspace.customer.phone), workspace.customer.email, workspace.customer.city].filter(Boolean).join(" · ") || "Customer purchase workspace"}</Text>
             </View>
             <View style={customerStyles.customerPanelDue}><Text style={customerStyles.customerPanelDueLabel}>OUTSTANDING</Text><Text style={customerStyles.customerPanelDueValue}>{rupees(workspace.summary.outstanding_balance)}</Text></View>
           </View>

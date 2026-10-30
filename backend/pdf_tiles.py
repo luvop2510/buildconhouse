@@ -16,6 +16,7 @@ Both reuse the shared image fetch/placeholder/escaping/footer helpers from
 pdf_generator so there is exactly one implementation of those in the codebase.
 """
 from __future__ import annotations
+from services.phone_format import format_phone
 from services.referrer_identity import referrer_label
 
 import functools
@@ -234,7 +235,7 @@ def _meta_grid(quotation: dict, customer: dict, styles: dict) -> Table:
     row1_labels = ["CUSTOMER NAME", "CONTACT NO.", "SELECTION / QUOTATION DATE", "QUOTATION NO."]
     row1_values = [
         quotation.get("customer_name") or customer.get("name") or "",
-        quotation.get("phone_snapshot") or customer.get("phone") or "",
+        format_phone(quotation.get("phone_snapshot") or customer.get("phone") or ""),
         quotation.get("doc_date") or created,
         quotation.get("doc_number") or quotation.get("number") or "",
     ]
@@ -285,7 +286,7 @@ def _brand_terms_signature_block(styles: dict, branding: dict, *, density: str =
         if compact else styles["term"]
     )
     email = branding.get("footer_email") or DEFAULT_EMAIL
-    mobile = branding.get("footer_phone") or DEFAULT_MOBILE
+    mobile = format_phone(branding.get("footer_phone") or DEFAULT_MOBILE)
     flow: list = [
         Paragraph("OUR BRAND PARTNERS", styles["sectionTitle"]),
         Spacer(1, partner_gap * mm),

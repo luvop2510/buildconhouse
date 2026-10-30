@@ -33,6 +33,9 @@ const modules = {
 const versionModule = {};
 new Function('exports', ts.transpileModule(readFileSync(new URL('../src/components/kitchen/KitchenVersions.ts', import.meta.url),'utf8'), {compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText)(versionModule);
 modules['./KitchenVersions'] = versionModule;
+const phoneModule = {};
+new Function('exports', ts.transpileModule(readFileSync(new URL('../src/utils/phone.ts', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText)(phoneModule);
+modules['@/src/utils/phone'] = phoneModule;
 function load(file, internals = '') {
   const output = {};
   const source = readFileSync(new URL(`../src/components/kitchen/${file}.tsx`, import.meta.url), 'utf8') + internals;
@@ -59,7 +62,7 @@ for (const expanded of [false, true]) {
   assert.deepEqual(calls.pop(), ['move_stage', { target_stage: 'design' }]);
   const details = find(tree, 'kitchen-project-details');
   assert.equal(Boolean(details), expanded);
-  if (expanded) { assert.match(text(details), /Customer QA.*9001112223/); assert.doesNotMatch(text(details), /removed-|Current stage|Target completion/); }
+  if (expanded) { assert.match(text(details), /Customer QA.*900-111-22-23/); assert.doesNotMatch(text(details), /removed-|Current stage|Target completion/); }
   assert.equal(find(tree, 'kitchen-customer-current-stage'), undefined);
 }
 editable = false;

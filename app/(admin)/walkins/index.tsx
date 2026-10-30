@@ -1,3 +1,4 @@
+import { formatPhone } from "@/src/utils/phone";
 import { MobileFilterSection, MultiSelectFilterBar } from "@/src/components/ds";
 import { filterValues, toggleFilterValue } from "@/src/utils/filters";
 import { WALKIN_SUMMARY_LABELS, walkinSummaryFilters, type WalkinSummary } from "@/src/utils/walkinSummary";
@@ -243,7 +244,7 @@ export default function WalkInsScreen({
         if (items.length >= 2000) throw new Error("This list reached the 2,000-walk-in limit. Narrow the filters before exporting.");
         return [
         ["Customer", "Phone", "Walk-in", "Visited", "Status", "Salesperson", "Floor", "Source", "Interested products", "Next follow-up"],
-        ...items.map(item => [item.customer_name, item.customer_phone, item.number, item.visited_at, item.status.replace(/_/g, " "), item.salesperson_name || "Unassigned", item.floor_id, item.source, item.interested_products.join(", "), item.next_followup_at]),
+        ...items.map(item => [item.customer_name, formatPhone(item.customer_phone), item.number, item.visited_at, item.status.replace(/_/g, " "), item.salesperson_name || "Unassigned", item.floor_id, item.source, item.interested_products.join(", "), item.next_followup_at]),
       ]; }} />
     </View>}
     embedded={isPhone}

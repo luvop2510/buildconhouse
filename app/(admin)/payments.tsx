@@ -1,3 +1,4 @@
+import { formatPhone } from "@/src/utils/phone";
 import { filterValues, toggleFilterValue } from "@/src/utils/filters";
 // ═══════════════════════════════════════════════════════════════════════════
 // Payments — migrated to Design System V2.
@@ -556,7 +557,7 @@ export default function PaymentsScreen() {
         `/payments/orders/${orderId}/whatsapp-reminder`,
       );
       if (!res.phone) toast.error("No phone number on file — please add one to the customer");
-      else toast.success(`Opening WhatsApp for ${res.phone_display || res.phone}`);
+      else toast.success(`Opening WhatsApp for ${formatPhone(res.phone_display || res.phone)}`);
       await Linking.openURL(res.wa_url);
     } catch (e: any) { toast.error(e?.detail || "Could not build reminder"); }
     finally { setWaLoading(false); }

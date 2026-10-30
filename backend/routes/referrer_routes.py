@@ -33,7 +33,9 @@ async def referrers_page(
         query = {"$and": [query, {"$or": [
             *[{field: {"$regex": term, "$options": "i"}} for field in ("name", "company", "phone")],
             {"$expr": {"$regexMatch": {"input": {"$concat": [
-                {"$cond": [{"$eq": ["$type", "architect"]}, "ARC-", "INT-"]}, {"$toUpper": "$id"},
+                {"$cond": [{"$eq": ["$type", "architect"]}, "ARC-", "INT-"]},
+                {"$toUpper": {"$substrCP": [{"$arrayElemAt": [{"$split": [{"$trim": {"input": "$name"}}, " "]}, 0]}, 0, 12]}},
+                "-", {"$toUpper": {"$substrCP": ["$id", 0, 8]}},
             ]}, "regex": term, "options": "i"}}},
         ]}]}
     docs, total = await asyncio.gather(

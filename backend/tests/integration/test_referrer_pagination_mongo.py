@@ -53,7 +53,7 @@ def test_pages_search_history_and_payload_against_real_mongo(mongo_url, monkeypa
             late = await page(4000)
             assert [row.id for row in late["rows"]] == [f"b-{i:04}" for i in range(1997, 2003)] + ["shared"]
             assert (await page(floor="first-floor"))["total"] == 2004
-            for search in ("Studio (A)+", "98765", "ARC-A-2002", "rc-a-2002"):
+            for search in ("Studio (A)+", "98765", "ARC-STUDIO-A-2002", "rc-studio-a-2002"):
                 result = await page(search=search)
                 assert result["total"] == 1 and [row.id for row in result["rows"]] == ["a-2002"]
             assert (await page(search=".*"))["total"] == 0
@@ -114,7 +114,7 @@ def test_owner_all_units_retains_inactive_and_missing_floor_reference_history(mo
             performance = [{"id": id} for id in ("active-029", "inactive-private", "missing-private", "inactive-shared")]
             result = await reporting._mark_historical_references(performance, "all", None)
             assert {row["id"] for row in result if row["historical"]} == {"inactive-private", "missing-private"}
-            shared = await directory.referrers_page(floor_id="first-floor,ground-floor", type=None, search="ARC-INACTIVE-SHARED", offset=0, limit=25, user=owner)
+            shared = await directory.referrers_page(floor_id="first-floor,ground-floor", type=None, search="ARC-STUDIO-INACTIVE", offset=0, limit=25, user=owner)
             assert [row.id for row in shared["rows"]] == ["inactive-shared"]
             concrete = await reporting._mark_historical_references(performance, "inactive-floor", None)
             assert next(row for row in concrete if row["id"] == "inactive-private")["historical"] is False

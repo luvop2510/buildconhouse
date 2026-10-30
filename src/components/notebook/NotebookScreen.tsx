@@ -1,3 +1,4 @@
+import { formatPhone } from "@/src/utils/phone";
 import { filterValues, toggleFilterValue } from "@/src/utils/filters";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, FlatList, Linking, Pressable, Platform, StyleSheet, View } from "react-native";
@@ -149,7 +150,7 @@ function LeadCard({ row, kitchen, quotationStage, saving, canUpdate, onCall, onW
     .map(id => floorNames.find(f => f.id === id)?.name || id).filter(Boolean).join(", ");
   return <View style={[styles.card, closed && styles.closedCard]}>
     <View style={styles.cardHeader}>
-      <View style={{ flex: 1, minWidth: 0, gap: 3 }}><Text style={styles.customerName}>{row.customer_name}</Text><Text selectable style={styles.phone}>{row.customer_phone}</Text></View>
+      <View style={{ flex: 1, minWidth: 0, gap: 3 }}><Text style={styles.customerName}>{row.customer_name}</Text><Text selectable style={styles.phone}>{formatPhone(row.customer_phone)}</Text></View>
       <View style={[styles.status, statusTone(row.status)]}><Text style={styles.statusText}>{STATUS_LABELS[row.status]}</Text></View>
     </View>
     <View style={styles.metadata}>

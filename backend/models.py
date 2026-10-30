@@ -6,6 +6,7 @@ from typing import Annotated, Any, Literal, Optional
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
+from services.phone_format import required_phone
 from services.password_policy import MIN_PASSWORD_LENGTH, validate_new_password
 from services.staff_contacts import optional_email, read_staff_email, read_staff_phone, validate_staff_phone
 
@@ -821,10 +822,19 @@ class Referrer(TimestampedModel):
 class ReferrerCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     type: ReferrerType
-    phone: Optional[str] = Field(None, max_length=100)
+    phone: str = Field(min_length=1, max_length=40)
     company: Optional[str] = Field(None, max_length=250)
     email: Optional[EmailStr] = None
     address: Optional[str] = Field(None, max_length=1000)
+
+    _required_phone = field_validator("phone", mode="before")(required_phone)
+
+    @field_validator("name")
+    @classmethod
+    def required_name(cls, value):
+        if not value.strip():
+            raise ValueError("Referrer name is required")
+        return value.strip()
 
 
 class ReferrerUpdate(ReferrerCreate):

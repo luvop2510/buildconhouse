@@ -1,5 +1,6 @@
 """Official BuildCon House quotation PDF — faithful A4 print template."""
 from __future__ import annotations
+from services.phone_format import format_phone
 from services.referrer_identity import referrer_label
 
 from collections import defaultdict
@@ -511,7 +512,7 @@ def _draw_footer(cv, doc, branding: dict | None = None) -> None:
     cv.drawString(doc.leftMargin, 10.5 * mm, b.get("footer_company_name") or "Buildcon House")
     cv.setFillColor(INK)
     cv.setFont("Helvetica", 7)
-    cv.drawString(doc.leftMargin, 6.5 * mm, f"M: {b.get('footer_phone') or '+91 99099 06652'}   |   {b.get('footer_email') or 'buildconhouse10@gmail.com'}")
+    cv.drawString(doc.leftMargin, 6.5 * mm, f"M: {format_phone(b.get('footer_phone') or '+91 99099 06652')}   |   {b.get('footer_email') or 'buildconhouse10@gmail.com'}")
     right = page_width - doc.rightMargin
     cv.setFont("Helvetica", 7)
     cv.drawRightString(right, 10.5 * mm, f"Page {doc.page}")
@@ -872,7 +873,7 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
     story.extend([Spacer(1, 3 * mm), HRFlowable(width="100%", thickness=1.25, color=BLUE), Spacer(1, 2.5 * mm)])
     meta = [
         [Paragraph("CUSTOMER NAME", styles["label"]), Paragraph("CONTACT NO.", styles["label"]), Paragraph("SELECTION / QUOTATION DATE", styles["label"]), Paragraph("QUOTATION NO.", styles["label"])],
-        [Paragraph(_escape(customer.get("company") or customer.get("name") or quotation.get("customer_name")), styles["body"]), Paragraph(_escape(quotation.get("phone_snapshot") or customer.get("phone") or ""), styles["body"]), Paragraph(created, styles["body"]), Paragraph(_escape(quotation.get("number")), styles["body"])],
+        [Paragraph(_escape(customer.get("company") or customer.get("name") or quotation.get("customer_name")), styles["body"]), Paragraph(_escape(format_phone(quotation.get("phone_snapshot") or customer.get("phone") or "")), styles["body"]), Paragraph(created, styles["body"]), Paragraph(_escape(quotation.get("number")), styles["body"])],
         [Paragraph("REFERENCE", styles["label"]), Paragraph("ATTENDED BY", styles["label"]), Paragraph("PREPARED BY", styles["label"]), Paragraph("ADDRESS", styles["label"])],
         [Paragraph(_escape(" · ".join(filter(None, [quotation.get("reference_source"), referrer_label(quotation)]))), styles["body"]), Paragraph(_escape(quotation.get("attended_by") or ""), styles["body"]), Paragraph(_escape(quotation.get("prepared_by") or b.get("footer_company_name") or "Buildcon House"), styles["body"]), Paragraph(_escape(quotation.get("address_snapshot") or customer.get("address") or ""), styles["body"])],
     ]
@@ -971,7 +972,7 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
         ("TOPPADDING", (0, 0), (-1, -1), 0.4), ("BOTTOMPADDING", (0, 0), (-1, -1), 0.4),
     ]))
     enquiries = Paragraph(
-        f"For general enquiries: M: {_escape(b.get('footer_phone') or '+91 99099 06652')}  |  Email: {_escape(b.get('footer_email') or 'buildconhouse10@gmail.com')}",
+        f"For general enquiries: M: {_escape(format_phone(b.get('footer_phone') or '+91 99099 06652'))}  |  Email: {_escape(b.get('footer_email') or 'buildconhouse10@gmail.com')}",
         styles["small"],
     )
     signature = Table([[Paragraph("I/We have reviewed and agree to the terms and conditions mentioned in this quotation.", styles["small"]), Paragraph("CUSTOMER SIGNATURE &amp; DATE", styles["signature"])]], colWidths=[_pw(160) * mm, _pw(107) * mm], rowHeights=[8 * mm])
