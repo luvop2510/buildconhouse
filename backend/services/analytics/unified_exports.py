@@ -13,6 +13,7 @@ from openpyxl.styles import Font, PatternFill
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 
 from services.analytics.unified import FLOORS
@@ -188,6 +189,32 @@ def _pdf_date(value):
         return str(value or "Date unavailable")
 
 
+def _pdf_bands(rows, identity, fields, width, face, section=""):
+    """Pack detail columns around exact rendered numeric widths, retaining identity."""
+    identity_width = max(140, width * .3)
+    measured = {}
+    for key in fields:
+        numbers = [display(row[key], key, row.get("currency", "INR")) for row in rows if numeric(row.get(key))]
+        if numbers:
+            header = "Orders (all selected currencies)" if section == "Trend" and key == "orders" else _label(key)
+            header_width = stringWidth(header, face, 8)
+            measured[key] = max(48, (header_width if section == "Trend" and key == "orders" else min(76, header_width)) + 14,
+                                *(stringWidth(value, face, 8) + 15 for value in numbers))
+        else:
+            values = [str(cell(row.get(key))) for row in rows]
+            measured[key] = max(52, min(120, stringWidth(_label(key), face, 8) + 14),
+                                min(120, max((stringWidth(value.split("\n")[0], face, 8) + 14 for value in values), default=52)))
+    bands, current = [], []
+    for key in fields:
+        if current and sum(measured[field] for field in current) + measured[key] > width - identity_width:
+            bands.append(current)
+            current = []
+        current.append(key)
+    if current or not bands:
+        bands.append(current)
+    return [([identity, *band], [width - sum(measured[key] for key in band), *[measured[key] for key in band]]) for band in bands]
+
+
 def _pdf_rows(name, rows):
     """Drop duplicate transport fields, retaining source identity and useful data."""
     if name == "Trend":
@@ -360,7 +387,7 @@ def pdf(report, sections, metadata):
             chart_grid = Table([graphics[i:i + 2] for i in range(0, len(graphics), 2)], colWidths=[section_width / min(2, len(graphics))] * min(2, len(graphics)), hAlign="LEFT")
             chart_grid.setStyle(TableStyle(table_style + [("BOTTOMPADDING", (0, 0), (-1, -1), 6)]))
             story.append(chart_grid)
-        bands = [[identity, *rest[offset:offset + 5]] for offset in range(0, len(rest), 5)] or [[identity]]
+        bands = _pdf_bands(rows, identity, rest, section_width, face, name)
         scales = {}
         for row in rows:
             for key, value in row.items():
@@ -369,12 +396,9 @@ def pdf(report, sections, metadata):
                     scale_key = (key, ledger, str(row.get("unit")) if key == "quantity" else None)
                     lower, upper = scales.get(scale_key, (0, 0))
                     scales[scale_key] = min(lower, value), max(upper, value)
-        for index, band in enumerate(bands):
+        for index, (band, widths) in enumerate(bands):
             if len(bands) > 1:
                 story.append(para(f"{name} / detail columns {index + 1} of {len(bands)} / {len(rows)} recorded rows", styles["DetailCaption"]))
-            widths = [section_width / len(band)] * len(band)
-            if name in {"Source Details", "Orders", "Records"} and len(band) > 1:
-                widths = [section_width * .46] + [section_width * .54 / (len(band) - 1)] * (len(band) - 1)
             values = [[para("Orders (all selected currencies)" if name == "Trend" and key == "orders" else _label(key), styles["NumberReport"] if any(isinstance(row.get(key), (int, float)) and not isinstance(row.get(key), bool) for row in rows) else body) for key in band]]
             for row in rows:
                 cells = []

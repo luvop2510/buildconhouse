@@ -228,3 +228,48 @@ def test_pdf_trend_identifies_order_counts_across_selected_currencies():
     headers = [entry.value for entry in sheet[1]]
     assert sheet.cell(2, headers.index("orders") + 1).value == 1
     assert "Orders (all selected currencies)" not in headers
+
+
+def test_product_pdf_keeps_crore_money_on_one_rendered_line_without_reducing_type():
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+    from reportlab.platypus import Paragraph
+    from services.analytics.unified_exports import PDF_WIDTH, _pdf_bands, _pdf_rows, display
+    from pdf_generator import RUPEE_FONT
+    rows = [{"id": f"product-{i}", "name": "Recorded product with a descriptive catalog name", "currency": "INR",
+             "sales": amount, "orders": 6, "customers": 4, "outstanding": None, "quantity": 160, "unit": "Pieces", "company_name": "Recorded company"}
+            for i, amount in enumerate((79999920.0, 19167390.0, 999999999.99))]
+    normalized = _pdf_rows("Products", rows)
+    face = RUPEE_FONT or "Helvetica"
+    bands = _pdf_bands(normalized, "name", [key for key in normalized[0] if key not in {"name", "currency"}], PDF_WIDTH, face)
+    for band, widths in bands:
+        assert sum(widths) == pytest.approx(PDF_WIDTH)
+        assert widths[0] >= 140
+        if "sales" in band:
+            content_width = widths[band.index("sales")] - 14
+            for row in rows:
+                value = display(row["sales"], "sales", "INR")
+                assert content_width >= stringWidth(value, face, 8)
+                paragraph = Paragraph(value, ParagraphStyle("MeasuredMoney", fontName=face, fontSize=8, leading=10, wordWrap="CJK"))
+                paragraph.wrap(content_width, 1000)
+                assert len(paragraph.blPara.lines) == 1
+    reader = PdfReader(BytesIO(export_bytes({}, [("Products", rows)], "pdf", {})))
+    runs = []
+    for page in reader.pages:
+        page.extract_text(visitor_text=lambda text, cm, tm, font, size: runs.append((text.strip(), size)))
+    for row in rows:
+        value = display(row["sales"], "sales", "INR")
+        assert any(text == value and size == 8 for text, size in runs)
+
+
+@pytest.mark.parametrize("section", ["Source Details", "Orders", "Records"])
+def test_transaction_pdf_keeps_all_crore_amounts_on_single_rendered_lines(section):
+    from services.analytics.unified_exports import display
+    row = {"id": "source-record", "number": "SO-2026", "customer_name": "Recorded customer", "floor_id": "first-floor", "currency": "INR",
+           "sales": 999999999.99, "collected": 199999999.99, "outstanding": 800000000.0}
+    reader = PdfReader(BytesIO(export_bytes({}, [(section, [row])], "pdf", {})))
+    runs = []
+    for page in reader.pages:
+        page.extract_text(visitor_text=lambda text, cm, tm, font, size: runs.append((text.strip(), size)))
+    for key in ("sales", "collected", "outstanding"):
+        assert any(text == display(row[key], key, "INR") and size == 8 for text, size in runs)
