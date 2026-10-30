@@ -1,4 +1,5 @@
 import type { Page, Route } from '@playwright/test';
+import { analyticsBoundary } from '../src/components/salesAnalytics/dateBounds';
 import { floors, mockSession } from './audit-fixtures';
 
 const entity = (id: string, name: string, sales: number, extra: Record<string, unknown> = {}) => ({
@@ -84,6 +85,11 @@ export async function mockSalesAnalytics(page: Page, options: Options = {}) {
     const floor = url.searchParams.get('floor_id') || 'all';
     const basis = url.searchParams.get('date_basis') || 'confirmation';
     const dashboard = analyticsDashboard(floor, basis);
+    if(['all','all_time'].includes(url.searchParams.get('preset')||''))dashboard.period={label:'All time',start:null as never,end:null as never};
+    else if(url.searchParams.get('preset')==='custom'){
+      const start=analyticsBoundary(url.searchParams.get('date_from')||'');const end=analyticsBoundary(url.searchParams.get('date_to')||'',true);
+      if(start!=null&&end!=null)dashboard.period={label:'Custom range',start:new Date(start).toISOString(),end:new Date(end).toISOString()};
+    }
     if (path === '/duplicates') return route.fulfill({ json: { items: [{ id: 'duplicate-customers', kind: 'customers', name: 'Ananya Shah', entities: [{ id: 'customer-a', name: 'Ananya Shah', floor_id: 'first-floor', status: 'Active' }, { id: 'customer-review-b', name: 'Ananya Shah', floor_id: 'first-floor', status: 'Active' }], review }], total: 1, page: 1, page_size: 25 } });
     if (path === '/duplicates/review' && route.request().method() === 'POST') {
       const body = route.request().postDataJSON();

@@ -4,7 +4,7 @@ import { useAuth } from '@/src/state/auth';
 import { subscribeApiCacheInvalidation } from '@/src/api/client';
 import { analyticsNextFilters } from './currencyScope';
 import { useSalesScope } from '@/src/components/salesData/SalesScope';
-import { analyticsQuery, type AnalyticsFilters } from '@/src/api/salesAnalytics';
+import { analyticsQuery, salesAnalyticsApi, type AnalyticsFilters } from '@/src/api/salesAnalytics';
 import { analyticsCacheGeneration, analyticsIdentityKey, cacheAnalyticsRead, cachedAnalyticsRead, clearAnalyticsReadCache, revokeAnalyticsReads, subscribeAnalyticsRevocation } from './readCache';
 
 // Only in-memory previews: logout, floor changes and writes release them immediately.
@@ -18,6 +18,10 @@ export function useAnalyticsScope() {
  const access = useSalesScope();
  const filters: AnalyticsFilters = { preset: 'this_month', date_basis: 'confirmation', granularity: 'day', floor_id: 'all', page: '1', page_size: '25' };
  FILTER_KEYS.forEach(key => { const value = params[key]; if (typeof value === 'string' && value) filters[key] = value; });
+ if(typeof params.floor_id!=='string'&&typeof params.floorId==='string')filters.floor_id=params.floorId;
+ if(typeof params.date_from!=='string'&&typeof params.dateFrom==='string')filters.date_from=params.dateFrom;
+ if(typeof params.date_to!=='string'&&typeof params.dateTo==='string')filters.date_to=params.dateTo;
+ filters.preset=({all:'all_time',quarter:'this_quarter',year:'this_year'} as Record<string,string>)[filters.preset]||filters.preset;
  if (isFloorRoute && !params.floor_id && typeof params.id === 'string' && ['ground-floor','first-floor','second-floor','third-floor'].includes(params.id)) filters.floor_id=params.id;
  const update = (input: AnalyticsFilters) => {
   const next = analyticsNextFilters(filters, input);
@@ -70,4 +74,15 @@ export function useAnalyticsRead<T>(inputKey: string, load: (signal: AbortSignal
  const data=enabled?(state.key===key?state.data:cachedAnalyticsRead<T>(key)):null;
  const loading=enabled&&(state.key!==key||state.loading);
  return { data, error: enabled&&state.key===key?state.error:null, loading, refreshing:loading&&data!==null, refresh: () => { setState(previous=>({...previous,loading:currentEnabled.current}));setRefreshKey(value => value + 1); } };
+}
+
+/** Legacy people/reference endpoints consume the unified dashboard's exact India boundaries. */
+export function useResolvedAnalyticsPeriod(){
+ const scope=useAnalyticsScope();const f=scope.filters;
+ const filters:AnalyticsFilters={floor_id:f.floor_id,preset:f.preset,date_from:f.date_from||'',date_to:f.date_to||'',date_basis:'confirmation',granularity:f.granularity||'day',page:'1',page_size:'25'};
+ const periodRead=useAnalyticsRead(`dashboard:${analyticsQuery(filters)}`,signal=>salesAnalyticsApi.dashboard(filters,signal),scope.canView);
+ const bounds=periodRead.data?.period;
+ const period=bounds?{preset:bounds.start&&bounds.end?'custom':'all',dateFrom:bounds.start,dateTo:bounds.end,label:bounds.label}:null;
+ const query=period?analyticsQuery({floor_id:filters.floor_id,preset:period.preset,date_from:period.dateFrom||'',date_to:period.dateTo||''}):'';
+ return {...scope,filters,period,periodRead,query};
 }

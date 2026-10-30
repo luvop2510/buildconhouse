@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { analyticsCustomRange } from './sales-analytics-helpers';
 import { mockSalesAnalytics } from './sales-analytics-fixtures';
 
 test('critical Interior section displays acquired customers before an order is placed', async ({ page }) => {
@@ -39,16 +40,11 @@ test('critical reference drilldown lists non-converted walk-ins and confirmed cu
   await page.getByRole('button',{name:'Referred people and source history',exact:true}).click();
   await expect(page.getByTestId('referrer-clients')).toContainText('Non-converted walk-in');
   await expect(page.getByTestId('referrer-clients')).toContainText('Confirmed customer');
-  const toggle = page.getByTestId('sales-data-filters-toggle');
-  if (await toggle.getAttribute('aria-expanded') === 'false') await toggle.click();
-  await page.getByTestId('sales-data-period-picker').click();
-  await page.getByTestId('sales-data-period-custom').click();
-  await page.getByRole('textbox', { name: 'From', exact: true }).fill('2026-10-10');
-  await page.getByRole('textbox', { name: 'To', exact: true }).fill('2026-10-15');
-  await page.getByRole('button', { name: 'Apply range', exact: true }).click();
+  await analyticsCustomRange(page,'2026-10-10','2026-10-15');
+  await page.getByTestId('analytics-filter-apply').click();
   await expect(page.getByTestId('referrer-clients')).toContainText('Clients brought · 1');
-  expect(reads.at(-1)?.searchParams.get('date_from')).toBe('2026-10-10T00:00:00+00:00');
-  expect(reads.at(-1)?.searchParams.get('date_to')).toBe('2026-10-16T00:00:00+00:00');
+  expect(reads.at(-1)?.searchParams.get('date_from')).toBe('2026-10-09T18:30:00.000Z');
+  expect(reads.at(-1)?.searchParams.get('date_to')).toBe('2026-10-15T18:30:00.000Z');
   expect(reads.every(url => url.searchParams.get('floor_id') === 'first-floor')).toBe(true);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
   await page.screenshot({ path: info.outputPath('reference-all-clients-custom-range.png'), fullPage: true });

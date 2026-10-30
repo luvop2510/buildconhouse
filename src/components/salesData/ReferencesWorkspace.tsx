@@ -3,22 +3,18 @@ import { View } from 'react-native';
 import { Text } from '@/src/components/AppText';
 import { AdminPage } from '@/src/components/AdminPage';
 import { salesWorkspaceApi } from '@/src/api/salesWorkspaces';
-import { salesAnalyticsApi, analyticsQuery } from '@/src/api/salesAnalytics';
+import { analyticsQuery } from '@/src/api/salesAnalytics';
 import { spacing, type } from '@/src/theme/tokens';
 import { ReferrerDirectory } from './ReferrerDirectory';
 import { Empty, ReadState } from '@/src/components/salesAnalytics/AnalyticsParts';
 import { AnalyticsFilters } from '@/src/components/salesAnalytics/AnalyticsFilters';
-import { useAnalyticsRead, useAnalyticsScope } from '@/src/components/salesAnalytics/useAnalytics';
+import { useAnalyticsRead, useResolvedAnalyticsPeriod } from '@/src/components/salesAnalytics/useAnalytics';
 import { ReportHeader } from './SalesReportParts';
 
 export function ReferencesWorkspace(){
  const params=useLocalSearchParams<{kind?:string}>();
- const {filters,update,floors,canView,accessError,retryAccess}=useAnalyticsScope();
- // Acquisitions use referral dates; reference sales retain order-confirmation dates.
- const selected={floor_id:filters.floor_id,preset:filters.preset,date_from:filters.date_from||'',date_to:filters.date_to||'',granularity:filters.granularity,date_basis:'confirmation'};
- const periodRead=useAnalyticsRead(`dashboard:${analyticsQuery(selected)}`,signal=>salesAnalyticsApi.dashboard(selected,signal),canView);
+ const {filters:selected,update,floors,canView,accessError,retryAccess,period,periodRead}=useResolvedAnalyticsPeriod();
  const bounds=periodRead.data?.period;
- const period=bounds?{preset:bounds.start&&bounds.end?'custom':'all',dateFrom:bounds.start,dateTo:bounds.end,label:bounds.label}:null;
  const key=analyticsQuery(selected)+':'+(period?.dateFrom||'')+':'+(period?.dateTo||'');
  const read=useAnalyticsRead(`reference-performance:${key}`,signal=>salesWorkspaceApi.get('relationships',{floorId:selected.floor_id,preset:period!.preset,dateFrom:period!.dateFrom||undefined,dateTo:period!.dateTo||undefined},{signal}),canView&&!!period);
  return <AdminPage title="Reference variety" header={false} contentStyle={{gap:spacing.s16,paddingTop:spacing.s16}}><View style={{width:'100%',maxWidth:1280,alignSelf:'center',gap:spacing.s16}}>

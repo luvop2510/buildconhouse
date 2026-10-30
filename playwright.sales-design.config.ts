@@ -1,6 +1,6 @@
 import { defineConfig } from '@playwright/test';
 export default defineConfig({
- testDir:'./e2e',testMatch:['sales-analytics.spec.ts','sales-redesign.spec.ts'],timeout:30000,retries:0,
+ testDir:'./e2e',testMatch:['sales-analytics.spec.ts','sales-redesign.spec.ts','redesign-sales-simplification.spec.ts','redesign-sales-reference-directory.spec.ts','redesign-interior-acquisition.spec.ts','redesign-keyboard-viewport.spec.ts'],timeout:30000,retries:0,
  outputDir:'output/playwright/sales-design',reporter:[['list'],['json',{outputFile:'output/playwright/sales-design-results.json'}]],
  use:{baseURL:process.env.E2E_BASE_URL||'http://127.0.0.1:8194',screenshot:'only-on-failure',trace:'retain-on-failure'},
  webServer:process.env.E2E_BASE_URL?undefined:{command:'AUDIT_PORT=8194 node scripts/serve-audit.mjs',url:'http://127.0.0.1:8194/login',reuseExistingServer:true},

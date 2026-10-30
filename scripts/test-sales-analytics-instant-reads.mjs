@@ -85,6 +85,13 @@ function fixture({ clear = true } = {}) {
  dashboard.unmount();customers.unmount();
  const revisit=fixture({clear:false});assert.equal(revisit.render().data,null);revisit.unmount();
 }
+{
+ let params={floorId:'third-floor',preset:'all',dateFrom:'2026-10-01T00:00:00Z',dateTo:'2026-11-01T00:00:00Z'};
+ const exports={};const modules={react:{},'expo-router':{useGlobalSearchParams:()=>params,usePathname:()=>'/sales-data/referrer/identity',useRouter:()=>({})},'@/src/components/salesData/SalesScope':{useSalesScope:()=>({canView:true})},'@/src/api/client':{subscribeApiCacheInvalidation:()=>()=>{}}};
+ vm.runInNewContext(transpile(read('../src/components/salesAnalytics/useAnalytics.ts')),{exports,require:id=>modules[id]||{},AbortController});
+ let values=exports.useAnalyticsScope().filters;assert.equal(values.floor_id,'third-floor');assert.equal(values.preset,'all_time');assert.equal(values.date_from,params.dateFrom);
+ params={...params,floor_id:'first-floor',date_from:'',date_to:'',preset:'this_month'};values=exports.useAnalyticsScope().filters;assert.equal(values.floor_id,'first-floor');assert.equal(values.date_from,undefined,'explicitly cleared modern bounds cannot restore an old bookmark date');assert.equal(values.date_to,undefined);
+}
 for(const path of ['../src/api/client.ts','../src/api/client.web.ts']) {
  const storage={secureGet:async()=>null,getItem:async()=>'',secureSet:async()=>{},setItem:async()=>{},secureRemove:async()=>{},removeItem:async()=>{}};
  const exports={};vm.runInNewContext(transpile(read(path)),{exports,require:()=>({storage,browserStorage:storage}),__DEV__:true,process:{env:{}},document:{cookie:''},AbortController,DOMException,setTimeout,clearTimeout,fetch:async()=>({ok:true,text:async()=>'{}'})});

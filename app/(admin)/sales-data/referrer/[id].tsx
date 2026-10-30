@@ -2,7 +2,7 @@ import { NavigationLink } from "@/src/design/NavigationLink";
 import { STAGE_LABELS, type KitchenStage } from "@/src/api/kitchenProjects";
 import { referrerCode } from "@/src/utils/referrer";
 import { MobileFilterSection } from "@/src/components/MobileFilterSection";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams } from "expo-router";
 import { useEffect, useState } from "react";
 import { View } from "react-native";
 import { Text } from "@/src/components/AppText";
@@ -17,14 +17,12 @@ import { colors, spacing, type } from "@/src/theme/tokens";
 import { TrendChart } from "@/src/components/salesData/TrendChart";
 import { downloadSectionExcel } from "@/src/utils/sectionExcel";
 import { toast } from "@/src/components/Toast";
-import { useAnalyticsDetailPeriod } from "@/src/components/salesData/useAnalyticsDetailPeriod";
-import { SalesFilters } from "@/src/components/salesData/SalesFilters";
-import { useFloorAccess } from "@/src/hooks/use-floor-access";
+import { AnalyticsFilters } from "@/src/components/salesAnalytics/AnalyticsFilters";
 import type { Granularity } from "@/src/components/salesData/salesDataApi";
 
 import { RankedBars } from '@/src/components/salesAnalytics/SalesGraphs';
 import { Choice, Disclosure, ReadState } from '@/src/components/salesAnalytics/AnalyticsParts';
-import { useAnalyticsRead, useAnalyticsScope } from '@/src/components/salesAnalytics/useAnalytics';
+import { useAnalyticsRead, useResolvedAnalyticsPeriod } from '@/src/components/salesAnalytics/useAnalytics';
 const fmtMoney = (value: number | null | undefined) => value == null ? 'Unavailable' : value.toLocaleString("en-IN", { maximumFractionDigits: 2 });
 
 type ReferrerDetailResponse = {
@@ -43,13 +41,11 @@ type ReferrerDetailResponse = {
 
 export default function ReferrerDetail() {
   const { id, floorId } = useLocalSearchParams<{ id: string; floorId?: string }>();
-  const { query: periodQuery, label: periodLabel, period, floorId: reportFloor } = useAnalyticsDetailPeriod();
-  const router = useRouter();
-  const { floors } = useFloorAccess();
+  const {query:periodQuery,period,periodRead,filters,update,floors,canView}=useResolvedAnalyticsPeriod();
+  const periodLabel=period?.label||'Selected period';const reportFloor=filters.floor_id;
   const [peopleOffset, setPeopleOffset] = useState(0);
   useEffect(() => { setPeopleOffset(0); }, [id, periodQuery]);
   const [granularity, setGranularity] = useState<Granularity>("month");
-  const { canView } = useAnalyticsScope();
   const { isPhone, isTabletPortrait } = useBp();
   const compact = isPhone || isTabletPortrait;
 
@@ -67,12 +63,11 @@ export default function ReferrerDetail() {
       subtitle={data ? `${reportFloor === "third-floor" ? "" : `₹${fmtMoney(data.total_revenue)} sales · `}${data.total_revenue_rnb || reportFloor === "third-floor" ? `RNB ${fmtMoney(data.total_revenue_rnb)} Furniture sales · ` : ""}${periodLabel}` : undefined}
       contentStyle={{gap:spacing.s16,width:"100%",maxWidth:1280,alignSelf:"center"}}
     >
-      {period ? <SalesFilters floors={floors} floorId={reportFloor} onFloorChange={floorId => router.setParams({ floorId })} period={period}
-        onPeriodChange={next => router.setParams({ preset: next.preset, dateFrom: next.dateFrom || "", dateTo: next.dateTo || "", date_from: "", date_to: "" })} /> : null}
+      <AnalyticsFilters filters={filters} showDateBasis={false} update={next=>update({...next,date_basis:'confirmation'})} floors={floors}/>
       <MobileFilterSection testID="referrer-filters">
       <Choice label="Time scale" value={granularity} onChange={value=>setGranularity(value as Granularity)} options={[{value:'day',label:'Day'},{value:'month',label:'Month'},{value:'quarter',label:'Quarter'},{value:'year',label:'Year'}]} testID="referrer-detail-granularity"/>
       </MobileFilterSection>
-      {!canView?<EmptyState title="Your account does not have permission to view Sales Data."/>:<ReadState variant="profile" loading={read.loading&&!data} refreshing={read.refreshing} error={read.error} retry={read.refresh}/>}
+      {!canView?<EmptyState title="Your account does not have permission to view Sales Data."/>:<ReadState variant="profile" loading={(read.loading||periodRead.loading)&&!data} refreshing={read.refreshing} error={read.error||periodRead.error} retry={()=>{periodRead.refresh();read.refresh();}}/>}
       {data ? (
         <View style={{ gap: spacing.lg }}>
           <Text style={type.body}>{[data.referrer.company, referrerCode(data.referrer.id, data.referrer.type, data.referrer.name)].filter(Boolean).join(", ")}</Text>
