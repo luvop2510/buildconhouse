@@ -13,6 +13,36 @@ from tests.unit.test_kitchen_version_relationships import aggregate
 
 
 @pytest.mark.asyncio
+async def test_create_response_read_failure_precedes_insert_and_retry_preserves_completed_address(setup, monkeypatch):
+    database, service, owner = setup
+    database.customers.rows[0]["address"] = None
+    original_customers = kitchen_projects.KitchenProjectService._current_customers
+    async def stalled_customers(self, _ids):
+        raise TimeoutError("Synthetic customer read timeout")
+    monkeypatch.setattr(kitchen_projects.KitchenProjectService, "_current_customers", stalled_customers)
+    monkeypatch.setattr(kitchen_routes, "db", database)
+    app = FastAPI()
+    app.include_router(kitchen_routes.router)
+    app.dependency_overrides[get_current_user] = lambda: owner
+    body = {"customer_id": "customer-a", "customer_address": "Entered address", "idempotency_key": "create-read-recovery"}
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app, raise_app_exceptions=False), base_url="http://test") as client:
+        response = await client.post("/kitchen-projects", json=body)
+    assert response.status_code == 503
+    assert not database.kitchen_projects.rows
+    assert database.customers.rows[0]["address"] == "Entered address"
+    assert database.kitchen_configuration.rows[0]["active_command_count"] == 0
+    assert not database.kitchen_configuration.rows[0].get("active_create_token")
+    monkeypatch.setattr(kitchen_projects.KitchenProjectService, "_current_customers", original_customers)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        retry = await client.post("/kitchen-projects", json=body)
+        replay = await client.post("/kitchen-projects", json=body)
+    assert retry.status_code == replay.status_code == 200
+    assert retry.json()["customer"]["address"] == "Entered address"
+    assert replay.json()["id"] == retry.json()["id"] and replay.json()["replayed"]
+    assert len(database.kitchen_projects.rows) == len(database.customers.rows) == 1
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(("stage", "target"), [
     ("visit", "cad"), ("quotation", "order"), ("order", "production"), ("production", "installation"),
 ])

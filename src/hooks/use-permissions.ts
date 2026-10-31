@@ -89,7 +89,7 @@ export function useModuleAccess() {
   const { selectedFloorId } = useFloorAccess(!!staff);
   return useCallback(
     (moduleKey: string) => {
-      if (moduleKey.startsWith("kitchen-")) moduleKey = "kitchen-projects";
+      const kitchenStage = moduleKey.startsWith("kitchen-") && !["kitchen-projects", "kitchen-dashboard"].includes(moduleKey);
       if (moduleKey === "dashboard" && staff) return true;
       if (moduleKey === "sales-data") return staff?.role === "owner";
       if (!staff) return true;
@@ -97,16 +97,16 @@ export function useModuleAccess() {
       if (moduleKey === "team") return false;
       if (staff.custom_access) {
         if (moduleKey === "settings") return true;
-        const resource = MODULE_GRANT_RESOURCE[moduleKey];
+        const resource = kitchenStage ? moduleKey.replaceAll("-", "_") : moduleKey === "kitchen-dashboard" ? "kitchen_projects" : MODULE_GRANT_RESOURCE[moduleKey];
         return Boolean(resource && hasGrantAccess(staff.access_grants, selectedFloorId, resource));
       }
-      if (KITCHEN_OWNER_ONLY && moduleKey === "kitchen-projects") return false;
+      if (KITCHEN_OWNER_ONLY && moduleKey.startsWith("kitchen-")) return false;
       if (!data) return true;
       const profileModules = staff.access_profile ? PROFILE_MODULES[staff.access_profile] : undefined;
       if (profileModules) return profileModules.has(moduleKey);
       const row = data.matrix[staff.role];
       if (!row || !(moduleKey in row)) return true;
-      return row[moduleKey] !== false;
+      return row[moduleKey] !== false && (!kitchenStage || row["kitchen-projects"] !== false);
     },
     [staff, data, selectedFloorId],
   );

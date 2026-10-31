@@ -50,6 +50,109 @@ async function historicalQuotation(api: APIRequestContext, project: any, designI
   });
 }
 
+test('Design upload and save failures retain their draft, release controls and retry without duplicate files', async ({ page, context }) => {
+  const created = await context.request.post('/api/kitchen-projects', { headers, data: {
+    customer_id: process.env.KITCHEN_E2E_CUSTOMER_ID, idempotency_key: randomUUID(), lead: {},
+  } });
+  expect(created.ok(), await created.text()).toBe(true);
+  let project = await created.json();
+  for (const target_stage of ['visit', 'cad', 'design']) project = await command(context.request, project, 'move_stage', { target_stage });
+  const health = captureRuntimeHealth(page);
+  let failRegistration = true;
+  let failSave = true;
+  await page.route('**/api/kitchen-projects/*/commands', route => {
+    const name = route.request().postDataJSON()?.command;
+    if (name === 'design_present' && failRegistration) {
+      failRegistration = false;
+      return route.fulfill({ status: 503, json: { detail: 'Synthetic design registration unavailable' } });
+    }
+    if (name === 'design_update' && failSave) {
+      failSave = false;
+      return route.fulfill({ status: 503, json: { detail: 'Synthetic design save unavailable' } });
+    }
+    return route.continue();
+  });
+  await open(page, project, 'design');
+  const chooser = page.waitForEvent('filechooser');
+  await page.getByTestId('kitchen-design-pdf-pick').click();
+  await (await chooser).setFiles({ name: 'retained-design.pdf', mimeType: 'application/pdf', buffer: kitchenPdfBytes('retained-design') });
+  await page.getByTestId('kitchen-design-pdf-upload').click();
+  await expect(page.getByTestId('kitchen-design-pdf-upload')).toHaveText('Retry saving PDF entry');
+  await expect(page.getByTestId('kitchen-design-pdf-upload')).toBeEnabled();
+  project = await (await context.request.get(`/api/kitchen-projects/${project.id}`, { headers })).json();
+  expect(project.attachments).toHaveLength(1);
+  expect(project.design_versions).toHaveLength(0);
+  const registered = page.waitForResponse(response => response.url().endsWith('/commands') && response.request().postDataJSON()?.command === 'design_present');
+  await page.getByTestId('kitchen-design-pdf-upload').click();
+  expect((await registered).ok()).toBe(true);
+  await page.getByTestId('kitchen-design-edit-response-approved').click();
+  await page.getByTestId('kitchen-design-sent-yes').click();
+  await page.getByTestId('kitchen-design-finalize').click();
+  await page.getByTestId('kitchen-design-edit-save').click();
+  await expect(page.getByText('Synthetic design save unavailable Your entries have been kept.', { exact: true })).toBeVisible();
+  await expect(page.getByTestId('kitchen-design-edit-save')).toBeEnabled();
+  await page.getByTestId('kitchen-project-actions').click();
+  await page.getByRole('menuitem', { name: 'History', exact: true }).click();
+  await expect(page.getByTestId('kitchen-history-sheet')).toBeVisible();
+  await page.getByTestId('kitchen-history-sheet-close').click();
+  await expect(page.getByTestId('kitchen-history-sheet')).toHaveCount(0);
+  await expect(page.getByTestId('kitchen-design-edit-response-approved')).toHaveAttribute('aria-pressed', 'true');
+  project = await clickCommand(page, 'kitchen-design-edit-save', 'design_update');
+  expect(project.attachments).toHaveLength(1);
+  expect(project.design_versions).toHaveLength(1);
+  expect(project.final_design_version_id).toBe(project.design_versions[0].id);
+  await page.reload();
+  await expect(page.getByTestId('kitchen-design-finalize')).toHaveAttribute('aria-pressed', 'true');
+  await health.assertHealthy();
+});
+
+for (const approveInForm of [false, true]) test(`Kitchen worker records the first handoff ${approveInForm ? 'immediately after saving customer approval' : 'of an approved design'} without changing customer approval`, async ({ page, context, baseURL }) => {
+  const created = await context.request.post('/api/kitchen-projects', { headers, data: {
+    customer_id: process.env.KITCHEN_E2E_CUSTOMER_ID, idempotency_key: randomUUID(), lead: {},
+  } });
+  expect(created.ok(), await created.text()).toBe(true);
+  let project = await created.json();
+  for (const target_stage of ['visit', 'cad', 'design']) project = await command(context.request, project, 'move_stage', { target_stage });
+  const uploaded = await uploadKitchenFixturePdf(context.request, project, 'worker-approved-design.pdf');
+  project = await command(context.request, uploaded.project, 'design_present', {
+    attachment_ids: [uploaded.attachment.id], final_attachment_id: uploaded.attachment.id,
+    shared_date: kitchenIndiaToday(), approval_date: approveInForm ? null : kitchenIndiaToday(), response: approveInForm ? 'Pending' : 'Approved', handoff_status: 'No',
+  });
+  await context.addCookies([{ name: 'kitchen_acceptance_session', value: 'worker', url: baseURL! }]);
+  const health = captureRuntimeHealth(page);
+  await open(page, project, 'design');
+  if (approveInForm) {
+    await page.getByTestId('kitchen-design-edit-response-approved').click();
+    project = await clickCommand(page, 'kitchen-design-edit-save', 'design_update', { response: 'Approved', handoff_status: 'No' });
+    await expect(page.getByTestId('kitchen-unsaved-notice')).toHaveCount(0);
+  }
+  const approvedDesign = project.design_versions[0];
+  await expect(page.getByTestId('kitchen-design-edit-response-approved')).toBeDisabled();
+  await expect(page.getByTestId('kitchen-design-edit-shared')).toBeDisabled();
+  await expect(page.getByTestId('kitchen-design-finalize')).toBeDisabled();
+  await expect(page.getByText('Customer approval is saved. Only the owner can correct approved details. Record the first company handoff below to finalize this design.', { exact: true })).toBeVisible();
+  await expect(page.getByTestId('kitchen-design-sent-yes')).toBeEnabled();
+  await page.getByTestId('kitchen-design-sent-yes').click();
+  await expect(page.getByTestId('kitchen-design-sent-date')).toHaveValue(kitchenIndiaToday());
+  project = await clickCommand(page, 'kitchen-design-edit-save', 'design_handoff', { version_id: approvedDesign.id, date: kitchenIndiaToday() });
+  expect(project.final_design_version_id).toBe(approvedDesign.id);
+  expect(project.design_versions[0]).toMatchObject({
+    response: 'Approved', shared_date: approvedDesign.shared_date, approval_date: approvedDesign.approval_date,
+    handoff_status: 'Yes', handoff_date: kitchenIndiaToday(),
+  });
+  await expect(page.getByTestId('kitchen-unsaved-notice')).toHaveCount(0);
+  await expect(page.getByTestId('kitchen-design-edit-reload')).toHaveCount(0);
+  await expect(page.getByTestId('kitchen-design-finalize')).toHaveAttribute('aria-pressed', 'true');
+  await page.reload();
+  await expect(page.getByTestId('kitchen-design-sent-yes')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('kitchen-design-sent-yes')).toBeDisabled();
+  await expect(page.getByTestId('kitchen-advance-quotation')).toBeEnabled();
+  project = await clickCommand(page, 'kitchen-advance-quotation', 'move_stage');
+  expect(project.stage).toBe('quotation');
+  await expect(page.getByTestId('kitchen-quotation-final-design')).toContainText('worker-approved-design.pdf');
+  await health.assertHealthy();
+});
+
 test('Simple design and quotation pages preserve PDF history, blank price and older order basis downstream', async ({ page, context }, info) => {
   let project = await seed(context.request);
   const health = captureRuntimeHealth(page);

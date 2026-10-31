@@ -230,16 +230,57 @@ async def test_intake_requires_address_before_any_customer_or_project_write(setu
     assert invalid.value.status_code == 422 and "address" in invalid.value.detail
     assert len(database.customers.rows) == 1 and not database.kitchen_projects.rows
     database.customers.rows[0]["address"] = address
-    for request in (
-        create_request(customer_id="customer-a", idempotency_key="missing-saved-address"),
-        create_request(customer={"name": "Typed name", "phone": "9000000000", "address": "Typed address"},
-                       idempotency_key="missing-matched-address"),
-    ):
-        with pytest.raises(HTTPException) as invalid:
-            await service.create(owner, request)
-        assert invalid.value.status_code == 422 and "update the existing customer" in invalid.value.detail
+    with pytest.raises(HTTPException) as invalid:
+        await service.create(owner, create_request(customer_id="customer-a", idempotency_key="missing-saved-address"))
+    assert invalid.value.status_code == 422 and "update the existing customer" in invalid.value.detail
     assert len(database.customers.rows) == 1 and not database.kitchen_projects.rows
     assert not database.customers.rows[0].get("kitchen_reference_reserved")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("address", [None, "", "  ", "absent"])
+@pytest.mark.parametrize("source", ["inline", "existing"])
+async def test_intake_fills_legacy_missing_address_and_replays_without_rewriting_contact(setup, address, source):
+    database, service, owner = setup
+    contact = database.customers.rows[0]
+    if address == "absent":
+        contact.pop("address")
+    else:
+        contact["address"] = address
+    original = copy.deepcopy(contact)
+    details = ({"customer": {"name": "Do not overwrite name", "phone": "9000000000", "address": "Typed address"}}
+               if source == "inline" else {"customer_id": contact["id"], "customer_address": "Typed address"})
+    body = create_request(**details, idempotency_key="missing-address-repair")
+    result = await service.create(owner, body)
+    replay = await service.create(owner, body)
+    assert result["customer_id"] == original["id"] == replay["customer_id"]
+    assert result["customer"]["address"] == contact["address"] == "Typed address"
+    assert {key: contact[key] for key in original if key != "address"} == {key: value for key, value in original.items() if key != "address"}
+    assert replay["replayed"] and len(database.kitchen_projects.rows) == len(database.customers.rows) == 1
+    contact["address"] = "Later canonical edit"
+    await service.create(owner, body)
+    assert contact["address"] == "Later canonical edit"
+
+
+@pytest.mark.asyncio
+async def test_intake_does_not_overwrite_address_changed_during_reservation(setup, monkeypatch):
+    database, service, owner = setup
+    database.customers.rows[0]["address"] = None
+    update = database.customers.update_one
+    async def concurrent_update(query, changes):
+        database.customers.rows[0]["address"] = "Concurrent address"
+        return await update(query, changes)
+    monkeypatch.setattr(database.customers, "update_one", concurrent_update)
+    body = create_request(customer={"name": "Typed name", "phone": "9000000000", "address": "Typed address"},
+                          idempotency_key="address-race")
+    with pytest.raises(HTTPException) as changed:
+        await service.create(owner, body)
+    assert changed.value.status_code == 409
+    assert database.customers.rows[0]["address"] == "Concurrent address"
+    assert not database.kitchen_projects.rows
+    monkeypatch.setattr(database.customers, "update_one", update)
+    retry = await service.create(owner, body)
+    assert retry["customer"]["address"] == "Concurrent address"
 
 
 @pytest.mark.asyncio
@@ -255,11 +296,26 @@ async def test_address_requirement_preserves_existing_creation_replay_and_histor
     assert converted["stage"] == "visit" and len(database.kitchen_projects.rows) == 1
 
 
+@pytest.mark.asyncio
+async def test_optional_existing_address_preserves_old_creation_fingerprints(setup):
+    database, service, owner = setup
+    body = create_request(customer_id="customer-a", idempotency_key="old-address-contract")
+    first = await service.create(owner, body)
+    old_fields = body.model_dump(exclude={"idempotency_key", "customer", "assigned_to", "customer_address"})
+    for field in ("referrer_id", "referrer_name", "referrer_type", "referrer_company"):
+        if old_fields["lead"].get(field) is None:
+            old_fields["lead"].pop(field, None)
+    assert database.kitchen_projects.rows[0]["creation_fingerprint"] == kitchen_projects.fingerprint(old_fields)
+    replay = await service.create(owner, body)
+    assert replay["id"] == first["id"] and replay["replayed"]
+
+
 def test_lead_requires_one_customer_source_and_valid_inline_identity():
     for payload in ({}, {"customer_id": "a", "customer": {"name": "A", "phone": "123"}},
                     {"customer": {"name": " ", "phone": "123"}},
                     {"customer": {"name": "A", "phone": "---"}},
-                    {"customer": {"name": "A", "phone": "123", "floor_id": "first-floor"}}):
+                    {"customer": {"name": "A", "phone": "123", "floor_id": "first-floor"}},
+                    {"customer": {"name": "A", "phone": "123"}, "customer_address": "Unbound address"}):
         with pytest.raises(ValidationError):
             CreateProject(idempotency_key="invalid-inline", **payload)
 

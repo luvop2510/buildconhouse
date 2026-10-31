@@ -225,4 +225,7 @@ async def own_file_transfer(project_id: str, user: UserPublic = Depends(get_curr
     row = await db.kitchen_file_transfers.find_one({"_id": user.id})
     if not row or row["state"] == "completed":
         return {"transfer": None}
+    project = await db.kitchen_projects.find_one({"id": row["project_id"], "floor_id": "second-floor"})
+    if not project or not kitchen_access.project_visible(project, user, {}):
+        return {"transfer": None}
     return {"transfer": {**KitchenFileTransfers(db).public(row), "project_id": row["project_id"]}}

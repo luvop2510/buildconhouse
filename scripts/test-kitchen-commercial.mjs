@@ -167,6 +167,25 @@ assert.deepEqual(calls.pop(), ['order_status', { status: 'On Hold', reason: 'Awa
 assert.equal(view.nodes.some(node => node.type === 'document'), false, 'Order confirmation never requests a new document');
 const design2 = { ...design, id: 'design-two', number: 2, requirements: 'Version two requirements', notes: 'Version two internal notes' };
 const quote2 = { ...quotation, id: 'quotation-two', number: 7, design_version_id: design2.id, notes: 'Revision seven notes' };
+view = render('design', { design_versions: [{ ...design, handoff_status: 'No', handoff_date: null }], final_design_version_id: null, permissions: { can_approve_exceptions: false } });
+assert.equal(view.control('kitchen-design-edit-response').props.disabled, true, 'Approved customer decisions remain owner-only');
+assert.equal(view.control('kitchen-design-edit-shared').props.disabled, true, 'Approved sharing dates remain owner-only');
+assert.equal(view.control('kitchen-design-sent').props.disabled, false, 'An authorized worker can record the initial company handoff after customer approval');
+view.control('kitchen-design-sent').props.onChange('Yes');
+view = view.refresh();
+assert.equal(view.control('kitchen-design-sent-date').props.value, '2026-10-26');
+assert.equal(view.control('kitchen-design-edit-save').props.disabled, false);
+await view.control('kitchen-design-edit-save').props.onPress();
+assert.deepEqual(calls.pop(), ['design_handoff', { version_id: 'design', date: '2026-10-26' }], 'First handoff uses the existing staff-authorized command without sending approved corrections');
+view.control('kitchen-design-sent').props.onChange('No');
+view = view.refresh();
+assert.deepEqual(drafts['commercial.cycle.1.design.design.handoffDate'], { handoff_status: 'No', handoff_date: '' }, 'Canceling the first handoff clears its hidden date and restores the unchanged saved draft');
+assert.equal(view.control('kitchen-design-edit-save').props.disabled, true, 'The unchanged No handoff needs no command');
+view = view.refresh(undefined, true);
+assert.equal(view.control('kitchen-design-sent').props.disabled, true, 'Busy and historical/production guards still prevent handoff');
+view = render('design', { permissions: { can_approve_exceptions: false } });
+assert.equal(view.control('kitchen-design-sent').props.disabled, true, 'A recorded handoff cannot be corrected by staff');
+assert.equal(view.control('kitchen-design-edit-save').props.disabled, true);
 view = render('design', { design_versions: [{ ...design, approval_date: '2026-10-20' }] });
 for (const retired of ['kitchen-design-edit-date','kitchen-design-edit-requirements','kitchen-design-edit-budget','kitchen-design-edit-notes','kitchen-design-edit-handoff']) assert.equal(view.control(retired),undefined);
 assert.deepEqual(view.control('kitchen-design-sent').props.values,['Yes','No']);
@@ -420,6 +439,9 @@ async function checkProvider(source) {
   const modules = {
     react: hooksReact, 'react/jsx-runtime': { jsx: (_type, props) => ({ props }) },
     'expo-router': { useRouter: () => ({ replace: route => routes.push(route) }) },
+    '@/src/state/auth': { useAuth: () => ({ staff: { role: 'owner' } }) },
+    '@/src/access-profiles': { staffLandingPath: () => '/(admin)/kitchen' },
+    '@/src/team-delegation': { hasGrantAccess: () => true },
     '@/src/api/kitchenProjects': { KITCHEN_STAGES: stages, kitchenProjectsApi: {
       get: async () => record, configuration: async () => ({}),
       command: async (id, version, _key, command, payload) => {
@@ -436,7 +458,7 @@ async function checkProvider(source) {
     './shared': { errorText: String, useKitchenSubmission: () => ({ submit: async (_fingerprint, work, accepted) => { const value = await work('provider-fixture'); accepted(value); return true; } }) },
     './KitchenDates': { kitchenToday: () => '2026-10-26' },
   './KitchenAutosave': { useKitchenAutosave: options => { autosaveOptions = options; return { status: autosaveStatus, retry: () => {} }; } },
-    './KitchenExitGuard': { useKitchenExitGuard: () => {} },
+    './KitchenExitGuard': { useKitchenExitGuard: () => ({ allowLeave() {} }) },
   };
   const providerExports = {};
   const output = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;

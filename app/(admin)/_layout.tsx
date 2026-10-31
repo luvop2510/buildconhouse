@@ -271,7 +271,7 @@ function useVisibleNav() {
   const { access, selectedFloorId } = useFloorAccess(!!staff);
   return (items: NavItem[]) => items.filter((item) => {
     if (selectedFloorId === KITCHEN_FLOOR_ID && !item.match.startsWith("kitchen-") && item.match !== "dashboard" && !isKitchenReportingRoute([item.match])) return false;
-    const permission = item.match.startsWith("kitchen-") ? "kitchen-projects" : item.match;
+    const permission = item.match;
     if (item.floors && selectedFloorId && !item.floors.includes(selectedFloorId)) return false;
     if (staff?.custom_access) return hasAccess(permission);
     if (item.roles && (!staff?.role || !item.roles.includes(staff.role))) return false;
@@ -545,7 +545,7 @@ function CustomAccessRouteGate({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const { selectedFloorId } = useFloorAccess(!!staff);
   const destinationReady = hasRouteDestination(segments);
-  const module = moduleForRoute(segments);
+  const module = selectedFloorId === KITCHEN_FLOOR_ID && isCustomerEditorRoute(segments) ? "kitchen-projects" : moduleForRoute(segments);
 
   useEffect(() => {
     // Expo can publish ['(admin)'] before a deep link's page segment. Do not

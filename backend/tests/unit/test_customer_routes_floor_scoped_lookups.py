@@ -36,6 +36,8 @@ class _FakeCustomers:
         # Apply the update to simulate real Mongo behavior
         if "$set" in update:
             self._doc.update(update["$set"])
+        for field in update.get("$unset", {}):
+            self._doc.pop(field, None)
         return {"matched_count": 1, "modified_count": 1}
 
 
@@ -91,3 +93,33 @@ def test_update_customer_works_cross_floor(monkeypatch):
     # Verify update_one was called with bare {"id": ...} filter
     # (the assertion inside update_one checks this; if floor_query were used, it would fail)
     assert customer_routes.db.customers.updated_with["$set"]["name"] == "JK Updated"
+
+
+def test_clearing_customer_email_unsets_the_sparse_unique_key(monkeypatch):
+    from models import CustomerUpdatePayload
+    database = _FakeDb({"id": "c1", "floor_id": "ground-floor", "name": "JK", "email": "old@example.com"})
+    monkeypatch.setattr(customer_routes, "db", database)
+    monkeypatch.setattr(customer_routes, "log_event", lambda **_kw: asyncio.sleep(0))
+    result = asyncio.run(customer_routes.update_customer("c1", CustomerUpdatePayload(email=None, address="New site"), user=_user()))
+    assert result.email is None and result.address == "New site"
+    assert "email" not in database.customers._doc
+    assert database.customers.updated_with["$unset"] == {"email": ""}
+    assert "email" not in database.customers.updated_with["$set"]
+
+
+def test_concurrent_customer_email_collision_is_an_actionable_conflict(monkeypatch):
+    import pytest
+    from fastapi import HTTPException
+    from models import CustomerUpdatePayload
+    from pymongo.errors import DuplicateKeyError
+    database = _FakeDb({"id": "c1", "floor_id": "ground-floor", "name": "JK"})
+    async def collision(*_args, **_kwargs):
+        raise DuplicateKeyError("Synthetic concurrent email collision")
+    async def before_collision(query, *_args, **_kwargs):
+        return None if "email" in query else database.customers._doc
+    monkeypatch.setattr(customer_routes, "db", database)
+    monkeypatch.setattr(database.customers, "update_one", collision)
+    monkeypatch.setattr(database.customers, "find_one", before_collision)
+    with pytest.raises(HTTPException) as conflict:
+        asyncio.run(customer_routes.update_customer("c1", CustomerUpdatePayload(email="new@example.com"), user=_user()))
+    assert conflict.value.status_code == 409

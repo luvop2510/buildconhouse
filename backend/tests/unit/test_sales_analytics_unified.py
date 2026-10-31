@@ -153,7 +153,7 @@ def test_profile_exports_single_identity_and_source_ids_to_real_formats():
         quotations = kitchen_projects = activity_events = products = Collection()
         def __getitem__(self, key):
             return Collection()
-    q = sales.entity_query(sales.Query(), "companies", "b1")
+    q = sales.entity_query(sales.Query(preset="custom", date_from="2026-10-01", date_to="2026-10-31"), "companies", "b1")
     report = asyncio.run(profile(DB(), [order("one", amount=60), order("two", amount=40)], q, None, "companies", "b1", table_page_size=100))
     assert report["identity"]["id"] == "b1"
     sections = report_sections(report, view="profile")

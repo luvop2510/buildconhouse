@@ -38,7 +38,7 @@ export function FloorDelegationEditor({ floors, catalog, value, onChange, disabl
                   <Text style={type.bodyStrong}>{resource.key === "kitchen_projects" ? "Kitchen workspace" : resource.label}{legacy ? " · Legacy access" : ""}</Text>
                   {resource.key === "kitchen_projects" ? <>
                     <Text style={type.caption}>Includes {currentPageLabels.join(" · ")}</Text>
-                    <Text style={type.caption}>These pages share workspace access. Updated workflow pages keep the selected permissions.</Text>
+                    <Text style={type.caption}>This option grants all Kitchen sections. To limit access, turn it off and select individual sections below.</Text>
                   </> : null}
                   {resource.key !== "kitchen_projects" && currentPageLabels.length ? <Text style={type.caption}>Pages: {currentPageLabels.join(" · ")}</Text> : null}
                   {legacy ? <Text style={type.caption}>Existing access is preserved. This page is no longer available for new delegation on this floor; turn it off to revoke it.</Text> : null}

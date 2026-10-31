@@ -118,6 +118,7 @@ class LeadCustomer(StrictModel):
 class CreateProject(StrictModel):
     assigned_to: Identifier | None = None
     customer_id: Identifier | None = None
+    customer_address: Text | None = None
     customer: LeadCustomer | None = None
     idempotency_key: CommandKey
     lead: LeadFields = Field(default_factory=LeadFields)
@@ -126,6 +127,8 @@ class CreateProject(StrictModel):
     def one_customer_source(self):
         if (self.customer_id is None) == (self.customer is None):
             raise ValueError("Select an existing customer or enter the new customer's details")
+        if self.customer_address is not None and self.customer_id is None:
+            raise ValueError("An existing customer address requires a selected customer")
         return self
 
 

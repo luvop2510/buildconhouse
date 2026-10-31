@@ -2,6 +2,7 @@ import { prepareKitchenFixtureCommand } from './kitchen-pdf-fixtures';
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { captureRuntimeHealth } from './runtime-health';
+import { formatPhone } from '../src/utils/phone';
 
 const stages = ['lead', 'visit', 'cad', 'design', 'quotation', 'order', 'production', 'installation', 'completed'] as const;
 const headers = { 'X-Floor-Id': 'second-floor' };
@@ -19,7 +20,7 @@ async function create(api: APIRequestContext, name: string, detail = false) {
     idempotency_key: randomUUID(),
     customer: { name, address: 'Synthetic complete customer address', phone: `9${BigInt(`0x${suffix.slice(0, 12)}`).toString().slice(-9).padStart(9, '0')}`,
       ...(detail ? { email: `${suffix}@example.com`, address: 'Synthetic complete customer address', company: 'Synthetic kitchen company',
-        property_name: 'Synthetic property', city: 'Ahmedabad', state: 'Gujarat', pincode: '380001', alternate_phone: '9000000001', notes: 'Synthetic customer instructions' } : {}) },
+        property_name: 'Synthetic property', city: 'Ahmedabad', state: 'Gujarat', pincode: '380001', notes: 'Synthetic customer instructions' } : {}) },
     lead: { site_location: `Search site ${suffix}`, notes: 'Saved original lead notes' },
   } });
   expect(response.ok(), await response.text()).toBe(true);
@@ -75,7 +76,7 @@ test('Dashboard shows all nine authoritative stage totals and opens the matching
     expect(listed.total).toBe(snapshot.stage_counts[stage]);
     expect(listed.rows.every((row: any) => row.stage === stage)).toBe(true);
     const customerRow = page.getByTestId(`kitchen-project-${projects[index].id}`);
-    await expect(customerRow).toContainText(projects[index].customer.phone);
+    await expect(customerRow).toContainText(formatPhone(projects[index].customer.phone));
     await customerRow.click();
     await expect(page.getByTestId('kitchen-project-details')).toBeVisible();
     await expect(page.getByTestId('kitchen-project-details')).toContainText(projects[index].customer.name);
@@ -149,8 +150,8 @@ test('Universal search crosses stage queues, opens compact customer identity and
   await expect(page).toHaveURL(new RegExp(`/kitchen/${project.id}/stages/visit\\?`));
   const details = page.getByTestId('kitchen-project-details');
   await expect(details).toBeVisible();
-  for (const field of ['name', 'phone']) await expect(details).toContainText(project.customer[field]);
-  for (const field of ['email', 'address', 'company', 'property_name', 'city', 'state', 'pincode', 'alternate_phone', 'notes']) await expect(details).not.toContainText(project.customer[field]);
+  for (const value of [project.customer.name, formatPhone(project.customer.phone)]) await expect(details).toContainText(value);
+  for (const field of ['email', 'address', 'company', 'property_name', 'city', 'state', 'pincode', 'notes']) await expect(details).not.toContainText(project.customer[field]);
   await expect(page.getByTestId('kitchen-customer-current-stage')).toHaveCount(0);
   await expect(page.getByTestId('kitchen-project-actions')).toBeVisible();
   await expect(page.getByTestId('kitchen-project-stages').getByRole('link')).toHaveCount(9);
@@ -177,7 +178,7 @@ test('Universal search crosses stage queues, opens compact customer identity and
   await page.getByTestId('kitchen-universal-search').fill(updated.email);
   await expect(page.getByTestId(`kitchen-search-project-${project.id}`)).toContainText(updated.name);
   await page.getByTestId(`kitchen-search-project-${project.id}`).click();
-  for (const value of [updated.name, updated.phone]) await expect(page.getByTestId('kitchen-project-details')).toContainText(value);
+  for (const value of [updated.name, formatPhone(updated.phone)]) await expect(page.getByTestId('kitchen-project-details')).toContainText(value);
   await expect(page.getByTestId('kitchen-visit-notes')).toHaveValue(`Changed from global search ${marker}`);
   await page.getByTestId('kitchen-page-back').click();
   await expect(page).toHaveURL(/\/kitchen$/);

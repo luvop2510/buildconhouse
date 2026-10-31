@@ -23,6 +23,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from auth import ROLE_HIERARCHY, ROLE_LABELS, get_current_user, require_min_role
 from db import db
 from models import UserPublic, now_iso
+from services.access_grants import KITCHEN_STAGE_RESOURCES, RESOURCE_REGISTRY
 
 router = APIRouter(prefix="/settings/permission-matrix", tags=["settings"])
 
@@ -42,6 +43,8 @@ MODULES: list[dict[str, str]] = [
     {"key": "settings", "label": "Settings"},
     {"key": "sales-data", "label": "Sales Data"},
 ]
+MODULES.extend({"key": f"kitchen-{stage}", "label": f"Kitchen · {RESOURCE_REGISTRY[resource]['label']}"}
+               for stage, resource in KITCHEN_STAGE_RESOURCES.items())
 MODULE_KEYS = {m["key"] for m in MODULES}
 
 # Mirrors the nav `roles` restriction that existed before this feature —
@@ -83,6 +86,12 @@ async def get_permission_matrix(_: UserPublic = Depends(get_current_user)):
                 matrix[role][mod_key] = bool(allowed)
     for role, row in matrix.items():
         row["sales-data"] = role == "owner"
+        for stage in KITCHEN_STAGE_RESOURCES:
+            key = f"kitchen-{stage}"
+            if role == "owner":
+                row[key] = True
+            elif key not in overrides.get(role, {}):
+                row[key] = row["kitchen-projects"]
     return {
         "modules": MODULES,
         "roles": _roles_payload(),

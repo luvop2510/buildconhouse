@@ -13,7 +13,7 @@ assert.deepEqual(stages, serverStages, 'Every backend stage must be represented 
 for (const page of KITCHEN_WORKSPACE_PAGES) {
   assert.ok(page.label.trim());
   assert.ok(page.icon.trim());
-  assert.equal(moduleForRoute(['(admin)', 'kitchen', 'stages', page.stage]), 'kitchen-projects');
+  assert.equal(moduleForRoute(['(admin)', 'kitchen', 'stages', page.stage]), `kitchen-${page.stage}`);
   assert.equal(hasGrantAccess([{ resource: KITCHEN_WORKSPACE_RESOURCE, floor_id: 'second-floor', actions: ['view'] }], 'second-floor', KITCHEN_WORKSPACE_RESOURCE), true);
   assert.equal(hasGrantAccess([{ resource: KITCHEN_WORKSPACE_RESOURCE, floor_id: 'second-floor', actions: ['view'] }], 'first-floor', KITCHEN_WORKSPACE_RESOURCE), false);
 }
@@ -42,3 +42,14 @@ const kitchenNav = KITCHEN_WORKSPACE_PAGES.map(page => ({ href: `/(admin)/kitche
 assert.deepEqual(delegationPageLabels('kitchen_projects', 'second-floor', kitchenNav), KITCHEN_WORKSPACE_PAGES.map(page => page.label));
 assert.deepEqual(delegationPageLabels('kitchen_projects', 'first-floor', kitchenNav), []);
 assert.deepEqual(delegationPageLabels('payments', 'ground-floor', [{href:'/(admin)/payments',label:'Payments'}, {href:'/(admin)/payments-list',label:'Fully paid orders'}]), ['Payments','Fully paid orders']);
+
+for (const stage of stages) {
+ const grants = [{ resource: `kitchen_${stage}`, floor_id: 'second-floor', actions: ['view','update'] }];
+ assert.equal(staffLandingPath(null, grants, 'second-floor'), `/(admin)/kitchen/stages/${stage}`);
+ assert.equal(hasGrantAccess(grants, 'second-floor', 'kitchen_projects'), true);
+ for (const other of stages) assert.equal(hasGrantAccess(grants, 'second-floor', `kitchen_${other}`), other === stage);
+ assert.equal(hasGrantAccess(grants, 'first-floor', `kitchen_${stage}`), false);
+ assert.equal(hasGrantAccess(grants, 'second-floor', `kitchen_${stage}`, 'create'), false);
+ assert.equal(hasGrantAccess([{resource:'kitchen_projects',floor_id:'second-floor',actions:['view']}], 'second-floor', `kitchen_${stage}`), true);
+}
+console.log('Kitchen section grants retain per-stage navigation, landing, actions and floor boundaries; legacy workspace grants retain every stage.');

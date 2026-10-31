@@ -6,7 +6,7 @@ import { Text } from "@/src/components/AppText";
 import { Alert, ErrorState, LoadingState, Sheet } from "@/src/components/ds";
 import { Menu } from "@/src/design/navigationControls";
 import { NavigationLink } from "@/src/design/NavigationLink";
-import { useActionAccess } from "@/src/hooks/use-permissions";
+import { useActionAccess, useModuleAccess } from "@/src/hooks/use-permissions";
 import { KITCHEN_STAGES, STAGE_LABELS, type KitchenCad, type KitchenLead, type KitchenProject, type KitchenStage, type KitchenVisit } from "@/src/api/kitchenProjects";
 import { Choice, displayDate, ErrorNotice, KitchenFloor, KitchenPage, KitchenPanel, rupees } from "./shared";
 import { KitchenDateField } from "./KitchenFilters";
@@ -25,7 +25,8 @@ import { formatPhone } from "@/src/utils/phone";
 type ProjectPage = "overview" | "stage" | "documents" | "history" | "assignments" | "exceptions";
 
 export function KitchenProjectDetail({ page = "stage" }: { page?: ProjectPage }) {
-  const canEditCustomer = useActionAccess("customers", "update", false);
+  const hasAccess = useModuleAccess();
+  const customerAccess = useActionAccess("customers", "update", false);
   const state = useKitchenProject();
   const { project, loading, failure, policy, policyError, reload, updateProject, submission, command, returnTo, retainedDraft } = state;
   const { stage: parameter, details } = useLocalSearchParams<{ stage?: string; details?: string }>();
@@ -39,6 +40,8 @@ export function KitchenProjectDetail({ page = "stage" }: { page?: ProjectPage })
   const future = Boolean(project && KITCHEN_STAGES.indexOf(selected) > KITCHEN_STAGES.indexOf(project.stage));
   const path = (suffix = "") => kitchenProjectPath(state.id, suffix, returnTo);
   const canUpdate = project?.permissions?.can_update === true;
+  const canEditCustomer = customerAccess || canUpdate;
+  const fullHistory = !project?.access_scoped;
   const held = project?.lifecycle_status === "On Hold" || project?.lifecycle_status === "Cancelled";
   const back = () => { if (router.canGoBack()) router.back(); else router.replace(returnTo as any); };
   const actionLabel = project ? currentTaskLabel(project) : "Open current task";
@@ -51,7 +54,7 @@ export function KitchenProjectDetail({ page = "stage" }: { page?: ProjectPage })
       { label: "Stage history", icon: "list", onPress: () => setPanel("workflow") },
       ...(canEditCustomer ? [{ label: "Edit customer", icon: "edit-2" as const, onPress: () => router.push(`/customers/${project.customer_id}/edit` as any) }] : []),
       { label: "Documents", icon: "paperclip", onPress: () => setPanel("documents") },
-      { label: "History", icon: "clock", onPress: () => setPanel("history") },
+      ...(fullHistory ? [{ label: "History", icon: "clock" as const, onPress: () => setPanel("history") }] : []),
       ...(selected === "order" ? [{ label: "Advance details", icon: "credit-card" as const, onPress: () => setPanel("advance") }] : []),
       ...(selected === "installation" ? [{ label: "Site visits", icon: "map-pin" as const, onPress: () => setPanel("visits") }] : []),
       { label: "Assigned to", icon: "user", onPress: () => setPanel("assignee") },
@@ -59,6 +62,7 @@ export function KitchenProjectDetail({ page = "stage" }: { page?: ProjectPage })
       { label: "Reload saved project", icon: "refresh-cw", onPress: reload },
       ...(project.permissions?.can_approve_exceptions ? [{ label: "Hold, cancel or revise project", icon: "settings" as const, onPress: () => setPanel("exceptions") }] : []),
     ]}><View style={{ minHeight: 44, minWidth: 44, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 8 }}><Text style={type.body}>Actions</Text><Feather name="more-horizontal" size={20} color={colors.onSurfaceSecondary} /></View></Menu> : undefined;
+  if (!hasAccess(`kitchen-${selected}`)) return <KitchenFloor><KitchenPage title="Kitchen" back={back}><ErrorState title="Section access required" subtitle="The owner can enable this Kitchen section from Team." /></KitchenPage></KitchenFloor>;
   if (parameter && !kitchenStage(parameter)) return <KitchenFloor><KitchenPage title="Kitchen" back={back}><ErrorState title="Stage unavailable" subtitle="Choose one of the nine Kitchen stages." /></KitchenPage></KitchenFloor>;
   return <KitchenFloor><KitchenPage title={STAGE_LABELS[selected]} back={back}
     compactHeader right={project ? <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>{projectActions}<Pressable accessibilityRole="button" accessibilityLabel="Project details" accessibilityState={{ expanded: detailsExpanded }} aria-expanded={detailsExpanded} testID="kitchen-project-details-toggle" onPress={() => setDetailsExpanded(value => !value)} style={{ minHeight: 44, minWidth: 44, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 8 }}><Text style={type.body}>Details</Text><Feather name={detailsExpanded ? "chevron-up" : "chevron-down"} size={16} color={colors.onSurfaceSecondary} /></Pressable></View> : undefined}
@@ -72,12 +76,12 @@ export function KitchenProjectDetail({ page = "stage" }: { page?: ProjectPage })
         <Text style={type.bodyStrong}>{[project.customer.name, formatPhone(project.customer.phone)].filter(Boolean).join(" · ")}</Text>
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
           <Button label="All stage records" icon="list" variant="secondary" onPress={() => setPanel("workflow")} testID="kitchen-customer-stage-records" />
-          <Button label="Complete history" icon="clock" variant="secondary" onPress={() => setPanel("history")} testID="kitchen-customer-history" />
+          {fullHistory ? <Button label="Complete history" icon="clock" variant="secondary" onPress={() => setPanel("history")} testID="kitchen-customer-history" /> : null}
           <NavigationLink href={"/kitchen" as any} style={{ minHeight: 44, justifyContent: "center", paddingHorizontal: 8 }}><Text style={[type.bodyStrong, { color: colors.brand }]}>Dashboard</Text></NavigationLink>
         </View>
       </View> : null}
       <ScrollView horizontal keyboardShouldPersistTaps="handled" showsHorizontalScrollIndicator={false} style={{ flexGrow: 0 }} contentContainerStyle={{ gap: spacing.sm }} testID="kitchen-project-stages" accessibilityLabel="Kitchen stages">
-        {KITCHEN_STAGES.map((stage, index) => <NavigationLink key={stage} href={path(`/stages/${stage}`) as any} testID={`kitchen-project-stage-${stage}`} accessibilityState={{ selected: selected === stage }} aria-current={selected === stage ? "page" : undefined} style={{ flexShrink: 0, minHeight: 44, justifyContent: "center", paddingHorizontal: spacing.md, borderWidth: 1, borderColor: selected === stage ? colors.brand : colors.border, borderRadius: 8, backgroundColor: selected === stage ? colors.brandTint : colors.surfaceSecondary }}><Text numberOfLines={1} style={type.body}>{index + 1}. {STAGE_LABELS[stage]}</Text></NavigationLink>)}
+        {KITCHEN_STAGES.map((stage, index) => hasAccess(`kitchen-${stage}`) ? <NavigationLink key={stage} href={path(`/stages/${stage}`) as any} testID={`kitchen-project-stage-${stage}`} accessibilityState={{ selected: selected === stage }} aria-current={selected === stage ? "page" : undefined} style={{ flexShrink: 0, minHeight: 44, justifyContent: "center", paddingHorizontal: spacing.md, borderWidth: 1, borderColor: selected === stage ? colors.brand : colors.border, borderRadius: 8, backgroundColor: selected === stage ? colors.brandTint : colors.surfaceSecondary }}><Text numberOfLines={1} style={type.body}>{index + 1}. {STAGE_LABELS[stage]}</Text></NavigationLink> : null)}
       </ScrollView>
       {selected === project.stage && canUpdate ? <StageNavigation project={project} disabled={disabled} /> : null}
       {loading ? <Text style={type.caption}>Refreshing saved project…</Text> : null}
@@ -147,7 +151,8 @@ function currentTaskLabel(project: KitchenProject) {
 
 function WorkflowRows({ project, path, onNavigate }: { project: KitchenProject; path: (suffix?: string) => string; onNavigate?: () => void }) {
   const current = KITCHEN_STAGES.indexOf(project.stage);
-  return <View>{KITCHEN_STAGES.map((stage, index) => <RouteRow key={stage} title={`${index + 1}. ${STAGE_LABELS[stage]}`} subtitle={index > current ? "Preview upcoming stage" : stage === project.stage ? "Current stage" : "Review earlier records"} href={path(`/stages/${stage}`)} trailing={stage === project.stage ? project.status : undefined} testID={`kitchen-stage-${stage}`} onNavigate={onNavigate} />)}</View>;
+  const hasAccess = useModuleAccess();
+  return <View>{KITCHEN_STAGES.map((stage, index) => hasAccess(`kitchen-${stage}`) ? <RouteRow key={stage} title={`${index + 1}. ${STAGE_LABELS[stage]}`} subtitle={index > current ? "Preview upcoming stage" : stage === project.stage ? "Current stage" : "Review earlier records"} href={path(`/stages/${stage}`)} trailing={stage === project.stage ? project.status : undefined} testID={`kitchen-stage-${stage}`} onNavigate={onNavigate} /> : null)}</View>;
 }
 
 function DuplicateReview({ project, disabled }: { project: KitchenProject; disabled: boolean }) {

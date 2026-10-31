@@ -45,7 +45,7 @@ export type KitchenPolicy = {
 };
 export type KitchenDashboard = { stage_customer_counts?: Record<KitchenStage, number>; total_customers?: number; total_projects?: number; stage_counts?: Record<KitchenStage, number>; workload?: { assignee_id: string | null; assignee_name: string | null; project_count: number }[]; configured: boolean; on_hold_projects?: number | null; next_action_overdue_projects?: number | null; completion_overdue_projects?: number | null; active_order_value?: string | null; active_projects: number | null; pending_approvals: number | null; overdue_projects: number | null; confirmed_order_value: string | null; notice?: string; definitions?: KitchenPolicy["metrics"] };
 export type KitchenProject = {
-  id: string; reference: string; project_reference?: string | null; customer_id: string; customer: KitchenCustomer;
+  access_scoped?: boolean; access_handoff?: boolean; production_started?: boolean; id: string; reference: string; project_reference?: string | null; customer_id: string; customer: KitchenCustomer;
   customer_order_confirmation?: "Not recorded" | "Yes" | "No";
   final_design_version_id?: string | null;
   version: number; stage: KitchenStage; lead: KitchenLead; visit: KitchenVisit; cad: KitchenCad;
@@ -79,7 +79,7 @@ export type KitchenQuery = {
 };
 export type KitchenFileTransfer = { transfer_id: string; filename?: string; size_bytes: number; chunk_bytes: number; part_count: number; state: "open" | "finishing" | "completed"; expires_at: string };
 export type KitchenOwnFileTransfer = KitchenFileTransfer & { project_id: string };
-export type KitchenCreate = { assigned_to?: string | null; customer_id?: string; customer?: Omit<KitchenCustomer, "id"> & { phone: string }; idempotency_key: string; lead: KitchenLead };
+export type KitchenCreate = { assigned_to?: string | null; customer_id?: string; customer_address?: string; customer?: Omit<KitchenCustomer, "id"> & { phone: string }; idempotency_key: string; lead: KitchenLead };
 export type KitchenCommand = "assign" | "move_stage" | "review_duplicate" | "edit_lead" | "convert" | "save_visit" | "save_cad" | "advance_stage" | "metadata" | "design_present" | "design_update" | "design_share" | "design_response" | "design_revision" | "design_handoff" | "quotation_receive" | "quotation_update" | "quotation_share" | "quotation_response" | "order_confirm" | "order_confirmation" | "order_update" | "order_document" | "order_advance" | "order_installment" | "order_material_arrived" | "installation_material_photos" | "order_amend" | "order_status" | "exception" | "production_update" | "installation_update" | "site_visit" | "approval";
 const options = { floorId: KITCHEN_FLOOR_ID, cacheMs: 0 };
 const query = (values: Record<string, string | number | undefined>) => {

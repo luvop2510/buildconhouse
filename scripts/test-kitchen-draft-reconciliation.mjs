@@ -7,7 +7,7 @@ const stages = ['lead', 'visit', 'cad', 'design', 'quotation', 'order', 'product
 const initial = { id: 'project', workflow_cycle: 1, version: 7, stage: 'lead', lead: { site_location: 'Original' }, visit: { notes: 'Original' }, cad: { progress: 0 }, orders: [] };
 
 async function harness(providerSource = source, record = structuredClone(initial), executeCommand) {
-  const hooks = [], effects = [], writes = [];
+  const hooks = [], effects = [], writes = [], navigations = [];
   let index = 0, state, settle;
   const same = (first, second) => first && second && first.length === second.length && first.every((value, position) => Object.is(value, second[position]));
   const react = {
@@ -30,7 +30,10 @@ async function harness(providerSource = source, record = structuredClone(initial
   };
   const modules = {
     react, 'react/jsx-runtime': { jsx: (_type, props) => ({ props }) },
-    'expo-router': { useRouter: () => ({ replace() {} }) },
+    'expo-router': { useRouter: () => ({ replace: path => navigations.push(path) }) },
+    '@/src/state/auth': { useAuth: () => ({ staff: { role: 'owner' } }) },
+    '@/src/access-profiles': { staffLandingPath: () => '/(admin)/kitchen/stages/lead' },
+    '@/src/team-delegation': { hasGrantAccess: () => true },
     '@/src/api/kitchenProjects': { KITCHEN_STAGES: stages, kitchenProjectsApi: {
       get: async () => record, configuration: async () => ({}),
       command: (id, version, key, command, payload) => {
@@ -43,7 +46,7 @@ async function harness(providerSource = source, record = structuredClone(initial
       try { const value = await work('fixture-request'); accepted(value); return true; } catch { return false; }
     } }) },
     './KitchenDates': { kitchenToday: () => '2026-10-26' },
-    './KitchenExitGuard': { useKitchenExitGuard() {} },
+    './KitchenExitGuard': { useKitchenExitGuard() { return { allowLeave() {} }; } },
   };
   const output = {};
   const compiled = ts.transpileModule(providerSource, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
@@ -57,7 +60,7 @@ async function harness(providerSource = source, record = structuredClone(initial
   render();
   for (let turn = 0; turn < 12; turn++) { await Promise.resolve(); render(); }
   assert.equal(state.loading, false);
-  return { render, get state() { return state; }, writes, returnPath: output.kitchenReturnPath, settle(value) { settle(value); } };
+  return { render, get state() { return state; }, writes, navigations, returnPath: output.kitchenReturnPath, settle(value) { settle(value); } };
 }
 
 async function checkOrdinary(providerSource = source) {
@@ -338,3 +341,14 @@ for (const fails of [false, true]) {
   assert.equal(stageMove.state.backgroundSaving, false);
 }
 console.log('Kitchen stage progress identifies the destination and clears after success or failure.');
+
+{
+  const view = await harness(source);
+  const moving = view.state.command('move_stage', { target_stage: 'visit' });
+  view.settle({ id: initial.id, stage: 'visit', version: 8, access_handoff: true });
+  assert.equal(await moving, true);
+  assert.equal(view.render().project.stage, 'lead', 'A minimal handoff acknowledgment never replaces the renderable source project');
+  assert.equal(view.navigations.at(-1), '/(admin)/kitchen/stages/lead');
+  assert.equal(view.state.dirty, false);
+}
+console.log('A section-limited handoff returns to the authorized queue without rendering a partial project.');

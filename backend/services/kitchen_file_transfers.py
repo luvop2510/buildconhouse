@@ -295,6 +295,9 @@ class KitchenFileTransfers:
         if not row:
             # The exact actor/project/transfer is already absent after a lost
             # acknowledgement. Do not touch another slot or any stored object.
+            foreign = await self.db.kitchen_file_transfers.find_one({"project_id": project_id, "transfer_id": transfer_id}, {"_id": 1})
+            if foreign:
+                raise HTTPException(404, "File transfer not found")
             return {"discarded": True}
         if row["state"] != "open":
             raise HTTPException(409, "A finishing or committed file cannot be discarded")
@@ -322,6 +325,9 @@ async def download_part(database, user, project_id, attachment_id, index, storag
     await access.require_project(database, user, project, policy)
     metadata = next((row for row in project["attachments"] if row["id"] == attachment_id), None)
     if not metadata:
+        raise HTTPException(404, "Kitchen attachment not found")
+    visible = access.visible_attachment_ids(project, user)
+    if visible is not None and attachment_id not in visible:
         raise HTTPException(404, "Kitchen attachment not found")
     size = metadata["size_bytes"]
     if not 0 < size <= MAX_TRANSFER_BYTES or not 0 <= index < math.ceil(size / CHUNK_BYTES):

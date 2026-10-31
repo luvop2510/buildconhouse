@@ -106,13 +106,12 @@ export default function Team() {
             const roleInfo = roles.find((r) => r.role === u.role);
             const phone = teamPhone(u);
             return (
+              <View key={u.id} style={[styles.card, { gap: spacing.md }]}>
               <Pressable
-                key={u.id}
                 testID={`team-row-${u.id}`}
                 accessibilityRole="button" accessibilityLabel={`Edit ${u.full_name}`}
                 onPress={() => setEditing(u)}
                 style={({ pressed }) => [
-                  styles.card,
                   {
                     flexDirection: "row", gap: spacing.md, alignItems: "center",
                     flexWrap: isPhone ? "wrap" : "nowrap",
@@ -139,6 +138,8 @@ export default function Team() {
                   {!u.active ? <Badge label="Disabled" tone="warning" size="sm" /> : null}
                 </View>
               </Pressable>
+              <StaffDirectoryActions staff={u} ownerId={ownerId!} editing={editing?.id === u.id} onEdit={() => setEditing(u)} />
+              </View>
             );
           })}
         </View>
@@ -169,6 +170,44 @@ export default function Team() {
 
 function CardNotice() {
   return <View testID="team-owner-only" style={styles.card}><Text style={type.body}>Only the owner can create, delete or manage team members and passwords.</Text></View>;
+}
+
+function StaffDirectoryActions({ staff, ownerId, editing, onEdit }: { staff: Staff; ownerId: string; editing: boolean; onEdit: () => void }) {
+  const [password, setPassword] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const pending = useRef(false);
+  const generation = useRef(0);
+  useLayoutEffect(() => {
+    generation.current += 1;
+    pending.current = false;
+    setPassword(null); setError(null); setBusy(false);
+    return () => { generation.current += 1; };
+  }, [staff, ownerId, editing]);
+  const reveal = async () => {
+    if (pending.current) return;
+    if (password !== null) { setPassword(null); return; }
+    const current = ++generation.current;
+    pending.current = true; setBusy(true); setError(null);
+    try {
+      const result = await api.post<{ password: string | null; reset_required: boolean }>(`/team/${staff.id}/password`);
+      if (current !== generation.current) return;
+      if (result.reset_required || typeof result.password !== "string") setError("This older password cannot be viewed. Choose Edit to set a new password.");
+      else setPassword(result.password);
+    } catch (cause: unknown) {
+      if (current === generation.current) setError(teamErrorMessage(cause, "Could not view password"));
+    } finally {
+      if (current === generation.current) { pending.current = false; setBusy(false); }
+    }
+  };
+  return <View style={{ gap: spacing.sm }}>
+    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
+      <Button label="Edit" variant="secondary" icon="edit-2" testID={`team-edit-${staff.id}`} onPress={() => { generation.current += 1; pending.current = false; setBusy(false); setPassword(null); setError(null); onEdit(); }} />
+      <Button label={password !== null ? "Hide password" : "Show password"} variant="secondary" icon={password !== null ? "eye-off" : "eye"} loading={busy} disabled={busy} testID={`team-password-toggle-${staff.id}`} onPress={() => void reveal()} />
+    </View>
+    {password !== null ? <Text testID={`team-password-${staff.id}`} selectable style={type.bodyStrong}>{password}</Text> : null}
+    {error ? <Text testID={`team-password-error-${staff.id}`} accessibilityRole="alert" style={type.caption}>{error}</Text> : null}
+  </View>;
 }
 
 type AccessOptions = { floors: Floor[]; catalog: DelegationCatalog };
@@ -207,7 +246,7 @@ function DelegationOptions({ options, error, onRetry, value, onChange, disabled 
 }) {
   if (error) return <ErrorState title="Access options unavailable" onRetry={onRetry} />;
   if (!options) return <Text style={type.caption}>Loading floors and pages…</Text>;
-  return <View style={{ gap: spacing.md }}><Text style={type.caption} testID="team-kitchen-access-help">For Kitchen employees, enable Kitchen Floor, then Kitchen workspace and the actions they need. The current workflow pages are listed below and keep the selected workspace permissions as pages change. Manager approvals require separate owner configuration.</Text><FloorDelegationEditor floors={options.floors} catalog={options.catalog} value={value} onChange={onChange} disabled={disabled} /></View>;
+  return <View style={{ gap: spacing.md }}><Text style={type.caption} testID="team-kitchen-access-help">For Kitchen employees, enable Kitchen Floor, then choose the whole Kitchen workspace or individual Kitchen stages and the actions they need. Manager approvals require separate owner configuration.</Text><FloorDelegationEditor floors={options.floors} catalog={options.catalog} value={value} onChange={onChange} disabled={disabled} /></View>;
 }
 
 function AddStaffSheet({ visible, options, optionsError, onRetry, onClose, onCreated, returnFocusRef }: {

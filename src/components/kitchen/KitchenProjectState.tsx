@@ -1,3 +1,6 @@
+import { hasGrantAccess } from "@/src/team-delegation";
+import { useAuth } from "@/src/state/auth";
+import { staffLandingPath } from "@/src/access-profiles";
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import { useRouter } from "expo-router";
 import { KITCHEN_STAGES, kitchenProjectsApi, type KitchenCommand, type KitchenPolicy, type KitchenProject, type KitchenStage } from "@/src/api/kitchenProjects";
@@ -56,6 +59,7 @@ export function kitchenProjectPath(id: string, suffix = "", returnTo = "/kitchen
 /** This ancestor remains mounted while project sibling routes change. */
 export function KitchenProjectProvider({ id, returnTo, children }: { id: string; returnTo?: string | string[]; children: ReactNode }) {
   const router = useRouter();
+  const { staff } = useAuth();
   const [project, setProject] = useState<KitchenProject | null>(null);
   const [loading, setLoading] = useState(true);
   const [failure, setFailure] = useState<string | null>(null);
@@ -81,7 +85,7 @@ export function KitchenProjectProvider({ id, returnTo, children }: { id: string;
   const taskKey = taskPrefix.slice(0, -1);
   const sitePrefix = `commercial.cycle.${project?.workflow_cycle ?? 1}.site.`;
   const currentTaskDirty = Object.keys(drafts).some(key => (key === taskKey || key.startsWith(taskPrefix) || project?.stage === "installation" && key.startsWith(sitePrefix)) && !key.endsWith(".expanded") && key in baselines.current && JSON.stringify(drafts[key]) !== JSON.stringify(baselines.current[key]));
-  useKitchenExitGuard({ dirty, scope: `/kitchen/${encodeURIComponent(id)}` });
+  const { allowLeave } = useKitchenExitGuard({ dirty, scope: `/kitchen/${encodeURIComponent(id)}` });
   const setDraftValue = useCallback((key: string, initial: unknown, next: SetStateAction<any>) => {
     const source = persistedDraftSource(saved.current, key);
     if (!(key in baselines.current)) baselines.current[key] = source !== undefined ? source : initial;
@@ -150,6 +154,12 @@ export function KitchenProjectProvider({ id, returnTo, children }: { id: string;
         }
       }
     }
+    if (name === "move_stage" && staff?.custom_access
+      && !hasGrantAccess(staff.access_grants, "second-floor", `kitchen_${String(payload.target_stage)}`)
+      && Object.keys(liveDrafts.current).some(key => !key.endsWith(".expanded") && key in baselines.current && !sameDraft(liveDrafts.current[key], baselines.current[key]))) {
+      submission.setError("Save or discard your unsaved changes before handing this project to another section.");
+      return Promise.resolve(false);
+    }
     // Responses acknowledge only the request snapshot, never entries typed while it was pending.
     const submittedDrafts = { ...liveDrafts.current };
     const submittedBaselines = { ...baselines.current };
@@ -158,6 +168,14 @@ export function KitchenProjectProvider({ id, returnTo, children }: { id: string;
     setPendingStage(name === "move_stage" && typeof payload.target_stage === "string" ? kitchenStage(payload.target_stage) ?? null : null);
     let accepted = false;
     return submission.submit({ id, command: name, payload }, key => kitchenProjectsApi.command(id, current.version, key, name, payload), value => {
+      if (value.access_handoff) {
+        accepted = true;
+        setDrafts({});
+        baselines.current = {}; draftSources.current = {};
+        allowLeave();
+        router.replace(staffLandingPath(null, staff?.access_grants || [], "second-floor") as any);
+        return;
+      }
       if (!acceptProject(value)) return;
       accepted = true;
       setRetainedDraft(false);

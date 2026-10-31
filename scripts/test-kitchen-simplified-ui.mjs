@@ -18,7 +18,7 @@ const modules = {
   '@expo/vector-icons/Feather': 'icon', '@/src/components/AppText': { Text: 'text' },
   '@/src/components/ds': { Alert: 'alert', ErrorState: 'error', EmptyState: 'empty', LoadingState: 'loading', SearchField: 'search', Sheet: 'sheet' },
   '@/src/design/navigationControls': { Menu: 'menu' }, '@/src/design/NavigationLink': { NavigationLink: 'link' },
-  '@/src/hooks/use-permissions': { useActionAccess: () => editable },
+  '@/src/hooks/use-permissions': { useActionAccess: () => editable, useModuleAccess: () => () => true },
   '@/src/state/auth': { useAuth: () => ({ staff: { role: 'owner' } }) },
   '@/src/design/responsive': { useBp: () => ({ isPhone: true }) },
   '@/src/theme/tokens': { spacing: {}, radius: {} },
@@ -76,6 +76,11 @@ assert.equal(find(queues, "kitchen-stage-navigation"), undefined, "Search queues
 for (const stage of stages) assert.equal(find(queues, `kitchen-queue-stage-${stage}`), undefined);
 const list = nodes(queues).find(node => node.type === workspace.ProjectList);
 assert.deepEqual(list.props.values, { search: 'Customer QA', page: '2' }, 'Old filter bookmarks cannot hide projects');
+const retryTree = render(workspace.Workspace, { page: 'stage', stage: 'lead' }, [{}]);
+const intake = nodes(retryTree).find(node => node.props?.onCreated);
+const beforeRetry = calls.length;
+intake.props.onCreated({ id: 'already-handed-off', stage: 'visit', access_handoff: true });
+assert.equal(calls.slice(beforeRetry).some(call => call[0] === 'navigate'), false, 'An already-saved lead retry stays in the authorized queue instead of opening an inaccessible project');
 const listTree = render(workspace.ProjectList, list.props);
 assert.ok(find(listTree, 'kitchen-search'), 'Customer search remains available');
 assert.equal(find(listTree, 'kitchen-filters-open'), undefined);

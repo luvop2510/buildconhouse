@@ -184,6 +184,17 @@ async def test_kitchen_floor_supervisors_retain_complete_work_queue(monkeypatch,
 
 
 @pytest.mark.asyncio
+async def test_kitchen_stage_grants_do_not_widen_a_narrow_legacy_profile(monkeypatch):
+    actor = user("worker", "second-floor", custom_access=True, access_profile="ground_payments_dispatches")
+    async def grants(*_args):
+        return [grant("kitchen_projects", "second-floor")]
+    monkeypatch.setattr(service, "grants_for_user", grants)
+    with pytest.raises(HTTPException) as denied:
+        await service.access_for(Database(), actor, "second-floor")
+    assert denied.value.status_code == 403
+
+
+@pytest.mark.asyncio
 async def test_http_today_enforces_auth_floor_and_no_store(monkeypatch):
     app = FastAPI()
     app.include_router(dashboard_routes.router, prefix="/api")

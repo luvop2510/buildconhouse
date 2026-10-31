@@ -1,5 +1,25 @@
 # AGENTS.md — BuildCon House ERP (forge2.0)
 
+## Kitchen section access and save recovery — 2026-11-01
+
+Team's shared floor/page/action editor now offers nine `kitchen_<stage>`
+resources beside the compatible all-section `kitchen_projects` grant. Keep
+current-stage list/search/dashboard/customer/private-file boundaries and semantic
+command permissions on the server. An authorized source-stage handoff may move
+into an ungranted stage; return only its actor-bound minimal acknowledgement and
+send the client back to its permitted queue. Preserve unsaved entries before a
+handoff and owner-only approved-record corrections. Kitchen workers can record
+the first company handoff of an approved design through `design_handoff`.
+
+Lead intake may complete a canonical missing customer address under its existing
+reservation/CAS guard, preserving every recorded address and contact identity.
+Hydrate create responses before the project insert. Customer email clearing uses
+`$unset`, since the sparse unique email index still indexes explicit null.
+Owner staff-list password reveal uses the existing audited endpoint on demand;
+never add plaintext to ordinary team responses, exports or persistent storage.
+Legacy hash-only passwords require the existing explicit owner reset.
+No migration is required. See docs/audits/2026-11-01-kitchen-team-save-recovery.md.
+
 ## Tile existing-person lookup — 2026-10-31
 
 Tile Selection and Quotation share explicit Existing customer discovery across

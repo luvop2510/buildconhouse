@@ -39,6 +39,7 @@ export function kitchenApprovalDate(at?: string) {
 }
 
 export function kitchenProductionStarted(project: KitchenProject) {
+  if (project.production_started) return true;
   const started = (work?: KitchenProject["production"]) => Boolean(work && (work.start_date || work.completion_date || work.status !== "Not Started"));
   if (started(project.production) || project.orders?.some(row => !row.authorization_invalidated && row.production_started)) return true;
   if (project.work_history?.some(row => (row.workflow_cycle ?? 1) === (project.workflow_cycle ?? 1) && started(row.production))) return true;

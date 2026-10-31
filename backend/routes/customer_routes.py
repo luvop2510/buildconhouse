@@ -274,6 +274,8 @@ async def get_customer(customer_id: str, with_completion: bool = False, user: Us
     doc = await get_floor_scoped_or_404(
         db.customers, customer_id, user, not_found="Customer not found", projection={"_id": 0, "password_hash": 0},
     )
+    from services.kitchen_access import require_customer
+    await require_customer(db, user, doc)
     from services.referrer_identity import acquired_counts, legacy_referrer_name
     if not doc.get("referrer_name"):
         doc = {**doc, "referrer_name": legacy_referrer_name(doc)}
@@ -320,6 +322,8 @@ async def update_customer(
     only place that flag can be flipped besides Send Invite (which turns it
     on implicitly, see below)."""
     existing = await get_floor_scoped_or_404(db.customers, customer_id, user, not_found="Customer not found", projection={"_id": 0})
+    from services.kitchen_access import require_customer
+    await require_customer(db, user, existing, "update")
 
     patch = body.model_dump(exclude_unset=True)
     if "referrer_id" in patch:
@@ -345,7 +349,15 @@ async def update_customer(
     if not patch:
         raise HTTPException(status_code=400, detail="Nothing to update")
     patch["updated_at"] = now_iso()
-    await db.customers.update_one({"id": customer_id}, {"$set": patch})
+    update = {"$set": patch}
+    if "email" in patch and patch["email"] is None:
+        # A sparse unique email index includes null; clearing must remove the key.
+        patch.pop("email")
+        update["$unset"] = {"email": ""}
+    try:
+        await db.customers.update_one({"id": customer_id}, update)
+    except DuplicateKeyError as exc:
+        raise HTTPException(status_code=409, detail="Another customer already uses this email") from exc
     if patch.get("portal_enabled") is False:
         await revoke_all_sessions("customer", customer_id)
 

@@ -1,3 +1,4 @@
+const KITCHEN_STAGE_NAMES = ["lead", "visit", "cad", "design", "quotation", "order", "production", "installation", "completed"] as const;
 export type GrantAction = "view" | "create" | "update" | "delete" | "export";
 export type DelegationFloor = { id: string; name: string };
 export type DelegationResource = {
@@ -77,7 +78,14 @@ export function loadDelegation(floorIds: string[], grants: { resource: string; a
 
 export function hasGrantAccess(grants: { resource: string; actions: string[]; floor_id?: string | null }[] | undefined, floorId: string, resource: string, action = "view"): boolean {
   if (!floorId) return false;
-  return Boolean(grants?.some((grant) => grant.resource === resource && (!grant.floor_id || grant.floor_id === floorId) && grant.actions.includes(action)));
+  const kitchenStages = KITCHEN_STAGE_NAMES.map(stage => `kitchen_${stage}`);
+  return Boolean(grants?.some((grant) => {
+    const resourceMatches = grant.resource === resource || floorId === "second-floor" && (
+      resource === "kitchen_projects" && kitchenStages.includes(grant.resource)
+      || kitchenStages.includes(resource) && grant.resource === "kitchen_projects"
+    );
+    return resourceMatches && (!grant.floor_id || grant.floor_id === floorId) && grant.actions.includes(action);
+  }));
 }
 
 /** Resolve notebook floor params before access checks and floor switching. */
@@ -117,7 +125,10 @@ export function moduleForRoute(segments: string[]): string | null {
     if (segments.includes("kitchen")) return "walkins";
     if (segments.includes("furniture")) return "walkins";
   }
-  if (segments.includes("kitchen") && !segments.includes("notebook")) return "kitchen-projects";
+  if (segments.includes("kitchen") && !segments.includes("notebook")) {
+    const stage = segments[segments.indexOf("stages") + 1];
+    return segments.includes("stages") && KITCHEN_STAGE_NAMES.some(candidate => candidate === stage) ? `kitchen-${stage}` : "kitchen-projects";
+  }
   if (segments.includes("tiles")) return segments.includes("orders") ? "orders" : "tiles";
   for (const module of ["payments", "payments-list", "quotations", "catalog", "customers", "purchases", "godown-stock", "followups", "notifications", "walkins", "dashboard", "sales-data"]) {
     if (segments.includes(module)) return module;
@@ -129,7 +140,7 @@ export function moduleForRoute(segments: string[]): string | null {
 
 /** Catalog visibility must never delete saved compatibility grants. */
 export function isResourceAssignable(resource: DelegationResource, floorId: string): boolean {
-  if (floorId === "second-floor" && resource.key !== "kitchen_projects") return false;
+  if (floorId === "second-floor" && resource.key !== "kitchen_projects" && !KITCHEN_STAGE_NAMES.some(stage => resource.key === `kitchen_${stage}`)) return false;
   return !resource.retired && (resource.assignable_floor_ids ?? resource.floor_ids).includes(floorId);
 }
 
@@ -143,6 +154,6 @@ export function delegationPageLabels(resource: string, floorId: string, navigati
   return [...new Set(navigation.filter((page) => {
     if (page.floors && !page.floors.includes(floorId) || page.roles?.length) return false;
     const module = moduleForRoute(page.href.split("/").filter(Boolean));
-    return (module === "payments-list" ? "payments" : module?.replaceAll("-", "_")) === resource;
+    return resource === "kitchen_projects" ? Boolean(module?.startsWith("kitchen-")) : (module === "payments-list" ? "payments" : module?.replaceAll("-", "_")) === resource;
   }).map((page) => page.label))];
 }

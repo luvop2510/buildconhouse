@@ -1,3 +1,4 @@
+const KITCHEN_STAGE_NAMES = ["lead", "visit", "cad", "design", "quotation", "order", "production", "installation", "completed"] as const;
 export type AccessProfile =
   | "ground_tile_quotations_followups"
   | "ground_payments_dispatches"
@@ -54,6 +55,7 @@ export function staffLandingPath(profile?: AccessProfile | null, grants?: Person
       orders: "/(admin)/tiles/orders", walkins: "/(admin)/walkins", dashboard: "/(admin)/dashboard",
       tiles: "/(admin)/tiles", godown_stock: "/(admin)/godown-stock",
       kitchen_projects: "/(admin)/kitchen",
+      ...Object.fromEntries(KITCHEN_STAGE_NAMES.map(stage => [`kitchen_${stage}`, `/(admin)/kitchen/stages/${stage}`])),
       furniture_quotations: "/(admin)/notebook/furniture-quotations",
   };
   // Legacy stage-specific notebook grants do not authorize the replacement
@@ -66,7 +68,8 @@ export function staffLandingPath(profile?: AccessProfile | null, grants?: Person
     furniture_quotations: ["third-floor"],
   };
   const permitted = grants?.find((grant) => {
-    if ((floorId || grant.floor_id) === "second-floor" && grant.resource !== "kitchen_projects") return false;
+    if ((floorId || grant.floor_id) === "second-floor" && grant.resource !== "kitchen_projects" && !KITCHEN_STAGE_NAMES.some(stage => grant.resource === `kitchen_${stage}`)) return false;
+    if (KITCHEN_STAGE_NAMES.some(stage => grant.resource === `kitchen_${stage}`) && (floorId || grant.floor_id) !== "second-floor") return false;
     if (!routeByResource[grant.resource] || !grant.actions.includes("view") || (floorId && grant.floor_id && grant.floor_id !== floorId)) return false;
     const targetFloor = floorId || grant.floor_id;
     return !targetFloor || !supportedFloors[grant.resource] || supportedFloors[grant.resource].includes(targetFloor);

@@ -333,6 +333,85 @@ def test_stage_list_carries_latest_commercial_fields_without_exposing_history():
     asyncio.run(run())
 
 
+@pytest.mark.parametrize("source", ["inline", "existing"])
+def test_legacy_blank_customer_address_is_saved_through_http_and_retained_across_stages(source):
+    async def run():
+        async with environment() as env:
+            customer_id = env["ids"]["customer"]
+            await env["db"].customers.update_one({"id": customer_id}, {"$unset": {"address": ""}})
+            fields = ({"customer": {"name": "Do not overwrite", "phone": "+91 99000 00031", "address": "Entered legacy address"}}
+                      if source == "inline" else {"customer_id": customer_id, "customer_address": "Entered legacy address"})
+            body = {**fields, "idempotency_key": str(uuid4())}
+            response = await env["api"].post("/api/kitchen-projects", json=body, headers=headers(env))
+            assert response.status_code == 200, response.text
+            project = response.json()
+            assert project["customer_id"] == customer_id
+            assert project["customer"]["address"] == "Entered legacy address"
+            assert project["customer"]["name"] == "Kitchen acceptance customer"
+            saved = await env["db"].customers.find_one({"id": customer_id})
+            assert saved["address"] == "Entered legacy address" and saved["kitchen_reference_reserved"]
+            retry = await env["api"].post("/api/kitchen-projects", json=body, headers=headers(env))
+            assert retry.status_code == 200 and retry.json()["replayed"]
+            project = await accepted(env, project, "move_stage", {"target_stage": "visit"})
+            project = await accepted(env, project, "save_visit", {"notes": "Visit edit after address completion"})
+            assert project["customer"]["address"] == "Entered legacy address"
+            loaded = await env["api"].get(f"/api/kitchen-projects/{project['id']}", headers=headers(env))
+            assert loaded.status_code == 200 and loaded.json()["customer"]["address"] == "Entered legacy address"
+            assert await env["db"].customers.count_documents({"floor_id": "second-floor"}) == 1
+            assert await env["db"].kitchen_projects.count_documents({}) == 1
+    asyncio.run(run())
+
+
+def test_editing_multiple_customers_without_email_respects_sparse_unique_index():
+    async def run():
+        async with environment() as env:
+            await env["db"].customers.create_index("email", unique=True, sparse=True, name="customers_email_unique")
+            second_id = str(uuid4())
+            await env["db"].customers.insert_one({"id": second_id, "name": "Second kitchen customer", "phone": "9900000042",
+                                                  "floor_id": "second-floor", "address": "Original second site"})
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=env["app"], raise_app_exceptions=False), base_url="http://acceptance") as api:
+                for customer_id in (env["ids"]["customer"], second_id):
+                    response = await api.patch(f"/api/customers/{customer_id}", json={"address": "Updated customer site", "email": None}, headers=headers(env))
+                    assert response.status_code == 200, response.text
+                    assert response.json()["address"] == "Updated customer site" and response.json()["email"] is None
+                for customer_id in (env["ids"]["customer"], second_id):
+                    saved = await env["db"].customers.find_one({"id": customer_id})
+                    assert saved["address"] == "Updated customer site" and "email" not in saved
+                response = await api.patch(f"/api/customers/{second_id}", json={"email": "shared@example.com"}, headers=headers(env))
+                assert response.status_code == 200
+                duplicate = await api.patch(f"/api/customers/{env['ids']['customer']}", json={"email": "shared@example.com"}, headers=headers(env))
+                assert duplicate.status_code == 409
+                cleared = await api.patch(f"/api/customers/{second_id}", json={"email": None}, headers=headers(env))
+                assert cleared.status_code == 200
+                assert "email" not in await env["db"].customers.find_one({"id": second_id})
+    asyncio.run(run())
+
+
+def test_worker_records_first_approved_design_handoff_without_approved_record_corrections():
+    async def run():
+        async with environment() as env:
+            project = await reach_stage(env, "design")
+            project = await accepted(env, project, "design_present", {"response": "Approved", "shared_date": "2026-10-19",
+                "approval_date": "2026-10-19", "handoff_status": "No"})
+            design_id = project["design_versions"][-1]["id"]
+            denied = await command(env, project, "design_update", {"version_id": design_id, "reason": "Worker cannot correct approved design"}, actor="worker")
+            assert denied.status_code == 403
+            key = str(uuid4())
+            handoff = await command(env, project, "design_handoff", {"version_id": design_id, "date": "2026-10-20"}, actor="worker", key=key)
+            assert handoff.status_code == 200, handoff.text
+            saved = handoff.json()
+            assert saved["design_versions"][-1]["handoff_status"] == "Yes"
+            assert saved["design_versions"][-1]["handoff_date"] == "2026-10-20"
+            assert saved["design_versions"][-1]["handoff_by"] == env["ids"]["worker"]
+            replay = await command(env, project, "design_handoff", {"version_id": design_id, "date": "2026-10-20"}, actor="worker", key=key)
+            assert replay.status_code == 200 and replay.json()["replayed"] and replay.json()["version"] == saved["version"]
+            correction = await command(env, saved, "design_update", {"version_id": design_id, "reason": "Still owner-only"}, actor="worker")
+            assert correction.status_code == 403
+            overwrite = await command(env, saved, "design_handoff", {"version_id": design_id, "date": "2026-10-21"}, actor="worker")
+            assert overwrite.status_code == 422
+    asyncio.run(run())
+
+
 def test_q01_q03_q11_customer_reuse_conversion_and_owner_assignment():
     async def run():
         async with environment() as env:
@@ -2276,9 +2355,9 @@ def test_universal_search_and_distinct_customer_stage_counts_use_authorized_curr
     capability_calls = []
     original_capability = kitchen_access.capability
 
-    async def capability(database, user, action):
+    async def capability(database, user, action, **options):
         capability_calls.append(action)
-        return await original_capability(database, user, action)
+        return await original_capability(database, user, action, **options)
 
     monkeypatch.setattr(kitchen_access, "capability", capability)
 

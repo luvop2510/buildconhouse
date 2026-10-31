@@ -10,7 +10,7 @@ from fastapi import HTTPException
 
 from access_profiles import PROFILE_MODULES
 from auth import accessible_floor_ids
-from services.access_grants import RESOURCE_REGISTRY, grant_allows, grants_for_user
+from services.access_grants import KITCHEN_STAGE_RESOURCES, RESOURCE_REGISTRY, grant_allows, grants_for_user
 from services.lead_scope import POST_ORDER_CATEGORIES, POST_ORDER_RULES
 
 INDIA = timezone(timedelta(hours=5, minutes=30))
@@ -41,6 +41,14 @@ async def access_for(database, user, floor):
         grants = await grants_for_user(database, user.id)
         enabled = {resource for resource in resources if any(grant_allows(grant, user_id=user.id,
                    resource=resource, action="view", floor_id=floor) for grant in grants)}
+        if floor == "second-floor":
+            from services import kitchen_access
+            kitchen_access.hydrate_stage_actions(user, grants)
+            if not user.access_profile and kitchen_access.allowed_stages(user):
+                enabled.add("kitchen_projects")
+            if user.access_profile:
+                enabled &= PROFILE_MODULES.get(user.access_profile, set())
+            return enabled, not user.access_profile and len(kitchen_access.allowed_stages(user)) == len(KITCHEN_STAGE_RESOURCES)
         if user.access_profile:
             enabled &= PROFILE_MODULES.get(user.access_profile, set())
         return enabled, not user.access_profile and resources <= enabled
@@ -124,6 +132,10 @@ async def scheduled_tasks(database, user, floor, resources, full, start, end):
         due = {"$cond": [{"$eq": ["$stage", "visit"]}, "$visit.visit_date", "$target_completion_date"]}
         # The denormalized assignee follows the current stage, never an old handoff.
         assigned = {} if user.role in {"owner", "admin", "manager"} else {"assigned_to": user.id}
+        if floor == "second-floor" and user.custom_access:
+            from services.kitchen_access import allowed_stages
+            if len(allowed_stages(user)) < len(KITCHEN_STAGE_RESOURCES):
+                assigned["stage"] = {"$in": allowed_stages(user)}
         specs.append(("kitchen_projects", "kitchen_projects", assigned,
                       {"stage": {"$ne": "completed"}, "status": {"$nin": ["Lost", "Cancelled", "On Hold"]}, "lifecycle_status": {"$nin": ["Cancelled", "On Hold"]}}, due,
                       {**fields, "stage": 1, "customer.name": 1, "cad.progress": 1, "production.progress": 1, "installation.progress": 1},

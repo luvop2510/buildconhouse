@@ -86,7 +86,9 @@ async def test_discard_absent_exact_actor_transfer_is_idempotent_without_touchin
     user = SimpleNamespace(id="owner")
     assert await KitchenFileTransfers(database).cancel(user, "project", "old-transfer") == {"discarded": True}
     capability.assert_awaited_once_with(database, user, "view")
-    sessions.find_one.assert_awaited_once_with({"_id": "owner", "project_id": "project", "transfer_id": "old-transfer"})
+    assert sessions.find_one.await_count == 2
+    assert sessions.find_one.await_args_list[0].args == ({"_id": "owner", "project_id": "project", "transfer_id": "old-transfer"},)
+    assert sessions.find_one.await_args_list[1].args == ({"project_id": "project", "transfer_id": "old-transfer"}, {"_id": 1})
     sessions.delete_one.assert_not_awaited()
     parts.delete_many.assert_not_awaited()
 

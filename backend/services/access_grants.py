@@ -42,6 +42,13 @@ RESOURCE_REGISTRY["payments"].update(description="Manage payments and the Fully 
 RESOURCE_REGISTRY["notifications"].update(retired=True, actions=["view"], description="Retired Notifications page; existing grants remain available for revocation.")
 RESOURCE_REGISTRY["reports"].update(actions=["view", "export"])
 RESOURCE_REGISTRY["followups"].update(floor_ids=["ground-floor", "first-floor", "second-floor", "third-floor"], description="Manage the selected floor's sales follow-up inbox.")
+KITCHEN_STAGE_RESOURCES = {stage: f"kitchen_{stage}" for stage in
+    ("lead", "visit", "cad", "design", "quotation", "order", "production", "installation", "completed")}
+for _stage, _resource in KITCHEN_STAGE_RESOURCES.items():
+    RESOURCE_REGISTRY[_resource] = {"label": {"cad": "CAD File"}.get(_stage, _stage.title()),
+        "floor_ids": ["second-floor"], "actions": ["view", *(["create"] if _stage == "lead" else []), "update", "export"],
+        "description": f"Access only Kitchen {_stage} records and their permitted workflow actions."}
+RESOURCE_REGISTRY["kitchen_projects"].update(label="All Kitchen stages", description="Access every Kitchen stage. Individual stage permissions can be assigned instead.")
 for _resource in ("catalog", "purchases", "godown_stock", "payments", "orders", "walkins"):
     RESOURCE_REGISTRY[_resource]["actions"] = ["view", "create", "update", "export"]
 
@@ -62,7 +69,7 @@ def delegation_resource_catalog(floor_ids: list[str]) -> list[dict[str, Any]]:
         supported = [floor for floor in floor_ids
                      if not metadata.get("floor_ids") or floor in metadata["floor_ids"]]
         assignable = [] if metadata.get("retired") or metadata.get("owner_only") else [
-            floor for floor in supported if floor != "second-floor" or key == "kitchen_projects"
+            floor for floor in supported if floor != "second-floor" or key == "kitchen_projects" or key in KITCHEN_STAGE_RESOURCES.values()
         ]
         resources.append({
             "key": key, "label": metadata["label"], "retired": metadata.get("retired", False),
@@ -123,6 +130,7 @@ MFA_ACCOUNT_REQUESTS = frozenset({
 POST_UPDATE_ROUTE_PATTERNS = (
     r"/api/kitchen-projects/[^/]+/commands",
     r"/api/kitchen-projects/[^/]+/attachments",
+    r"/api/kitchen-projects/[^/]+/file-transfers(?:/[^/]+/finish)?",
     r"/api/followups/notebook/[^/]+/[^/]+/(?:convert|outcome)",
     r"/api/followups/[^/]+/(?:contact|snooze|complete|log-call)",
     r"/api/walkins/[^/]+/(?:contact|visit-showroom)",
@@ -160,6 +168,8 @@ POST_UPDATE_ROUTE_PATTERNS = (
 def action_for_api_request(method: str, path: str, query=None) -> str | None:
     """Exports require the export capability even for direct authenticated GETs."""
     method = method.upper()
+    if method == "DELETE" and fullmatch(r"/api/kitchen-projects/[^/]+/file-transfers/[^/]+", path):
+        return "update"
     if method == "POST" and fullmatch(r"/api/(?:furniture-quotations|quotations)/[^/]+/whatsapp-send", path):
         return "export"
     if method in {"POST", "DELETE"} and fullmatch(r"/api/quotations/[^/]+/whatsapp-draft", path):
@@ -191,6 +201,8 @@ def granted_floor_ids(grants, *, user_id: str, path: str, action: str, resource:
         # Ground-floor tile grants cannot widen the shared quotations API to
         # another floor, including when the stored grant is organization-wide.
         resources = (resource,) if resource else resource_candidates_for_api_path(path, floor)
+        if resource in KITCHEN_STAGE_RESOURCES.values():
+            resources = (*resources, "kitchen_projects")
         if grant.get("resource") == "tiles" and floor is None:
             floor = "ground-floor"
             resources = resource_candidates_for_api_path(path, floor)
@@ -289,6 +301,12 @@ def resource_candidates_for_api_path(path: str, floor_id: str | None) -> tuple[s
     """
     if floor_id == "third-floor" and whatsapp_document_status(path):
         return ("furniture_quotations",)
+    if floor_id == "second-floor" and (path == "/api/kitchen-projects" or path.startswith("/api/kitchen-projects/")):
+        return ("kitchen_projects", *KITCHEN_STAGE_RESOURCES.values())
+    if floor_id == "second-floor" and fullmatch(r"/api/customers/[^/]+", path):
+        return ("customers", "kitchen_projects", *KITCHEN_STAGE_RESOURCES.values())
+    if floor_id == "second-floor" and (path == "/api/referrers" or path.startswith("/api/referrers/")):
+        return ("kitchen_projects", "kitchen_lead", "sales_data")
     if path == "/api/referrers" or path.startswith("/api/referrers/"):
         return ("quotations", "tiles", "notebook_walkins", "notebook_quotations", "sales_data")
     if path == "/api/followups/assignees":

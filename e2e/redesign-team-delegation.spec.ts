@@ -197,6 +197,33 @@ test('critical team delegation: multiple floors, pages and actions save in one c
   ]);
 });
 
+test('critical team delegation: all nine Kitchen sections are separate choices and Lead-only access saves without the whole workspace', async ({ page }) => {
+  const stages = ['lead', 'visit', 'cad', 'design', 'quotation', 'order', 'production', 'installation', 'completed'];
+  const kitchenCatalog = { ...catalog, resources: [...catalog.resources,
+    { key: 'kitchen_projects', label: 'All Kitchen stages', actions: ['view', 'create', 'update', 'export'], floor_ids: ['second-floor'] },
+    ...stages.map(stage => ({ key: `kitchen_${stage}`, label: stage === 'cad' ? 'CAD File' : `${stage[0].toUpperCase()}${stage.slice(1)}`,
+      actions: ['view', ...(stage === 'lead' ? ['create'] : []), 'update', 'export'], floor_ids: ['second-floor'] })),
+  ] };
+  const { writes } = await teamFixture(page, () => kitchenCatalog);
+  await fillNewMember(page);
+  await switchFor(page, 'floor-toggle-second-floor').check();
+  await expect(switchFor(page, 'page-toggle-second-floor-kitchen_projects')).not.toBeChecked();
+  for (const stage of stages) {
+    await expect(switchFor(page, `page-toggle-second-floor-kitchen_${stage}`)).toBeVisible();
+    await expect(switchFor(page, `page-toggle-second-floor-kitchen_${stage}`)).not.toBeChecked();
+  }
+  await expect(page.getByTestId('team-kitchen-access-help')).toContainText('individual Kitchen stages');
+  await switchFor(page, 'page-toggle-second-floor-kitchen_lead').check();
+  await switchFor(page, 'action-toggle-second-floor-kitchen_lead-create').check();
+  await switchFor(page, 'action-toggle-second-floor-kitchen_lead-update').check();
+  await expect(page.getByTestId('delegation-summary')).toHaveText('1 floors · 1 pages enabled');
+  await page.getByTestId('add-staff-save').click();
+  await expect(page.getByTestId('add-staff-sheet')).toHaveCount(0);
+  expect(writes).toHaveLength(1);
+  expect(writes[0].body.floor_ids).toEqual(['second-floor']);
+  expect(writes[0].body.access_grants).toEqual([{ resource: 'kitchen_lead', floor_id: 'second-floor', actions: ['view', 'create', 'update'] }]);
+});
+
 test('critical team delegation: a new account starts with every floor off and saves explicit no access', async ({ page }) => {
   const { writes } = await teamFixture(page);
   await fillNewMember(page);
@@ -766,6 +793,66 @@ test('critical team contacts: a delayed older refresh cannot resurrect a deleted
   await expect(page.getByText('No team members', { exact: true })).toBeVisible();
 });
 
+
+test('critical team password: staff list reveals on demand and opens personal editing without retaining the password', async ({ page }) => {
+  const { writes } = await teamFixture(page);
+  let reveals = 0;
+  await page.route('**/api/team/test-worker/password', route => {
+    reveals++;
+    expect(route.request().method()).toBe('POST');
+    return route.fulfill({ json: { password: 'DirectoryMember!2026', reset_required: false } });
+  });
+  await expect(page.getByTestId('team-password-test-worker')).toHaveCount(0);
+  expect(reveals).toBe(0);
+  await page.getByTestId('team-password-toggle-test-worker').click();
+  await expect(page.getByTestId('team-password-test-worker')).toHaveText('DirectoryMember!2026');
+  await expect(page.getByTestId('edit-staff-sheet')).toHaveCount(0);
+  await page.getByTestId('team-password-toggle-test-worker').click();
+  await expect(page.getByTestId('team-password-test-worker')).toHaveCount(0);
+  expect(reveals).toBe(1);
+  await page.getByTestId('team-password-toggle-test-worker').click();
+  await expect(page.getByTestId('team-password-test-worker')).toBeVisible();
+  await page.getByTestId('team-edit-test-worker').click();
+  await expect(page.getByTestId('team-password-test-worker')).toHaveCount(0);
+  await page.getByTestId('edit-staff-name').fill('Updated Staff Name');
+  await page.getByTestId('edit-staff-username').fill('updated-staff');
+  await page.getByTestId('edit-staff-phone').fill('9001112223');
+  await page.getByTestId('edit-staff-email').fill('updated-staff@example.test');
+  await page.getByTestId('edit-staff-save').click();
+  await expect(page.getByTestId('edit-staff-sheet')).toHaveCount(0);
+  expect(writes).toHaveLength(1);
+  expect(writes[0]).toMatchObject({ path: '/api/team/test-worker', method: 'PATCH', body: {
+    full_name: 'Updated Staff Name', login_id: 'updated-staff', phone: '9001112223', email: 'updated-staff@example.test',
+  } });
+  expect(writes[0].body).not.toHaveProperty('password');
+  await expect(page.getByTestId('team-row-test-worker')).toContainText('Updated Staff Name');
+  await expect(page.getByTestId('team-password-test-worker')).toHaveCount(0);
+});
+
+test('critical team password: staff list handles legacy credentials and ignores a reveal completed after editing starts', async ({ page }) => {
+  await teamFixture(page);
+  await page.route('**/api/team/test-worker/password', route => route.fulfill({ json: { password: null, reset_required: true } }));
+  await page.getByTestId('team-password-toggle-test-worker').click();
+  await expect(page.getByTestId('team-password-error-test-worker')).toContainText('Choose Edit to set a new password');
+  await expect(page.getByTestId('team-password-test-worker')).toHaveCount(0);
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/api/team/test-worker/password', async route => {
+    await held;
+    await route.fulfill({ json: { password: 'LateDirectoryMember!2026', reset_required: false } });
+  });
+  const requested = page.waitForRequest('**/api/team/test-worker/password');
+  await page.getByTestId('team-password-toggle-test-worker').click();
+  await requested;
+  await page.getByTestId('team-row-test-worker').click();
+  await expect(page.getByTestId('edit-staff-sheet')).toBeVisible();
+  const acknowledged = page.waitForResponse('**/api/team/test-worker/password');
+  release();
+  await acknowledged;
+  await page.getByTestId('edit-staff-sheet').getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(page.getByTestId('team-password-test-worker')).toHaveCount(0);
+  await expect(page.getByTestId('team-password-toggle-test-worker')).toHaveAccessibleName('Show password');
+});
 
 test('critical team password: owner can reveal, hide and reopen without retaining credentials', async ({ page }) => {
   await teamFixture(page);
