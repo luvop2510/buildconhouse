@@ -331,7 +331,7 @@ async def _create_loan_transfer(
             replacement["loan_replenishment_returned_qty"] = 0
             replacement["loan_replenishment_reserved_qty"] = 0
             replacement["loan_replenishment_promised_qty"] = float(qty)
-            replacement["loan_replenishment_for_customer_name"] = source_customer.get("company") or source_customer.get("name")
+            replacement["loan_replenishment_for_customer_name"] = source_customer.get("name")
             replacement["loan_replenishment_status"] = "awaiting_return"
             replacement["loan_replenishment_transfer_id"] = transfer_id
             replacement["split_from_item_id"] = matching_item["id"]
@@ -353,7 +353,7 @@ async def _create_loan_transfer(
             matching_item = replacement
             dest_item_id = str(uuid4())
             dest_name = destination.get("company") or destination.get("name")
-            source_name = source_customer.get("company") or source_customer.get("name")
+            source_name = source_customer.get("name")
             note_in = f"Borrowed from {source_name}; return when ordered product arrives."
             note_out = f"Lent to {dest_name}; replacement is due when ordered product arrives."
             if reason:

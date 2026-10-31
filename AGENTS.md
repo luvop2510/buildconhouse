@@ -1,5 +1,38 @@
 # AGENTS.md — BuildCon House ERP (forge2.0)
 
+## Tile existing-person lookup — 2026-10-31
+
+Tile Selection and Quotation share explicit Existing customer discovery across
+Customers, Walk-ins and Follow-ups on account-permitted floors. Revalidate source
+resource grants and source identity on reuse; never attach a foreign-floor ID to
+a Ground document or move its orders. Copy contact/referral fields only, retain
+existing Ground identity and values, deterministic retries, bounded literal search
+and stale picker guards.
+
+## Sanitary quotation recovery and purchase latency — 2026-10-31
+
+Compact quotation/picker headers scroll with products; fullscreen reserves only
+the compact Exit control. Keep the existing editing and review tools reachable
+after exit, stable field identity, room ordering and native/web scroll behavior.
+Saved quotation recovery offers only matching account/floor/document drafts;
+navigation must not cancel pending local recovery writes or mix document scopes.
+
+Sanitary PDF product photos retain the catalog image's normalized source
+orientation, full canvas and aspect ratio: no additional rotation, cropping,
+stretching or forced landscape. This strict rule is PDF-only; catalog uploads
+and other floors retain their existing behavior. All requested product,
+seat and dimension images share one bounded prefetch snapshot; never retry
+missing optional images serially while rendering. Quotation media ownership uses
+the existing cold-safe exact-product helper, preserving floor/SKU validation.
+Sanitary PO Final keeps its original cover followed directly by products; real
+payment/cost information flows afterward without a forced duplicate summary page.
+
+Purchase status/history/received quantities commit in one guarded update. Bulk
+moves may overlap three independent POs, with rows inside each PO kept serial.
+Preserve exact receipts, floor scopes, per-row results, guarded conflict reloads
+and unchanged-movement retry repair. No automatic write replay or detached
+load-bearing bookkeeping. See the 31 October sanitary recovery audit.
+
 ## Ground/Kitchen hardening — 2026-10-30
 
 Ground release, move-to-godown, both dispatch sources and Delivered must write

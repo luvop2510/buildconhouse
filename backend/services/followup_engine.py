@@ -301,7 +301,7 @@ async def _tiles_pipeline_producer(quotations: list[dict], customers: dict[str, 
             level = "critical"
         out[f"{rule_type}:{q['id']}"] = {
             "rule_type": rule_type, "category": category,
-            "customer_id": cust["id"], "customer_name": cust.get("company") or cust.get("name"),
+            "customer_id": cust["id"], "customer_name": cust.get("name"),
             "customer_phone": cust.get("phone"), "customer_tier": tier,
             "quotation_id": q["id"], "quotation_number": q.get("number"),
             "purchase_id": None, "purchase_number": None, "project_name": q.get("project_name"),
@@ -580,7 +580,7 @@ async def _reconcile_followups_locked() -> dict:
         desired[key] = {
             "rule_type": rule_type, "category": category,
             "customer_id": customer["id"],
-            "customer_name": customer.get("company") or customer.get("name"),
+            "customer_name": customer.get("name"),
             "customer_phone": customer.get("phone"), "customer_tier": tier,
             "quotation_id": quotation.get("id") if quotation else None,
             "quotation_number": quotation.get("number") if quotation else None,

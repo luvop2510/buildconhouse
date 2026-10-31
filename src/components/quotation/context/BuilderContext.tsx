@@ -760,17 +760,10 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
   // Recovery is account/floor scoped on web and native, and never replaces
   // a document without an explicit choice. Only unacknowledged edits remain.
   useEffect(() => {
-    // An explicit customer-quotation edit must never be interrupted by an
-    // unrelated local draft recovery prompt. The requested server document is
-    // authoritative for this workflow.
-    if (initialQuotationId) {
-      setRecoveryDraft(null);
-      setRecoveryReady(true);
-      return;
-    }
     let current = true;
     void readBuilderDraft(accountId, activeFloorId).then((draft) => {
-      if (current) { setRecoveryDraft(draft); setRecoveryReady(true); }
+      // A saved-document route recovers only its own unacknowledged edits.
+      if (current) { setRecoveryDraft(!initialQuotationId || draft?.quotationId === initialQuotationId ? draft : null); setRecoveryReady(true); }
     });
     return () => { current = false; documentGeneration.current += 1; restoreRequest.current += 1; };
   }, [accountId, activeFloorId, initialQuotationId]);
@@ -778,11 +771,9 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
   useEffect(() => {
     if (!recoveryReady || recoveryDraft || !accountId || !activeFloorId || lastSavedStateRef.current === s) return;
     if (!s.customerId && !s.lines.length && !s.header.projectName && !s.notes) return;
-    const timer = setTimeout(() => {
-      void writeBuilderDraft({ version: 1, accountId, floorId: activeFloorId, at: Date.now(),
-        quotationId, quotationNumber, serverSavedAt: serverSavedAtRef.current, state: s }, draftEpoch.current);
-    }, 250);
-    return () => clearTimeout(timer);
+    // Register each edit immediately so Back/reload cannot cancel a debounce.
+    void writeBuilderDraft({ version: 1, accountId, floorId: activeFloorId, at: Date.now(),
+      quotationId, quotationNumber, serverSavedAt: serverSavedAtRef.current, state: s }, draftEpoch.current);
   }, [s, quotationId, quotationNumber, accountId, activeFloorId, recoveryReady, recoveryDraft]);
 
   const dismissRecovery = useCallback(() => {
@@ -1553,7 +1544,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
       const persistedId = await persist();
       if (!persistedId) return;
       const customer = customers.find((item) => item.id === s.customerId);
-      const name = (customer?.company || customer?.name || "Customer").replace(/[\\/:*?"<>|]/g, "").trim().replace(/\s+/g, " ") || "Customer";
+      const name = (customer?.name || "Customer").replace(/[\\/:*?"<>|]/g, "").trim().replace(/\s+/g, " ") || "Customer";
       const date = new Date().toLocaleDateString("en-GB").replace(/\//g, "-");
       await downloadApiFile(`/quotations/${persistedId}/pptx`, `${name} PPT ${date}.pptx`, "product PPT", activeFloorId);
     } catch (error: any) {

@@ -77,7 +77,7 @@ export default function CustomerDashboard() {
       header={(
         <CustomerHeader
           brand
-          customerName={customer?.company || customer?.name}
+          customerName={customer?.name}
           onLogout={async () => { await logout(); router.replace("/(auth)/login"); }}
         />
       )}

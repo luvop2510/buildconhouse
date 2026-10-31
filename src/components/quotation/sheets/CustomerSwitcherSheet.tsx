@@ -231,9 +231,9 @@ export function CustomerSwitcherSheet() {
                 style={[styles.custRow, active && styles.custRowActive]}
               >
                 <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text style={styles.custName} numberOfLines={1}>{c.company || c.name}</Text>
+                  <Text style={styles.custName} numberOfLines={1}>{c.name}</Text>
                   <Text style={type.caption} numberOfLines={1}>
-                    {[c.name !== (c.company || c.name) ? c.name : null, formatPhone(c.phone), c.email].filter(Boolean).join(" · ") || "—"}
+                    {[formatPhone(c.phone), c.email].filter(Boolean).join(" · ") || "—"}
                   </Text>
                 </View>
                 {active ? <Feather name="check" size={16} color={ds.brass} /> : null}

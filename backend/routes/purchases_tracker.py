@@ -757,7 +757,7 @@ async def customer_workspace(
 
     response = {
         "customer": {
-            "id": customer["id"], "name": customer.get("name"), "company": customer.get("company"),
+            "id": customer["id"], "name": customer.get("name"),
             "tier": customer.get("tier"), "email": customer.get("email"), "phone": customer.get("phone"),
         },
         "summary": {
@@ -803,7 +803,7 @@ async def customer_workspace(
     # redirect target useful while removing payment balances, payment history,
     # follow-ups and general CRM activity from the response itself.
     if user.access_profile == "sanitary_purchases":
-        response["customer"] = {"id": customer["id"], "name": customer.get("name"), "company": customer.get("company")}
+        response["customer"] = {"id": customer["id"], "name": customer.get("name"), }
         response["summary"].pop("outstanding_balance", None)
         response["summary"].pop("refund_due", None)
         response.pop("payments", None)
@@ -1103,42 +1103,48 @@ async def _sync_po_status_with_stages(po_id: str, user: UserPublic) -> Optional[
     """Fetch the fresh PO, derive the correct status from item stages, and
     persist it (+ status_history + qty_received bookkeeping + activity event)
     if a forward sync is warranted. Returns the new status, or None."""
-    fresh = await db.purchase_orders.find_one(floor_query(user, {"id": po_id}), {"_id": 0})
-    if not fresh:
-        return None
-    target = _derive_po_status_from_stages(fresh.get("items", []), fresh.get("status", "draft"))
-    if not target:
-        return None
-
-    now = now_iso()
-    ev = PurchaseStatusEvent(
-        from_status=fresh.get("status"), to_status=target,
-        by_user_id=user.id, by_user_name=user.full_name,
-        note="Auto-synced from Material Tracker stage change",
-    ).model_dump()
-    set_fields: dict = {"status": target, "updated_at": now}
-    await db.purchase_orders.update_one(
-        {"id": po_id},
-        {"$set": set_fields, "$push": {"status_history": ev}},
-    )
-    # Keep qty_received consistent with /receive bookkeeping for every item
-    # that has physically reached "delivered" — otherwise the receive-progress
-    # math (partial vs full) on the PO-lifecycle side would still read 0.
-    for it2 in fresh.get("items", []):
-        if normalized_stage(it2) == "dispatched" and float(it2.get("qty_received") or 0) < float(it2.get("qty") or 0):
-            await db.purchase_orders.update_one(
-                {"id": po_id, "items.id": it2["id"]},
-                {"$set": {"items.$.qty_received": it2.get("qty")}},
+    for _ in range(3):
+        fresh = await db.purchase_orders.find_one(floor_query(user, {"id": po_id}), {"_id": 0})
+        if not fresh or fresh.get("status") in {"cancelled", "packed", "ready_for_dispatch"}:
+            return None
+        items = fresh.get("items", [])
+        target = _derive_po_status_from_stages(items, fresh.get("status", "draft"))
+        # Received quantities and status must commit together; one update per
+        # delivered line made large POs slow and allowed partially synced reads.
+        set_fields = {
+            f"items.{index}.qty_received": item.get("qty")
+            for index, item in enumerate(items)
+            if normalized_stage(item) == "dispatched"
+            and float(item.get("qty_received") or 0) < float(item.get("qty") or 0)
+        }
+        if not target and not set_fields:
+            return None
+        now = now_iso()
+        update: dict = {"$set": {**set_fields, "updated_at": now}}
+        if target:
+            ev = PurchaseStatusEvent(
+                from_status=fresh.get("status"), to_status=target,
+                by_user_id=user.id, by_user_name=user.full_name,
+                note="Auto-synced from Material Tracker stage change",
+            ).model_dump()
+            update["$set"]["status"] = target
+            update["$push"] = {"status_history": ev}
+        saved = await db.purchase_orders.update_one(
+            floor_query(user, {"id": po_id, "status": fresh.get("status"), "items": items}),
+            update,
+        )
+        if not saved.matched_count:
+            continue
+        if target:
+            await log_event(
+                event_type="purchase.status_changed",
+                entity_type="purchase", entity_id=po_id, actor=user,
+                customer_id=fresh.get("customer_id"),
+                summary=f"Status auto-synced to {STATUS_LABELS.get(target, target)} (Material Tracker)",
+                payload={"from": fresh.get("status"), "to": target, "source": "material_tracker_sync"},
             )
-
-    await log_event(
-        event_type="purchase.status_changed",
-        entity_type="purchase", entity_id=po_id, actor=user,
-        customer_id=fresh.get("customer_id"),
-        summary=f"Status auto-synced to {STATUS_LABELS.get(target, target)} (Material Tracker)",
-        payload={"from": fresh.get("status"), "to": target, "source": "material_tracker_sync"},
-    )
-    return target
+        return target
+    raise HTTPException(409, "Movement recorded, but purchase status changed concurrently. Retry the unchanged movement to finish synchronization.")
 
 
 async def _apply_stage_change(
@@ -1240,7 +1246,8 @@ async def _attempt_stage_change(
     is_partial = move_qty < full_qty - 1e-6
 
     if not is_partial and from_stage == to_stage and not command_key:
-        return {"po_id": po["id"], "item_id": item_id, "no_change": True}
+        return {"po_id": po["id"], "item_id": item_id, "no_change": True,
+                "po_status_synced_to": await _sync_po_status_with_stages(po["id"], user)}
 
     now = now_iso()
     # Guard every quantity input and active state used in this calculation.
@@ -1265,7 +1272,9 @@ async def _attempt_stage_change(
     if not is_partial and from_stage == to_stage:
         result = {"po_id": po["id"], "item_id": item_id, "no_change": True}
         saved = await db.purchase_orders.update_one(mutation_guard, {"$set": receipt_fields(result)})
-        return result if saved.matched_count else {"conflict": True, "expected_qty": full_qty}
+        if not saved.matched_count:
+            return {"conflict": True, "expected_qty": full_qty}
+        return {**result, "po_status_synced_to": await _sync_po_status_with_stages(po["id"], user)}
 
     # -------------------------------------------------------------------
     # PARTIAL MOVE — split the line into two tracked pieces.
@@ -1487,15 +1496,34 @@ async def bulk_move(
         raise HTTPException(status_code=400, detail=f"Unknown stage '{body.stage}'")
     if not body.item_ids:
         raise HTTPException(status_code=400, detail="No items selected")
-    results: list[dict] = []
-    succeeded = 0
-    for iid in body.item_ids:
-        try:
-            r = await _apply_stage_change(iid, body.stage, user, body.note)
-            results.append({"item_id": iid, "ok": True, **r})
-            succeeded += 1
-        except HTTPException as e:
-            results.append({"item_id": iid, "ok": False, **_bulk_move_error_payload(e)})
+    orders = await db.purchase_orders.find(
+        floor_query(user, {"items.id": {"$in": body.item_ids}}),
+        {"_id": 0, "id": 1, "items.id": 1},
+    ).to_list(len(body.item_ids))
+    order_by_item = {item["id"]: order["id"] for order in orders
+                     for item in order.get("items", []) if item.get("id") and order.get("id")}
+    groups: dict[str, list[tuple[int, str]]] = {}
+    for index, iid in enumerate(body.item_ids):
+        groups.setdefault(order_by_item.get(iid, iid), []).append((index, iid))
+    # Independent POs can overlap Atlas/activity reads. Keep each PO serial so
+    # our own bulk command cannot exhaust another selected line's CAS retries.
+    slots = asyncio.Semaphore(3)
+    results: list[dict] = [{} for _ in body.item_ids]
+
+    async def move_group(rows: list[tuple[int, str]]) -> None:
+        async with slots:
+            for index, iid in rows:
+                try:
+                    r = await _apply_stage_change(iid, body.stage, user, body.note)
+                    results[index] = {"item_id": iid, "ok": True, **r}
+                except HTTPException as e:
+                    results[index] = {"item_id": iid, "ok": False, **_bulk_move_error_payload(e)}
+
+    outcomes = await asyncio.gather(*(move_group(rows) for rows in groups.values()), return_exceptions=True)
+    for outcome in outcomes:
+        if isinstance(outcome, BaseException):
+            raise outcome
+    succeeded = sum(result["ok"] for result in results)
     failed = len(results) - succeeded
     return {
         "count": len(results),

@@ -418,7 +418,7 @@ export function TransferSheet({
   const filteredCustomers = useMemo(() => {
     const term = custSearch.trim().toLowerCase();
     if (!term) return customers;
-    return customers.filter((c) => (c.company || c.name || "").toLowerCase().includes(term));
+    return customers.filter((c) => (c.name || "").toLowerCase().includes(term));
   }, [customers, custSearch]);
 
   if (!item) return null;
@@ -503,7 +503,7 @@ export function TransferSheet({
                     },
                   ]}
                 >
-                  <Text style={{ fontSize: 13, color: ds.ink, flex: 1 }} numberOfLines={1}>{c.company || c.name}</Text>
+                  <Text style={{ fontSize: 13, color: ds.ink, flex: 1 }} numberOfLines={1}>{c.name}</Text>
                   {pick === c.id ? <Feather name="check" size={14} color={ds.brassDeep} /> : null}
                 </Pressable>
               ))}

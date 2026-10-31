@@ -79,6 +79,8 @@ async function selectPhoto(page: Page, bytes = image) {
 }
 
 async function review(page: Page) {
+  const exitFullscreen = page.getByTestId("expand-quotation-workspace");
+  if (await exitFullscreen.isVisible()) await exitFullscreen.click();
   const button = page.getByTestId('mobile-review-quotation');
   if (await button.isVisible()) await button.click();
   const quotationTab = page.getByRole('tab', { name: /Quotation ·/ });

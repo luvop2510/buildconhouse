@@ -95,12 +95,12 @@ def test_document_media_is_proven_by_exact_floor_and_sku_without_database_roundt
         "foreign": {"id": "foreign", "floor_id": "ground-floor", "sku": "FOREIGN"},
         "changed": {"id": "changed", "floor_id": "first-floor", "sku": "NEW"},
     }
-    async def snapshot():
+    async def snapshot(*_args):
         return SimpleNamespace(product_by_id=products, media_rows_by_product={
             key: [{"product_id": key, "public_url": f"https://cdn.test/{key}-current.png", "is_primary": True}]
             for key in products
         })
-    monkeypatch.setattr(quotation_routes.catalog_service, "get_catalog_snapshot", snapshot)
+    monkeypatch.setattr(quotation_routes.catalog_service, "snapshot_for_product_ids", snapshot)
     monkeypatch.setattr(quotation_routes, "db", object())  # no DB reads permitted
     rows = asyncio.run(quotation_routes._canonicalize_item_images([
         {"product_id": "same", "sku": "SAME", "image": "same-snapshot"},
@@ -116,10 +116,10 @@ def test_document_media_is_proven_by_exact_floor_and_sku_without_database_roundt
 
 
 def test_pdf_rows_never_include_a_foreign_floor_hero_or_snapshot(monkeypatch):
-    async def snapshot():
+    async def snapshot(*_args):
         return SimpleNamespace(product_by_id={"foreign": {"id": "foreign", "floor_id": "ground-floor", "sku": "F"}},
                                media_rows_by_product={"foreign": [{"product_id": "foreign", "public_url": "https://cdn.test/foreign.png"}]})
-    monkeypatch.setattr(quotation_routes.catalog_service, "get_catalog_snapshot", snapshot)
+    monkeypatch.setattr(quotation_routes.catalog_service, "snapshot_for_product_ids", snapshot)
     items = asyncio.run(quotation_routes._pdf_items({"floor_id": "first-floor", "items": [
         {"product_id": "foreign", "sku": "F", "name": "Foreign product", "image": "https://cdn.test/foreign-snapshot.png"},
     ]}))
@@ -141,10 +141,28 @@ def test_exact_current_legacy_photo_replaces_expired_quote_snapshot(monkeypatch)
     current = _build_snapshot([
         {"id": "legacy", "floor_id": "first-floor", "sku": "EXACT", "images": ["https://cdn.test/current.png"]},
     ], [], [], [], [])
-    async def snapshot():
+    async def snapshot(*_args):
         return current
-    monkeypatch.setattr(quotation_routes.catalog_service, "get_catalog_snapshot", snapshot)
+    monkeypatch.setattr(quotation_routes.catalog_service, "snapshot_for_product_ids", snapshot)
     rows = asyncio.run(quotation_routes._canonicalize_item_images([
         {"product_id": "legacy", "sku": "EXACT", "image": "https://cdn.test/deleted.png"},
     ], "first-floor"))
     assert rows[0]["image"] == "https://cdn.test/current.png"
+
+
+def test_cold_document_media_never_starts_full_catalog_warmup(monkeypatch):
+    async def full_catalog():
+        raise AssertionError("Quotation must not wait for the full catalog")
+    calls = []
+    async def exact(product_ids):
+        calls.append(set(product_ids))
+        return SimpleNamespace(product_by_id={"p1": {"id": "p1", "sku": "ONE", "floor_id": "first-floor"}},
+                               media_rows_by_product={"p1": [{"product_id": "p1", "public_url": "https://cdn.test/current.png"}]})
+    monkeypatch.setattr(quotation_routes.catalog_service, "get_catalog_snapshot", full_catalog)
+    monkeypatch.setattr(quotation_routes.catalog_service, "snapshot_for_product_ids", exact)
+    rows = asyncio.run(quotation_routes._canonicalize_item_images([
+        {"product_id": "p1", "sku": "ONE", "image": "snapshot"},
+        {"product_id": "p1", "sku": "ONE", "image": "snapshot"},
+    ], "first-floor"))
+    assert calls == [{"p1"}]
+    assert [row["image"] for row in rows] == ["https://cdn.test/current.png"] * 2

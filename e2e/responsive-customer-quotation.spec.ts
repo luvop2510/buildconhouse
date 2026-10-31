@@ -50,6 +50,9 @@ test('critical customer quotation rows and sanitary quotation detail stay aligne
 
   if (width <= 390) {
     await page.getByTestId('manage-quotation-products-mobile-quote').click();
+    await expect(page.getByTestId('quotation-workspace')).toBeVisible();
+    const exitFullscreen = page.getByTestId('expand-quotation-workspace');
+    if (await exitFullscreen.isVisible()) await exitFullscreen.click();
     await page.getByRole('button', { name: /Review/ }).click();
     await expect(page.getByTestId('room-header-Bathroom')).toBeVisible();
     const roomHeader = await page.getByTestId('room-header-Bathroom').boundingBox();

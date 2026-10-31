@@ -3,9 +3,9 @@
 // swatches, favourite heart, quick-preview → ProductModal, and "Add" button.
 //
 // Uses FlatList w/ numColumns for grid layout. Search + sort + filters live
-// in the sticky header.
+// in the scrolling list header.
 import Feather from "@expo/vector-icons/Feather";
-import { memo, useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { ActivityIndicator, FlatList, LayoutChangeEvent, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { Text, TextInput } from "@/src/components/AppText";
 
@@ -40,7 +40,7 @@ const SORT_OPTIONS: { k: SortKey; label: string; icon: React.ComponentProps<type
   { k: "name", label: "A–Z", icon: "align-left" },
 ];
 
-export function ProductExplorer({ showCompactFilters = true }: { showCompactFilters?: boolean }) {
+export function ProductExplorer({ showCompactFilters = true, scrollHeader }: { showCompactFilters?: boolean; scrollHeader?: ReactNode }) {
   const b = useBuilder();
   const [paneWidth, setPaneWidth] = useState(0);
   const [facets, setFacets] = useState<Record<string, { value: string }[]>>({});
@@ -97,14 +97,8 @@ export function ProductExplorer({ showCompactFilters = true }: { showCompactFilt
     storage.setItem(RECENT_SEARCHES_KEY, JSON.stringify([]));
   }, []);
 
-  return (
-    <View
-      style={styles.panel}
-      onLayout={(event: LayoutChangeEvent) => {
-        const next = Math.round(event.nativeEvent.layout.width);
-        if (next !== paneWidth) setPaneWidth(next);
-      }}
-    >
+  const header = <>
+      {scrollHeader}
       <View style={[styles.head, showCompactFilters && styles.headCompact]}>
         <View style={styles.crumbs}>
           <Text style={styles.crumb} numberOfLines={1}>{brandName}</Text>
@@ -227,10 +221,19 @@ export function ProductExplorer({ showCompactFilters = true }: { showCompactFilt
         ) : null}
         </ScrollView> : null}
       </View>
+    </>;
 
+  return (
+    <View style={styles.panel} onLayout={(event: LayoutChangeEvent) => {
+      const next = Math.round(event.nativeEvent.layout.width);
+      if (next !== paneWidth) setPaneWidth(next);
+    }}>
+      {!showCompactFilters ? header : null}
       <ProductFilterSheet open={showCompactFilters && filtersOpen} onClose={() => setFiltersOpen(false)} facets={facets} />
 
       <FlatList
+        testID="explorer-product-list"
+        ListHeaderComponent={showCompactFilters ? header : null}
         // A query keeps the previous page in memory until it settles. Never
         // offer those cards as matches for the new search/filter, including
         // the timeout path where the old page can still be present.
@@ -238,9 +241,9 @@ export function ProductExplorer({ showCompactFilters = true }: { showCompactFilt
         key={`grid-${numCols}`}
         numColumns={numCols}
         style={{ flex: 1, minHeight: 0 }}
-        columnWrapperStyle={numCols > 1 ? { gap: 12 } : undefined}
+        columnWrapperStyle={numCols > 1 ? { gap: 12, paddingHorizontal: showCompactFilters ? 12 : 16 } : undefined}
         keyExtractor={catalogItemKey}
-        contentContainerStyle={{ padding: showCompactFilters ? 12 : 16, gap: 12, paddingBottom: 24 }}
+        contentContainerStyle={{ paddingTop: showCompactFilters ? 0 : 16, paddingHorizontal: numCols > 1 ? 0 : (showCompactFilters ? 12 : 16), gap: 12, paddingBottom: 24 }}
         keyboardShouldPersistTaps="handled"
         renderItem={({ item }) => (
           <ProductGridCard

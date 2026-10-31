@@ -86,7 +86,7 @@ export function CustomerDataDeletionDialog({ customer, onClose, onDeleted }: {
   };
 
   return <Sheet visible={!!customer} onClose={() => { if (!deleting) onClose(); }}
-    title="Delete customer data?" subtitle={customer?.company || customer?.name} width={520} scroll
+    title="Delete customer data?" subtitle={customer?.name} width={520} scroll
     testID="confirm-delete-customer-list"
     footer={<>
       <Button label="Cancel" variant="secondary" onPress={onClose} disabled={deleting} />

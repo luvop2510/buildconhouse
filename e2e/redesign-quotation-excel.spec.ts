@@ -29,9 +29,9 @@ test('critical quotation Excel persists the current quotation and downloads on d
   });
   await page.goto('/quotations/new?quotationId=excel-quote');
   await expect(page.getByTestId('quotation-workspace')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Download Excel file', exact: true })).toBeVisible();
   const expand = page.getByTestId('expand-quotation-workspace');
   if (await expand.isVisible()) await expand.click();
+  await expect(page.getByRole('button', { name: 'Download Excel file', exact: true })).toBeVisible();
   const quotationTab = page.getByTestId('builder-tab-quotation');
   if (await quotationTab.isVisible()) await quotationTab.click();
   await page.getByTestId('qty-line').fill('2');

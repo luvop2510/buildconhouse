@@ -34,6 +34,7 @@ from routes.catalog_routes import router as catalog_router  # noqa: E402
 from routes.catalog_import_routes import router as catalog_import_router  # noqa: E402
 from routes.customer_routes import router as customer_router  # noqa: E402
 from routes.po_final_routes import router as po_final_router  # noqa: E402
+from routes.quotation_customer_sources import router as quotation_customer_sources_router
 from routes.quotation_routes import router as quotation_router  # noqa: E402
 from routes.misc_routes import router as misc_router  # noqa: E402
 from routes.media_routes import router as media_router  # noqa: E402
@@ -414,6 +415,7 @@ api.include_router(catalog_router)
 api.include_router(catalog_import_router)
 api.include_router(customer_router)
 api.include_router(po_final_router)
+api.include_router(quotation_customer_sources_router)
 api.include_router(quotation_router)
 api.include_router(furniture_quotation_router)
 api.include_router(kitchen_router)

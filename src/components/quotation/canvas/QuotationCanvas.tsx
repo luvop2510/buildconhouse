@@ -1,5 +1,6 @@
+import type { ReactNode } from "react";
 // QuotationCanvas — the DnD flat list that mixes room headers + lines.
-import { Pressable, StyleSheet, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { Text } from "@/src/components/AppText";
 import Feather from "@expo/vector-icons/Feather";
 import DraggableFlatList, { RenderItemParams } from "react-native-draggable-flatlist";
@@ -13,7 +14,7 @@ import type { BuilderRow } from "../helpers/types";
 import { LineRow } from "./LineRow";
 import { RoomHeaderRow } from "./RoomHeaderRow";
 
-export function QuotationCanvas({ compact = false }: { compact?: boolean }) {
+export function QuotationCanvas({ compact = false, scrollHeader }: { compact?: boolean; scrollHeader?: ReactNode }) {
   const b = useBuilder();
 
   const renderItem = ({ item, drag, isActive }: RenderItemParams<BuilderRow>) => {
@@ -45,7 +46,7 @@ export function QuotationCanvas({ compact = false }: { compact?: boolean }) {
 
   if (b.flatRows.length === 0 || (b.flatRows.length <= b.s.rooms.length && b.s.lines.length === 0)) {
     return (
-      <View style={{ flex: 1, justifyContent: "center" }}>
+      <ScrollView style={{ flex: 1, minHeight: 0 }} keyboardShouldPersistTaps="handled">{scrollHeader}<View style={{ justifyContent: "center", paddingVertical: 24 }}>
         <EmptyState
           icon="file-plus"
           title="Add your first product"
@@ -61,12 +62,13 @@ export function QuotationCanvas({ compact = false }: { compact?: boolean }) {
             <Text style={styles.browseBtnText}>Browse catalog</Text>
           </Pressable>
         ) : null}
-      </View>
+      </View></ScrollView>
     );
   }
 
   return (
     <DraggableFlatList
+      ListHeaderComponent={scrollHeader ? <>{scrollHeader}</> : null}
       data={b.flatRows}
       keyExtractor={(row) => row.id}
       onDragEnd={b.onLinesDragEnd}

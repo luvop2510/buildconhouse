@@ -83,8 +83,8 @@ export default function Customers() {
         page: "Customers",
         section: completed ? "100% completed customers" : "Active customer accounts",
         rows: [
-          ["Name", "Company", "Status", "Email", "Phone", "City"],
-          ...filtered.map(customer => [customer.name, customer.company, completed ? "100% completed" : "Active", customer.email, formatPhone(customer.phone), customer.city]),
+          ["Name", "Status", "Email", "Phone"],
+          ...filtered.map(customer => [customer.name, completed ? "100% completed" : "Active", customer.email, formatPhone(customer.phone)]),
         ],
         filename: `customers-${completed ? "completed" : "active"}.xlsx`,
         floorId: selectedFloorId,
@@ -192,9 +192,9 @@ export default function Customers() {
                 ]}
               >
                 <View style={[styles.customerMain, !isDesktop && styles.customerMainMobile]}>
-                <Avatar name={c.company || c.name} size={44} tone="brand" />
+                <Avatar name={c.name} size={44} tone="brand" />
                 <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
-                  <Text numberOfLines={isDesktop ? 1 : 2} style={type.titleSm}>{c.company || c.name}</Text>
+                  <Text numberOfLines={isDesktop ? 1 : 2} style={type.titleSm}>{c.name}</Text>
                   <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm, flexWrap: "wrap" }}>
                     <Text style={type.caption} numberOfLines={isDesktop ? 1 : 2}>{c.email}</Text>
                     {c.city ? (

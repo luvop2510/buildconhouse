@@ -455,7 +455,7 @@ async def order_detail(order_id: str, user: UserPublic = Depends(get_current_use
         "customer": {
             "id": customer.get("id"),
             "name": customer.get("name"),
-            "company": customer.get("company"),
+
             "phone": customer.get("phone"),
             "email": customer.get("email"),
             "city": customer.get("city"),

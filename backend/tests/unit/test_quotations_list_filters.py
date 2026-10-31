@@ -148,7 +148,7 @@ def test_quotation_list_proves_images_in_one_snapshot_read_per_floor(monkeypatch
         def find(self, *args):
             return _Cursor(documents)
     reads = []
-    async def snapshot():
+    async def snapshot(*_args):
         reads.append(True)
         return SimpleNamespace(product_by_id={
             "own": {"id": "own", "floor_id": "first-floor", "sku": "OWN"},
@@ -158,7 +158,7 @@ def test_quotation_list_proves_images_in_one_snapshot_read_per_floor(monkeypatch
             "foreign": [{"product_id": "foreign", "public_url": "https://cdn.test/foreign.png"}],
         })
     monkeypatch.setattr(quotation_routes, "db", SimpleNamespace(quotations=Quotations()))
-    monkeypatch.setattr(quotation_routes.catalog_service, "get_catalog_snapshot", snapshot)
+    monkeypatch.setattr(quotation_routes.catalog_service, "snapshot_for_product_ids", snapshot)
     result = asyncio.run(quotation_routes.list_quotations(user=_user()))
     assert [doc["id"] for doc in result] == ["first", "second", "third"]
     assert [doc["items"][0]["image"] for doc in result] == [None, "https://cdn.test/own.png", "https://cdn.test/foreign.png"]

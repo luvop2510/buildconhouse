@@ -1296,7 +1296,7 @@ async def create_followup(body: FollowupCreate, user: UserPublic = Depends(get_c
     f = Followup(
         **({'id': request_id} if request_id else {}),
         source_key=None, rule_type="manual", category=body.category,
-        customer_id=cust["id"], customer_name=cust.get("company") or cust.get("name"),
+        customer_id=cust["id"], customer_name=cust.get("name"),
         customer_phone=cust.get("phone"), customer_tier=tier,
         quotation_id=quotation.get("id") if quotation else None,
         quotation_number=quotation.get("number") if quotation else None,
@@ -1329,7 +1329,7 @@ async def create_followup(body: FollowupCreate, user: UserPublic = Depends(get_c
             raise HTTPException(422, str(exc)) from exc
         f = f.model_copy(update={
             "customer_id": cust["id"],
-            "customer_name": cust.get("company") or cust.get("name"),
+            "customer_name": cust.get("name"),
             "customer_phone": cust.get("phone"),
             "customer_tier": cust.get("tier", "retail"),
         })

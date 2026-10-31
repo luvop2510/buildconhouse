@@ -23,6 +23,8 @@ export function ProductPickerSheet() {
   return (
     <Overlay open={b.pickerSheetOpen} onClose={() => b.setPickerSheetOpen(false)} title="Add products" presentation="fullscreen" scroll={false} header={false}>
       <SafeAreaView edges={[]} style={{ flex: 1, backgroundColor: colors.surface }}>
+        <View style={{ flex: 1, minHeight: 0 }}>
+          <ProductExplorer showCompactFilters scrollHeader={<>
         <View style={styles.head}>
           <Pressable onPress={() => b.setPickerSheetOpen(false)} style={styles.close} testID="picker-sheet-close" accessibilityRole="button" accessibilityLabel="Close product picker">
             <Feather name="x" size={22} color={colors.onSurface} />
@@ -38,10 +40,7 @@ export function ProductPickerSheet() {
           </Pressable>
           {roomsOpen ? <View style={{ paddingBottom: 8 }}><RoomChipRow /></View> : null}
         </View>
-        <View style={{ flex: 1, minHeight: 0 }}>
-          {/* This is the only product view without the persistent BrandRail,
-              so it owns the compact brand and category selectors. */}
-          <ProductExplorer showCompactFilters />
+          </>} />
         </View>
         <View style={styles.summary}>
           <View style={{ flex: 1, minWidth: 0 }} accessibilityLiveRegion="polite">

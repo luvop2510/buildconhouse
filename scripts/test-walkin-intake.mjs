@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import vm from 'node:vm';
 import ts from 'typescript';
+import { formatPhone } from '../src/utils/phone.ts';
 
 const source = readFileSync(new URL('../app/(admin)/walkins/new.tsx', import.meta.url), 'utf8');
 const compiled = ts.transpileModule(source, { compilerOptions: {
@@ -48,6 +49,7 @@ function fixture(floorId) {
     'react-native-safe-area-context': { SafeAreaView: 'SafeAreaView' },
     'expo-router': { useLocalSearchParams: () => ({}), useRouter: () => ({ replace: path => navigation.push(path), push() {}, back() {} }) },
     '@/src/components/AppText': { Text: 'Text' },
+    '@/src/utils/phone': { formatPhone },
     '@/src/components/ui': ui,
     '@/src/design/Disclosure': { Disclosure: 'Disclosure' },
     '@/src/components/leads/LeadScopeFields': { LeadScopeFields: 'LeadScopeFields' },

@@ -2,6 +2,8 @@ import { expect, test, type Page } from '@playwright/test';
 import { mockSession } from './audit-fixtures';
 
 async function reviewQuotation(page: Page) {
+  const exitFullscreen = page.getByTestId("expand-quotation-workspace");
+  if (await exitFullscreen.isVisible()) await exitFullscreen.click();
   const review = page.getByTestId('mobile-review-quotation');
   if (await review.isVisible()) await review.click();
   const quotationTab = page.getByRole('tab', { name: /Quotation ·/ });
@@ -162,7 +164,7 @@ test('critical quotation drag handles support keyboard ordering and a release di
   // card's midpoint and the next handle are both inside the visible receipt.
   await page.getByTestId('receipt-list').evaluate(element => {
     const previous = element.querySelector<HTMLElement>('[data-quotation-row="line-a"]');
-    if (previous) element.scrollTop = previous.offsetTop + previous.offsetHeight / 4;
+    if (previous) element.scrollTop = (previous.parentElement?.offsetTop || 0) + previous.offsetTop + previous.offsetHeight / 4;
     const next = element.querySelector<HTMLElement>('[data-testid="line-drag-line-b"]');
     if (next) element.scrollTop += Math.max(0, next.getBoundingClientRect().top - (element.getBoundingClientRect().bottom - 24));
   });
@@ -190,7 +192,7 @@ test('critical quotation real touch drop persists product ordering after reload'
   // card's midpoint and the next handle are both inside the visible receipt.
   await page.getByTestId('receipt-list').evaluate(element => {
     const previous = element.querySelector<HTMLElement>('[data-quotation-row="line-a"]');
-    if (previous) element.scrollTop = previous.offsetTop + previous.offsetHeight / 4;
+    if (previous) element.scrollTop = (previous.parentElement?.offsetTop || 0) + previous.offsetTop + previous.offsetHeight / 4;
   });
   const source = await handle.boundingBox();
   const target = await page.locator('[data-quotation-row="line-a"]').boundingBox();
@@ -228,7 +230,7 @@ test('critical quotation a product can be dragged down into another room without
   await page.mouse.move(x, canvas.y + canvas.height / 2);
   await page.getByTestId('receipt-list').evaluate(element => {
     const destination = element.querySelector<HTMLElement>('[data-quotation-row="line-c"]');
-    if (destination) element.scrollTop = destination.offsetTop + destination.offsetHeight / 2 - element.clientHeight / 2;
+    if (destination) element.scrollTop = (destination.parentElement?.offsetTop || 0) + destination.offsetTop + destination.offsetHeight / 2 - element.clientHeight / 2;
   });
   // Preview insertion and browser scrolling can change layout between calls.
   // Model both settled insertion positions using fresh bounds in each phase.
@@ -242,7 +244,7 @@ test('critical quotation a product can be dragged down into another room without
         const boundary = element.querySelector<HTMLElement>(after ? '[data-quotation-row="hdr-Closed"]' : '[data-quotation-row="hdr-Kitchen"]');
         const root = destination?.parentElement;
         if (!destination || !boundary || !root) throw new Error('Missing destination geometry');
-        element.scrollTop = destination.offsetTop + destination.offsetHeight / 2 - element.clientHeight / 2;
+        element.scrollTop = (destination.parentElement?.offsetTop || 0) + destination.offsetTop + destination.offsetHeight / 2 - element.clientHeight / 2;
         const top = root.getBoundingClientRect().top;
         const productMid = top + destination.offsetTop + destination.offsetHeight / 2;
         const boundaryMid = top + boundary.offsetTop + boundary.offsetHeight / 2;

@@ -1,5 +1,5 @@
 // Pointer-based ordering works with mouse, pen and touch without native gestures.
-import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent, type ReactNode } from "react";
 import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { Text } from "@/src/components/AppText";
 import Feather from "@expo/vector-icons/Feather";
@@ -21,7 +21,7 @@ type Drag = {
   lastY: number | null; lastScrollTop: number | null;
 };
 
-export function QuotationCanvas({ compact = false }: { compact?: boolean }) {
+export function QuotationCanvas({ compact = false, scrollHeader }: { compact?: boolean; scrollHeader?: ReactNode }) {
   const b = useBuilder();
   const root = useRef<HTMLDivElement>(null);
   const drag = useRef<Drag | null>(null);
@@ -186,9 +186,10 @@ export function QuotationCanvas({ compact = false }: { compact?: boolean }) {
   };
 
   if (!b.s.lines.length) {
-    return <View style={{ flex: 1, justifyContent: "center" }}><EmptyState icon="file-plus" title="Add your first product" subtitle={compact ? "Tap Browse catalog to search and add products. Everything totals live." : "Search on the left and tap to add. Everything totals live."} />{compact ? <Pressable testID="empty-browse-catalog" onPress={() => b.setPickerSheetOpen(true)} style={styles.browseBtn}><Feather name="search" size={15} color={ds.canvas} /><Text style={styles.browseBtnText}>Browse catalog</Text></Pressable> : null}</View>;
+    return <ScrollView style={{ flex: 1, minHeight: 0 }} keyboardShouldPersistTaps="handled">{scrollHeader}<View style={{ justifyContent: "center", paddingVertical: 24 }}><EmptyState icon="file-plus" title="Add your first product" subtitle={compact ? "Tap Browse catalog to search and add products. Everything totals live." : "Search on the left and tap to add. Everything totals live."} />{compact ? <Pressable testID="empty-browse-catalog" onPress={() => b.setPickerSheetOpen(true)} style={styles.browseBtn}><Feather name="search" size={15} color={ds.canvas} /><Text style={styles.browseBtnText}>Browse catalog</Text></Pressable> : null}</View></ScrollView>;
   }
   return <ScrollView style={{ flex: 1, minHeight: 0 }} keyboardShouldPersistTaps="handled" testID="receipt-list">
+    {scrollHeader}
     <div ref={root} style={{ position: "relative", padding: spacing.md, paddingBottom: 32, display: "flex", flexDirection: "column", gap: 6 }}
       onPointerDown={start}
       onPointerMove={event => { if (drag.current?.pointerId === event.pointerId) { event.preventDefault(); drag.current.y = event.clientY; } }}

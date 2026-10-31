@@ -124,8 +124,10 @@ def test_po_final_pdf_matches_quotation_cover_and_keeps_commercial_ledger():
     assert "PRICE & PAYMENT SUMMARY" not in cover
     assert "MRP" in text and "OFFER" in text
     assert "90.00" in text and "81.00" not in text
-    assert len(pages) == 3
-    assert "PRICE & PAYMENT SUMMARY" in text
+    assert len(pages) == 2
+    assert "PRICE & PAYMENT SUMMARY" not in text
+    assert "Payments and additional costs" in text
+    assert "B-7" in (pages[1].extract_text() or "")
     assert "PRODUCT" in text and "IMAGE" in text and "B-7" in text
     assert "Handling" in text and "80.00" in text
     assert "GoDown stock credits (included in total)" in text
@@ -152,3 +154,19 @@ def test_po_final_tiles_pdf_uses_tile_quotation_product_table():
     assert "PRODUCT DETAILS" in text and "600x600" in text
     assert "120.00" in text
     assert "TERMS & CONDITIONS" not in text
+
+
+def test_po_final_without_supplementary_ledger_keeps_original_page_count():
+    from io import BytesIO
+    from pypdf import PdfReader
+
+    data = {"quotation_number": "Q-8", "customer": {"name": "Alice"},
+            "items": [{"id": "line", "qty": 1, "total": 100}],
+            "items_total": 100, "total": 100, "payable_total": 100}
+    quotation = {"number": "Q-8", "items": [
+        {"id": "line", "name": "Basin", "sku": "B-8", "room": "Bath", "qty": 1, "unit_price": 100},
+    ]}
+    pages = PdfReader(BytesIO(build_po_final_pdf(data, quotation=quotation))).pages
+    assert len(pages) == 2
+    assert "B-8" in (pages[1].extract_text() or "")
+    assert "PAYMENT SUMMARY" not in " ".join(page.extract_text() or "" for page in pages)

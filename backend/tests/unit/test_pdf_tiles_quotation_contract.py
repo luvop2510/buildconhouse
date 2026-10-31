@@ -163,7 +163,7 @@ def test_tiles_quotation_portrait_media_uses_landscape(monkeypatch):
     }, {"name": "Portrait Tile Contract"})
 
     assert pdf.startswith(b"%PDF-")
-    assert rendered_sources[0][0] > rendered_sources[0][1]
+    assert rendered_sources[0] == (120, 60)
 
 
 def test_tiles_quotation_recovers_portrait_media_inside_an_old_white_canvas():

@@ -140,11 +140,9 @@ async def _canonicalize_item_images(items, floor_id: str | None = None) -> list[
     eligible_ids = product_ids
     snapshot = None
     if floor_id:
-        # Ownership proof and media come from the existing warmed catalog,
-        # avoiding a fresh Atlas lookup for every quotation read/autosave.
-        snapshot = await catalog_service.get_catalog_snapshot()
-        if getattr(snapshot, "database_backed", False):
-            snapshot = await catalog_service.snapshot_for_product_ids(list(product_ids))
+        # Reuse a warm catalog, or read only these products on a cold process.
+        # Include foreign IDs so their historical snapshots can be cleared.
+        snapshot = await catalog_service.snapshot_for_product_ids(list(product_ids))
         eligible_ids = set()
         for item in raw_items:
             product = snapshot.product_by_id.get(str(item.get("product_id")))
@@ -659,7 +657,7 @@ async def create_quotation(
     quot = Quotation(
         number=await _next_number(),
         customer_id=customer["id"],
-        customer_name=customer.get("company") or customer["name"],
+        customer_name=customer["name"],
         project_name=body.project_name,
         phone_snapshot=body.phone_snapshot or customer.get("phone"),
         reference_source=body.reference_source,
@@ -959,7 +957,7 @@ async def update_quotation(
             # or historical referral; explicit reference edits are handled below.
             update.update(_customer_referrer_fields(new_customer))
         update["customer_id"] = new_customer["id"]
-        update["customer_name"] = new_customer.get("company") or new_customer["name"]
+        update["customer_name"] = new_customer["name"]
         # Refresh the frozen phone snapshot to the new customer's phone unless
         # this same request is also explicitly setting one.
         if body.phone_snapshot is None:

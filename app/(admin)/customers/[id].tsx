@@ -114,7 +114,7 @@ function WalkInFollowupSheet({ visible, onClose, customer, onCreate }: {
   };
 
   return (
-    <Sheet visible={visible} onClose={onClose} title="Add to Follow-ups" subtitle={customer.company || customer.name} width={420}
+    <Sheet visible={visible} onClose={onClose} title="Add to Follow-ups" subtitle={customer.name} width={420}
       footer={<>
         <Button label="Cancel" variant="secondary" onPress={onClose} size="md" />
         <View style={{ flex: 1 }} />
@@ -404,7 +404,7 @@ export default function CustomerDetail() {
           ? [["PO", "Status", "Brand", "Supplier", "Items", "Total (INR)", "Created"], ...(workspace?.purchase_orders || []).map(row => [row.number, row.status, row.brand_name, row.supplier_name, row.item_count, row.grand_total, row.created_at])]
           : [["Date", "Event", "Summary", "Recorded by"], ...timeline.map(row => [row.created_at, row.event_type, row.summary, row.actor_name])];
     try {
-      await downloadSectionExcel({ resource: "customers", page: `Customer ${customer?.company || customer?.name || id}`, section: `Customer ${section}`, rows, filename: `customer-${id}-${section}.xlsx`, floorId: selectedFloorId });
+      await downloadSectionExcel({ resource: "customers", page: `Customer ${customer?.name || id}`, section: `Customer ${section}`, rows, filename: `customer-${id}-${section}.xlsx`, floorId: selectedFloorId });
     } catch (error: any) { toast.error(error?.message || `Could not export ${section}`); }
   };
 
@@ -491,8 +491,8 @@ export default function CustomerDetail() {
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }} edges={isPhone ? [] : ["top"]}>
       <ScrollView contentContainerStyle={{ padding: isPhone ? spacing.md : spacing.xl, gap: spacing.lg, paddingBottom: spacing.xxxl }}>
       <PageHeader
-        title={customer.company || customer.name}
-        subtitle={`${customer.email}${customer.city ? ` · ${customer.city}` : ""}`}
+        title={customer.name}
+        subtitle={`${customer.email}`}
         overline={customer.purchase_completion_status === "completed" ? "CUSTOMER · 100% COMPLETED" : "CUSTOMER"}
         back={() => router.back()}
         actions={
@@ -529,11 +529,11 @@ export default function CustomerDetail() {
         {/* Identity row */}
         <Card>
           <View style={{ flexDirection: "row", gap: spacing.lg, alignItems: "center", flexWrap: "wrap" }}>
-            <Avatar name={customer.company || customer.name} size={64} tone="brand" />
+            <Avatar name={customer.name} size={64} tone="brand" />
             <View style={{ flex: 1, minWidth: isDesktop ? 240 : 0, gap: 6 }}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm, flexWrap: "wrap" }}>
                 <Text style={[type.titleLg, { flexShrink: 1 }]} numberOfLines={isDesktop ? 1 : 3}>
-                  {customer.company || customer.name}
+                  {customer.name}
                 </Text>
                 {customer.purchase_completion_status === "completed" ? <Badge label="100% completed" tone="success" /> : null}
               </View>

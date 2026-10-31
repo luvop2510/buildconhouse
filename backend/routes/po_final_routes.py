@@ -1,6 +1,8 @@
 """Customer PO Final read model and downloadable final quotation."""
 from __future__ import annotations
 
+import asyncio
+
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -46,7 +48,8 @@ async def _po_final(customer_id: str, quotation_id: str | None, user: UserPublic
     )
     floor_id = customer.get("floor_id")
     quotations = await db.quotations.find(
-        {"customer_id": customer_id, "floor_id": floor_id}, {"_id": 0},
+        {"customer_id": customer_id, "floor_id": floor_id},
+        {"_id": 0, "id": 1, "number": 1, "status": 1, "updated_at": 1, "grand_total": 1},
     ).sort("updated_at", -1).to_list(1000)
     if not quotations:
         if quotation_id:
@@ -63,9 +66,17 @@ async def _po_final(customer_id: str, quotation_id: str | None, user: UserPublic
             raise HTTPException(status_code=404, detail="Quotation not found for this customer")
     else:
         selected = next((q for q in quotations if q.get("status") in {"ordered", "won"}), quotations[0])
-    purchase_orders = await db.purchase_orders.find(
-        {"customer_id": customer_id, "floor_id": floor_id, "quotation_id": selected["id"]}, {"_id": 0},
-    ).to_list(1000)
+    # Choices need no item/revision histories; load only the selected body.
+    selected, purchase_orders = await asyncio.gather(
+        db.quotations.find_one(
+            {"id": selected["id"], "customer_id": customer_id, "floor_id": floor_id}, {"_id": 0},
+        ),
+        db.purchase_orders.find(
+            {"customer_id": customer_id, "floor_id": floor_id, "quotation_id": selected["id"]}, {"_id": 0},
+        ).to_list(1000),
+    )
+    if selected is None:
+        raise HTTPException(status_code=404, detail="Quotation not found for this customer")
     selected_po_ids = [po["id"] for po in purchase_orders if po.get("id")]
     if selected_po_ids:
         source_orders = await db.purchase_orders.find(
@@ -93,14 +104,16 @@ async def _po_final(customer_id: str, quotation_id: str | None, user: UserPublic
     if po_ids:
         event_match.extend([{"purchase_id": {"$in": po_ids}},
                             {"entity_type": "purchase", "entity_id": {"$in": po_ids}}])
-    events = await db.activity_events.find(
-        {"floor_id": floor_id, "$or": event_match}, {"_id": 0},
-    ).sort("created_at", 1).to_list(5000)
-    stock_transfers = await db.godown_customer_transfers.find(
-        {"floor_id": floor_id, "recipient_customer_id": customer_id,
-         "recipient_quotation_id": selected["id"], "transfer_type": "godown_stock"},
-        {"_id": 0},
-    ).sort("created_at", 1).to_list(1000)
+    events, stock_transfers = await asyncio.gather(
+        db.activity_events.find(
+            {"floor_id": floor_id, "$or": event_match}, {"_id": 0},
+        ).sort("created_at", 1).to_list(5000),
+        db.godown_customer_transfers.find(
+            {"floor_id": floor_id, "recipient_customer_id": customer_id,
+             "recipient_quotation_id": selected["id"], "transfer_type": "godown_stock"},
+            {"_id": 0},
+        ).sort("created_at", 1).to_list(1000),
+    )
     events.extend({
         "id": f"godown-transfer:{transfer['id']}",
         "event_type": "godown_stock.customer_transferred",

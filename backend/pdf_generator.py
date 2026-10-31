@@ -308,20 +308,26 @@ def _prepare_image_bytes(data: bytes, *, force_landscape: bool = False) -> bytes
 
 
 
-def prefetch_product_images(items: Iterable[dict], *, workers: int = 6, timeout: float = 8.0) -> None:
-    """Warm the bounded image cache concurrently under one total deadline.
+def prefetch_product_images(items: Iterable[dict], *, workers: int = 6, timeout: float = 8.0) -> dict[str, bytes | None]:
+    """Capture available image bytes concurrently under one total deadline.
 
-    ReportLab itself remains synchronous, but after this pass every `_img`
-    lookup is normally an in-memory cache hit. Missing, corrupt and timed-out
-    images retain the existing placeholder behavior.
+    Rendering uses this snapshot without starting serial network retries.
+    Missing, corrupt and timed-out images retain the existing placeholder.
     """
     urls = list(dict.fromkeys(
         str(item.get("image")) for item in items
         if str(item.get("image") or "").startswith(("https://", "http://"))
     ))
-    if not urls:
-        return
-    prefetch_urls(urls, _remote_image_bytes, workers=workers, timeout=timeout)
+    fetched: dict[str, bytes | None] = {}
+
+    def fetch(url: str) -> bytes | None:
+        data = _remote_image_bytes(url)
+        fetched[url] = data
+        return data
+
+    prefetch_urls(urls, fetch, workers=workers, timeout=timeout)
+    # Late optional images may warm the cache, but never block this document.
+    return dict(fetched)
 
 
 def _media_urls(item: dict, field: str) -> list[str]:
@@ -470,6 +476,7 @@ def _img(
     force_landscape: bool = False,
     cover: bool = False,
     trim_whitespace: bool = True,
+    image_bytes: dict[str, bytes | None] | None = None,
 ) -> Flowable:
     """Render the supplied product image inside the quotation image cell.
 
@@ -478,12 +485,12 @@ def _img(
     use the largest non-distorted fit without losing product detail.
     """
     if url and str(url).startswith(("https://", "http://")):
-        data = _remote_image_bytes(str(url))
+        data = image_bytes.get(str(url)) if image_bytes is not None else _remote_image_bytes(str(url))
         if data:
             try:
                 prepared = _prepare_image_bytes(data)
                 if force_landscape:
-                    # PDF product photos use the landscape presentation requested by the showroom.
+                    # Retain the existing presentation of other-floor tile PDFs.
                     from PIL import Image as PILImage
                     prepared = _trim_product_whitespace(prepared)
                     with PILImage.open(BytesIO(prepared)) as source:
@@ -731,20 +738,6 @@ def _po_final_payment_table(quotation: dict, style: ParagraphStyle, width_mm: fl
     return table
 
 
-def _po_final_cover(quotation: dict, customer: dict, styles: dict) -> list[Flowable]:
-    """Commercial-only cover using the standard quotation visual language."""
-    body = styles["body"]
-    return [
-        _brand_header("PRODUCT QUOTATION", styles),
-        Spacer(1, 3 * mm), HRFlowable(width="100%", thickness=1.25, color=BLUE),
-        Spacer(1, 4 * mm),
-        Paragraph(f"<b>Customer:</b> {_escape(customer.get('company') or customer.get('name') or quotation.get('customer_name'))}", body),
-        Paragraph(f"<b>Quotation:</b> {_escape(quotation.get('number'))}", body),
-        Spacer(1, 6 * mm), Paragraph("PRICE &amp; PAYMENT SUMMARY", styles["section"]),
-        Spacer(1, 2 * mm), _po_final_payment_table(quotation, styles["cell"], 187),
-    ]
-
-
 def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None = None) -> bytes:
     """Render the supplied BuildCon House A4 quotation template.
 
@@ -768,16 +761,15 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
     """
     started_at = monotonic()
     b = branding or {}
-    prefetch_product_images(quotation.get("items") or [])
-    if quotation.get("include_dimensions") or any(item.get("seat_cover_image_urls") for item in quotation.get("items") or []):
-        media_urls = [
-            url for item in quotation.get("items") or []
-            for url in (
-                (_media_urls(item, "dimension_image_urls") if quotation.get("include_dimensions") and not item.get("exclude_dimension") else [])
-                + _seat_cover_urls(item)
-            )
-        ]
-        prefetch_urls(media_urls, _remote_image_bytes)
+    items = quotation.get("items") or []
+    media_urls = [
+        url for item in items
+        for url in (
+            (_media_urls(item, "dimension_image_urls") if quotation.get("include_dimensions") and not item.get("exclude_dimension") else [])
+            + _seat_cover_urls(item)
+        )
+    ]
+    image_bytes = prefetch_product_images([*items, *({"image": url} for url in media_urls)])
     buf = BytesIO()
     cover_height_mm = PAGE_H_MM
     doc = BaseDocTemplate(
@@ -873,7 +865,7 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
     story.extend([Spacer(1, 3 * mm), HRFlowable(width="100%", thickness=1.25, color=BLUE), Spacer(1, 2.5 * mm)])
     meta = [
         [Paragraph("CUSTOMER NAME", styles["label"]), Paragraph("CONTACT NO.", styles["label"]), Paragraph("SELECTION / QUOTATION DATE", styles["label"]), Paragraph("QUOTATION NO.", styles["label"])],
-        [Paragraph(_escape(customer.get("company") or customer.get("name") or quotation.get("customer_name")), styles["body"]), Paragraph(_escape(format_phone(quotation.get("phone_snapshot") or customer.get("phone") or "")), styles["body"]), Paragraph(created, styles["body"]), Paragraph(_escape(quotation.get("number")), styles["body"])],
+        [Paragraph(_escape(customer.get("name") or quotation.get("customer_name")), styles["body"]), Paragraph(_escape(format_phone(quotation.get("phone_snapshot") or customer.get("phone") or "")), styles["body"]), Paragraph(created, styles["body"]), Paragraph(_escape(quotation.get("number")), styles["body"])],
         [Paragraph("REFERENCE", styles["label"]), Paragraph("ATTENDED BY", styles["label"]), Paragraph("PREPARED BY", styles["label"]), Paragraph("ADDRESS", styles["label"])],
         [Paragraph(_escape(" · ".join(filter(None, [quotation.get("reference_source"), referrer_label(quotation)]))), styles["body"]), Paragraph(_escape(quotation.get("attended_by") or ""), styles["body"]), Paragraph(_escape(quotation.get("prepared_by") or b.get("footer_company_name") or "Buildcon House"), styles["body"]), Paragraph(_escape(quotation.get("address_snapshot") or customer.get("address") or ""), styles["body"])],
     ]
@@ -1021,9 +1013,6 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
         item_widths = [_pw(v) * mm for v in widths]
     max_rows = _max_item_rows_per_page()
     story.append(NextPageTemplate("details"))
-    if quotation.get("_po_final") is not None:
-        story.append(PageBreak())
-        story.extend(_po_final_cover(quotation, customer, styles))
     for area_index, room in enumerate(room_order, 1):
         room_items = grouped.get(room, [])
         # Stacked photos and diagrams need more vertical space than ordinary
@@ -1085,13 +1074,13 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
                 seat_urls = _seat_cover_urls(item)
                 diagram_urls = _media_urls(item, "dimension_image_urls") if quotation.get("include_dimensions") and not item.get("exclude_dimension") else []
                 primary_image = item.get("image") or (seat_urls[0] if seat_urls else None)
-                product_images: list[Flowable] = [_img(primary_image, width_mm=image_width_mm, height_mm=image_height_mm, force_landscape=True)]
+                product_images: list[Flowable] = [_img(primary_image, width_mm=image_width_mm, height_mm=image_height_mm, trim_whitespace=False, image_bytes=image_bytes)]
                 product_images.extend(
-                    _img(url, width_mm=image_width_mm, height_mm=image_height_mm)
+                    _img(url, width_mm=image_width_mm, height_mm=image_height_mm, trim_whitespace=False, image_bytes=image_bytes)
                     for url in seat_urls[:1] if url != primary_image
                 )
                 diagram_images: list[Flowable] = [
-                    _img(url, width_mm=image_width_mm, height_mm=image_height_mm, trim_whitespace=False)
+                    _img(url, width_mm=image_width_mm, height_mm=image_height_mm, trim_whitespace=False, image_bytes=image_bytes)
                     for url in diagram_urls
                 ]
                 if has_discount:
@@ -1142,6 +1131,15 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
             table.setStyle(TableStyle(item_style_cmds))
             story.append(table)
             sr_offset += n_data_rows
+
+    final = quotation.get("_po_final") or {}
+    if final and (final.get("payments") or final.get("additional_costs")
+                  or abs(float(final.get("payable_total") or 0) - float(final.get("total") or 0)) > .005):
+        # Keep the ledger with the products instead of inserting a duplicate cover.
+        story.extend([
+            Spacer(1, 4 * mm), Paragraph("Payments and additional costs", styles["section"]),
+            Spacer(1, 2 * mm), _po_final_payment_table(quotation, styles["cell"], _pw(267)),
+        ])
 
     doc.build(story)
     rendered = buf.getvalue()

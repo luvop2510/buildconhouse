@@ -1269,7 +1269,7 @@ function FollowupsWorkspace() {
         onClose={() => setCustomerPreviewOpen(false)}
         variant={isPhone ? "bottom" : "modal"}
         width={isPhone ? undefined : 720}
-        title={detail?.customer?.company || detail?.customer?.name || "Customer"}
+        title={detail?.customer?.name || "Customer"}
         subtitle={detail?.followup?.reason}
       >
         <ScrollView style={styles.mobileDetailScroll} contentContainerStyle={styles.mobileDetailContent}>
@@ -1792,7 +1792,7 @@ function ContextPanel({ detail, loading, embedded, compact }: { detail: Detail |
   const { followup, customer, stats, quotations, timeline } = detail;
   return (
     <View style={{ gap: spacing.md }}>
-      <Panel overline="CONTEXT" title={customer.company || customer.name}>
+      <Panel overline="CONTEXT" title={customer.name}>
         <View style={{ gap: spacing.sm }}>
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
             {customer.phone ? <Badge label={formatPhone(customer.phone)} tone="neutral" size="sm" icon="phone" /> : null}
@@ -2012,7 +2012,7 @@ function NewFollowupSheet({ visible, onClose, customers, assignees, defaultAssig
     if (searchedCustomers) return searchedCustomers.slice(0, 8);
     const term = customerQuery.trim().toLowerCase();
     if (!term) return customers.slice(0, 8);
-    return customers.filter((c) => (c.company || c.name).toLowerCase().includes(term) || c.phone?.includes(term)).slice(0, 8);
+    return customers.filter((c) => (c.name).toLowerCase().includes(term) || c.phone?.includes(term)).slice(0, 8);
   }, [customers, customerQuery, searchedCustomers]);
   const selectedCustomer = chosenCustomer || customers.find((c) => c.id === customerId);
 
@@ -2057,7 +2057,7 @@ function NewFollowupSheet({ visible, onClose, customers, assignees, defaultAssig
           </View>
         </FormField>
         {customerMode === "existing" ? <FormField label="Customer" required>
-            <SearchField value={selectedCustomer ? (selectedCustomer.company || selectedCustomer.name) : customerQuery}
+            <SearchField value={selectedCustomer ? (selectedCustomer.name) : customerQuery}
               onChangeText={(v) => { setCustomerQuery(v); setCustomerId(null); setChosenCustomer(null); }} placeholder="Search customer…" onClear={() => { setCustomerQuery(""); setCustomerId(null); setChosenCustomer(null); }} />
             {customerSearchFailed ? <Text style={type.caption}>Customer search failed. Edit your search to retry.</Text> : null}
             {!customerId && matches.length ? (
@@ -2065,7 +2065,7 @@ function NewFollowupSheet({ visible, onClose, customers, assignees, defaultAssig
                 {matches.map((c) => (
                   <Pressable key={c.id} onPress={() => { setCustomerId(c.id); setChosenCustomer(c); setCustomerQuery(""); }}
                     style={{ padding: spacing.md, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.divider }}>
-                    <Text style={type.bodySm}>{c.company || c.name}</Text>
+                    <Text style={type.bodySm}>{c.name}</Text>
                     {c.phone ? <Text style={type.caption}>{formatPhone(c.phone)}</Text> : null}
                   </Pressable>
                 ))}

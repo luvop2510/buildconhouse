@@ -155,7 +155,7 @@ export default function WalkInDetail() {
       <ScrollView contentContainerStyle={{ padding: isPhone ? spacing.lg : spacing.xl, paddingBottom: isPhone ? 132 : spacing.xxl, gap: spacing.md }}>
         <PageHeader title={w.customer_name} overline={w.number} back={() => router.back()} embedded />
         <Card variant="outlined" padding={spacing.lg} style={{ gap: spacing.sm }}>
-          <Text style={type.bodyStrong}>{formatPhone(w.customer_phone)} {w.alternate_phone ? `· Alt: ${formatPhone(w.alternate_phone)}` : ""}</Text>
+          <Text style={type.bodyStrong}>{formatPhone(w.customer_phone)}</Text>
           {canUpdate ? <Button label="Interested floors · Assign team" icon="layers" variant="secondary" onPress={() => setScopeOpen(true)} testID="walkin-edit-interests" /> : null}
           {w.referrer_name ? <Text style={type.bodySm}>Interior / architect: {w.referrer_name}</Text> : null}
           <Text style={type.bodyMuted}>{w.source} · {(w.interested_products || []).join(", ") || "No products noted"}</Text>

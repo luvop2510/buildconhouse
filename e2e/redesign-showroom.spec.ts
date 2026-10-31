@@ -103,18 +103,18 @@ test('critical customer intake retains optional details after a failed save', as
   const optional = page.getByRole('button', { name: 'Additional customer details', exact: true });
   await optional.click();
   await expect(optional).toHaveAttribute('aria-expanded', 'true');
-  await page.getByTestId('new-customer-company').fill('Project office');
+  await page.getByTestId('new-customer-email').fill('project@example.test');
   await optional.click();
   await page.getByRole('button', { name: 'Save Customer', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('Customer save unavailable');
   await expect(page.getByTestId('new-customer-name')).toHaveValue('Showroom customer');
   await optional.click();
-  await expect(page.getByTestId('new-customer-company')).toHaveValue('Project office');
+  await expect(page.getByTestId('new-customer-email')).toHaveValue('project@example.test');
   fail = false;
   await page.getByRole('button', { name: 'Save Customer', exact: true }).click();
   await expect(page).toHaveURL(/\/customers\/saved-customer/);
   expect(writes).toHaveLength(2);
-  expect(writes[1]).toMatchObject({ name: 'Showroom customer', phone: '9000000000', company: 'Project office' });
+  expect(writes[1]).toMatchObject({ name: 'Showroom customer', phone: '9000000000', email: 'project@example.test' });
   expect(writes[1]).not.toHaveProperty('tier');
 });
 
@@ -216,6 +216,7 @@ test('critical quotation picker keeps nested dialogs isolated and preserves sele
   await page.route('**/api/brands**', r => r.fulfill({ json: [{ id: 'brand-one', name: 'Fixture brand' }] }));
   await page.route('**/api/products/families?**', r => r.fulfill({ json: { total: 1, items: [{ family_key: 'basin', family_name: 'Basin', category_id: 'basins', brand_id: 'brand-one', min_price: 600.25, variants: [{ id: 'basin-white', sku: 'B-101', name: 'Basin', price: 600.25, mrp: 600.25, stock: 2, finish: 'White' }] }] } }));
   await page.goto('/quotations/new');
+  await page.getByTestId('expand-quotation-workspace').click();
   const add = page.getByTestId('mobile-add-first');
   await expect(add).toBeVisible();
   await add.click();
@@ -245,6 +246,7 @@ test('critical quotation picker keeps nested dialogs isolated and preserves sele
   await expect(recovery).toBeVisible();
   await page.getByRole('button', { name: 'Restore draft', exact: true }).click();
   await expect(recovery).toHaveCount(0);
+  await page.getByTestId('expand-quotation-workspace').click();
   await page.getByTestId('mobile-review-quotation').click();
   await expect(page.getByRole('button', { name: 'Reorder Basin · White', exact: true })).toBeVisible();
   await expect(page.getByTestId('mobile-finalize')).toBeDisabled();

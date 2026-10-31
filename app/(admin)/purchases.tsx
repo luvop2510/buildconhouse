@@ -382,7 +382,7 @@ export default function PurchasesScreen() {
         await downloadSectionExcel({ resource: "purchases",
           page: "Purchases",
           section: "Customer workspaces",
-          rows: [["Customer", "Company", "Email", "Phone", "City"], ...customers.filter(customer => `${customer.name} ${customer.company || ""} ${customer.email || ""}`.toLowerCase().includes(q.trim().toLowerCase())).map(customer => [customer.name, customer.company, customer.email, formatPhone(customer.phone), customer.city])],
+          rows: [["Customer", "Email", "Phone"], ...customers.filter(customer => `${customer.name} ${customer.company || ""} ${customer.email || ""}`.toLowerCase().includes(q.trim().toLowerCase())).map(customer => [customer.name, customer.email, formatPhone(customer.phone)])],
           filename: "purchases-customers.xlsx",
           floorId: selectedFloorId,
         });

@@ -1,3 +1,4 @@
+import { ExistingTileCustomer } from "./ExistingTileCustomer";
 import { formatPhone } from "@/src/utils/phone";
 import { useAuth } from "@/src/state/auth";
 import { useActionAccess } from "@/src/hooks/use-permissions";
@@ -1143,6 +1144,7 @@ function CustomerNameField({
   const show = focused && query.length >= 2 && !exactPicked;
   return (
     <View style={{ flex: 1, zIndex: 400 }}>
+      <ExistingTileCustomer onPick={onPickCustomer} onLookupActive={onLookupActive} />
       <TextInput
         value={value}
         onChangeText={onChangeText}

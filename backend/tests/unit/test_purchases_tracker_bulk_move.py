@@ -62,6 +62,12 @@ class _FakePurchaseOrders:
             merged.update(part)
         return merged
 
+    def find(self, *_args, **_kwargs):
+        from types import SimpleNamespace
+        async def rows(*_args):
+            return self.docs
+        return SimpleNamespace(to_list=rows)
+
     async def find_one(self, query, *_args, **_kwargs):
         query = self._flatten_query(query)
         item_id = query.get("items.id")
@@ -105,6 +111,7 @@ class _FakeDb:
 
 @pytest.fixture(autouse=True)
 def _stub_side_effects(monkeypatch):
+    monkeypatch.setattr(tracker, "db", _FakeDb([]))
     async def _noop_sync(*_args, **_kwargs):
         return None
 

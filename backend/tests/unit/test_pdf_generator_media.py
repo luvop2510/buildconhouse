@@ -606,8 +606,8 @@ def test_exif_orientation_eight_is_honored_once():
         assert image.size == (120, 60)
 
 
-def test_all_quotation_pdfs_use_landscape_product_presentation(monkeypatch):
-    """All document types contain the full source without turning it sideways."""
+def test_sanitary_keeps_portrait_while_tile_pdfs_retain_existing_presentation(monkeypatch):
+    """Only the sanitary canvas preservation rule changes orientation policy."""
     monkeypatch.setattr(pdf_generator, "_remote_image_bytes", lambda _url: _png_bytes(60, 120))
     original_img = pdf_generator._img
     rendered_sizes: list[tuple[float, float]] = []
@@ -641,7 +641,7 @@ def test_all_quotation_pdfs_use_landscape_product_presentation(monkeypatch):
     assert pdf_tiles.build_tiles_selection_pdf(tiles, {"name": "PDF Test"}).startswith(b"%PDF-")
     assert pdf_tiles.build_tiles_quotation_pdf(tiles, {"name": "PDF Test"}).startswith(b"%PDF-")
     assert len(rendered_sizes) == 3
-    assert all(width > height for width, height in source_sizes)
+    assert source_sizes == [(60, 120), (120, 60), (120, 60)]
     assert all(width > height for width, height in requested_boxes[1:])
     assert requested_boxes == [
         (pdf_generator._pw(pdf_generator.DETAIL_MEDIA_FRAME_WIDTH_MM), pdf_generator._pw(pdf_generator.DETAIL_MEDIA_FRAME_HEIGHT_MM)),
@@ -744,6 +744,57 @@ def test_customer_metadata_prints_at_readable_size_and_wraps_without_overlap(bui
     spans = []
     page.extract_text(visitor_text=lambda text, _cm, _tm, _font, size: spans.append((text, size)))
     assert any("Sample Customer" in text and size >= 11 for text, size in spans)
-    assert any("90000" in text and size >= 11 for text, size in spans)
+    assert any(pdf_generator.format_phone(doc["phone_snapshot"]) in text and size >= 11 for text, size in spans)
     assert any("Architecture" in text and size >= 11 for text, size in spans)
     assert "CUSTOMER SIGNATURE" in (page.extract_text() or "")
+
+
+def test_pdf_optional_images_share_one_prefetch_and_missing_images_are_not_refetched(monkeypatch):
+    calls, batches = [], []
+    def fetch(url):
+        calls.append(url)
+        return _png_bytes(60, 120) if "healthy" in url else None
+    def prefetch(urls, fetch, **kwargs):
+        batches.append(list(urls))
+        for url in urls:
+            if "late" not in url:
+                fetch(url)
+    monkeypatch.setattr(pdf_generator, "_remote_image_bytes", fetch)
+    monkeypatch.setattr(pdf_generator, "prefetch_urls", prefetch)
+    doc = {"customer_name": "Images", "include_dimensions": True, "items": [
+        {"sku": "ONE", "name": "Basin", "room": "Bath", "qty": 1, "unit_price": 100,
+         "image": "https://cdn.test/healthy.png", "seat_cover_image_urls": ["https://cdn.test/missing.png"],
+         "dimension_image_urls": ["https://cdn.test/late.png"]},
+    ], "subtotal": 100, "grand_total": 100}
+    pdf = pdf_generator.build_quotation_pdf(doc, {"name": "Images"})
+    assert len(batches) == 1
+    assert set(batches[0]) == {"https://cdn.test/healthy.png", "https://cdn.test/missing.png", "https://cdn.test/late.png"}
+    assert calls == ["https://cdn.test/healthy.png", "https://cdn.test/missing.png"]
+    assert "Image unavailable" in " ".join(page.extract_text() or "" for page in PdfReader(BytesIO(pdf)).pages)
+
+
+@pytest.mark.parametrize("size", [(90, 180), (180, 90), (120, 120)])
+def test_sanitary_pdf_keeps_full_supplied_canvas_and_pixels(monkeypatch, size):
+    source = PILImage.new("RGB", size, "white")
+    source.paste((180, 30, 30), (size[0] // 3, size[1] // 3, size[0] * 2 // 3, size[1] * 2 // 3))
+    output = BytesIO()
+    source.save(output, format="PNG")
+    monkeypatch.setattr(pdf_generator, "_remote_image_bytes", lambda _url: output.getvalue())
+    frames = []
+    original = pdf_generator._img
+    def capture(*args, **kwargs):
+        frame = original(*args, **kwargs)
+        frames.append(frame)
+        return frame
+    monkeypatch.setattr(pdf_generator, "_img", capture)
+    pdf_generator.build_quotation_pdf({"floor_id": "first-floor", "include_dimensions": True,
+        "items": [{"name": "Catalog original", "sku": "SOURCE", "qty": 1, "unit_price": 100,
+                   "image": "https://cdn.test/source.png", "seat_cover_image_urls": ["https://cdn.test/seat.png"],
+                   "dimension_image_urls": ["https://cdn.test/diagram.png"]}],
+        "subtotal": 100, "grand_total": 100}, {"name": "Customer"})
+    assert len(frames) == 3
+    for frame in frames:
+        assert (frame.source_width, frame.source_height) == size
+        assert frame.reader.getRGBData() == source.tobytes()
+        _, _, width, height = pdf_generator.contain_box(*size, frame.width, frame.height)
+        assert width / height == pytest.approx(size[0] / size[1])

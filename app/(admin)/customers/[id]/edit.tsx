@@ -53,15 +53,10 @@ export default function EditCustomer() {
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const [name, setName] = useState("");
-  const [company, setCompany] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
-  const [city, setCity] = useState("");
   const [address, setAddress] = useState("");
   const [propertyName, setPropertyName] = useState("");
-  const [stateField, setStateField] = useState("");
-  const [pincode, setPincode] = useState("");
-  const [gstin, setGstin] = useState("");
   const [referrer, setReferrer] = useState<{ id: string; name: string; type: "architect" | "interior_designer" } | null>(null);
   const [notes, setNotes] = useState("");
   const [portalEnabled, setPortalEnabled] = useState(false);
@@ -93,15 +88,13 @@ export default function EditCustomer() {
       const c = await api.get<Customer>(`/customers/${id}`, { floorId: selectedFloorId, signal: controller.signal });
       if (!current()) return;
       setName(c.name || "");
-      setCompany(c.company || "");
+
       setEmail(c.email || "");
       setPhone(c.phone || "");
-      setCity(c.city || "");
+
       setAddress(c.address || "");
       setPropertyName(c.property_name || "");
-      setStateField(c.state || "");
-      setPincode(c.pincode || "");
-      setGstin(c.gstin || "");
+
       setReferrer(c.referrer_id && c.referrer_name && c.referrer_type ? { id: c.referrer_id, name: c.referrer_name, type: c.referrer_type } : null);
       setNotes(c.notes || "");
       setPortalEnabled(!!c.portal_enabled);
@@ -125,15 +118,13 @@ export default function EditCustomer() {
     try {
       await api.patch(`/customers/${id}`, {
         name: name.trim(),
-        company: company.trim() || null,
+
         email: email.trim() || null,
         phone: phone.trim() || null,
-        city: city.trim() || null,
+
         address: address.trim() || null,
         property_name: propertyName.trim() || null,
-        state: stateField.trim() || null,
-        pincode: pincode.trim() || null,
-        gstin: gstin.trim() || null,
+
         referrer_id: referrer?.id || null,
         notes: notes.trim() || null,
         portal_enabled: portalEnabled,
@@ -222,7 +213,7 @@ export default function EditCustomer() {
             error={error}
             testID="edit-customer-name"
           />
-          <TextField label="Company" value={company} onChangeText={setCompany} testID="edit-customer-company" />
+
           <TextField
             label="Email"
             value={email}
@@ -233,14 +224,14 @@ export default function EditCustomer() {
             testID="edit-customer-email"
           />
           <TextField label="Phone" value={phone} onChangeText={setPhone} keyboardType="phone-pad" testID="edit-customer-phone" />
-          <TextField label="City" value={city} onChangeText={setCity} testID="edit-customer-city" />
+
           <TextField label="Property / project" value={propertyName} onChangeText={setPropertyName} placeholder="e.g. Riverfront Residence" testID="edit-customer-property-name" />
           <TextField label="Address" value={address} onChangeText={setAddress} multiline numberOfLines={3} style={{ minHeight: 72, textAlignVertical: "top" }} testID="edit-customer-address" />
           <View style={{ flexDirection: isPhone ? "column" : "row", gap: spacing.sm }}>
-            <TextField label="State" value={stateField} onChangeText={setStateField} containerStyle={{ flex: 1 }} testID="edit-customer-state" />
-            <TextField label="Pincode" value={pincode} onChangeText={setPincode} keyboardType="number-pad" containerStyle={{ flex: 1 }} testID="edit-customer-pincode" />
+
+
           </View>
-          <TextField label="GSTIN" value={gstin} onChangeText={setGstin} autoCapitalize="characters" testID="edit-customer-gstin" />
+
           <ReferrerField value={referrer} onChange={setReferrer} />
           <TextField label="Notes" value={notes} onChangeText={setNotes} multiline numberOfLines={2} style={{ minHeight: 56, textAlignVertical: "top" }} testID="edit-customer-notes" />
 

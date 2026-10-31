@@ -362,7 +362,7 @@ SELECTION_PRODUCT_IMAGE_HEIGHT_MM = SELECTION_PRODUCT_IMAGE_WIDTH_MM / (16 / 10)
 
 def build_tiles_selection_pdf(quotation: dict, customer: dict, branding: dict | None = None) -> bytes:
     b = branding or {}
-    prefetch_product_images(quotation.get("items") or [])
+    image_bytes = prefetch_product_images(quotation.get("items") or []) or {}
     buf = BytesIO()
     doc = SimpleDocTemplate(
         buf, pagesize=PORTRAIT_A4, leftMargin=8 * mm, rightMargin=8 * mm,
@@ -406,10 +406,9 @@ def build_tiles_selection_pdf(quotation: dict, customer: dict, branding: dict | 
         rows.append([
             Paragraph(str(index), styles["cell"]),
             _img(
-                item.get("image"),
+                item.get("image"), image_bytes=image_bytes, force_landscape=True,
                 width_mm=SELECTION_PRODUCT_IMAGE_WIDTH_MM,
                 height_mm=SELECTION_PRODUCT_IMAGE_HEIGHT_MM,
-                force_landscape=True,
                 cover=True,
             ),
             Paragraph(_escape(item.get("room") or ""), styles["cell"]),
@@ -452,7 +451,7 @@ QUOTATION_PRODUCT_IMAGE_HEIGHT_MM = QUOTATION_PRODUCT_IMAGE_WIDTH_MM / (16 / 10)
 
 def build_tiles_quotation_pdf(quotation: dict, customer: dict, branding: dict | None = None) -> bytes:
     b = branding or {}
-    prefetch_product_images(quotation.get("items") or [])
+    image_bytes = prefetch_product_images(quotation.get("items") or []) or {}
     buf = BytesIO()
     doc = SimpleDocTemplate(
         buf, pagesize=PORTRAIT_A4, leftMargin=8 * mm, rightMargin=8 * mm,
@@ -481,7 +480,7 @@ def build_tiles_quotation_pdf(quotation: dict, customer: dict, branding: dict | 
             _header_block("PRODUCT QUOTATION", "Tiles &amp; Sanitaryware Solutions", styles),
             Spacer(1, 2 * mm),
             HRFlowable(width="100%", thickness=1.1, color=INK, spaceAfter=2.5 * mm),
-            Paragraph(f"<b>Customer:</b> {_escape(customer.get('company') or customer.get('name') or quotation.get('customer_name'))}", styles["cell"]),
+            Paragraph(f"<b>Customer:</b> {_escape(customer.get('name') or quotation.get('customer_name'))}", styles["cell"]),
             Paragraph(f"<b>Quotation:</b> {_escape(quotation.get('number'))}", styles["cell"]),
             Spacer(1, 4 * mm),
             Paragraph("PRICE &amp; PAYMENT SUMMARY", styles["sectionTitle"]),
@@ -534,10 +533,9 @@ def build_tiles_quotation_pdf(quotation: dict, customer: dict, branding: dict | 
         rows.append([
             Paragraph(str(index), styles["cell"]),
             _img(
-                item.get("image"),
+                item.get("image"), image_bytes=image_bytes, force_landscape=True,
                 width_mm=QUOTATION_PRODUCT_IMAGE_WIDTH_MM,
                 height_mm=QUOTATION_PRODUCT_IMAGE_HEIGHT_MM,
-                force_landscape=True,
                 cover=True,
             ),
             Paragraph(_escape(item.get("room") or ""), styles["cell"]),

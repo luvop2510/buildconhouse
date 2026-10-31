@@ -80,6 +80,8 @@ async function openPicker(page: Page) {
 
 async function reviewQuotation(page: Page) {
   await expect(page.getByTestId('quotation-workspace')).toBeVisible();
+  const exitFullscreen = page.getByTestId('expand-quotation-workspace');
+  if (await exitFullscreen.isVisible()) await exitFullscreen.click();
   const back = page.getByTestId('picker-view-quotation');
   if (await back.isVisible()) await back.click();
   const review = page.getByTestId('mobile-review-quotation');
@@ -171,8 +173,7 @@ test('critical quotation create-only access recovers locally and submits once wi
     const draft = JSON.parse(JSON.parse(raw)); // storage serializes the draft JSON string.
     return { customerId: draft.state.customerId, products: draft.state.lines.map((line: { product_id: string; qty: number }) => [line.product_id, line.qty]) };
   })).toEqual({ customerId: 'client', products: [['trim', 1]] });
-  // Wait for the complete customer/product snapshot, not an earlier product-only
-  // write. A reload before the 250ms local debounce legitimately loses that edit.
+  // Wait for the complete customer/product snapshot, not an earlier product-only write.
   await page.reload();
   await expect(page.getByTestId('draft-recovery')).toBeVisible();
   await page.getByRole('button', { name: 'Restore draft', exact: true }).click();

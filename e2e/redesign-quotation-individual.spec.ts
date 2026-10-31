@@ -30,6 +30,8 @@ async function individualQuotation(page: Page) {
 }
 
 async function showLines(page: Page) {
+  const exitFullscreen = page.getByTestId("expand-quotation-workspace");
+  if (await exitFullscreen.isVisible()) await exitFullscreen.click();
   const review = page.getByTestId("mobile-review-quotation");
   if (await review.isVisible()) await review.click();
   const tab = page.getByRole('tab', { name: /Quotation ·/ });

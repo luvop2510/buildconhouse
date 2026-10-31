@@ -68,8 +68,8 @@ export function BuilderTopbar({
   const meta = statusMeta[status] || statusMeta.draft;
 
   return (
-    <View>
-    <View style={[styles.bar, hidden && { display: "none" }]}>
+    <View style={hidden ? { display: "none" } : undefined}>
+    <View style={styles.bar}>
       <Pressable testID="builder-back" accessibilityRole="button" accessibilityLabel="Back to quotations" onPress={onBack} style={styles.back} hitSlop={6}>
         <Feather name="chevron-left" size={18} color={colors.onSurface} />
         {!isPhone ? <Text style={styles.backLabel}>Back</Text> : null}

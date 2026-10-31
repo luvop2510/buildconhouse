@@ -278,6 +278,8 @@ test('critical warehouse-only details and unpriced quotation actions always offe
   await card.getByTestId('godown-save-warehouse-only').click();
   await expect(page).toHaveURL(/\/quotations\/new\?godownStockId=warehouse-only$/);
   await expect(page.getByText('Warehouse mixer added from godown stock — select a customer to reserve it', { exact: true })).toBeVisible();
+  const exitFullscreen = page.getByTestId("expand-quotation-workspace");
+  if (await exitFullscreen.isVisible()) await exitFullscreen.click();
   const review = page.getByTestId('mobile-review-quotation');
   if (await review.isVisible()) await review.click();
   await expect(page.locator('[data-testid^="qty-godown-warehouse-only-"]')).toHaveValue('1');

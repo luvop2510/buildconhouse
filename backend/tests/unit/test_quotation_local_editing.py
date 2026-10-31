@@ -78,12 +78,12 @@ def test_ordered_quote_product_edits_do_not_touch_operational_projections(monkey
     monkeypatch.setattr(quotation_routes, "get_floor_scoped_or_404", scoped)
     monkeypatch.setattr(quotation_routes, "_track_product_usage", no_usage)
 
-    async def catalog():
+    async def catalog(*_args):
         return quotation_routes.catalog_service._build_snapshot(
             [{"id": "p-1", "sku": "NEW", "floor_id": "first-floor"}],
             [], [], [], [],
         )
-    monkeypatch.setattr(quotation_routes.catalog_service, "get_catalog_snapshot", catalog)
+    monkeypatch.setattr(quotation_routes.catalog_service, "snapshot_for_product_ids", catalog)
 
     edited = asyncio.run(quotation_routes.update_quotation(
         "q-1",
@@ -129,14 +129,14 @@ def test_reordered_items_survive_patch_and_detail_without_cross_brand_sorting(mo
     async def no_usage(*_args, **_kwargs):
         return None
 
-    async def catalog():
+    async def catalog(*_args):
         return quotation_routes.catalog_service._build_snapshot(
             [{"id": f"p-{i}", "sku": str(i), "floor_id": "first-floor"} for i in range(1, 4)],
             [], [], [], [],
         )
     monkeypatch.setattr(quotation_routes, "get_floor_scoped_or_404", scoped)
     monkeypatch.setattr(quotation_routes, "_track_product_usage", no_usage)
-    monkeypatch.setattr(quotation_routes.catalog_service, "get_catalog_snapshot", catalog)
+    monkeypatch.setattr(quotation_routes.catalog_service, "snapshot_for_product_ids", catalog)
     reordered = [document["items"][1], document["items"][0], document["items"][2]]
     result = asyncio.run(quotation_routes.update_quotation(
         "q-1", QuotationUpdate(items=reordered, silent=True), user=_user(),

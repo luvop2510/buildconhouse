@@ -124,15 +124,15 @@ class TokenResponse(BaseModel):
 # ---------- Customers ----------
 class CustomerBase(BaseModel):
     name: str
-    company: Optional[str] = None
+    company: Optional[str] = Field(default=None, exclude=True)
     email: Optional[EmailStr] = None
     phone: Optional[str] = None
     address: Optional[str] = None
     property_name: Optional[str] = None
-    city: Optional[str] = None
-    state: Optional[str] = None
-    pincode: Optional[str] = None
-    gstin: Optional[str] = None
+    city: Optional[str] = Field(default=None, exclude=True)
+    state: Optional[str] = Field(default=None, exclude=True)
+    pincode: Optional[str] = Field(default=None, exclude=True)
+    gstin: Optional[str] = Field(default=None, exclude=True)
     tier: Literal["retail", "trade", "vip"] = "retail"
     notes: Optional[str] = None
     avatar_url: Optional[str] = None
@@ -152,7 +152,7 @@ class CustomerBase(BaseModel):
     # document reads back identically — no migration. Not yet exposed in
     # any UI beyond Walk-ins; reserved so future channels (SMS, branch
     # transfers, lead scoring, segmentation) don't need a schema change.
-    alternate_phone: Optional[str] = None
+    alternate_phone: Optional[str] = Field(default=None, exclude=True)
     preferred_contact_method: Optional[Literal["call", "whatsapp", "email", "sms"]] = None
     preferred_contact_time: Optional[str] = None
     assigned_branch: Optional[str] = None
@@ -179,19 +179,19 @@ class CustomerUpdatePayload(BaseModel):
     """Customers > Edit Customer. All fields optional — only supplied keys
     are patched (see customer_routes.update_customer)."""
     name: Optional[str] = None
-    company: Optional[str] = None
+    company: Optional[str] = Field(default=None, exclude=True)
     email: Optional[EmailStr] = None
     phone: Optional[str] = None
     address: Optional[str] = None
     property_name: Optional[str] = None
-    city: Optional[str] = None
-    state: Optional[str] = None
-    pincode: Optional[str] = None
-    gstin: Optional[str] = None
+    city: Optional[str] = Field(default=None, exclude=True)
+    state: Optional[str] = Field(default=None, exclude=True)
+    pincode: Optional[str] = Field(default=None, exclude=True)
+    gstin: Optional[str] = Field(default=None, exclude=True)
     tier: Optional[Literal["retail", "trade", "vip"]] = None
     notes: Optional[str] = None
     portal_enabled: Optional[bool] = None
-    alternate_phone: Optional[str] = None
+    alternate_phone: Optional[str] = Field(default=None, exclude=True)
     preferred_contact_method: Optional[Literal["call", "whatsapp", "email", "sms"]] = None
     preferred_contact_time: Optional[str] = None
     assigned_branch: Optional[str] = None

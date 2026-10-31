@@ -60,7 +60,7 @@ def test_ppt_endpoint_never_fetches_foreign_floor_hero_or_persisted_snapshot(mon
             {"product_id": "foreign", "sku": "F", "name": "Product", "room": "Bath", "image": "https://cdn.test/foreign-snapshot.png"},
         ]}
 
-    async def snapshot():
+    async def snapshot(*_args):
         return SimpleNamespace(product_by_id={"foreign": {"id": "foreign", "floor_id": "ground-floor", "sku": "F"}},
                                media_rows_by_product={"foreign": [{"product_id": "foreign", "public_url": "https://cdn.test/foreign.png"}]})
 
@@ -70,7 +70,7 @@ def test_ppt_endpoint_never_fetches_foreign_floor_hero_or_persisted_snapshot(mon
 
     fetched = []
     monkeypatch.setattr(quotation_routes, "get_floor_scoped_or_404", lookup)
-    monkeypatch.setattr(quotation_routes.catalog_service, "get_catalog_snapshot", snapshot)
+    monkeypatch.setattr(quotation_routes.catalog_service, "snapshot_for_product_ids", snapshot)
     monkeypatch.setattr(quotation_routes, "_diagram_items", parts)
     monkeypatch.setattr(quotation_ppt, "prefetch_urls", lambda urls: fetched.extend(urls))
     monkeypatch.setattr(quotation_ppt, "remote_image_bytes", lambda url: fetched.append(url))

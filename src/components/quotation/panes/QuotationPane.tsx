@@ -1,12 +1,11 @@
 import { formatPhone } from "@/src/utils/phone";
 import { referrerCode } from "@/src/utils/referrer";
 // QuotationPane V4 — the right pane in the V4 shell.
-// Renders: sticky header (number + save state + status), room chip row, canvas
+// Renders: scrolling customer/room controls, canvas
 // (rooms + line items), footer (notes + discount + totals + place order).
 //
 // Customer / phone / project / reference-source live in the topbar on desktop
-// and in this pane's fixed header on compact layouts, so they never disappear
-// behind the quotation canvas.
+// and in this pane's scrolling header on compact layouts.
 import Feather from "@expo/vector-icons/Feather";
 import { Keyboard, Platform, Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from "react-native";
 import { Text, TextInput } from "@/src/components/AppText";
@@ -14,7 +13,7 @@ import { Text, TextInput } from "@/src/components/AppText";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useBp } from "@/src/design/responsive";
 import { useInputActive } from "@/src/hooks/use-input-active";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { ProductExplorer } from "../catalog/ProductExplorer";
 import { colors, money, spacing } from "@/src/theme/tokens";
 import { color as ds } from "@/src/design/tokens";
@@ -29,8 +28,10 @@ export function QuotationPane({
   browseInline = false,
   mobileWorkspaceCollapsed = false,
   onMobileWorkspaceCollapsedChange,
+  scrollHeader,
 }: {
   compact?: boolean;
+  scrollHeader?: ReactNode;
   browseInline?: boolean;
   mobileWorkspaceCollapsed?: boolean;
   onMobileWorkspaceCollapsedChange?: (collapsed: boolean) => void;
@@ -44,15 +45,10 @@ export function QuotationPane({
   const browsing = browseInline && section === "products";
   useEffect(() => { setRoomsOpen(false); }, [b.s.activeRoom]);
 
-  return (
-    <View style={styles.panel} testID="quotation-workspace">
-      {browseInline && mobileWorkspaceCollapsed ? <View style={styles.focusHead}>
-        <Text style={[styles.focusTitle, { flex: 1 }]}>Products</Text>
-        <Pressable accessibilityRole="button" accessibilityLabel="Show quotation workspace" testID="expand-quotation-workspace"
-          onPress={() => onMobileWorkspaceCollapsedChange?.(false)} style={styles.focusRestore}>
-          <Text style={styles.focusRestoreLabel}>Exit full screen</Text><Feather name="minimize-2" size={15} color={ds.brassDeep} />
-        </Pressable>
-      </View> : <View style={styles.head}>
+  const header = <>
+    {scrollHeader}
+    {browseInline && mobileWorkspaceCollapsed ? <View style={{ height: 60 }} /> : null}
+    {!(browseInline && mobileWorkspaceCollapsed) ? <View style={styles.head}>
         <CustomerDetails />
         {!browsing ? <RoomChipRow /> : null}
         {browseInline ? (
@@ -87,14 +83,24 @@ export function QuotationPane({
             <Text style={styles.sectionMeta}>{b.s.lines.length} {b.s.lines.length === 1 ? "product" : "products"} · {b.s.rooms.length} {b.s.rooms.length === 1 ? "room" : "rooms"}</Text>
           </View>
         )}
-      </View>}
+      </View> : null}
+    </>;
 
-      {browsing && roomsOpen ? <View style={styles.browseRooms}><RoomChipRow /></View> : null}
-      {browseInline ? <View style={[styles.body, !browsing && { display: "none" }]}><ProductExplorer showCompactFilters /></View> : null}
+  return (
+    <View style={styles.panel} testID="quotation-workspace">
+      {!browseInline ? header : null}
+      {browseInline && mobileWorkspaceCollapsed ? <View style={styles.focusHead} pointerEvents="box-none">
+        <Pressable accessibilityRole="button" accessibilityLabel="Show quotation workspace" testID="expand-quotation-workspace"
+          onPress={() => onMobileWorkspaceCollapsedChange?.(false)} style={styles.focusRestore}>
+          <Text style={styles.focusRestoreLabel}>Exit full screen</Text><Feather name="minimize-2" size={15} color={ds.brassDeep} />
+        </Pressable>
+      </View> : null}
+      {browseInline ? <View style={[styles.body, !browsing && { display: "none" }]}><ProductExplorer showCompactFilters scrollHeader={browsing ? header : undefined} /></View> : null}
       <View style={[styles.body, browsing && { display: "none" }]}>
-        <QuotationCanvas compact={compact} />
+        <QuotationCanvas compact={compact} scrollHeader={browseInline && !browsing ? header : undefined} />
       </View>
-      {browsing ? (viewportPhone && inputActive ? null : <View style={[styles.browseFooter, { paddingBottom: Math.max(10, insets.bottom) }]}>
+      {browsing && roomsOpen ? <View style={styles.browseRooms}><RoomChipRow /></View> : null}
+      {browsing ? (mobileWorkspaceCollapsed || (viewportPhone && inputActive) ? null : <View style={[styles.browseFooter, { paddingBottom: Math.max(10, insets.bottom) }]}>
         <Pressable style={{ flex: 1, minWidth: 0, minHeight: 44, justifyContent: "center" }} accessibilityRole="button"
           accessibilityLabel={`Adding to ${b.s.activeRoom}. Change room`} accessibilityState={{ expanded: roomsOpen }}
           testID="browse-room-toggle" onPress={() => setRoomsOpen(value => !value)}>
@@ -129,7 +135,7 @@ function CustomerDetails() {
         testID="quotation-details-toggle" onPress={() => expanded ? collapse() : setExpanded(true)} style={styles.detailsSummary}>
         <Feather name="user" size={17} color={ds.brassDeep} />
         <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={styles.summaryTitle} numberOfLines={1}>{customer?.company || customer?.name || "Customer & project details"}</Text>
+          <Text style={styles.summaryTitle} numberOfLines={1}>{customer?.name || "Customer & project details"}</Text>
           <Text style={styles.summarySubtitle} numberOfLines={1}>
             {customer ? [b.s.header.projectName, formatPhone(b.s.header.phone), b.s.header.address].filter(Boolean).join(" · ") || "Add project, address & reference" : "Add customer, address, phone & reference"}
           </Text>
@@ -164,7 +170,7 @@ function CompactHeaderFields() {
       >
         <Text style={styles.fieldLabel}>Customer</Text>
         <View style={styles.customerValueRow}>
-          <Text style={styles.fieldValue} numberOfLines={1}>{customer?.company || customer?.name || "Select customer"}</Text>
+          <Text style={styles.fieldValue} numberOfLines={1}>{customer?.name || "Select customer"}</Text>
           <Feather name="chevron-down" size={12} color={colors.onSurfaceMuted} />
         </View>
       </Pressable>
@@ -238,7 +244,7 @@ const styles = StyleSheet.create({
   tabLabel: { fontSize: 13, fontWeight: "700", color: colors.onSurfaceSecondary },
   focusButton: { minHeight: 44, flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, borderRadius: 8, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, backgroundColor: colors.surface },
   focusButtonLabel: { fontSize: 11, fontWeight: "700", color: ds.brassDeep },
-  focusHead: { minHeight: 56, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: spacing.md, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: colors.border, backgroundColor: colors.surfaceSecondary },
+  focusHead: { position: "absolute", top: 8, right: 12, zIndex: 2 },
   focusTitle: { fontSize: 13, fontWeight: "700", color: colors.onSurface },
   focusMeta: { marginTop: 2, fontSize: 11, color: colors.onSurfaceSecondary },
   focusRestore: { minWidth: 44, minHeight: 44, flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, borderRadius: 8, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, backgroundColor: colors.surface },

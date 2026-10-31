@@ -25,15 +25,10 @@ export default function NewCustomer() {
   const { isPhone, gutter } = useBp();
   const [saving, setSaving] = useState(false);
   const [name, setName] = useState("");
-  const [company, setCompany] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
-  const [city, setCity] = useState("");
   const [address, setAddress] = useState("");
   const [propertyName, setPropertyName] = useState("");
-  const [stateField, setStateField] = useState("");
-  const [pincode, setPincode] = useState("");
-  const [gstin, setGstin] = useState("");
   const [referrer, setReferrer] = useState<{ id: string; name: string; type: "architect" | "interior_designer" } | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -50,15 +45,13 @@ export default function NewCustomer() {
     try {
       const payload = {
         name: name.trim(),
-        company: company.trim() || null,
+
         email: email.trim() || null,
         phone: phone.trim() || null,
-        city: city.trim() || null,
+
         address: address.trim() || null,
         property_name: propertyName.trim() || null,
-        state: stateField.trim() || null,
-        pincode: pincode.trim() || null,
-        gstin: gstin.trim() || null,
+
         referrer_id: referrer?.id || null,
       };
       const created = await api.post<{ id: string }>("/customers", payload);
@@ -103,13 +96,7 @@ export default function NewCustomer() {
           />
           <Disclosure title="Additional customer details">
           <ReferrerField value={referrer} onChange={setReferrer} />
-          <TextField
-            label="Company"
-            placeholder="Business name (optional)"
-            value={company}
-            onChangeText={setCompany}
-            testID="new-customer-company"
-          />
+
           <TextField
             label="Email"
             placeholder="name@example.com"
@@ -119,17 +106,11 @@ export default function NewCustomer() {
             keyboardType="email-address"
             testID="new-customer-email"
           />
-          <TextField
-            label="City"
-            placeholder="e.g. Ahmedabad"
-            value={city}
-            onChangeText={setCity}
-            testID="new-customer-city"
-          />
+
           <TextField label="Property / project" placeholder="e.g. Riverfront Residence" value={propertyName} onChangeText={setPropertyName} testID="new-customer-property-name" />
           <TextField
             label="Address"
-            placeholder="Street, area, pincode"
+            placeholder="Street and area"
             value={address}
             onChangeText={setAddress}
             multiline
@@ -138,32 +119,10 @@ export default function NewCustomer() {
             testID="new-customer-address"
           />
           <View style={{ flexDirection: isPhone ? "column" : "row", gap: spacing.sm }}>
-            <TextField
-              label="State"
-              placeholder="e.g. Gujarat"
-              value={stateField}
-              onChangeText={setStateField}
-              containerStyle={{ flex: 1 }}
-              testID="new-customer-state"
-            />
-            <TextField
-              label="Pincode"
-              placeholder="6-digit"
-              value={pincode}
-              onChangeText={setPincode}
-              keyboardType="number-pad"
-              containerStyle={{ flex: 1 }}
-              testID="new-customer-pincode"
-            />
+
+
           </View>
-          <TextField
-            label="GSTIN"
-            placeholder="Optional, for invoicing"
-            value={gstin}
-            onChangeText={setGstin}
-            autoCapitalize="characters"
-            testID="new-customer-gstin"
-          />
+
 
 
           </Disclosure>

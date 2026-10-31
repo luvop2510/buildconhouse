@@ -85,7 +85,7 @@ export function BuilderShell({ onBack }: { onBack: () => void }) {
       style={{ flex: 1, backgroundColor: colors.surface }}
       onLayout={onLayout}
     >
-      <BuilderTopbar onBack={onBack} isPhone={isPhone} isDesktop={threePane} hidden={isPhone && mobileWorkspaceCollapsed} />
+      {!isPhone ? <BuilderTopbar onBack={onBack} isPhone={false} isDesktop={threePane} /> : null}
 
       {b.referenceError ? (
         <View style={styles.referenceError} testID="builder-reference-error">
@@ -150,6 +150,7 @@ export function BuilderShell({ onBack }: { onBack: () => void }) {
           <QuotationPane
             compact={compactCatalog}
             browseInline
+            scrollHeader={<BuilderTopbar onBack={onBack} isPhone isDesktop={false} hidden={mobileWorkspaceCollapsed} />}
             mobileWorkspaceCollapsed={mobileWorkspaceCollapsed}
             onMobileWorkspaceCollapsedChange={setMobileWorkspaceCollapsed}
           />

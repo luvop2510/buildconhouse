@@ -42,7 +42,7 @@ export function QuotationBuilder({
 
   return (
     <BuilderProvider
-      key={`${staff?.id}:${selectedFloorId || floors[0]?.id || ""}`}
+      key={`${staff?.id}:${selectedFloorId || floors[0]?.id || ""}:${initialQuotationId || "new"}`}
       initialProductId={initialProductId || null}
       initialCatalogEntryId={initialCatalogEntryId || null}
       initialGodownStockId={initialGodownStockId || null}
@@ -50,7 +50,7 @@ export function QuotationBuilder({
       initialQuotationId={initialQuotationId || null}
       onFinalize={(quotationId) => router.replace(`/(admin)/quotations/${quotationId}` as any)}
     >
-      <BuilderShell onBack={() => router.back()} />
+      <BuilderShell onBack={() => router.canGoBack() ? router.back() : router.replace("/(admin)/quotations")} />
     </BuilderProvider>
   );
 }

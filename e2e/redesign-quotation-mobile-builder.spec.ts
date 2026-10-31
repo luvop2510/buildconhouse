@@ -85,6 +85,8 @@ test('critical mobile quotation product focus preserves filtering and exposes co
 test('critical mobile quotation adds custom products from full-screen picker and saves or keeps them inline', async ({ page }, info) => {
   test.skip(page.viewportSize()!.width > 1024, 'Compact quotation workspace');
   const fixture = await builderFixture(page);
+  const exitFullscreen = page.getByTestId('expand-quotation-workspace');
+  if (await exitFullscreen.isVisible()) await exitFullscreen.click();
   await page.getByTestId('mobile-add-first').click();
   const picker = page.getByRole('dialog', { name: 'Add products', exact: true });
   await expect(picker).toBeVisible();
@@ -132,6 +134,8 @@ test('critical mobile quotation adds custom products from full-screen picker and
   await expect.poll(() => fixture.saved().items.length).toBe(2);
   await page.reload();
   await expect(page.getByTestId('quotation-workspace')).toBeVisible();
+  const restoredExit = page.getByTestId('expand-quotation-workspace');
+  if (await restoredExit.isVisible()) await restoredExit.click();
   await expect(review.or(page.getByTestId('receipt-list')).filter({ visible: true }).first()).toBeVisible();
   if (await review.isVisible()) await review.click();
   await expect(page.getByTestId('receipt-list')).toBeVisible();
@@ -167,6 +171,7 @@ test('critical quotation search hides stale cards and recovers from an empty fil
 test('critical mobile quotation chooses a room directly while browsing and retains the selection through review', async ({ page }, info) => {
   test.skip(page.viewportSize()!.width >= 768, 'Single-pane phone workspace');
   const fixture = await builderFixture(page);
+  await page.getByTestId('expand-quotation-workspace').click();
   const search = page.getByTestId('explorer-search').filter({ visible: true });
   await search.fill('Basin');
   await expect(page.getByTestId('browse-room-toggle')).toHaveCount(0);
@@ -232,6 +237,8 @@ test('critical product add feedback does not block a deliberate second quantity 
 test('critical quotation room actions preserve the room name in a narrow desktop panel', async ({ page }) => {
   await builderFixture(page);
   await page.getByTestId('add-B-0').first().click();
+  const exitFullscreen = page.getByTestId('expand-quotation-workspace');
+  if (await exitFullscreen.isVisible()) await exitFullscreen.click();
   const review = page.getByTestId('mobile-review-quotation');
   if (await review.isVisible()) await review.click();
   const room = page.getByTestId('room-name-Master Bath');
@@ -242,4 +249,119 @@ test('critical quotation room actions preserve the room name in a narrow desktop
     expect(box!.width).toBeGreaterThanOrEqual(44);
     expect(box!.height).toBeGreaterThanOrEqual(44);
   }
+});
+
+test('critical phone product and quotation headers scroll away without hiding full-screen exit', async ({ page }, info) => {
+  test.skip(page.viewportSize()!.width >= 768, 'Single-pane phone workspace');
+  await builderFixture(page);
+  const products = page.getByTestId('explorer-product-list').filter({ visible: true });
+  await expect(page.getByTestId('quotation-downloads')).toBeHidden();
+  await expect(page.getByTestId('browse-room-toggle')).toHaveCount(0);
+  await expect(page.getByTestId('mobile-review-quotation')).toHaveCount(0);
+  await page.screenshot({ path: info.outputPath('fullscreen-products.png') });
+  await expect(page.getByTestId('expand-quotation-workspace')).toBeVisible();
+  await products.evaluate(element => { element.scrollTop = 500; });
+  await expect.poll(() => page.getByTestId('explorer-filter-toggle').evaluate(element => {
+    const list = element.closest('[data-testid="explorer-product-list"]')!;
+    return element.getBoundingClientRect().bottom <= list.getBoundingClientRect().top;
+  })).toBe(true);
+  await expect(page.getByTestId('expand-quotation-workspace')).toBeVisible();
+  await products.evaluate(element => { element.scrollTop = 0; });
+  for (const sku of ['B-0', 'B-1', 'B-2', 'B-3']) await page.getByTestId(`add-${sku}`).click();
+  await page.getByTestId('expand-quotation-workspace').click();
+  await page.getByTestId('mobile-review-quotation').click();
+  const receipt = page.getByTestId('receipt-list');
+  const header = page.getByTestId('quotation-details-toggle');
+  await expect(header).toBeVisible();
+  await receipt.evaluate(element => { element.scrollTop = 500; });
+  await expect.poll(() => header.evaluate(element => {
+    const list = element.closest('[data-testid="receipt-list"]')!;
+    return element.getBoundingClientRect().bottom <= list.getBoundingClientRect().top;
+  })).toBe(true);
+  await expect(page.locator('[data-testid^="qty-basin-0-"]')).toBeVisible();
+  await page.screenshot({ path: info.outputPath('quotation-scrolled.png') });
+  // The picker uses the same scrolling header rather than a second fixed toolbar.
+  await page.getByTestId('mobile-add-first').click();
+  const picker = page.getByRole('dialog', { name: 'Add products', exact: true });
+  await expect(picker).toBeVisible();
+  await picker.getByTestId('explorer-product-list').evaluate(element => { element.scrollTop = 500; });
+  await expect.poll(() => picker.getByTestId('picker-sheet-close').evaluate(element => {
+    const list = element.closest('[data-testid="explorer-product-list"]')!;
+    return element.getBoundingClientRect().bottom <= list.getBoundingClientRect().top;
+  })).toBe(true);
+  await page.screenshot({ path: info.outputPath('picker-scrolled.png') });
+  await picker.getByTestId('picker-view-quotation').click();
+  await expect(picker).not.toBeVisible();
+  await receipt.evaluate(element => { element.scrollTop = 0; });
+  await expect(header).toBeVisible();
+});
+
+test('critical failed edits recover when reloading the same saved quotation', async ({ page }) => {
+  await builderFixture(page);
+  await page.route(/\/api\/quotations\/q-mobile(?:\?.*)?$/, route => route.request().method() === 'PATCH'
+    ? route.fulfill({ status: 503, json: { detail: 'Save temporarily unavailable' } }) : route.fallback());
+  await page.getByTestId('add-B-0').first().click();
+  const exitFullscreen = page.getByTestId('expand-quotation-workspace');
+  if (await exitFullscreen.isVisible()) await exitFullscreen.click();
+  const review = page.getByTestId('mobile-review-quotation');
+  if (await review.isVisible()) await review.click();
+  await expect(page.getByTestId('save-status')).toContainText('Save failed');
+  await expect.poll(() => page.evaluate(() => {
+    const raw = localStorage.getItem('forge.builder.draft.v1.audit-owner.first-floor');
+    return raw ? JSON.parse(JSON.parse(raw)).state.lines.length : 0;
+  })).toBe(1);
+  await page.reload();
+  await expect(page.getByTestId('draft-recovery')).toBeVisible();
+  await page.getByRole('button', { name: 'Restore draft', exact: true }).click();
+  await expect(page.getByTestId('draft-recovery')).not.toBeVisible();
+  const restoredExit = page.getByTestId('expand-quotation-workspace');
+  if (await restoredExit.isVisible()) await restoredExit.click();
+  if (await review.isVisible()) await review.click();
+  await expect(page.locator('[data-testid^="qty-basin-0-"]')).toHaveValue('1');
+  const receipt = page.getByTestId('receipt-list');
+  await receipt.evaluate(element => { element.scrollTop = element.scrollHeight; });
+  await expect(page.locator('[data-testid^="qty-basin-0-"]')).toBeVisible();
+});
+
+test('critical builder Back from a direct link returns to quotations', async ({ page }) => {
+  await builderFixture(page);
+  const exit = page.getByTestId('expand-quotation-workspace');
+  if (await exit.isVisible()) await exit.click();
+  await page.getByTestId('builder-back').click();
+  await expect(page).toHaveURL(/\/quotations$/);
+});
+
+test('critical a saved quotation ignores another document recovery without deleting it', async ({ page }) => {
+  await builderFixture(page);
+  await page.route(/\/api\/quotations\/q-mobile(?:\?.*)?$/, route => route.request().method() === 'PATCH'
+    ? route.fulfill({ status: 503, json: { detail: 'Save temporarily unavailable' } }) : route.fallback());
+  await page.getByTestId('add-B-0').first().click();
+  const key = 'forge.builder.draft.v1.audit-owner.first-floor';
+  await expect.poll(() => page.evaluate(storageKey => {
+    const raw = localStorage.getItem(storageKey);
+    return raw ? JSON.parse(JSON.parse(raw)).state.lines.length : 0;
+  }, key)).toBe(1);
+  await page.evaluate(storageKey => {
+    const draft = JSON.parse(JSON.parse(localStorage.getItem(storageKey)!));
+    draft.quotationId = 'another-quotation';
+    localStorage.setItem(storageKey, JSON.stringify(JSON.stringify(draft)));
+  }, key);
+  await page.reload();
+  await expect(page.getByTestId('product-card-B-0').first()).toBeVisible();
+  await expect(page.getByTestId('draft-recovery')).toHaveCount(0);
+  expect(await page.evaluate(storageKey => JSON.parse(JSON.parse(localStorage.getItem(storageKey)!)).quotationId, key)).toBe('another-quotation');
+});
+
+test('critical an edit registers its recovery before deferred save timers run', async ({ page }) => {
+  await builderFixture(page);
+  await page.clock.install();
+  await page.clock.pauseAt(new Date(Date.now() + 1000));
+  // Keep the old 250ms recovery debounce and 900ms server autosave paused.
+  await page.getByTestId('add-B-0').first().evaluate((element: HTMLElement) => element.click());
+  await expect.poll(() => page.evaluate(() => {
+    const raw = localStorage.getItem('forge.builder.draft.v1.audit-owner.first-floor');
+    if (!raw) return null;
+    const draft = JSON.parse(JSON.parse(raw));
+    return { quotationId: draft.quotationId, products: draft.state.lines.map((line: { product_id: string }) => line.product_id) };
+  })).toEqual({ quotationId: 'q-mobile', products: ['basin-0'] });
 });

@@ -114,7 +114,7 @@ def build_chalan_pdf(chalan: dict, po: dict, customer: dict, branding: dict | No
     story.append(Spacer(1, 2 * mm))
 
     customer_name = _first_value(
-        po.get("customer_name"), customer.get("company"), customer.get("name"), default="Customer",
+        po.get("customer_name"), customer.get("name"), default="Customer",
     )
     customer_address = ", ".join(
         str(value).strip()
