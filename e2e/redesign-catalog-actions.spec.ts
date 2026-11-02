@@ -1,6 +1,28 @@
 import { expect, test } from '@playwright/test';
 import { mockSession } from './audit-fixtures';
 
+test('empty category can be found and deleted from the catalog', async ({ page }) => {
+  await mockSession(page, '/catalog', false, { floorId: 'first-floor' });
+  let deleted = false;
+  await page.route('**/api/brands**', route => route.fulfill({ json: [] }));
+  await page.route('**/api/categories**', route => {
+    if (route.request().method() === 'DELETE') {
+      expect(new URL(route.request().url()).pathname).toBe('/api/categories/custom-category');
+      deleted = true;
+      return route.fulfill({ json: { ok: true } });
+    }
+    return route.fulfill({ json: deleted ? [] : [{ id: 'custom-category', name: 'Custom category' }] });
+  });
+  await page.route('**/api/catalog/facets**', route => route.fulfill({ json: {} }));
+  await page.route('**/api/catalog/hierarchy**', route => route.fulfill({ json: { tree: [] } }));
+  await page.route('**/api/products/families**', route => route.fulfill({ json: { items: [], total: 0 } }));
+  await page.goto('/catalog');
+  await page.getByTestId('open-delete-category').click();
+  await page.getByTestId('manage-delete-category-custom-category').click();
+  await expect.poll(() => deleted).toBe(true);
+  await expect(page.getByTestId('manage-delete-category-custom-category')).toHaveCount(0);
+});
+
 for (const floor of ['first-floor', 'ground-floor']) {
   test(`critical custom catalog product is addable on ${floor}`, async ({ page }) => {
     await mockSession(page, '/catalog', false, { floorId: floor });

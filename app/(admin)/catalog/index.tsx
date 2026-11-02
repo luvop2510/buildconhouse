@@ -120,6 +120,8 @@ export default function Catalog() {
   const canCreateProduct = useActionAccess("catalog", "create", !!staff && ["owner", "admin", "manager", "accounts", "purchase"].includes(staff.role)) && ["first-floor", "ground-floor"].includes(selectedFloorId);
   const canDeleteCategory = useActionAccess("catalog", "delete", !!staff && ["owner", "admin", "manager", "accounts", "purchase"].includes(staff.role)) && ["first-floor", "ground-floor"].includes(selectedFloorId);
   const categoryDeleting = useRef(false);
+  const [deletingCategoryId, setDeletingCategoryId] = useState<string | null>(null);
+  const [categoryDeleteOpen, setCategoryDeleteOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
 
   const [brands, setBrands] = useState<Brand[]>([]);
@@ -372,6 +374,15 @@ export default function Catalog() {
   const filterError = [referenceError, hierarchyError].filter(Boolean).join(" ");
   const filtersLoading = referencesLoading || hierarchyLoading;
   const retryFilters = () => setFilterRevision((revision) => revision + 1);
+  const deleteCategory = (id: string) => {
+    if (categoryDeleting.current) return;
+    categoryDeleting.current = true;
+    setDeletingCategoryId(id);
+    void api.delete(`/categories/${encodeURIComponent(id)}`, { floorId: selectedFloorId }).then(() => {
+      setCatValues(current => current.filter(value => value !== id));
+    }).catch((error: any) => toast.error(typeof error?.detail === "string" ? error.detail : "Could not delete category. Please try again."))
+      .finally(() => { categoryDeleting.current = false; setDeletingCategoryId(null); });
+  };
 
   const countLabel = (count: number) => mode === "families"
     ? count === 1 ? "family" : "families"
@@ -443,6 +454,9 @@ export default function Catalog() {
       </View>
 
       <FilterLoadStatus error={filterError} loading={filtersLoading} onRetry={retryFilters} />
+      {canDeleteCategory ? <View style={{ alignSelf: "flex-start" }}>
+        <Button label="Delete category" icon="trash-2" variant="secondary" size="sm" testID="open-delete-category" onPress={() => setCategoryDeleteOpen(true)} />
+      </View> : null}
 
       {!isPhone ? <>
       <View style={styles.horizontalStrip}>
@@ -493,15 +507,7 @@ export default function Catalog() {
             onPress={() => { setCat(c.id); }}
             testID={`cat-${c.id}`}
           />
-          {canDeleteCategory ? <IconButton icon="trash-2" size={36} tone="ghost" accessibilityLabel={`Delete category ${c.name}`} testID={`delete-category-${c.id}`} onPress={() => {
-            if (categoryDeleting.current) return;
-            categoryDeleting.current = true;
-            const floor = selectedFloorId;
-            void api.delete(`/categories/${encodeURIComponent(c.id)}`, { floorId: floor }).then(() => {
-              setCatValues(current => current.filter(id => id !== c.id));
-            }).catch((error: any) => toast.error(typeof error?.detail === "string" ? error.detail : "Could not delete category. Please try again."))
-              .finally(() => { categoryDeleting.current = false; });
-          }} /> : null}
+          {canDeleteCategory ? <IconButton icon="trash-2" size={36} tone="ghost" accessibilityLabel={`Delete category ${c.name}`} testID={`delete-category-${c.id}`} onPress={() => deleteCategory(c.id)} /> : null}
         </View>)}
       </ScrollView>
       <Pressable accessibilityRole="button" accessibilityLabel="Scroll categories right"
@@ -606,6 +612,19 @@ export default function Catalog() {
       />
       <CreateCatalogProduct visible={createOpen} floorId={selectedFloorId} brands={brands} categories={categories}
         onClose={() => setCreateOpen(false)} onCreated={() => { void load(); }} />
+
+      <BottomSheet visible={categoryDeleteOpen} onClose={() => setCategoryDeleteOpen(false)} title="Delete category" testID="delete-category-sheet">
+        <View style={{ gap: spacing.md }}>
+          <Text style={type.bodyMuted}>Remove products from a category before deleting it.</Text>
+          <FilterLoadStatus error={referenceError ?? ""} loading={referencesLoading} onRetry={retryFilters} />
+          {!referencesLoading && !referenceError && !categories.length ? <Text style={type.bodyMuted}>No categories on this floor.</Text> : null}
+          {categories.map(category => <View key={category.id} style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+            <Text style={[type.body, { flex: 1 }]}>{category.name}</Text>
+            <Button label={`Delete ${category.name}`} variant="secondary" size="sm" testID={`manage-delete-category-${category.id}`}
+              loading={deletingCategoryId === category.id} disabled={!!deletingCategoryId && deletingCategoryId !== category.id} onPress={() => deleteCategory(category.id)} />
+          </View>)}
+        </View>
+      </BottomSheet>
 
       <FiltersSheet
         visible={filtersOpen}
