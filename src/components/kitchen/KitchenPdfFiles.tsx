@@ -9,9 +9,9 @@ import { useKitchenDraft, useKitchenProject } from "./KitchenProjectState";
 import { downloadKitchenFile, uploadKitchenFile, KITCHEN_MAX_PDF_BYTES, KITCHEN_MAX_FILE_BYTES } from "./KitchenFileTransport";
 import { KitchenButton as Button, kitchenType as type } from "./KitchenPrimitives";
 import { kitchenApprovalDate } from "./KitchenVersions";
-import { spacing } from "@/src/theme/tokens";
+import { colors, spacing } from "@/src/theme/tokens";
 
-export function KitchenPdfFile({ project, file, selected, onSelect, disabled, testID, photo = false }: { photo?: boolean; project: KitchenProject; file: KitchenAttachment; selected?: boolean; onSelect?: () => void; disabled?: boolean; testID: string }) {
+export function KitchenPdfFile({ project, file, selected, onSelect, disabled, testID, photo = false, bordered = false }: { bordered?: boolean; photo?: boolean; project: KitchenProject; file: KitchenAttachment; selected?: boolean; onSelect?: () => void; disabled?: boolean; testID: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const pending = useRef(false);
@@ -31,7 +31,7 @@ export function KitchenPdfFile({ project, file, selected, onSelect, disabled, te
     } finally { pending.current = false; setBusy(false); }
   };
   const uploadDate = file.upload_date || kitchenApprovalDate(file.uploaded_at) || "";
-  return <View style={{ gap: spacing.sm }} testID={testID}>
+  return <View style={[{ gap: spacing.sm }, bordered && { borderWidth: 1, borderColor: colors.borderStrong, borderRadius: 6, padding: spacing.s12, backgroundColor: colors.surfaceSecondary }]} testID={testID}>
     <Text style={type.bodyStrong}>{file.filename}{selected ? " · Finalize PDF" : ""}</Text>
     <Text style={type.caption}>Uploaded: {uploadDate ? displayDate(uploadDate) : "Historical date not recorded"}</Text>
     <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
@@ -49,6 +49,7 @@ type PdfTransfer = Pick<KitchenOwnFileTransfer, "project_id" | "transfer_id" | "
 export function KitchenPdfFiles({ project, attachmentIds, finalId, onAdd, onSelect, disabled, selectionDisabled = false, label, testID, draftKey, fileKind = "pdf" }: { fileKind?: "pdf" | "photo"; project: KitchenProject; attachmentIds: string[]; finalId: string; onAdd: (id: string) => void | boolean | Promise<void | boolean>; onSelect: (id: string) => void; disabled: boolean; selectionDisabled?: boolean; label?: string; testID: string; draftKey: string }) {
   const { policy, documentSubmission: submission, updateProject, reload } = useKitchenProject();
   const photo = fileKind === "photo";
+  const quotationSection = !photo && (label === "GI" || label === "SS" || label === "Mix");
   const noun = photo ? "photo" : "PDF";
   const [picked, setPicked] = useKitchenDraft<DocumentPicker.DocumentPickerAsset | null>(`${draftKey}.picked`, null);
   const [photoQueue, setPhotoQueue] = useKitchenDraft<DocumentPicker.DocumentPickerAsset[]>(`${draftKey}.photoQueue`, []);
@@ -145,10 +146,10 @@ export function KitchenPdfFiles({ project, attachmentIds, finalId, onAdd, onSele
   };
   const busy = submission.busy || uploading || discarding;
   const progressLabel = discarding ? `Discarding unfinished ${noun} upload…` : progress === 0 ? `Preparing ${noun}…` : progress < 95 ? `Uploading ${noun} · ${progress}%` : progress < 100 ? `Verifying and saving ${noun}…` : `Saving ${noun} entry…`;
-  return <View style={{ gap: spacing.md }} testID={testID}>
+  return <View style={[{ gap: spacing.md }, quotationSection && { borderWidth: 1, borderColor: colors.borderStrong, borderRadius: 8, padding: spacing.s16, backgroundColor: colors.surfaceSubtle }]} testID={testID}>
     {label ? <Text style={type.bodyStrong}>{label}</Text> : null}
     {!disabled ? <Text style={type.caption}>{photo ? "JPG or PNG · Up to 25 MB per photo. Select multiple photos or add more at any time." : "PDF · Up to 10 MB (10,000,000 bytes) per file."}</Text> : null}
-    {included.map(file => <KitchenPdfFile key={file.id} project={project} file={file} photo={photo} selected={!photo && file.id === finalId} onSelect={photo ? undefined : () => onSelect(file.id)} disabled={disabled || selectionDisabled || busy} testID={`${testID}-${file.id}`} />)}
+    {included.map(file => <KitchenPdfFile key={file.id} project={project} file={file} photo={photo} bordered={quotationSection} selected={!photo && file.id === finalId} onSelect={photo ? undefined : () => onSelect(file.id)} disabled={disabled || selectionDisabled || busy} testID={`${testID}-${file.id}`} />)}
     {!disabled ? <>
       <Button label={photo ? "Choose photo" : label ? `Choose ${label} PDF` : "Choose PDF"} variant="secondary" disabled={busy || !policy?.files} onPress={pick} testID={`${testID}-pick`} />
       {picked ? <><Text style={type.body}>{picked.name}{photo && photoQueue.length ? ` · ${photoQueue.length} more selected` : ""}</Text><Button label={uploading ? progressLabel : uploadedFile ? `Retry saving ${noun} entry` : photo ? "Upload photo" : "Upload PDF"} disabled={busy || !policy?.files} loading={uploading} onPress={upload} testID={`${testID}-upload`} /></> : null}

@@ -331,13 +331,14 @@ class QuotationReceived(DocumentPayload):
     final_attachment_id: Identifier | None = None
     design_version_id: Identifier
     amount: str | None = None
+    upload_date: str | None = None
     received_date: str | None = None
     shared_date: str | None = None
     received_status: Literal["Not recorded", "Yes", "No"] | None = None
     sent_status: Literal["Not recorded", "Yes", "No"] | None = None
     response: Literal["Pending", "Approved", "Changes Required", "Rejected"] = "Pending"
     _amount = field_validator("amount", mode="before")(lambda value: money_text(None if isinstance(value, str) and not value.strip() else value))
-    _dates = field_validator("received_date", "shared_date", mode="before")(date_only)
+    _dates = field_validator("upload_date", "received_date", "shared_date", mode="before")(date_only)
 
 
 class QuotationUpdate(StrictModel):
@@ -346,6 +347,7 @@ class QuotationUpdate(StrictModel):
     version_id: Identifier
     design_version_id: Identifier | None = None
     amount: str | None = None
+    upload_date: str | None = None
     received_date: str | None = None
     shared_date: str | None = None
     received_status: Literal["Not recorded", "Yes", "No"] | None = None
@@ -353,7 +355,7 @@ class QuotationUpdate(StrictModel):
     response: Literal["Pending", "Approved", "Changes Required", "Rejected"] = "Pending"
     notes: Text | None = None
     _amount = field_validator("amount", mode="before")(lambda value: money_text(None if isinstance(value, str) and not value.strip() else value))
-    _dates = field_validator("received_date", "shared_date", mode="before")(date_only)
+    _dates = field_validator("upload_date", "received_date", "shared_date", mode="before")(date_only)
 
 
 class OrderConfirmation(StrictModel):

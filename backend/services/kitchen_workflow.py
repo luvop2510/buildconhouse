@@ -69,7 +69,7 @@ def pdf_selection(project, fields, *, quotation=False):
         row = attachments.get(identity)
         if not row or row.get("content_type") != "application/pdf" or not recorded_day(row.get("uploaded_at")):
             reject("Select uploaded PDF files belonging to this project with a recorded upload date")
-    day = recorded_day(attachments[final]["uploaded_at"])
+    day = (fields.get("upload_date") if quotation else None) or recorded_day(attachments[final]["uploaded_at"])
     result = {"final_attachment_id": final, "attachment_id": final, "url": None, "upload_date": day}
     if quotation:
         result.update(pdf_options=options, kitchen_type=next(row["kitchen_type"] for row in options if row["attachment_id"] == final),
@@ -451,6 +451,8 @@ def apply(project, command, payload, policy, user, now, validate):
             reject("Choose the finalized design version for this quotation")
         bound_orders = [o for o in project.get("orders", []) if o.get("quotation_version_id") == row.get("id") and not o.get("authorization_invalidated")]
         if pdf_workflow:
+            if editing and proposed.get("final_attachment_id") != row.get("final_attachment_id") and "upload_date" not in body.model_fields_set:
+                proposed.pop("upload_date", None)
             proposed.update(pdf_selection(project, proposed, quotation=True))
         if editing and bound_orders and pdf_workflow:
             previous_pdf = pdf_selection(project, row, quotation=True)

@@ -33,6 +33,13 @@ const mocks = {
   '@/src/theme/tokens': { radius: {}, spacing: {} },
   './KitchenPrimitives': { KitchenButton: host('button'), KitchenTextField: host('input'), KitchenFieldRow: host('row'), kitchenColors: {}, kitchenType: {} },
 };
+const moneyExports = {};
+new Function('exports', ts.transpileModule(await readFile(new URL('../src/components/kitchen/KitchenMoney.ts', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText)(moneyExports);
+mocks['./KitchenMoney'] = moneyExports;
+for (const [raw, formatted] of [['', ''], ['1234', '1,234'], ['12345678.09', '1,23,45,678.09'], ['100000.00', '1,00,000.00'], ['1234.', '1,234.']]) {
+  assert.equal(moneyExports.formatKitchenAmount(raw), formatted);
+  assert.equal(moneyExports.kitchenAmountInput(formatted), raw);
+}
 const dateExports = {};
 new Function('exports', ts.transpileModule(await readFile(new URL('../src/components/kitchen/KitchenDates.ts', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText)(dateExports);
 mocks['./KitchenDates'].kitchenProductionEnd = dateExports.kitchenProductionEnd;
@@ -98,12 +105,16 @@ view = chooseQuotation(view, 'SS', 'ss-file');
 view = chooseQuotation(view, 'Mix', 'mix-file');
 assert.equal(view.control('kitchen-quotation-GI-pdf').props.finalId, 'mix-file', 'All kitchen types share exactly one final PDF');
 assert.match(view.text, /Final kitchen type: Mix/);
+assert.equal(view.control('kitchen-quotation-upload-date').props.value, '2026-10-19');
+view.control('kitchen-quotation-upload-date').props.onChange('2026-10-17');
+view = view.refresh();
 await view.control('kitchen-quotation-receive').props.onPress();
 const [quotationCommand, quotationPayload] = calls.pop();
 assert.equal(quotationCommand, 'quotation_receive');
 assert.deepEqual(quotationPayload.pdf_options, [{attachment_id:'file',kitchen_type:'GI'},{attachment_id:'ss-file',kitchen_type:'SS'},{attachment_id:'mix-file',kitchen_type:'Mix'}]);
 assert.equal(quotationPayload.final_attachment_id, 'mix-file');
-for (const field of ['amount','received_date','upload_date','notes']) assert.equal(quotationPayload[field], undefined, `${field} is not manually submitted`);
+assert.equal(quotationPayload.upload_date, '2026-10-17', 'The edited PDF upload date is submitted');
+for (const field of ['amount','received_date','notes']) assert.equal(quotationPayload[field], undefined, `${field} is not manually submitted`);
 assert.equal(quotationPayload.sent_status, 'No');
 assert.equal(quotationPayload.shared_date, null);
 view = render('quotation');
@@ -336,6 +347,12 @@ view = render('order', { quotation_versions: [quotation], orders: [order] }, { '
 assert.equal(view.control('kitchen-advance-save').props.disabled, false);
 await view.control('kitchen-advance-save').props.onPress();
 assert.deepEqual(calls.pop(), ['order_advance', { status: 'Yes', received: true, amount: '100.00', date: '2026-10-26' }]);
+view.control('kitchen-advance-amount').props.onChangeText('12345678.90');
+view = view.refresh();
+assert.equal(view.control('kitchen-advance-amount').props.value, '1,23,45,678.90');
+await view.control('kitchen-advance-save').props.onPress();
+assert.equal(calls.pop()[1].amount, '12345678.90', 'Formatted entries submit an ungrouped decimal');
+
 view = render('order', { quotation_versions: [quotation], orders: [order] }, { 'order.advanceEdit.expanded': true, 'order.advanceReceived': 'Yes', 'order.advanceAmount': '0.00' }, undefined, 'advance');
 assert.equal(view.control('kitchen-advance-save').props.disabled, true, 'Received advances require a positive amount');
 view = render('order', { quotation_versions: [quotation], orders: [order] }, { 'order.advanceEdit.expanded': true, 'order.advanceReceived': 'No' }, undefined, 'advance');

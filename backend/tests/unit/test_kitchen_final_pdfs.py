@@ -107,6 +107,20 @@ def test_multiple_quote_types_select_only_one_with_its_own_upload_date(setup):
     assert quote["kitchen_type"] == "Mix" and quote["received_date"] == "2026-10-26"
 
 
+
+def test_quote_upload_date_can_be_corrected_and_stays_with_selected_pdf(setup):
+    _, _, owner = setup
+    project = aggregate()
+    apply(project, "quotation_receive", quotation_fields(upload_date="2026-10-18"), owner)
+    quote = project["quotation_versions"][-1]
+    assert quote["upload_date"] == quote["received_date"] == "2026-10-18"
+    apply(project, "quotation_update", {"version_id": quote["id"], "upload_date": "2026-10-19"}, owner)
+    assert quote["upload_date"] == quote["received_date"] == "2026-10-19"
+    apply(project, "quotation_update", {"version_id": quote["id"], "notes": "Preserve date"}, owner)
+    assert quote["upload_date"] == "2026-10-19"
+    with pytest.raises(ValidationError):
+        QuotationReceived(**quotation_fields(upload_date="2026-02-30"))
+
 def test_quote_type_is_mandatory_and_cannot_be_supplied_separately():
     with pytest.raises(ValidationError):
         QuotationReceived(**quotation_fields(pdf_options=[{"attachment_id": "quote-pdf"}]))

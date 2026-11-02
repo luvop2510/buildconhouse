@@ -21,7 +21,7 @@ const modules={
   './KitchenProjectState':{useKitchenProject:()=>context,useKitchenDraft:(key,initial)=>[drafts[key]??initial,next=>{drafts[key]=typeof next==='function'?next(drafts[key]??initial):next;}]},
   './KitchenFileTransport':{KITCHEN_MAX_PDF_BYTES:10_000_000,uploadKitchenFile:async(project,file,key,progress,started)=>{uploaded.push([project,file,key]);if(uploadWork)return uploadWork(project,file,key,progress,started);progress(100);return uploadResult || {...current,version:5,attachments:[uploadedFile]};},downloadKitchenFile:async()=>true},
   './KitchenVersions':{kitchenApprovalDate:at=>at?new Date(new Date(at).getTime()+330*60_000).toISOString().slice(0,10):undefined},
-  '@/src/theme/tokens':{spacing:{}},
+  '@/src/theme/tokens':{spacing:{},colors:{}},
 };
 const exports={};
 new Function('require','exports','window',ts.transpileModule(readFileSync(new URL('../src/components/kitchen/KitchenPdfFiles.tsx',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText)(name=>{assert.ok(modules[name],name);return modules[name];},exports,{open:()=>null});
