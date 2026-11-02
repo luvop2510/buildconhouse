@@ -40,6 +40,8 @@ for (const [raw, formatted] of [['', ''], ['1234', '1,234'], ['12345678.09', '1,
   assert.equal(moneyExports.formatKitchenAmount(raw), formatted);
   assert.equal(moneyExports.kitchenAmountInput(formatted), raw);
 }
+assert.deepEqual(moneyExports.editKitchenAmount('1,234', '1234', 2), { value: '234', caret: 0 });
+assert.deepEqual(moneyExports.editKitchenAmount('1,23,456', '1,29,3,456', 4), { value: '1293456', caret: 4 });
 const dateExports = {};
 new Function('exports', ts.transpileModule(await readFile(new URL('../src/components/kitchen/KitchenDates.ts', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText)(dateExports);
 mocks['./KitchenDates'].kitchenProductionEnd = dateExports.kitchenProductionEnd;

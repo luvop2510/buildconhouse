@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type ReactNode, type Dispatch, type SetStateAction } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode, type ComponentProps, type Dispatch, type SetStateAction } from "react";
 import { Pressable, View } from "react-native";
 import { Text } from "@/src/components/AppText";
 import { Alert } from "@/src/components/ds";
@@ -6,7 +6,7 @@ import { KITCHEN_STAGES, STAGE_LABELS, type KitchenCommand, type KitchenProject,
 import { Choice, displayDate, KitchenPanel, KitchenDetails, historicalCount, rupees } from "./shared";
 import { KitchenSelect, KitchenDateField } from "./KitchenFilters";
 import { KitchenPdfFiles } from "./KitchenPdfFiles";
-import { formatKitchenAmount, kitchenAmountInput } from "./KitchenMoney";
+import { editKitchenAmount, formatKitchenAmount } from "./KitchenMoney";
 import { kitchenProductionEnd, kitchenToday } from "./KitchenDates";
 import { kitchenOrderContext, kitchenProductionStarted, kitchenOrderQuotations, kitchenHasFinalDesign, kitchenHasFinalQuotation } from "./KitchenVersions";
 import { DesignStage } from "./DesignStage";
@@ -15,6 +15,21 @@ import { useKitchenDraft, useKitchenProject } from "./KitchenProjectState";
 import { useKitchenAutosave } from "./KitchenAutosave";
 import { radius, spacing } from "@/src/theme/tokens";
 import { KitchenButton as Button, KitchenTextField as TextField, KitchenFieldRow, kitchenColors as colors, kitchenType as type } from "./KitchenPrimitives";
+
+function AmountField({ value, onChangeText, ...props }: ComponentProps<typeof TextField> & { value: string; onChangeText: (value: string) => void }) {
+  const [selection, setSelection] = useState<{ start: number; end: number } | undefined>();
+  const caret = useRef(0);
+  const formatted = formatKitchenAmount(value);
+  return <TextField {...props} value={formatted} selection={selection} onSelectionChange={event => {
+    caret.current = event.nativeEvent.selection.start;
+    setSelection(event.nativeEvent.selection);
+  }} onChangeText={next => {
+    const edit = editKitchenAmount(formatted, next, caret.current);
+    caret.current = edit.caret;
+    setSelection({ start: edit.caret, end: edit.caret });
+    onChangeText(edit.value);
+  }} />;
+}
 
 export type StageCommand = (command: KitchenCommand, payload: Record<string, unknown>, background?: boolean) => Promise<boolean>;
 type CommercialProps = { project: KitchenProject; stage: KitchenStage; disabled: boolean; command: StageCommand; mode?: "task" | "amendment" | "advance" | "visits" };
@@ -125,7 +140,7 @@ function StageForms({ project, stage, disabled, command }: CommercialProps) {
         {!order && (active || preview) ? <View style={{ gap: spacing.md, paddingTop: 16, borderTopWidth: 1, borderTopColor: colors.divider }}>
           {orderRequirement ? stageHelp(orderRequirement, "quotation") : <Text style={type.caption}>The quotation is approved. Record the confirmation date and confirm the customer order below.</Text>}
           {dateField("Order date", orderDate, setOrderDate, "kitchen-order-date")}
-          <TextField label="Final order amount (INR)" value={formatKitchenAmount(finalAmount)} onChangeText={value => setFinalAmount(kitchenAmountInput(value))} keyboardType="decimal-pad" editable={!locked} testID="kitchen-order-amount" />
+          <AmountField label="Final order amount (INR)" value={finalAmount} onChangeText={setFinalAmount} keyboardType="decimal-pad" editable={!locked} testID="kitchen-order-amount" />
           {changedAmount ? <Choice label="Customer approved changed final amount" value={amountApproved} values={["Not recorded", "Yes", "No"]} onChange={setAmountApproved} disabled={locked} testID="kitchen-order-amount-approved" /> : null}
           <TextField label="Internal notes" value={orderNotes} onChangeText={setOrderNotes} editable={!locked} multiline testID="kitchen-order-notes" />
           {!validAmount(finalAmount) && !orderRequirement ? <Text style={type.caption}>Enter the final order amount in INR, with up to two decimal places.</Text> : null}
@@ -245,7 +260,7 @@ function OrderAmendment({ project, disabled, command, inline = false }: Commerci
     <Text style={type.bodyMuted}>Commercial amendments are available during Order. To change the approved design or commercial basis at this stage, use Return to Design above with a reason. Earlier orders, work and approvals stay in History.</Text>
   </KitchenPanel>;
   const form = <><Text style={type.caption}>The original order remains preserved. Changed commercial terms require explicit customer approval.</Text>
-          <TextField label="Amended final amount (INR)" value={formatKitchenAmount(amendAmount)} onChangeText={value => setAmendAmount(kitchenAmountInput(value))} editable={!disabled} keyboardType="decimal-pad" testID="kitchen-amend-amount" />
+          <AmountField label="Amended final amount (INR)" value={amendAmount} onChangeText={setAmendAmount} editable={!disabled} keyboardType="decimal-pad" testID="kitchen-amend-amount" />
           <KitchenDateField label="Amendment approval date" value={amendDate} onChange={setAmendDate} disabled={disabled} testID="kitchen-amend-date" />
           <TextField label="Internal notes" value={amendReason} onChangeText={setAmendReason} editable={!disabled} multiline testID="kitchen-amend-reason" />
           <Choice label="Customer approved amended terms" value={amendApproved} values={["Not recorded", "Yes", "No"]} onChange={setAmendApproved} disabled={disabled} testID="kitchen-amend-approved" />
@@ -274,7 +289,7 @@ function OrderInstallments({ project, disabled, command }: CommercialProps) {
       <KitchenDetails items={[{ label: "Order total", value: rupees(order.final_amount) }, { label: "Total paid", value: rupees((paid / 100).toFixed(2)) }, { label: "Remaining", value: rupees((remaining / 100).toFixed(2)) }]} />
       {order.advance.received ? <Text style={type.body}>Advance · {displayDate(order.advance.date)} · {rupees(order.advance.amount)}</Text> : null}
       {(order.installments || []).map((row, index) => <Text key={row.id} style={type.body} testID={`kitchen-installment-${index}`}>{`Installment ${index + 1} · ${displayDate(row.date)} · ${rupees(row.amount)}`}</Text>)}
-      <TextField label="Installment amount paid (INR)" keyboardType="decimal-pad" value={formatKitchenAmount(amount)} onChangeText={value => setAmount(kitchenAmountInput(value))} editable={!locked} testID="kitchen-installment-amount" />
+      <AmountField label="Installment amount paid (INR)" keyboardType="decimal-pad" value={amount} onChangeText={setAmount} editable={!locked} testID="kitchen-installment-amount" />
       <KitchenDateField label="Payment date" value={date} onChange={setDate} min={order.order_date} max={kitchenToday()} disabled={locked} testID="kitchen-installment-date" />
       <Button label="Record installment" disabled={locked || !validAmount || !date || date < order.order_date || date > kitchenToday()} onPress={() => void add()} testID="kitchen-installment-save" />
       <Choice label="Material arrived" value={arrived} values={["Yes", "No"]} onChange={setArrived} disabled={locked} testID="kitchen-material-arrived" />
@@ -293,7 +308,7 @@ function OrderAdvance({ project, disabled, command }: CommercialProps) {
   const [advanceDate, setAdvanceDate] = useKitchenDraft(`${draftCycle}.order.advanceDate`, order?.advance.date || (!locked ? kitchenToday() : ""));
   return <View style={{ gap: spacing.md }}>
           <Choice label="Advance received" value={advanceReceived} values={["Not recorded", "Yes", "No"]} onChange={setAdvanceReceived} disabled={locked} testID="kitchen-advance-received" />
-          <TextField label="Advance amount (INR)" value={formatKitchenAmount(advanceAmount)} onChangeText={value => setAdvanceAmount(kitchenAmountInput(value))} editable={!locked} keyboardType="decimal-pad" testID="kitchen-advance-amount" />
+          <AmountField label="Advance amount (INR)" value={advanceAmount} onChangeText={setAdvanceAmount} editable={!locked} keyboardType="decimal-pad" testID="kitchen-advance-amount" />
           {<KitchenDateField label="Advance receipt date" value={advanceDate} onChange={setAdvanceDate} disabled={locked} testID="kitchen-advance-date" />}
           {!order ? <Text style={type.caption}>Confirm the customer order above before saving an advance. Pending is the normal status before confirmation.</Text> : advanceReceived !== "Yes" && Boolean(Number(advanceAmount)) ? <Text style={type.caption}>An amount or receipt date requires Yes. Edit the status or clear those entries.</Text> : advanceReceived === "Yes" && (!validAmount(advanceAmount, true) || !advanceDate) ? <Text style={type.caption}>Enter a positive amount received and its receipt date.</Text> : null}
           <Button label="Save advance details" disabled={locked || !order || (advanceReceived === "Yes" ? !validAmount(advanceAmount, true) || !advanceDate : Boolean(Number(advanceAmount)))} onPress={() => command("order_advance", { status: advanceReceived, received: advanceReceived === "Yes", amount: advanceAmount.trim() || "0.00", date: advanceReceived === "Yes" ? advanceDate || null : null })} testID="kitchen-advance-save" />
