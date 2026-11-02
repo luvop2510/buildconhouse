@@ -85,7 +85,7 @@ function screen(kind, width = 'desktop') {
     'react-native': { StyleSheet: { create: value => value }, Platform: { OS: 'web' }, useWindowDimensions: () => ({ width: 390 }) },
     './tilePresentation': { tilesPickerColumns: () => 1 },
     'expo-router': { useRouter: () => ({}), useLocalSearchParams: () => ({ id: routeId }) },
-    '@/src/api/client': { api: { get } },
+    '@/src/api/client': { api: { get }, subscribeCatalogMutations: () => () => {} },
     '@/src/hooks/use-reduced-motion': { useReducedMotion: () => false },
     '@/src/utils/filters': { filterValues: value => !value || value === 'all' ? [] : value.split(',') },
     '@/src/api/walkins': { walkinsApi: { get: (id, options) => get(`/walkins/${id}`, options), timeline: (id, options) => get(`/walkins/${id}/timeline`, options), listAssignees: async () => [] } },
