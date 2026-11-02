@@ -1113,9 +1113,6 @@ async def update_stock_pricing(stock_id: str, body: StockPricingUpdate, user: Us
 @router.post("/{stock_id}/quantity-count")
 async def record_missing_quantity(stock_id: str, body: MissingQuantityCount, user: UserPublic = Depends(require_min_role("warehouse"))):
     lot = await get_floor_scoped_or_404(db.godown_stock, stock_id, user, not_found="Godown stock lot not found", projection={"_id": 0})
-    if await db.settings.find_one({"kind":"stock_count_deletion_receipt", "floor_id":lot["floor_id"], "stock_id":stock_id,
-                                   "command_key":body.idempotency_key, "command_actor":user.id}, {"_id":1}):
-        raise HTTPException(409, "This count was deleted. Start a new count.")
     fingerprint = hashlib.sha256(json.dumps([user.id, body.model_dump(mode="json", exclude={"idempotency_key"})], sort_keys=True).encode()).hexdigest()
     def replay(row):
         for count in row.get("quantity_counts", []):
@@ -1154,39 +1151,6 @@ async def record_missing_quantity(stock_id: str, body: MissingQuantityCount, use
             return await _stock_response(previous)
         raise HTTPException(409, "Stock changed while this count was being saved. Reload and review current stock.")
     return await _stock_response(updated)
-
-
-@router.delete("/{stock_id}/quantity-counts/{count_id}")
-async def delete_quantity_count(stock_id: str, count_id: str, user: UserPublic = Depends(require_min_role("manager"))):
-    floor = floor_for_write(user)
-    if floor not in {"first-floor", "ground-floor"}:
-        raise HTTPException(403, "Count deletion is available on Ground and Sanitary floors")
-    receipt_id = f"stock-count-deletion:{floor}:{stock_id}:{count_id}"
-    async def reverse(session):
-        if await db.settings.find_one({"_id":receipt_id}, session=session):
-            return {"ok":True,"already_deleted":True}
-        lot = await db.godown_stock.find_one({"id":stock_id,"floor_id":floor}, session=session)
-        if not lot:
-            raise HTTPException(404, "Stock not found")
-        counts = lot.get("quantity_counts") or []
-        if len(counts) != 1 or counts[0].get("id") != count_id:
-            raise HTTPException(404, "Stock count not found")
-        count = counts[0]
-        qty = float(count.get("qty") or 0)
-        if (not isfinite(qty) or qty < 0 or lot.get("quantity_missing") or lot.get("archived")
-            or float(lot.get("qty_received") or 0) != qty or float(lot.get("available_qty") or 0) != qty
-            or float(lot.get("loaned_out_qty") or 0) != 0 or lot.get("allocations") or lot.get("stock_movements")
-            or lot.get("customer_transfers") or await db.godown_customer_transfers.find_one({"stock_id":stock_id}, {"_id":1}, session=session)):
-            raise HTTPException(409, "Reverse later stock movements before deleting this count")
-        await db.godown_stock.update_one({"_id":lot["_id"]}, {"$set":{"qty_received":0,"available_qty":0,
-            "quantity_missing":True,"updated_at":now_iso()},"$pull":{"quantity_counts":{"id":count_id}}}, session=session)
-        await db.settings.insert_one({"_id":receipt_id,"kind":"stock_count_deletion_receipt","floor_id":floor,
-            "stock_id":stock_id,"command_key":count.get("command_key"),"command_actor":count.get("actor_id")},session=session)
-        return {"ok":True,"already_deleted":False}
-    from pymongo.read_concern import ReadConcern
-    from pymongo.write_concern import WriteConcern
-    async with await client.start_session() as session:
-        return await session.with_transaction(reverse, read_concern=ReadConcern("snapshot"), write_concern=WriteConcern("majority"))
 
 
 @router.post("/{stock_id}/movements")

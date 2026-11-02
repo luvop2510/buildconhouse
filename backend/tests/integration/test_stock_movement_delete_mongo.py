@@ -50,34 +50,3 @@ def test_stock_movement_reversal_is_scoped_replay_safe_and_preserves_reserved_st
             await client.drop_database(db.name)
             client.close()
     asyncio.run(run())
-
-
-def test_opening_count_delete_restores_unknown_and_blocks_old_retry(monkeypatch):
-    from models import UserPublic
-    from routes import godown_stock_routes as route
-    async def run():
-        client = AsyncIOMotorClient(URL, serverSelectionTimeoutMS=5000)
-        db = client.stock_count_delete_disposable
-        await client.drop_database(db.name)
-        monkeypatch.setattr(route, 'db', db)
-        monkeypatch.setattr(route, 'client', client)
-        user = UserPublic(id='owner', email='owner@example.test', full_name='Owner', role='owner', active_floor_id='first-floor')
-        try:
-            await db.godown_stock.insert_one({'id':'lot','floor_id':'first-floor','quantity_missing':False,'qty_received':3,
-                'available_qty':2,'quantity_counts':[{'id':'count','qty':3,'actor_id':'owner','command_key':'count-key'}]})
-            with pytest.raises(HTTPException) as blocked:
-                await route.delete_quantity_count('lot','count',user)
-            assert blocked.value.status_code == 409
-            await db.godown_stock.update_one({'id':'lot'},{'$set':{'available_qty':3}})
-            await route.delete_quantity_count('lot','count',user)
-            lot = await db.godown_stock.find_one({'id':'lot'})
-            assert lot['quantity_missing'] is True and lot['qty_received'] == lot['available_qty'] == 0
-            assert (await route.delete_quantity_count('lot','count',user))['already_deleted']
-            with pytest.raises(HTTPException) as replay:
-                await route.record_missing_quantity('lot',route.MissingQuantityCount(qty=3,counted_on=date(2026,1,1),
-                    reason='Physical count',idempotency_key='count-key'),user)
-            assert replay.value.status_code == 409
-        finally:
-            await client.drop_database(db.name)
-            client.close()
-    asyncio.run(run())

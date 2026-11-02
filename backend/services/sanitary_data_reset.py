@@ -74,7 +74,7 @@ async def make_plan(db, session=None):
     # service resumes. Download tokens are short-lived and can be recreated.
     queries["user_sessions"] = {}
     queries["download_tokens"] = {}
-    queries["settings"] = {"floor_id": FLOOR, "kind": {"$in": ["godown_transfer_completion", "payment_reversal_receipt", "stock_deletion_receipt", "stock_movement_deletion_receipt", "stock_count_deletion_receipt"]}}
+    queries["settings"] = {"floor_id": FLOOR, "kind": {"$in": ["godown_transfer_completion", "payment_reversal_receipt", "stock_deletion_receipt", "stock_movement_deletion_receipt"]}}
     product_ids = [r["id"] for r in await fetch("products", scope, {"id": 1}) if r.get("id")]
     queries["product_usage"] = {"product_id": {"$in": product_ids}}
 

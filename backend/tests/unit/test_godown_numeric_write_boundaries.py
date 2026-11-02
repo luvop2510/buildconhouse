@@ -118,7 +118,7 @@ def test_receipt_rejects_derived_overflow_before_catalog_or_quantity_write(monke
 
 def test_opening_count_rejects_overflow_before_write(monkeypatch):
     update = AsyncMock()
-    monkeypatch.setattr(routes, "db", SimpleNamespace(settings=SimpleNamespace(find_one=AsyncMock(return_value=None)), godown_stock=SimpleNamespace(
+    monkeypatch.setattr(routes, "db", SimpleNamespace(godown_stock=SimpleNamespace(
         find_one=AsyncMock(return_value=stock(available_qty=0, qty_received=0, quantity_missing=True, unit_price=1e308)),
         find_one_and_update=update), godown_customer_transfers=SimpleNamespace(find_one=AsyncMock(return_value=None))))
     body = routes.MissingQuantityCount(qty=2, counted_on=date(2026, 1, 1), reason="Opening count",
