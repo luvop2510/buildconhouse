@@ -435,8 +435,12 @@ def apply(project, command, payload, policy, user, now, validate):
         editing = command == "quotation_update"
         body = validate(QuotationUpdate if editing else QuotationReceived, payload)
         row = selected(project, "quotation_versions", body.version_id) if editing else {}
-        if production_has_started(project):
-            reject("Production has started; use the owner-authorized Return to Design workflow")
+        started = production_has_started(project)
+        if started and editing and (row.get("workflow_cycle", 1) != project.get("workflow_cycle", 1)
+                or any(order.get("quotation_version_id") == row.get("id") for order in project.get("orders", []))):
+            reject("Production has started and this quotation belongs to a recorded order or earlier cycle; create a new quotation to preserve its history")
+        if started and not editing and body.response != "Pending":
+            reject("A new quotation must start Pending after production starts")
         if editing and row.get("response") == "Approved" and user.role != "owner":
             reject("Only the owner can correct an approved quotation")
         fields = body.model_dump(exclude_unset=True, exclude={"version_id"}) if editing else body.model_dump()

@@ -158,6 +158,33 @@ def test_changing_final_pdf_cannot_silently_change_existing_order_basis(setup):
     assert project["orders"] == original
 
 
+def test_new_quotation_keeps_order_bound_pdf_and_starts_pending(setup):
+    _, _, owner = setup
+    project = aggregate("order")
+    apply(project, "order_confirm", {"quotation_version_id": "q1", "order_date": "2026-10-25"}, owner)
+    old_order = copy.deepcopy(project["orders"])
+    old_quote = copy.deepcopy(next(row for row in project["quotation_versions"] if row["id"] == "q1"))
+    project["production"] = {"status": "In Production", "start_date": "2026-10-25"}
+    project["stage"] = "quotation"
+    with pytest.raises(HTTPException, match="recorded order"):
+        apply(project, "quotation_update", {"version_id": "q1", "notes": "Do not alter order evidence"}, owner)
+    with pytest.raises(HTTPException, match="start Pending"):
+        apply(project, "quotation_receive", quotation_fields(response="Approved"), owner)
+    apply(project, "quotation_receive", quotation_fields(
+        pdf_options=[{"attachment_id": "design-pdf", "kitchen_type": "SS"}],
+        final_attachment_id="design-pdf"), owner)
+    new_quote = project["quotation_versions"][-1]
+    assert new_quote["id"] != "q1" and new_quote["response"] == "Pending"
+    assert new_quote["final_attachment_id"] == "design-pdf"
+    apply(project, "quotation_update", {"version_id": new_quote["id"], "upload_date": "2026-10-20",
+        "sent_status": "Yes", "shared_date": "2026-10-25", "response": "Pending"}, owner)
+    assert new_quote["upload_date"] == "2026-10-20" and new_quote["sent_status"] == "Yes"
+    apply(project, "quotation_update", {"version_id": new_quote["id"], "response": "Approved"}, owner)
+    assert new_quote["response"] == "Approved"
+    assert next(row for row in project["quotation_versions"] if row["id"] == "q1") == old_quote
+    assert project["orders"] == old_order
+
+
 @pytest.mark.asyncio
 async def test_manual_next_cannot_bypass_final_design_or_quotation_and_failed_write_keeps_version(setup):
     database, service, owner = setup

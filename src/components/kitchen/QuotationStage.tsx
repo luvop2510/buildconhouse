@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { View } from "react-native";
 import { Text } from "@/src/components/AppText";
 import type { KitchenPdfOption, KitchenProject, KitchenVersion } from "@/src/api/kitchenProjects";
@@ -15,25 +16,36 @@ export function QuotationStage({ project, disabled, command }: { project: Kitche
   const latest = project.quotation_versions?.at(-1);
   const basis = project.design_versions?.find(row=>row.id===latest?.design_version_id);
   const quote = basis && (basis.workflow_cycle ?? 1) !== (project.workflow_cycle ?? 1) ? undefined : latest;
-  return <KitchenPanel><QuotationForm key={quote?.id || "new"} project={project} quote={quote} disabled={disabled} command={command} /></KitchenPanel>;
+  const [revisionOf, setRevisionOf] = useKitchenDraft<string | null>(`commercial.cycle.${project.workflow_cycle ?? 1}.quotation.revising`, null);
+  const seed = revisionOf ? project.quotation_versions?.find(row => row.id === revisionOf) : undefined;
+  const revising = Boolean(seed);
+  const bound = Boolean(quote && (quote.order_bound || !project.commercial_basis_invalidated && project.orders?.some(row => row.quotation_version_id === quote.id && !row.authorization_invalidated) || project.access_scoped && quote.order_bound === undefined && kitchenProductionStarted(project)));
+  const canRevise = Boolean(quote && project.stage === "quotation" && !project.lifecycle_status && project.permissions?.can_update !== false && (bound || quote.response === "Approved" && !project.permissions?.can_approve_exceptions));
+  return <KitchenPanel>
+    {canRevise && !revising ? <Button label="Edit quotation" variant="secondary" disabled={disabled} onPress={() => setRevisionOf(quote!.id)} testID="kitchen-quotation-revise" /> : null}
+    {revising ? <Text style={type.caption}>This creates a revised quotation. It does not change the confirmed order or carry forward customer approval.</Text> : null}
+    <QuotationForm key={revising ? `revision-${seed?.id}` : quote?.id || "new"} project={project} quote={revising ? undefined : quote} seed={seed} revision={revising} disabled={disabled} command={command} onRevisionSaved={() => setRevisionOf(null)} />
+  </KitchenPanel>;
 }
-function QuotationForm({ project, quote, disabled, command }: { project: KitchenProject; quote?: KitchenVersion; disabled: boolean; command: StageCommand }) {
-  const prefix = `commercial.cycle.${project.workflow_cycle ?? 1}.quotation.${quote?.id || "new"}.edit`;
+function QuotationForm({ project, quote, seed, revision = false, disabled, command, onRevisionSaved }: { project: KitchenProject; quote?: KitchenVersion; seed?: KitchenVersion; revision?: boolean; disabled: boolean; command: StageCommand; onRevisionSaved: () => void }) {
+  const prefix = `commercial.cycle.${project.workflow_cycle ?? 1}.quotation.${revision ? `revision.${seed?.id}` : quote?.id || "new"}.edit`;
+  const saving = useRef(false);
   const { resetDraftValue, documentSubmission } = useKitchenProject();
   const source = JSON.stringify(quote || null);
   const savedDesign = project.design_versions?.find(row => row.id === quote?.design_version_id);
   const savedHistorical = Boolean(savedDesign && (savedDesign.workflow_cycle ?? 1) !== (project.workflow_cycle ?? 1));
-  const boundOrder = Boolean(quote && project.orders?.some(row => row.quotation_version_id === quote.id && !row.authorization_invalidated) && !project.commercial_basis_invalidated);
-  const readOnly = project.stage !== "quotation" || Boolean(project.lifecycle_status) || kitchenProductionStarted(project) || savedHistorical || project.permissions?.can_update === false || quote?.response === "Approved" && !project.permissions?.can_approve_exceptions;
+  const boundOrder = Boolean(quote && (quote.order_bound || !project.commercial_basis_invalidated && project.orders?.some(row => row.quotation_version_id === quote.id && !row.authorization_invalidated) || project.access_scoped && quote.order_bound === undefined && kitchenProductionStarted(project)));
+  const readOnly = project.stage !== "quotation" || Boolean(project.lifecycle_status) || boundOrder && kitchenProductionStarted(project) || savedHistorical || project.permissions?.can_update === false || quote?.response === "Approved" && !project.permissions?.can_approve_exceptions;
   const locked = disabled || readOnly;
   // An upload temporarily disables controls; it must not clear a proposed date.
   const defaultDate = readOnly ? "" : kitchenToday();
-  const initialFile = project.attachments?.find(file => file.id === quote?.final_attachment_id);
-  const [draft, setDraft] = useKitchenDraft(prefix, { source, pdf_options: quote?.pdf_options || [] as KitchenPdfOption[], final_attachment_id: quote?.final_attachment_id || "", upload_date: quote?.upload_date || initialFile?.upload_date || kitchenApprovalDate(initialFile?.uploaded_at) || "", sent_status: quote?.sent_status === "No" ? "No" : quote?.sent_status === "Yes" || quote?.shared_date ? "Yes" : "No", shared_date: quote?.shared_date || defaultDate, response: quote?.response || "Pending" });
+  const initial = quote || seed;
+  const initialFile = project.attachments?.find(file => file.id === initial?.final_attachment_id);
+  const [draft, setDraft] = useKitchenDraft(prefix, { source, pdf_options: initial?.pdf_options || [] as KitchenPdfOption[], final_attachment_id: initial?.final_attachment_id || "", upload_date: initial?.upload_date || initialFile?.upload_date || kitchenApprovalDate(initialFile?.uploaded_at) || "", sent_status: revision ? "No" : quote?.sent_status === "No" ? "No" : quote?.sent_status === "Yes" || quote?.shared_date ? "Yes" : "No", shared_date: revision ? defaultDate : quote?.shared_date || defaultDate, response: revision ? "Pending" : quote?.response || "Pending" });
   const update = (key: "sent_status" | "shared_date" | "response" | "upload_date", value: string) => setDraft(previous => ({ ...previous, [key]: value }));
   // A working quotation follows the explicit final design. Recorded order chains
   // retain their original IDs until an authorized order change is confirmed.
-  const designId = boundOrder || savedHistorical || kitchenProductionStarted(project) ? quote?.design_version_id || "" : project.final_design_version_id || "";
+  const designId = boundOrder || savedHistorical ? quote?.design_version_id || "" : project.final_design_version_id || "";
   const design = project.design_versions?.find(row => row.id === designId);
   const historical = Boolean(design && (design.workflow_cycle ?? 1) !== (project.workflow_cycle ?? 1));
   const requirement = !design ? "Choose the finalized design in Design." : historical || project.design_revision_pending ? "Choose an approved design from the current work cycle." : !kitchenHasFinalDesign(design) ? "Select a finalized design PDF, record customer approval and choose Yes for Sent to company in Design." : null;
@@ -57,9 +69,10 @@ function QuotationForm({ project, quote, disabled, command }: { project: Kitchen
     <Choice label="Quotation sent to customer" value={draft.sent_status} values={["Yes", "No"]} onChange={value => update("sent_status", value)} disabled={locked} testID="kitchen-quotation-sent" />
     <KitchenDateField label="Quotation date sent to customer" value={draft.shared_date} onChange={value => update("shared_date", value)} disabled={locked} testID="kitchen-quotation-shared-date" />
     {draft.response === "Rejected" ? <Text style={type.caption}>Saved customer response: Rejected. Select a choice to change it.</Text> : null}
-    <Choice label="Customer response" value={draft.response} values={["Pending", "Approved", "Changes Required"]} onChange={value => update("response", value)} disabled={locked} testID="kitchen-version-response" />
+    {revision ? <Text style={type.caption}>Save this revision first; customer response starts as Pending.</Text> : null}
+    <Choice label="Customer response" value={draft.response} values={["Pending", "Approved", "Changes Required"]} onChange={value => update("response", value)} disabled={locked || revision} testID="kitchen-version-response" />
     {problem ? <Text accessibilityRole="alert" style={type.bodyMuted}>{problem}</Text> : null}
     {quote?.response === "Approved" && !project.permissions?.can_approve_exceptions ? <Text style={type.caption}>Only the owner can correct an approved quotation.</Text> : null}
-    {project.stage === "quotation" ? <Button label={"Save quotation details"} disabled={locked || documentSubmission.busy || stale || Boolean(requirement) || Boolean(problem)} onPress={async () => { const { source: _source, ...fields } = draft; await command(quote ? "quotation_update" : "quotation_receive", { ...fields, design_version_id: designId, ...(quote ? { version_id: quote.id } : {}), upload_date: uploadDate || null, shared_date: sharedDate || null });  }} testID={quote ? "kitchen-quotation-edit-save" : "kitchen-quotation-receive"} /> : null}
+    {project.stage === "quotation" ? <Button label={"Save quotation details"} disabled={locked || documentSubmission.busy || stale || Boolean(requirement) || Boolean(problem)} onPress={async () => { if (saving.current) return; saving.current = true; try { const { source: _source, ...fields } = draft; const saved = await command(quote ? "quotation_update" : "quotation_receive", { ...fields, design_version_id: designId, ...(quote ? { version_id: quote.id } : {}), upload_date: uploadDate || null, shared_date: sharedDate || null }); if (saved && revision) onRevisionSaved(); } finally { saving.current = false; } }} testID={quote ? "kitchen-quotation-edit-save" : "kitchen-quotation-receive"} /> : null}
   </View>;
 }

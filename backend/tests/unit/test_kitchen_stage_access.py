@@ -1,4 +1,5 @@
 """Stage delegation uses existing grant resources and never inherits sibling access."""
+import copy
 import pytest
 from fastapi import HTTPException
 
@@ -7,6 +8,7 @@ from services import kitchen_access as access
 from services.access_grants import (KITCHEN_STAGE_RESOURCES, action_for_api_request, build_grant,
     delegation_resource_catalog, granted_floor_ids, resource_supports)
 from tests.unit.test_kitchen_projects import setup
+from tests.unit.test_kitchen_version_relationships import aggregate
 
 
 def stage_staff(database, stage, actions=None):
@@ -66,3 +68,20 @@ def test_stage_resources_are_assignable_and_uploads_use_update_permission():
     assert action_for_api_request("POST", "/api/kitchen-projects/p/file-transfers") == "update"
     assert action_for_api_request("POST", "/api/kitchen-projects/p/file-transfers/t/finish") == "update"
     assert action_for_api_request("DELETE", "/api/kitchen-projects/p/file-transfers/t") == "update"
+
+
+@pytest.mark.asyncio
+async def test_quotation_worker_sees_binding_without_order_details(setup):
+    database, _, _ = setup
+    user, _ = stage_staff(database, "quotation")
+    await access.capability(database, user, "update", stage="quotation")
+    project = aggregate("quotation")
+    project["floor_id"] = "second-floor"
+    project["orders"] = [{"quotation_version_id": "q1", "final_amount": "123456.00", "authorization_invalidated": True}]
+    original = copy.deepcopy(project)
+    response = access.redact_project(copy.deepcopy(project), project, user)
+    assert response["orders"] == []
+    quotes = {row["id"]: row for row in response["quotation_versions"]}
+    assert quotes["q1"]["order_bound"] is True
+    assert quotes["q2"]["order_bound"] is False
+    assert project == original

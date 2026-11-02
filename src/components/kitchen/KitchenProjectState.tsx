@@ -190,7 +190,7 @@ export function KitchenProjectProvider({ id, returnTo, children }: { id: string;
         design_revision: [`${cycle}.design.${String(payload.version_id)}.revisionReason`],
         design_handoff: [`${cycle}.design.${String(payload.version_id)}.handoffDate`],
         quotation_update: [`${cycle}.quotation.${String(payload.version_id)}.edit`],
-        quotation_receive: [`${cycle}.quotation.new.edit`, `${cycle}.quotation.new.${String(payload.design_version_id)}.edit`, `${cycle}.quotation.date`, `${cycle}.quotation.amount`, `${cycle}.quotation.file`, `${cycle}.quotation.url`, `${cycle}.quotation.notes`],
+        quotation_receive: [`${cycle}.quotation.new.edit`, `${cycle}.quotation.new.${String(payload.design_version_id)}.edit`, `${cycle}.quotation.revision.`, `${cycle}.quotation.date`, `${cycle}.quotation.amount`, `${cycle}.quotation.file`, `${cycle}.quotation.url`, `${cycle}.quotation.notes`],
         quotation_share: [`${cycle}.quotation.${String(payload.version_id)}.shareDate`],
         quotation_response: [`${cycle}.quotation.${String(payload.version_id)}.response`],
         order_installment: [`${cycle}.order.installment.${String(payload.order_id)}.amount`, `${cycle}.order.installment.${String(payload.order_id)}.date`],
@@ -220,6 +220,22 @@ export function KitchenProjectProvider({ id, returnTo, children }: { id: string;
         // Reopening explicitly resets saved installation work, preserving a newer local edit.
         if (name === "exception" && payload.action === "reopen") {
           replaceSaved(`commercial.cycle.${value.workflow_cycle ?? 1}.installation`, value.installation);
+        }
+        if (name === "quotation_receive") {
+          const revisionKey = Object.keys(submittedDrafts).find(key => key.startsWith(`${cycle}.quotation.revision.`) && key.endsWith(".edit"));
+          const previousIds = new Set((current.quotation_versions || []).map(row => row.id));
+          const created = value.quotation_versions?.find(row => !previousIds.has(row.id));
+          if (revisionKey && created && !unchanged(revisionKey)) {
+            const submitted = submittedDrafts[revisionKey] as { source: string };
+            const edited = updated[revisionKey] as { source: string } | undefined;
+            if (edited?.source === submitted.source) {
+              const key = `${cycle}.quotation.${created.id}.edit`;
+              const source = JSON.stringify(created);
+              updated[key] = { ...edited, source };
+              baselines.current[key] = { ...submitted, source };
+              remove(revisionKey);
+            }
+          }
         }
         const orderEditorKey = `${cycle}.order.${current.orders?.at(-1)?.id}.edit`;
         const designEditorKey = `${cycle}.design.${String(payload.version_id)}.edit`;

@@ -130,6 +130,17 @@ def visible_attachment_ids(project, user):
 
 
 def redact_project(result, project, user, *, attachments=True):
+    # A quotation-stage worker may not see orders, but needs to know whether
+    # editing a quotation would alter recorded order evidence. This flag is
+    # derived from the authoritative aggregate, including historical orders.
+    if "quotation" in allowed_stages(user):
+        bound_ids = {order.get("quotation_version_id") for order in project.get("orders", [])}
+        if "quotation_versions" in result:
+            result["quotation_versions"] = [{**quote, "order_bound": quote.get("id") in bound_ids}
+                                            for quote in result["quotation_versions"]]
+        if result.get("current_quotation"):
+            quote = result["current_quotation"]
+            result["current_quotation"] = {**quote, "order_bound": quote.get("id") in bound_ids}
     if not scoped(user):
         return result
     from models_kitchen import LeadFields, VisitFields, CadFields

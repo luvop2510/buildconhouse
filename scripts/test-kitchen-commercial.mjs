@@ -146,6 +146,48 @@ for (const year of ['2024', '2025', '2030']) {
   view=view.refresh();
   assert.equal(view.control('kitchen-quotation-receive').props.disabled,true,'Business-date chronology still rejects sending a quotation before company handoff');
 }
+for (const response of ['Pending', 'Approved']) {
+  for (const owner of [true, false]) {
+    view = render('quotation', { quotation_versions: [{ ...quotation, response }], permissions: { can_update: true, can_approve_exceptions: owner } });
+    const locked = response === 'Approved' && !owner;
+    assert.equal(view.control('kitchen-quotation-GI-pdf').props.disabled, locked, `Saved ${response} PDF chooser lock for ${owner ? 'owner' : 'staff'}`);
+    assert.equal(view.control('kitchen-quotation-sent').props.disabled, locked);
+    assert.equal(view.control('kitchen-quotation-upload-date').props.disabled, locked);
+    assert.equal(view.control('kitchen-version-response').props.disabled, locked);
+  }
+}
+for (const productionFields of [{ production: {} }, { activity: [{ payload: { changes: { production: { after: {} } } } }] }, { work_history: [{ production: {} }] }]) {
+  view = render('quotation', { quotation_versions: [{ ...quotation, response: 'Pending' }], permissions: { can_update: true }, ...productionFields });
+  assert.equal(view.control('kitchen-quotation-GI-pdf').props.disabled, false, 'Missing legacy production status must not lock editable quotation PDFs');
+  assert.equal(view.control('kitchen-quotation-sent').props.disabled, false, 'Missing legacy production status must not lock quotation fields');
+}
+view = render('quotation', { quotation_versions: [{ ...quotation, response: 'Pending' }], permissions: { can_update: true }, production: { status: 'In Production' } });
+assert.equal(view.control('kitchen-quotation-GI-pdf').props.disabled, false, 'A new unbound pending quotation remains editable after production starts');
+view = render('quotation', { quotation_versions: [quotation], orders: [order], permissions: { can_update: true, can_approve_exceptions: true }, production: { status: 'In Production' } });
+assert.equal(view.control('kitchen-quotation-GI-pdf').props.disabled, true, 'The original order-bound quotation remains protected');
+view.control('kitchen-quotation-revise').props.onPress();
+view = view.refresh();
+assert.equal(view.control('kitchen-quotation-GI-pdf').props.disabled, false, 'A revised quotation allows new PDFs');
+assert.equal(view.control('kitchen-quotation-GI-pdf').props.finalId, 'file', 'Revision starts with the existing PDF');
+assert.equal(view.control('kitchen-quotation-sent').props.value, 'No', 'Prior send status is not copied to a revision');
+assert.equal(view.control('kitchen-version-response').props.value, 'Pending', 'Prior customer approval is not copied');
+assert.equal(view.control('kitchen-version-response').props.disabled, true, 'Save the revision before recording a customer response');
+assert.match(view.text, /does not change the confirmed order/);
+view = chooseQuotation(view, 'SS', 'ss-file');
+assert.equal(view.control('kitchen-quotation-receive').props.disabled, false);
+await view.control('kitchen-quotation-receive').props.onPress();
+assert.equal(calls.at(-1)[0], 'quotation_receive');
+assert.equal(calls.at(-1)[1].final_attachment_id, 'ss-file');
+assert.equal(calls.at(-1)[1].response, 'Pending');
+assert.equal(calls.at(-1)[1].design_version_id, design.id);
+view = render('quotation', { access_scoped: true, quotation_versions: [{ ...quotation, order_bound: true }], orders: [], permissions: { can_update: true }, production_started: true });
+assert.equal(view.control('kitchen-quotation-GI-pdf').props.disabled, true, 'Redacted orders retain server-provided binding protection');
+assert.ok(view.control('kitchen-quotation-revise'), 'Scoped staff can revise the order-bound quotation');
+view.control('kitchen-quotation-revise').props.onPress();
+view = view.refresh();
+assert.equal(view.control('kitchen-quotation-GI-pdf').props.disabled, false);
+view = render('quotation', { access_scoped: true, quotation_versions: [{ ...quotation, response: 'Pending', order_bound: false }], orders: [], permissions: { can_update: true }, production_started: true });
+assert.equal(view.control('kitchen-quotation-GI-pdf').props.disabled, false, 'Server-confirmed unbound revision remains editable for scoped staff');
 for (const lifecycle_status of ['On Hold', 'Cancelled']) {
   view = render('quotation', { lifecycle_status, quotation_versions: [{ ...quotation, response: 'Pending', shared_date: null }] });
   assert.equal(view.control('kitchen-quotation-shared-date').props.value, '', 'Inactive records preserve an unknown historical date');
@@ -435,6 +477,7 @@ const providerSource = await readFile(new URL('../src/components/kitchen/Kitchen
 async function checkProvider(source) {
   const hooks = [], effects = [], requests = [], routes = [];
   let index = 0, dirty = false, state;
+  let releaseRevision;
   let record = { ...base, version: 7, stage: 'installation', installation: { status: 'In Progress' } };
   const same = (first, second) => first && second && first.length === second.length && first.every((value, position) => Object.is(value, second[position]));
   const hooksReact = {
@@ -470,6 +513,9 @@ async function checkProvider(source) {
         else if (command === 'move_stage') {
           assert.notEqual(payload.target_stage, record.stage, 'The real backend rejects a redundant same-stage move');
           record = { ...record, version: version + 1, stage: payload.target_stage };
+        } else if (command === 'quotation_receive' && payload.test_pending) {
+          await new Promise(resolve => { releaseRevision = resolve; });
+          record = { ...record, version: version + 1, quotation_versions: [...(record.quotation_versions || []), { id: 'created-revision', response: 'Pending' }] };
         } else record = { ...record, version: version + 1 };
         return record;
       },
@@ -508,6 +554,17 @@ async function checkProvider(source) {
   renderProvider();
   assert.equal(state.drafts[firstDraft], undefined, 'A saved quotation clears its own new-version draft');
   assert.deepEqual(state.drafts[otherDraft], { amount: '200' }, 'Saving one design quotation keeps another design’s unsaved draft');
+  const revisionKey = 'commercial.cycle.1.quotation.revision.previous.edit';
+  state.setDraftValue(revisionKey, { source: 'null', shared_date: '' }, { source: 'null', shared_date: '2026-10-26' });
+  renderProvider();
+  const pending = state.command('quotation_receive', { design_version_id: 'd1', test_pending: true });
+  state.setDraftValue(revisionKey, { source: 'null', shared_date: '' }, { source: 'null', shared_date: '2026-10-27' });
+  renderProvider();
+  releaseRevision();
+  await pending;
+  renderProvider();
+  assert.equal(state.drafts[revisionKey], undefined);
+  assert.deepEqual(state.drafts['commercial.cycle.1.quotation.created-revision.edit'], { source: JSON.stringify({ id: 'created-revision', response: 'Pending' }), shared_date: '2026-10-27' }, 'New typing survives creation and rebases onto the saved revision');
 }
 await checkProvider(providerSource);
 await assert.rejects(checkProvider(providerSource.replace('if (name === "move_stage" && current.stage === payload.target_stage) return Promise.resolve(true);', '')), /redundant same-stage move/, 'Negative control reproduces the rejected legacy second move without the fix');
