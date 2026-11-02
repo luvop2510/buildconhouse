@@ -1305,6 +1305,73 @@ async def _intake_catalog_product(body: DirectIntake, floor_id: str) -> dict:
     return {**product, "brand_name": brand["name"]}
 
 
+@router.delete("/{stock_id}")
+async def delete_stock(stock_id: str, user: UserPublic = Depends(require_min_role("manager"))):
+    floor = floor_for_write(user)
+    if floor not in {"first-floor", "ground-floor"}:
+        raise HTTPException(403, "Stock deletion is available on Ground and Sanitary floors")
+    receipt_id = f"stock-deletion:{floor}:{stock_id}"
+    lot = await db.godown_stock.find_one({"id": stock_id, "floor_id": floor}, {"payment_id": 1})
+    if not lot and await db.settings.find_one({"kind": "payment_reversal_receipt", "floor_id": floor, "stock_id": stock_id}):
+        return {"ok": True, "already_deleted": True}
+    if lot and lot.get("payment_id"):
+        from services.payment_reversal import reverse_payment
+        result = await reverse_payment(db, client, lot["payment_id"], floor, user.id)
+        from services.analytics import cache
+        try:
+            await cache.bump("payments")
+            await cache.bump("purchase_orders")
+        except Exception:
+            logging.getLogger(__name__).exception("Stock reversal cache invalidation failed")
+        return result
+    async def remove(session):
+        if await db.settings.find_one({"id": receipt_id}, session=session):
+            return {"ok": True, "already_deleted": True}
+        lot = await db.godown_stock.find_one({"id": stock_id, "floor_id": floor}, session=session)
+        if not lot:
+            raise HTTPException(404, "Stock not found")
+        if lot.get("payment_id"):
+            raise HTTPException(409, "This stock changed. Try again.")
+        if (lot.get("allocations") or lot.get("stock_movements") or lot.get("customer_transfers")
+                or lot.get("quantity_counts") or float(lot.get("loaned_out_qty") or 0) != 0
+                or float(lot.get("available_qty") or 0) != float(lot.get("qty_received") or 0)
+                or await db.godown_customer_transfers.find_one({"floor_id": floor, "stock_id": stock_id}, session=session)):
+            raise HTTPException(409, "This stock has been used or changed. Reverse its movements before deleting it.")
+        receipt = {"id": receipt_id, "kind": "stock_deletion_receipt", "floor_id": floor, "actor_id": user.id, "completed_at": now_iso()}
+        if lot.get("source_purchase_order_id"):
+            purchase = await db.purchase_orders.find_one({"id": lot["source_purchase_order_id"], "floor_id": floor}, session=session)
+            item = next((row for row in (purchase or {}).get("items", []) if row.get("id") == lot.get("source_purchase_item_id")), None)
+            history = [row for row in (item or {}).get("godown_transfer_history", []) if row.get("stock_id") == stock_id]
+            quantity, value = float(lot.get("qty_received") or 0), float(lot.get("transferred_value") or 0)
+            if (not item or len(history) != 1 or not isfinite(quantity) or not isfinite(value) or quantity <= 0 or value < 0
+                    or float(history[0].get("qty") or 0) != quantity or round(float(history[0].get("transferred_value") or 0), 2) != round(value, 2)
+                    or any(not isfinite(float(item.get(k) or 0)) or float(item.get(k) or 0) + 1e-8 < v for k, v in (("godown_transferred_qty", quantity), ("godown_valued_qty", quantity), ("godown_transferred_value", value)))):
+                raise HTTPException(409, "The linked purchase movement has changed and cannot be reversed.")
+            await db.purchase_orders.update_one({"_id": purchase["_id"], "items.id": item["id"]}, {"$inc": {
+                "items.$.godown_transferred_qty": -quantity, "items.$.godown_valued_qty": -quantity, "items.$.godown_transferred_value": -value},
+                "$pull": {"items.$.godown_transfer_history": {"stock_id": stock_id}}}, session=session)
+            if lot.get("source_quotation_id"):
+                await db.quotations.update_one({"id": lot["source_quotation_id"], "floor_id": floor}, {"$inc": {"payment_revision": 1}}, session=session)
+        if lot.get("intake_command") and isinstance(lot.get("_id"), str):
+            receipt["intake_command_id"] = lot["_id"]
+        from services.stock_media_cleanup import detach_stock_photos
+        await detach_stock_photos(db, floor, stock_id, session)
+        await db.godown_stock.delete_one({"_id": lot["_id"]}, session=session)
+        await db.activity_events.delete_many({"floor_id": floor, "$or": [{"entity_type": "godown_stock", "entity_id": stock_id}, {"payload.stock_id": stock_id}]}, session=session)
+        await db.settings.insert_one(receipt, session=session)
+        return {"ok": True, "already_deleted": False}
+    from pymongo.read_concern import ReadConcern
+    from pymongo.write_concern import WriteConcern
+    async with await client.start_session() as session:
+        result = await session.with_transaction(remove, read_concern=ReadConcern("snapshot"), write_concern=WriteConcern("majority"))
+    from services.analytics import cache
+    try:
+        await cache.bump("purchase_orders")
+    except Exception:
+        logging.getLogger(__name__).exception("Stock reversal cache invalidation failed")
+    return result
+
+
 @router.post("/direct-intakes")
 async def direct_intake(body: DirectIntake, user: UserPublic = Depends(require_min_role("warehouse"))):
     """Add catalog or independently described material without a customer source."""
@@ -1328,6 +1395,8 @@ async def direct_intake(body: DirectIntake, user: UserPublic = Depends(require_m
                 raise HTTPException(status_code=409, detail="This stock intake was already recorded with different details. Review the recorded lot before adding more stock.")
             return {**_stock_view(existing), "idempotent": True}
 
+        if await db.settings.find_one({"kind": "stock_deletion_receipt", "floor_id": floor_id, "intake_command_id": command_id}):
+            raise HTTPException(409, "This stock intake was deleted. Start a new intake.")
         existing = await db.godown_stock.find_one(floor_query(user, {"_id": command_id}))
         if existing:
             return replay(existing)

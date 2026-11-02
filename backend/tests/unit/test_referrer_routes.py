@@ -37,6 +37,8 @@ class _Collection:
                         if not any(matches_query(doc, clause) for clause in value): return False
                     elif key == '$and':
                         if not all(matches_query(doc, clause) for clause in value): return False
+                    elif key == 'excluded_floor_ids' and isinstance(value, dict) and '$not' in value:
+                        if all(floor in doc.get(key, []) for floor in value['$not']['$all']): return False
                     elif isinstance(value, dict) and '$in' in value:
                         if doc.get(key) not in value['$in']: return False
                     elif doc.get(key) != value: return False
@@ -159,6 +161,21 @@ def test_archive_referrer_write_stays_on_the_authorized_floor(monkeypatch):
     asyncio.run(referrer_routes.archive_referrer("r1", active=False, user=_user()))
 
     assert fake_db.referrers.updated_selector == {"id": "r1", "floor_id": "first-floor"}
+
+
+def test_archive_rejects_contact_hidden_from_selected_floor(monkeypatch):
+    import pytest
+    from fastapi import HTTPException
+    doc = {"id": "r1", "floor_id": "first-floor", "shared_across_floors": True,
+           "excluded_floor_ids": ["first-floor"]}
+    fake_db = _FakeDb([doc])
+    monkeypatch.setattr(referrer_routes, "db", fake_db)
+    async def authorized(*_args, **_kwargs): return doc
+    monkeypatch.setattr(referrer_routes, "get_floor_scoped_or_404", authorized)
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(referrer_routes.archive_referrer("r1", active=False, user=_user('owner')))
+    assert error.value.status_code == 404
+    assert fake_db.referrers.updated_selector is None
 
 
 def test_shared_reference_is_reused_across_floors_without_exposing_private_entries(monkeypatch):

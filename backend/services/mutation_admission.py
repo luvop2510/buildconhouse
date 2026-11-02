@@ -6,6 +6,7 @@ never expire: a paused/crashed writer cannot silently resume after its lease.
 A crash therefore blocks deletion safely until an operator reconciles admission.
 """
 from contextlib import asynccontextmanager
+import asyncio
 from uuid import uuid4
 from fastapi import HTTPException
 
@@ -23,14 +24,20 @@ async def admission(database, *, exclusive=False):
         query["writers"] = []
         update = {"$set": {"exclusive": token}}
     result = await gate.update_one(query, update)
+    # Briefly wait for ordinary in-flight saves; never expire a writer token.
+    if exclusive:
+        for _ in range(40):
+            if result.matched_count:
+                break
+            await asyncio.sleep(0.1)
+            result = await gate.update_one(query, update)
     if not result.matched_count:
-        raise HTTPException(409, "Other work is still saving. Wait for it to finish, then review and retry the deletion.")
+        raise HTTPException(409, "Another operation is still saving. Please try again.")
     try:
         yield
     finally:
         # A canceled request must release only its own token. If the process
         # dies before release, no unsafe deletion can bypass that token.
-        import asyncio
         if exclusive:
             await asyncio.shield(gate.update_one({"_id": KEY, "exclusive": token}, {"$set": {"exclusive": None}}))
         else:
@@ -47,9 +54,9 @@ class MutationAdmissionMiddleware:
             return await self.app(scope, receive, send)
         from db import db
         from starlette.responses import JSONResponse
-        exclusive = scope["method"] == "DELETE" and bool(re.fullmatch(
-            r"/api/(?:customers/[^/]+|quotations/(?:[^/]+|client-draft/[^/]+))", scope["path"],
-        ))
+        exclusive = (scope["method"] == "POST" and scope["path"] == "/api/customers/floor-reset") or (scope["method"] == "DELETE" and bool(re.fullmatch(
+            r"/api/(?:products/[^/]+(?:/variants)?|customers/[^/]+|walkins/[^/]+|payments/[^/]+|godown-stock/[^/]+|purchase-orders/[^/]+|quotations/(?:[^/]+|client-draft/[^/]+))", scope["path"],
+        )))
         try:
             async with admission(db, exclusive=exclusive):
                 await self.app(scope, receive, send)

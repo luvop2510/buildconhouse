@@ -52,6 +52,10 @@ export default function WalkInsScreen({
   const floors = staff?.custom_access ? assignedFloors.filter(floor => hasGrantAccess(staff.access_grants, floor.id, "walkins")) : assignedFloors;
   const canCreate = !staff?.custom_access || hasGrantAccess(staff.access_grants, fixedFloorId || selectedFloorId, "walkins", "create");
   const canUpdate = (record: WalkIn) => !staff?.custom_access || hasGrantAccess(staff.access_grants, record.floor_id, "walkins", "update");
+  const canDelete = (record: WalkIn) => ["first-floor", "ground-floor"].includes(record.floor_id) && !!staff && (staff.custom_access
+    ? hasGrantAccess(staff.access_grants, record.floor_id, "walkins", "delete")
+    : ["owner", "admin", "manager"].includes(staff.role));
+  const deleting = useRef(new Set<string>());
   const [summaryError, setSummaryError] = useState(false);
   const [summaryRevision, setSummaryRevision] = useState(0);
   const [savingSelections, setSavingSelections] = useState<string[]>([]);
@@ -87,6 +91,21 @@ export default function WalkInsScreen({
   const queryRef = useRef({ key: queryKey });
   if (queryRef.current.key !== queryKey) queryRef.current = { key: queryKey };
   const activeQuery = queryRef.current;
+
+  const deleteWalkin = async (record: WalkIn) => {
+    if (!canDelete(record) || deleting.current.has(record.id)) return;
+    deleting.current.add(record.id);
+    try {
+      await walkinsApi.remove(record.id, record.floor_id);
+      if (mounted.current && scopeRef.current === activeScope) {
+        requestId.current += 1;
+        setItems(current => current.filter(item => item.id !== record.id));
+        setSummaryRevision(value => value + 1);
+      }
+    } catch (error: any) {
+      if (mounted.current && scopeRef.current === activeScope) toast.error(error?.detail || "Could not delete walk-in");
+    } finally { deleting.current.delete(record.id); }
+  };
 
   useEffect(() => {
     mounted.current = true;
@@ -310,6 +329,7 @@ export default function WalkInsScreen({
               onPress={() => router.push(`/(admin)/walkins/${w.id}?floor_id=${w.floor_id}` as any)}
               onCall={() => callCustomer(w)}
               onWhatsApp={canUpdate(w) ? () => { void whatsAppCustomer(w); } : undefined}
+              onDelete={canDelete(w) ? () => { void deleteWalkin(w); } : undefined}
               onScheduleSelection={canUpdate(w) && w.floor_id === "ground-floor" ? () => scheduleSelection(w) : undefined}
               onVisitShowroom={!quotationFollowup && canUpdate(w) ? () => visitShowroom(w) : undefined}
               quotationFollowup={quotationFollowup}

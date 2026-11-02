@@ -23,8 +23,10 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from pymongo.errors import DuplicateKeyError
+from pymongo.read_concern import ReadConcern
+from pymongo.write_concern import WriteConcern
 
-from auth import floor_query, floor_scope_ids, get_current_user, profile_floor_ids, require_floor_access, require_min_role
+from auth import floor_for_write, floor_query, floor_scope_ids, get_current_user, profile_floor_ids, require_floor_access, require_min_role
 from db import db
 from models import Followup, UserPublic, now_iso
 from models_walkins import WalkIn, WalkInCreate, WalkInUpdate, ReassignWalkInBody, WALKIN_OPEN_STATUSES
@@ -409,9 +411,39 @@ async def walkins_analytics(user: UserPublic = Depends(get_current_user)):
 
 
 # ---------- Detail / update / contact / actions ----------
+def _visible_walkin_query(walkin_id):
+    # Existing Kitchen/Furniture behavior is untouched; deleted Ground and
+    # Sanitary walk-ins retain only an identity tombstone for linked leads.
+    return {"id": walkin_id, "$or": [
+        {"floor_id": {"$nin": ["first-floor", "ground-floor"]}}, {"is_deleted": {"$ne": True}},
+    ]}
+
+
+@router.delete("/{walkin_id}")
+async def delete_walkin(walkin_id: str, user: UserPublic = Depends(require_min_role("manager"))):
+    floor = floor_for_write(user)
+    if floor not in {"first-floor", "ground-floor"}:
+        raise HTTPException(403, "Walk-in deletion is available on the Ground and Sanitary floors")
+    async def remove(session):
+        record = await db.walkins.find_one({"id": walkin_id, "floor_id": floor}, session=session)
+        if not record:
+            raise HTTPException(404, "Walk-in not found")
+        if not record.get("is_deleted"):
+            # Other floor follow-ups can still group by this stable ID, but
+            # no customer contact or walk-in details remain in the tombstone.
+            await db.walkins.replace_one({"_id": record["_id"]}, {"_id": record["_id"], "id": walkin_id,
+                "floor_id": floor, "is_deleted": True, "deleted_at": now_iso(), "deleted_by": user.id}, session=session)
+            await db.activity_events.delete_many({"floor_id": floor, "$or": [
+                {"entity_type": "walkin", "entity_id": walkin_id}, {"walkin_id": walkin_id}, {"payload.walkin_id": walkin_id},
+            ]}, session=session)
+        return {"ok": True}
+    async with await db.client.start_session() as session:
+        return await session.with_transaction(remove, read_concern=ReadConcern("snapshot"), write_concern=WriteConcern("majority"))
+
+
 @router.get("/{walkin_id}", response_model=WalkIn)
 async def get_walkin(walkin_id: str, user: UserPublic = Depends(get_current_user)):
-    doc = await db.walkins.find_one(floor_query(user, {"id": walkin_id}), {"_id": 0})
+    doc = await db.walkins.find_one(floor_query(user, _visible_walkin_query(walkin_id)), {"_id": 0})
     if not doc:
         raise HTTPException(status_code=404, detail="Walk-in not found")
     return WalkIn(**(await _walkin_attributions([doc]))[0])
@@ -419,7 +451,7 @@ async def get_walkin(walkin_id: str, user: UserPublic = Depends(get_current_user
 
 @router.get("/{walkin_id}/timeline")
 async def walkin_timeline(walkin_id: str, user: UserPublic = Depends(get_current_user)):
-    doc = await db.walkins.find_one(floor_query(user, {"id": walkin_id}), {"_id": 0, "customer_id": 1})
+    doc = await db.walkins.find_one(floor_query(user, _visible_walkin_query(walkin_id)), {"_id": 0, "customer_id": 1})
     if not doc:
         raise HTTPException(status_code=404, detail="Walk-in not found")
     return await timeline_for(customer_id=doc["customer_id"], limit=60, floor_ids=floor_scope_ids(user))
@@ -510,7 +542,7 @@ async def visit_showroom(walkin_id: str, user: UserPublic = Depends(require_min_
 
 @router.patch("/{walkin_id}", response_model=WalkIn)
 async def update_walkin(walkin_id: str, body: WalkInUpdate, user: UserPublic = Depends(require_min_role("sales"))):
-    doc = await db.walkins.find_one(floor_query(user, {"id": walkin_id}), {"_id": 0})
+    doc = await db.walkins.find_one(floor_query(user, _visible_walkin_query(walkin_id)), {"_id": 0})
     if not doc:
         raise HTTPException(status_code=404, detail="Walk-in not found")
     patch = body.model_dump(exclude_unset=True)
@@ -557,7 +589,7 @@ async def reassign_walkin(walkin_id: str, body: ReassignWalkInBody, user: UserPu
     silent. Transfers ownership of this Walk-in's own open automated
     Follow-up to the new salesperson and preserves the change in the
     Customer's activity timeline."""
-    doc = await db.walkins.find_one(floor_query(user, {"id": walkin_id}), {"_id": 0})
+    doc = await db.walkins.find_one(floor_query(user, _visible_walkin_query(walkin_id)), {"_id": 0})
     if not doc:
         raise HTTPException(status_code=404, detail="Walk-in not found")
     new_sp = await _salesperson_for_floor(body.salesperson_id, doc["floor_id"])
@@ -588,7 +620,7 @@ async def contact_walkin(walkin_id: str, channel: str = Query(..., pattern="^(wh
     from services.email_service import build_email
     from services.messaging_service import build_message
 
-    doc = await db.walkins.find_one(floor_query(user, {"id": walkin_id}), {"_id": 0})
+    doc = await db.walkins.find_one(floor_query(user, _visible_walkin_query(walkin_id)), {"_id": 0})
     if not doc:
         raise HTTPException(status_code=404, detail="Walk-in not found")
     doc = (await _walkin_attributions([doc]))[0]

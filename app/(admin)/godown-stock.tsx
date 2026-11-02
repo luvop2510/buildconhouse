@@ -10,6 +10,7 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View, type Dimens
 import { Text, TextInput } from "@/src/components/AppText";
 
 import { addDirectGodownStock, getGodownHistory, getGodownLot, getGodownStock, getPoFinalMatches, getSkuSuggestions, recordGodownQuantity, updateGodownDetails, uploadGodownImage, type GodownHistory, type GodownLot, type GodownStockResponse, type PoFinalMatch, type SkuSuggestion } from "@/src/api/godownStock";
+import { api } from "@/src/api/client";
 import { StockMovementEditor } from "@/src/components/godown/StockMovementEditor";
 import { CustomerTransferSheet } from "@/src/components/godown/CustomerTransferSheet";
 import { Sheet } from "@/src/design/components";
@@ -55,6 +56,8 @@ export default function GodownStockScreen() {
   const { selectedFloorId } = useFloorAccess();
   const { staff } = useAuth();
   const canEditPricing = useActionAccess("godown_stock", "update", staff?.role !== "worker");
+  const canDeleteStock = useActionAccess("godown_stock", "delete", !!staff && ["owner", "admin", "manager"].includes(staff.role)) && ["first-floor", "ground-floor"].includes(selectedFloorId);
+  const deletingStock = useRef(new Set<string>());
   const router = useRouter(); const { isPhone, isDesktop } = useBp();
   const { newStockId } = useLocalSearchParams<{ newStockId?: string }>();
   const newStockContext = useRef({ id: newStockId, floor: selectedFloorId });
@@ -127,6 +130,16 @@ export default function GodownStockScreen() {
     const timer = setTimeout(() => { void load(); }, 180);
     return () => clearTimeout(timer);
   }, [q, brand, selectedFloorId, load]);
+  const deleteStock = async (lot: GodownLot) => {
+    if (!canDeleteStock || !selectedFloorId || deletingStock.current.has(lot.id)) return;
+    deletingStock.current.add(lot.id);
+    try {
+      await api.delete(`/godown-stock/${encodeURIComponent(lot.id)}`, { floorId: selectedFloorId });
+      if (isCurrentFloor()) void load();
+    } catch (error: any) {
+      if (isCurrentFloor()) toast.error(error?.detail || "Could not delete stock");
+    } finally { deletingStock.current.delete(lot.id); }
+  };
   const loadMore = async () => {
     if (!selectedFloorId || !isCurrentFloor()) return;
     const current = dataRef.current;
@@ -242,7 +255,7 @@ export default function GodownStockScreen() {
     <Text testID="godown-results" accessibilityLiveRegion="polite" style={styles.result}>{!currentQuery ? "Searching stock…" : `${data?.available_lot_count ?? lots.filter(lot => !lot.quantity_missing && lot.available_qty > 0).length} available · ${data?.zero_lot_count ?? lots.filter(lot => !lot.quantity_missing && lot.available_qty <= 0).length} zero-stock lots · ${data?.unknown_quantity_count ?? lots.filter(lot => lot.quantity_missing).length} quantities not recorded · showing ${Math.min(visibleCount, lots.length)} of ${data?.total_lots ?? lots.length}`}</Text>
     {exporting ? <Text accessibilityLiveRegion="polite" style={type.body}>Preparing the complete filtered export…</Text> : null}
     <View style={styles.exportActions}><Pressable accessibilityRole="button" accessibilityLabel="Export filtered godown inventory to Excel" testID="godown-export-inventory" disabled={!canExport} onPress={() => void exportStock("inventory")} style={[styles.exportButton, !canExport && { opacity: .45 }]}><Feather name="download" size={15} color={colors.brand} /><Text style={styles.detailsText}>Inventory .xlsx</Text></Pressable><Pressable accessibilityRole="button" accessibilityLabel="Export godown stock movements to Excel" testID="godown-export-movements" disabled={!canExport} onPress={() => void exportStock("movements")} style={[styles.exportButton, !canExport && { opacity: .45 }]}><Feather name="download" size={15} color={colors.brand} /><Text style={styles.detailsText}>Movements .xlsx</Text></Pressable></View>
-    <View style={[styles.grid, !isPhone && styles.gridWide]}>{lots.slice(0, visibleCount).map(lot => <LotCard key={`${selectedFloorId}:${lot.id}`} floorId={selectedFloorId || undefined} lot={lot} compact={isPhone} width={isPhone ? "100%" : isDesktop ? "31.9%" : "48.8%"} canEditPricing={canEditPricing} onUpdated={updated => { if (!isCurrentFloor()) return; setData(current => mergeStockUpdate(current, updated)); }} onViewDetails={() => { if (lot.product_id) router.push(`/(admin)/catalog/${encodeURIComponent(lot.product_id)}` as any); }} onAdd={(variantIndex) => router.push(`/(admin)/quotations/new?godownStockId=${encodeURIComponent(lot.id)}${variantIndex === null ? "" : `&godownVariant=${variantIndex}`}` as any)} onTransfer={() => { setTransferMatch(null); setTransferLot(lot); }} />)}</View>
+    <View style={[styles.grid, !isPhone && styles.gridWide]}>{lots.slice(0, visibleCount).map(lot => <LotCard key={`${selectedFloorId}:${lot.id}`} floorId={selectedFloorId || undefined} lot={lot} compact={isPhone} width={isPhone ? "100%" : isDesktop ? "31.9%" : "48.8%"} canEditPricing={canEditPricing} onDelete={canDeleteStock ? () => { void deleteStock(lot); } : undefined} onUpdated={updated => { if (!isCurrentFloor()) return; setData(current => mergeStockUpdate(current, updated)); }} onViewDetails={() => { if (lot.product_id) router.push(`/(admin)/catalog/${encodeURIComponent(lot.product_id)}` as any); }} onAdd={(variantIndex) => router.push(`/(admin)/quotations/new?godownStockId=${encodeURIComponent(lot.id)}${variantIndex === null ? "" : `&godownVariant=${variantIndex}`}` as any)} onTransfer={() => { setTransferMatch(null); setTransferLot(lot); }} />)}</View>
     {pageError ? <Text accessibilityRole="alert" style={type.body}>{pageError}</Text> : null}
     {currentQuery && (data?.next_offset != null || visibleCount < lots.length) ? <Pressable accessibilityRole="button" accessibilityLabel="Load more godown stock" testID="godown-load-more" disabled={loadingMore || loading} onPress={() => void loadMore()} style={styles.details}><Text style={styles.detailsText}>{loadingMore ? "Loading more stock…" : `Load more (${(data?.total_lots ?? lots.length) - Math.min(visibleCount, lots.length)} remaining)`}</Text></Pressable> : null}
     {!lots.length && !loading && currentQuery ? <View style={styles.empty}><Feather name="archive" size={28} color={colors.onSurfaceMuted} /><Text style={type.titleMd}>No matching stock</Text><Text style={type.bodyMuted}>Try another brand or search term.</Text></View> : null}
@@ -261,7 +274,7 @@ export default function GodownStockScreen() {
   </ScrollView>;
 }
 function Chip({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) { return <Pressable accessibilityRole="tab" accessibilityState={{ selected }} onPress={onPress} style={[styles.chip, selected && styles.chipSelected]}><Text style={[styles.chipText, selected && styles.chipTextSelected]}>{label}</Text></Pressable>; }
-function LotCard({ lot, floorId, width, compact, canEditPricing, onUpdated, onViewDetails, onAdd, onTransfer }: { lot: GodownLot; floorId?: string; width: DimensionValue; compact: boolean; canEditPricing: boolean; onUpdated: (updated: GodownLot) => void; onViewDetails: () => void; onAdd: (variantIndex: number | null) => void; onTransfer: () => void }) {
+function LotCard({ lot, floorId, width, compact, canEditPricing, onDelete, onUpdated, onViewDetails, onAdd, onTransfer }: { lot: GodownLot; floorId?: string; width: DimensionValue; compact: boolean; canEditPricing: boolean; onDelete?: () => void; onUpdated: (updated: GodownLot) => void; onViewDetails: () => void; onAdd: (variantIndex: number | null) => void; onTransfer: () => void }) {
   const [variantIndex, setVariantIndex] = useState<number | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [editingPrice, setEditingPrice] = useState(false);
@@ -451,6 +464,7 @@ function LotCard({ lot, floorId, width, compact, canEditPricing, onUpdated, onVi
       <Pressable accessibilityRole="button" accessibilityLabel={`Transfer ${lot.name} to a customer`} disabled={!canTransfer} onPress={onTransfer} style={[styles.transferAction, !canTransfer && { opacity: .45 }]}><Feather name="repeat" size={16} color={colors.brand} /><Text style={styles.detailsText}>Transfer to customer</Text></Pressable>
       <View style={styles.actions}><Pressable accessibilityRole="button" accessibilityLabel={`View ${isCatalogProduct ? "catalog" : "stock"} details for ${lot.name}`} onPress={isCatalogProduct ? onViewDetails : () => setShowHistory(value => !value)} style={styles.details}><Feather name="external-link" size={16} color={colors.brand} /><Text style={styles.detailsText}>View details</Text></Pressable><Pressable accessibilityRole="button" accessibilityLabel={needsPrice && canEditPricing ? `Set price and add ${lot.name} to a new quotation` : `Add ${lot.name}${selectedPrice == null ? "" : ` at ${money(selectedPrice)}`} to a new quotation`} disabled={savingPrice || !canTransfer || (needsPrice && !canEditPricing)} onPress={() => needsPrice ? openEditor(true) : onAdd(variantIndex)} style={[styles.add, (savingPrice || !canTransfer || (needsPrice && !canEditPricing)) && { opacity: .45 }]}><Feather name="plus" size={17} color={colors.onBrand} /><Text style={styles.addText}>{needsPrice && canEditPricing ? "Set price & add" : "Add to quotation"}</Text></Pressable></View>
     </>}
+    {onDelete ? <Pressable accessibilityRole="button" accessibilityLabel={`Delete stock ${lot.name}`} testID={`delete-stock-${lot.id}`} onPress={onDelete} style={styles.details}><Feather name="trash-2" size={16} color={colors.error} /><Text style={[styles.detailsText, { color: colors.error }]}>Delete stock</Text></Pressable> : null}
     {!canTransfer ? <Text style={type.caption}>{lot.quantity_missing ? "Record the stock quantity before quoting or transferring this lot." : "No transferable units are available. Check the stock history for allocations."}</Text> : needsPrice && !canEditPricing ? <Text style={type.caption}>Ask a stock manager to record a price before adding this lot to a quotation.</Text> : null}
   </View>;
 }

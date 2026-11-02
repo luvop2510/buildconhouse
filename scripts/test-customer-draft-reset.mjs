@@ -16,7 +16,7 @@ const deferred = () => { let resolve; const promise = new Promise(done => { reso
 function fixture(seed = {}) {
   const data = new Map(Object.entries(seed));
   const removed = [];
-  let failKey, enumerationFails = false, beforeWrite;
+  let failKey, enumerationFails = false, beforeWrite, generation = '', generationFails = false;
   const storage = {
     getItem: async (key, fallback) => data.has(key) ? data.get(key) : fallback,
     setItem: async (key, value) => { if (beforeWrite) await beforeWrite.promise; data.set(key, value); return true; },
@@ -28,11 +28,12 @@ function fixture(seed = {}) {
       return [...data.keys()];
     } } },
     '@/src/utils/storage': { storage },
+    '@/src/api/client': { api: { get: async () => { if (generationFails) throw new Error('offline'); return { generation }; } } },
     './draftRecovery': { parseBuilderDraft: raw => raw ? JSON.parse(raw) : null },
   };
   const exports = {};
   vm.runInNewContext(compiled, { exports, require: name => { assert.ok(modules[name], `Unexpected import: ${name}`); return modules[name]; } });
-  return { api: exports, data, removed, fail: key => { failKey = key; }, failEnumeration: value => { enumerationFails = value; }, blockWrite: gate => { beforeWrite = gate; } };
+  return { api: exports, data, removed, fail: key => { failKey = key; }, failEnumeration: value => { enumerationFails = value; }, blockWrite: gate => { beforeWrite = gate; }, generation: value => { generation = value; }, failGeneration: value => { generationFails = value; } };
 }
 
 test('reset removes indexed and orphan customer draft blobs and legacy snapshot while preserving preferences', async () => {
@@ -52,6 +53,19 @@ test('reset removes indexed and orphan customer draft blobs and legacy snapshot 
   assert.equal(f.data.get('forge.admin.sidebar.collapsed.v1'), true);
   assert.equal(f.data.get('forge.jwt.kind'), 'staff');
   assert.equal(f.data.get(marker), release);
+});
+
+test('sanitary reset removes only sanitary drafts and preserves later entries', async () => {
+  const sanitary = `${prefix}.owner.first-floor`;
+  const ground = `${prefix}.other.ground-floor`;
+  const f = fixture({ [marker]: release, [sanitary]: 'old sanitary', [ground]: 'ground draft' });
+  await f.api.ensureBuilderDraftReset();
+  assert.equal(f.data.has(sanitary), false);
+  assert.equal(f.data.get(ground), 'ground draft');
+  f.data.set(sanitary, 'new sanitary');
+  const next = fixture(Object.fromEntries(f.data));
+  await next.api.ensureBuilderDraftReset();
+  assert.equal(next.data.get(sanitary), 'new sanitary');
 });
 
 test('reset is serialized and post-reset drafts survive subsequent startup modules', async () => {
@@ -93,6 +107,7 @@ test('unavailable key enumeration keeps reset incomplete and can recover', async
 
 test('startup reset invalidates previously queued draft writers and deletes an in-flight persisted blob', async () => {
   const f = fixture();
+  await f.api.readBuilderDraft('owner', 'first-floor');
   const gate = deferred();
   f.blockWrite(gate);
   const oldEpoch = f.api.builderDraftEpoch();
@@ -107,4 +122,18 @@ test('startup reset invalidates previously queued draft writers and deletes an i
   await f.api.writeBuilderDraft(draft, oldEpoch);
   assert.equal([...f.data.keys()].some(key => key.startsWith(`${prefix}.`)), false);
   assert.equal(f.data.get(marker), release);
+});
+
+test('floor generation discards old drafts, retains new drafts, and fails closed offline', async () => {
+  const key = `${prefix}.owner.first-floor`;
+  const f = fixture({ [key]: JSON.stringify({ accountId: 'owner', floorId: 'first-floor', resetGeneration: 'old' }) });
+  f.generation('new');
+  f.failGeneration(true);
+  await assert.rejects(f.api.readBuilderDraft('owner', 'first-floor'), /offline/);
+  assert.equal(f.data.has(key), true);
+  f.failGeneration(false);
+  assert.equal(await f.api.readBuilderDraft('owner', 'first-floor'), null);
+  await f.api.writeBuilderDraft({ accountId: 'owner', floorId: 'first-floor' }, f.api.builderDraftEpoch());
+  assert.equal(JSON.parse(f.data.get(key)).resetGeneration, 'new');
+  assert.equal((await f.api.readBuilderDraft('owner', 'first-floor')).resetGeneration, 'new');
 });

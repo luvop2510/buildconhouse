@@ -4,6 +4,8 @@ import { formatPhone } from "@/src/utils/phone";
 // unified customer-card language shared with quotations/purchases/payments.
 import { Disclosure } from "@/src/design/Disclosure";
 import Feather from "@expo/vector-icons/Feather";
+import { randomUUID } from "expo-crypto";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, View } from "react-native";
@@ -50,7 +52,10 @@ export default function Customers() {
   const [items, setItems] = useState<Customer[] | null>(null);
   const [q, setQ] = useState("");
   const [visibleCount, setVisibleCount] = useState(CUSTOMER_RENDER_BATCH);
+  const deleting = useRef(false);
   const [deleteTarget, setDeleteTarget] = useState<Customer | null>(null);
+  const resetCommand = useRef<{ key: string; floor: string; pending: boolean } | null>(null);
+  const [resetting, setResetting] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const requestId = useRef(0);
 
@@ -64,6 +69,43 @@ export default function Customers() {
       () => { if (id === requestId.current) setLoadError(true); },
     );
   }, [selectedFloorId, completed]);
+  const deleteCustomer = async (customerId: string) => {
+    if (!selectedFloorId || deleting.current) return;
+    deleting.current = true;
+    const request = requestId.current;
+    try {
+      await api.delete(`/customers/${encodeURIComponent(customerId)}`, { floorId: selectedFloorId });
+      if (request === requestId.current) setItems(current => (current || []).filter(item => item.id !== customerId));
+    } catch (error: any) {
+      if (request === requestId.current) toast.error(error?.detail || "Could not delete customer data");
+    } finally { deleting.current = false; }
+  };
+  const resetFloorCustomers = async () => {
+    if (!["first-floor", "ground-floor"].includes(selectedFloorId) || !staff?.id || resetCommand.current?.pending) return;
+    const command = resetCommand.current?.floor === selectedFloorId ? resetCommand.current : { key: "", floor: selectedFloorId, pending: false };
+    resetCommand.current = command;
+    command.pending = true;
+    const request = requestId.current;
+    const savedKey = `forge.customer-floor-reset.${encodeURIComponent(staff.id)}.${selectedFloorId}`;
+    setResetting(true);
+    try {
+      command.key = command.key || await AsyncStorage.getItem(savedKey) || randomUUID();
+      await AsyncStorage.setItem(savedKey, command.key);
+      await api.post("/customers/floor-reset", { request_id: command.key }, { floorId: selectedFloorId });
+      await AsyncStorage.removeItem(savedKey);
+      resetCommand.current = null;
+      if (request === requestId.current) load();
+    } catch (error: any) {
+      // Retain the same key when a response is lost so retry cannot erase new data.
+      if (error?.status && error.status < 500 && error.status !== 408) {
+        try { await AsyncStorage.removeItem(savedKey); resetCommand.current = null; } catch { /* keep the command for retry */ }
+      }
+      if (request === requestId.current) toast.error(error?.detail || "Could not reset customer data");
+    } finally {
+      command.pending = false;
+      setResetting(false);
+    }
+  };
   useFocusEffect(useCallback(() => { load(); return () => { requestId.current += 1; }; }, [load]));
 
   const filtered = useMemo(() => (items || []).filter((c) => {
@@ -124,6 +166,7 @@ export default function Customers() {
 
         {/* Toolbar */}
         <View style={{ gap: spacing.md }}>
+          {canDeleteCustomers && ["first-floor", "ground-floor"].includes(selectedFloorId) ? <Button label="Reset floor customer data" icon="trash-2" variant="secondary" loading={resetting} onPress={() => { void resetFloorCustomers(); }} testID="reset-floor-customer-data" /> : null}
           <MobileFilterSection testID="customers-filters">
           <SearchField
             value={q}
@@ -219,7 +262,7 @@ export default function Customers() {
                     {canDeleteCustomers ? (
                       <IconButton
                         icon="trash-2"
-                        onPress={() => setDeleteTarget(c)}
+                        onPress={() => { if (["first-floor", "ground-floor"].includes(selectedFloorId)) void deleteCustomer(c.id); else setDeleteTarget(c); }}
                         size={isDesktop ? 30 : 44}
                         tone="danger"
                         accessibilityLabel={`Delete ${c.name}`}
@@ -243,14 +286,9 @@ export default function Customers() {
           </View>
         )}
       </ScrollView>
-      <CustomerDataDeletionDialog customer={deleteTarget} onClose={() => setDeleteTarget(null)}
-        onDeleted={(id) => {
-          setItems((current) => (current || []).filter((item) => item.id !== id));
-          setDeleteTarget(null);
-          toast.success("Customer data deleted");
-          load();
-        }}
-      />
+      <CustomerDataDeletionDialog customer={deleteTarget} onClose={() => setDeleteTarget(null)} onDeleted={(id) => {
+        setItems(current => (current || []).filter(item => item.id !== id)); setDeleteTarget(null); load();
+      }} />
     </SafeAreaView>
   );
 }

@@ -773,6 +773,16 @@ async def create_quotation(
     return quot
 
 
+@router.get("/floor-reset-generation")
+async def floor_reset_generation(user: UserPublic = Depends(get_current_user)):
+    from auth import floor_scope_ids
+    floors = floor_scope_ids(user)
+    if len(floors) != 1 or floors[0] not in {"first-floor", "ground-floor"}:
+        raise HTTPException(403, "Ground or Sanitary floor access required")
+    row = await db.settings.find_one({"id": "customer-reset-generation:" + floors[0]}, {"_id": 0, "generation": 1})
+    return {"generation": (row or {}).get("generation", "")}
+
+
 @router.get("/{quotation_id}", response_model=Quotation)
 async def get_quotation(quotation_id: str, with_completion: bool = False, user: UserPublic = Depends(get_current_user)):
     doc = await get_floor_scoped_or_404(db.quotations, quotation_id, user, not_found="Quotation not found", projection={"_id": 0})

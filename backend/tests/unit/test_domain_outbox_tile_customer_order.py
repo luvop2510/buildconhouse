@@ -88,6 +88,7 @@ class _FakeDb:
         self.customers = _FakeCollection([
             {"id": "cust-1", "name": "Nileshbhai Pokiya", "phone": "9909900000", "address": "123 Ring Road", "city": "Rajkot"},
         ])
+        self.settings = _FakeCollection()
         self.purchase_orders = _FakeCollection()
         self.customer_orders = _FakeCollection()
         self.payments = _FakeCollection()
@@ -163,6 +164,22 @@ def test_standard_quotation_never_creates_customer_order(monkeypatch):
         assert po["customer_order_id"] is None
         assert all(item["stage"] == "po_final" for item in po["items"])
         assert all(item["stage_history"][0]["to_stage"] == "po_final" for item in po["items"])
+
+
+def test_order_event_does_not_recreate_deleted_purchase(monkeypatch):
+    fake_db = _FakeDb(_tiles_quotation(doc_type="standard", floor_id="first-floor"))
+    fake_db.settings.docs.append({
+        "kind": "customer_deletion_receipt",
+        "purchase_automation_key": "order-placed:q-1:po:b-qutone",
+    })
+    monkeypatch.setattr(outbox, "db", fake_db)
+    monkeypatch.setattr(sequence, "db", fake_db)
+    monkeypatch.setattr(tile_movement_log, "db", fake_db)
+
+    asyncio.run(outbox._handle_order_placed(_event("q-1"), session=None))
+
+    assert len(fake_db.purchase_orders.docs) == 1
+    assert fake_db.purchase_orders.docs[0]["brand_id"] == "b-dimore"
 
 
 def test_sanitary_godown_line_creates_an_in_box_purchase_item(monkeypatch):

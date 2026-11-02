@@ -15,6 +15,7 @@ import { Platform, Pressable, StyleSheet, View } from "react-native";
 import { Text, TextInput } from "@/src/components/AppText";
 
 import { tileOrdersApi, type PurchaseOrderDetail } from "@/src/api/tileOrders";
+import { api } from "@/src/api/client";
 import { Alert } from "@/src/components/ui";
 import { toast } from "@/src/components/Toast";
 import {
@@ -25,7 +26,9 @@ import { StatusPill, WorkflowRail } from "@/src/components/tiles/TileOrderStatus
 import { TileOrderProductCell } from "@/src/components/tiles/TileOrderProductCell";
 import { tileIdentityMeta } from "@/src/components/tiles/tilePresentation";
 import { CellNumber, CellText, DataTable, type Column } from "@/src/components/tiles/TileTable";
-import { useRequireFloorAccess } from "@/src/hooks/use-floor-access";
+import { useFloorAccess, useRequireFloorAccess } from "@/src/hooks/use-floor-access";
+import { useActionAccess } from "@/src/hooks/use-permissions";
+import { useAuth } from "@/src/state/auth";
 import { colors, radius, spacing, type } from "@/src/theme/tokens";
 import { Disclosure } from "@/src/design/Disclosure";
 import { ExcelExportButton } from "@/src/components/ExcelExportButton";
@@ -54,6 +57,9 @@ function lineStatus(item: ReleaseItem): { label: string; tone: LineTone } {
 
 export default function BrandOrderDetailScreen() {
   useRequireFloorAccess("ground-floor");
+  const { selectedFloorId } = useFloorAccess();
+  const { staff } = useAuth();
+  const canDelete = useActionAccess("purchases", "delete", !!staff && ["owner", "admin", "manager"].includes(staff.role)) && selectedFloorId === "ground-floor";
   const { poId } = useLocalSearchParams<{ poId: string }>();
   const router = useRouter();
   const [order, setOrder] = useState<PurchaseOrderDetail | null>(null);
@@ -69,6 +75,21 @@ export default function BrandOrderDetailScreen() {
   if (activeScope.current.id !== poId) activeScope.current = { id: poId, active: true };
   const scope = activeScope.current;
   const submitBusy = useRef(false);
+
+  const deletePurchase = async () => {
+    if (!poId || !canDelete || submitBusy.current) return;
+    submitBusy.current = true;
+    setSubmitting(true);
+    try {
+      await api.delete(`/purchase-orders/${encodeURIComponent(poId)}`, { floorId: "ground-floor" });
+      if (scope.active && activeScope.current === scope) router.replace("/(admin)/tiles/orders?tab=brands" as any);
+    } catch (e: any) {
+      if (scope.active && activeScope.current === scope) toast.error(e?.detail || "Could not delete purchase");
+    } finally {
+      submitBusy.current = false;
+      if (scope.active && activeScope.current === scope) setSubmitting(false);
+    }
+  };
 
   const load = useCallback(async () => {
     if (!poId || !scope.active || activeScope.current !== scope) return;
@@ -360,7 +381,7 @@ export default function BrandOrderDetailScreen() {
         eyebrow={order.number}
         title={order.customer_name}
         subtitle={`${order.brand_name || "Unassigned brand"} · release material to BuildCon`}
-        actions={<ButtonGroup><StatusPill status={order.overall_status} /><ExcelExportButton resource="orders" floorId="ground-floor" page="Tiles release order" section="Release products" filename={`${order.number}-release`} scopeKey={poId} testID="tile-release-export" rows={[
+        actions={<ButtonGroup><StatusPill status={order.overall_status} />{canDelete ? <Button label="Delete purchase" variant="danger" disabled={submitting} onPress={deletePurchase} testID="delete-tile-purchase-order" /> : null}<ExcelExportButton resource="orders" floorId="ground-floor" page="Tiles release order" section="Release products" filename={`${order.number}-release`} scopeKey={poId} testID="tile-release-export" rows={[
           ["Order", "Customer", "Brand", "Product", "SKU", "Unit", "Ordered", "Released", "Remaining"],
           ...order.items.map(item => [order.number, order.customer_name, order.brand_name, item.name, item.sku, item.quantity_unit || "Box", item.qty, item.boxes_ready, item.boxes_pending]),
         ]} /></ButtonGroup>}

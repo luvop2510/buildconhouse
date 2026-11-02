@@ -43,6 +43,7 @@ export default function WalkInDetail() {
   const hasModuleAccess = useModuleAccess();
   const { staff } = useAuth();
   const requestId = useRef(0);
+  const deleting = useRef(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [w, setW] = useState<WalkIn | null>(null);
   const [timeline, setTimeline] = useState<Record<string, any>[]>([]);
@@ -138,6 +139,21 @@ export default function WalkInDetail() {
   };
 
   const canUpdate = !w?.showroom_followup_id && !w?.showroom_transferred_at && (!staff?.custom_access || hasGrantAccess(staff.access_grants, w?.floor_id || floor_id || "", "walkins", "update"));
+  const canDelete = !!w && ["first-floor", "ground-floor"].includes(w.floor_id) && !!staff && (staff.custom_access
+    ? hasGrantAccess(staff.access_grants, w.floor_id, "walkins", "delete")
+    : ["owner", "admin", "manager"].includes(staff.role));
+  const deleteWalkin = async () => {
+    if (!w || !canDelete || busy || deleting.current) return;
+    deleting.current = true;
+    const request = requestId.current;
+    setBusy(true);
+    try {
+      await walkinsApi.remove(w.id, w.floor_id);
+      if (request === requestId.current) router.replace("/(admin)/walkins" as any);
+    } catch (error: any) {
+      if (request === requestId.current) toast.error(error?.detail || "Could not delete walk-in");
+    } finally { deleting.current = false; if (request === requestId.current) setBusy(false); }
+  };
 
   const filteredAssignees = assignees.filter((a) => a.full_name.toLowerCase().includes(spSearch.trim().toLowerCase()));
 
@@ -179,6 +195,7 @@ export default function WalkInDetail() {
         />
 
         <View style={{ flexDirection: "row", gap: spacing.sm, flexWrap: "wrap" }}>
+          {canDelete ? <Button label="Delete walk-in" icon="trash-2" variant="danger" size="sm" loading={busy} onPress={() => { void deleteWalkin(); }} testID="walkin-detail-delete" /> : null}
           <Button label="Call" icon="phone" variant="secondary" size="sm" onPress={() => w.customer_phone && openUrl(`tel:${w.customer_phone}`)} />
           {canUpdate && !w.showroom_followup_id && !w.showroom_transferred_at && w.status !== "lost" ? <Button label={w.showroom_followup_id ? "View Visit Showroom" : "Visit Showroom"} icon="home" size="sm" loading={busy} onPress={visitShowroom} testID="walkin-visit-showroom" /> : null}
           {canUpdate ? <Button label="WhatsApp" icon="message-circle" variant="secondary" size="sm" onPress={whatsApp} /> : null}

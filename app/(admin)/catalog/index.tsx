@@ -17,6 +17,9 @@ import { ActivityIndicator, FlatList, Platform, Pressable, ScrollView, StyleShee
 import { Text, TextInput } from "@/src/components/AppText";
 
 import { ProductImage } from "@/src/components/ProductImage";
+import { CreateCatalogProduct } from "@/src/components/catalog/CreateCatalogProduct";
+import { useAuth } from "@/src/state/auth";
+import { useActionAccess } from "@/src/hooks/use-permissions";
 import { productImageList } from "@/src/components/quotation/helpers/media";
 import { BottomSheet } from "@/src/components/BottomSheet";
 import { Alert, Chip, EmptyState, IconButton, PriceTag, ScreenTitle, SegmentedControl, Skeleton, Button } from "@/src/components/ui";
@@ -111,6 +114,9 @@ export default function Catalog() {
   const router = useRouter();
   const { productCols, pad, isPhone } = useBreakpoint();
   const { selectedFloorId } = useFloorAccess();
+  const { staff } = useAuth();
+  const canCreateProduct = useActionAccess("catalog", "create", !!staff && ["owner", "admin", "manager", "accounts", "purchase"].includes(staff.role)) && ["first-floor", "ground-floor"].includes(selectedFloorId);
+  const [createOpen, setCreateOpen] = useState(false);
 
   const [brands, setBrands] = useState<Brand[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -373,6 +379,7 @@ export default function Catalog() {
   // Header actions
   const HeaderRight = (
     <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+      {canCreateProduct ? <IconButton icon="plus" onPress={() => setCreateOpen(true)} size={36} tone="surface" accessibilityLabel="Add product" testID="add-catalog-product" /> : null}
       <IconButton
         icon="upload-cloud"
         onPress={() => router.push("/(admin)/catalog/import" as any)}
@@ -582,6 +589,8 @@ export default function Catalog() {
           ) : null
         }
       />
+      <CreateCatalogProduct visible={createOpen} floorId={selectedFloorId} brands={brands} categories={categories}
+        onClose={() => setCreateOpen(false)} onCreated={() => { void load(); }} />
 
       <FiltersSheet
         visible={filtersOpen}

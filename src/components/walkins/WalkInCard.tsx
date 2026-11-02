@@ -31,9 +31,10 @@ function daysWaiting(visitedAt: string): number {
 }
 
 export function WalkInCard({
-  w, onPress, onCall, onWhatsApp, onScheduleSelection, quotationFollowup = false, onSaveQuotationPrice, onTransferToQuotation, onVisitShowroom,
+  w, onPress, onCall, onWhatsApp, onDelete, onScheduleSelection, quotationFollowup = false, onSaveQuotationPrice, onTransferToQuotation, onVisitShowroom,
 }: {
   w: WalkIn; onPress: () => void; onCall: () => void; onWhatsApp?: () => void; onScheduleSelection?: () => void;
+  onDelete?: () => void;
   quotationFollowup?: boolean;
   onSaveQuotationPrice?: (price: number | null) => Promise<void>;
   onTransferToQuotation?: () => void;
@@ -98,6 +99,7 @@ export function WalkInCard({
         <View style={{ flexDirection: "row", gap: spacing.sm, marginTop: spacing.xs, flexWrap: "wrap" }}>
           <IconButton icon="phone" onPress={onCall} size={44} tone="brandLight" accessibilityLabel="Call" testID={`walkin-call-${w.id}`} />
           {onWhatsApp ? <IconButton icon="message-circle" onPress={onWhatsApp} size={44} tone="surface" accessibilityLabel="WhatsApp" testID={`walkin-wa-${w.id}`} /> : null}
+          {onDelete ? <IconButton icon="trash-2" onPress={onDelete} size={44} tone="surface" accessibilityLabel={`Delete walk-in for ${w.customer_name}`} testID={`walkin-delete-${w.id}`} /> : null}
           {onVisitShowroom && !w.showroom_followup_id && !w.showroom_transferred_at && w.status !== "lost" ? (
             <Button label={w.showroom_followup_id ? "View Visit Showroom" : "Visit Showroom"} icon="home" size="sm" loading={transferring} onPress={() => {
               if (showroomWrite.current) return;

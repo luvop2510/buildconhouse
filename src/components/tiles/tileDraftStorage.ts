@@ -1,14 +1,18 @@
 import { storage } from "@/src/utils/storage";
+import { api } from "@/src/api/client";
 import { DRAFT_TTL_MS } from "@/src/components/quotation/helpers/draftRecovery";
 import { removeRegisteredBuilderDraft, writeRegisteredBuilderDraft } from "@/src/components/quotation/helpers/draftStorage";
 
 export type TileDraft<Header = any, Row = any, Partner = any> = {
   version: 1; accountId: string; docType: string; routeId: string | null; at: number;
+  resetGeneration?: string;
   documentId: string | null; number: string | null; serverSavedAt: string | null; clientDraftId: string;
   customerId: string | null; customerSnapshot: { name: string; phone: string };
   header: Header; rows: Row[]; partner: Partner; legacyPartnerLabel: string; partnerEdited: boolean;
 };
 const keyFor = (accountId: string, docType: string, routeId: string | null) => `forge.builder.draft.v1.tiles.${encodeURIComponent(accountId)}.${encodeURIComponent(docType)}.${encodeURIComponent(routeId || "new")}`;
+const generations = new Map<string, string>();
+const scopeFor = (accountId: string, docType: string) => JSON.stringify([accountId, docType]);
 
 export function parseTileDraft(raw: string | null, accountId: string, docType: string, routeId: string | null, now = Date.now()): TileDraft | null {
   try {
@@ -32,13 +36,22 @@ export function parseTileDraft(raw: string | null, accountId: string, docType: s
 
 export async function readTileDraft(accountId: string, docType: string, routeId: string | null) {
   const key = keyFor(accountId, docType, routeId);
+  const result = await api.get<{ generation: string }>("/quotations/floor-reset-generation", { floorId: "ground-floor" });
+  if (typeof result?.generation !== "string") throw new Error("Could not verify saved drafts");
+  generations.set(scopeFor(accountId, docType), result.generation);
   const raw = await storage.getItem<string | null>(key, null);
   const draft = parseTileDraft(raw, accountId, docType, routeId);
   if (raw && !draft) await removeRegisteredBuilderDraft(key);
+  if (draft && (draft.resetGeneration || "") !== result.generation) {
+    if (await removeRegisteredBuilderDraft(key) === false) throw new Error("Could not clear an old tile draft");
+    return null;
+  }
   return draft;
 }
 export const writeTileDraft = async (draft: TileDraft, epoch: number) => {
-  if (await writeRegisteredBuilderDraft(keyFor(draft.accountId, draft.docType, draft.routeId), draft, epoch) === false) throw new Error("Could not save the draft on this device");
+  const generation = generations.get(scopeFor(draft.accountId, draft.docType));
+  if (generation === undefined) throw new Error("Could not verify saved drafts");
+  if (await writeRegisteredBuilderDraft(keyFor(draft.accountId, draft.docType, draft.routeId), { ...draft, resetGeneration: generation }, epoch) === false) throw new Error("Could not save the draft on this device");
 };
 export const removeTileDraft = (accountId: string, docType: string, routeId: string | null) => removeRegisteredBuilderDraft(keyFor(accountId, docType, routeId));
 

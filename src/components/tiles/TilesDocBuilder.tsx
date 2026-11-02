@@ -337,6 +337,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
     draftEpoch.current = builderDraftEpoch();
     const local = accountId ? readTileDraft(accountId, docType, routeId || null) : Promise.resolve(null);
     if (!routeId) {
+      setLoading(false);
       // Reusing this route for a fresh document must not carry the previous
       // document's customer, ID or rows into the new draft scope.
       dirtyRef.current = false; persistedIdRef.current = null; customerIdRef.current = null;
@@ -345,6 +346,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
       setHeader({ customerName: "", phone: "", reference: "", docDate: defaultDocDate(docType), attendedBy: "", preparedBy: "", address: "", docNumber: "", transportationFee: "0" });
       setRows([emptyRow()]); setPartner(null); setLegacyPartnerLabel(""); setPartnerEditVersion(0); partnerSavedVersion.current = 0;
       setStatus("draft"); setSaveState("idle");
+      setRestoreError(null);
       void local.then(draft => {
         if (!alive || documentScopeRef.current !== documentScope) return;
         if (draft && !dirtyRef.current) {
@@ -355,7 +357,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
           } else applyLocalDraft(draft);
         }
         setLocalReady(true);
-      });
+      }).catch(() => { if (alive && documentScopeRef.current === documentScope) setRestoreError("Could not verify saved drafts. Check your connection and try again."); });
       return () => { alive = false; };
     }
     dirtyRef.current = false;
@@ -927,6 +929,13 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
     if (!recoveryDraft || busy) return;
     setBusy("recover");
     try {
+      const fresh = await readTileDraft(accountId, docType, routeId || null);
+      if (!fresh) { setRecoveryDraft(null); return; }
+      if (fresh.at !== recoveryDraft.at || fresh.documentId !== recoveryDraft.documentId) {
+        setRecoveryDraft(fresh);
+        toast.error("The saved draft changed. Review it and try again.");
+        return;
+      }
       let asCopy = false;
       if (recoveryDraft.documentId) {
         try {

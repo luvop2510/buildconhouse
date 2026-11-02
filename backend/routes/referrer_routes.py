@@ -110,6 +110,8 @@ async def archive_referrer(
     referrer = await get_floor_scoped_or_404(
         db.referrers, referrer_id, user, not_found="Referrer not found", projection={"_id": 0},
     )
+    if floor_for_write(user) in (referrer.get("excluded_floor_ids") or []):
+        raise HTTPException(status_code=404, detail="Referrer not found")
     if referrer.get("shared_across_floors") and user.role != "owner":
         raise HTTPException(status_code=403, detail="Only the owner can archive a shared reference")
     selector = {"id": referrer_id, "floor_id": referrer["floor_id"]}

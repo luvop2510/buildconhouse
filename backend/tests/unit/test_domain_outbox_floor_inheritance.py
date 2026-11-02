@@ -77,6 +77,7 @@ def test_order_placed_purchase_order_and_payment_inherit_quotation_floor(monkeyp
         products = _Recorder()
         brands = _Recorder()
         suppliers = _Recorder()
+        settings = _Recorder()
         purchase_orders = _Recorder()
         payments = _Recorder()
         activity_events = _Recorder()

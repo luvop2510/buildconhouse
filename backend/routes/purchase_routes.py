@@ -22,9 +22,9 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from auth import floor_query, require_min_role
+from auth import floor_for_write, floor_query, require_min_role
 from services.purchase_workspace import get_purchase_workspace_user as get_current_user
-from db import db
+from db import client, db
 from models import (
     PurchaseAttachment, PurchaseAttachmentCreate, PurchaseOrder, PurchaseOrderItem,
     PurchaseOrderUpdate, PurchaseReceivePayload, PurchaseStageEvent, PurchaseStatusEvent,
@@ -287,6 +287,21 @@ async def status_config(_: UserPublic = Depends(get_current_user)):
         "transitions": ALLOWED_TRANSITIONS,
         "labels": STATUS_LABELS,
     }
+
+
+@router.delete("/{po_id}")
+async def delete_purchase_order(po_id: str, user: UserPublic = Depends(require_min_role("manager"))):
+    from media_storage.factory import private_bucket
+    from services.purchase_deletion import delete_purchase
+    result = await delete_purchase(db, client, po_id, floor_for_write(user), user.id, private_bucket())
+    from services.analytics import cache
+    try:
+        await cache.bump("purchase_orders")
+        await cache.bump("customer_orders")
+        await cache.bump("material_movements")
+    except Exception:
+        logger.exception("Purchase deletion cache invalidation failed")
+    return result
 
 
 @router.get("/{po_id}", response_model=PurchaseOrder)

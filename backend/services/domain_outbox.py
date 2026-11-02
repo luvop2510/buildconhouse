@@ -387,6 +387,8 @@ async def _handle_order_placed(event: dict, session: Any) -> dict:
     for group in groups:
         brand_key = (group["brand_id"] or "unassigned") + (":godown" if group.get("is_godown") else "")
         po_key = f"{key}:po:{brand_key}"
+        if await db.settings.find_one({"kind": "customer_deletion_receipt", "purchase_automation_key": po_key}, {"_id": 1}, session=session):
+            continue
         existing = await db.purchase_orders.find_one({"automation_key": po_key}, {"_id": 0, "id": 1}, session=session)
         if existing:
             created_po_ids.append(existing["id"])
@@ -722,6 +724,12 @@ async def outbox_worker() -> None:
                 from services.customer_deletion import cleanup_deleted_customer_files
                 from media_storage import get_media_storage
                 await cleanup_deleted_customer_files(db, get_media_storage())
+                from services.stock_media_cleanup import cleanup_stock_media
+                # Re-check references while writers are excluded so catalog or
+                # another floor cannot acquire an image during file removal.
+                if await db.settings.find_one({'kind': 'stock_media_deletion_receipt', 'pending_files.0': {'$exists': True}}, {'_id': 1}):
+                    async with admission(db, exclusive=True):
+                        await cleanup_stock_media(db, get_media_storage())
                 next_share_cleanup = now + 3600
         except asyncio.CancelledError:
             raise

@@ -47,8 +47,20 @@ export default function EditCustomer() {
   const activeRef = useRef(false);
   const loadedContextRef = useRef<typeof context | null>(null);
   const loadAbortRef = useRef<AbortController | null>(null);
+  const deletingCustomer = useRef(false);
   const isCurrent = useCallback(() => activeRef.current && contextRef.current === context, [context]);
   const canDeleteCustomers = useActionAccess("customers", "delete", staff?.role === "owner") && staff?.role === "owner";
+
+  const deleteCustomer = async () => {
+    if (!id || !selectedFloorId || !isCurrent() || deletingCustomer.current) return;
+    deletingCustomer.current = true;
+    try {
+      await api.delete(`/customers/${encodeURIComponent(id)}`, { floorId: selectedFloorId });
+      if (isCurrent()) router.replace("/(admin)/customers" as any);
+    } catch (error: any) {
+      if (isCurrent()) toast.error(error?.detail || "Could not delete customer data");
+    } finally { deletingCustomer.current = false; }
+  };
 
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState(false);
@@ -197,11 +209,11 @@ export default function EditCustomer() {
         back={() => router.back()}
         actions={canDeleteCustomers ? (
           <Button
-            label="Manage customer data"
-            icon="settings"
+            label={["first-floor", "ground-floor"].includes(selectedFloorId) ? "Delete customer data" : "Manage customer data"}
+            icon={["first-floor", "ground-floor"].includes(selectedFloorId) ? "trash-2" : "settings"}
             variant="secondary"
             size="sm"
-            onPress={() => router.push("/(admin)/customers" as any)}
+            onPress={() => { if (["first-floor", "ground-floor"].includes(selectedFloorId)) void deleteCustomer(); else router.push("/(admin)/customers" as any); }}
             testID="delete-customer-edit"
           />
         ) : undefined}

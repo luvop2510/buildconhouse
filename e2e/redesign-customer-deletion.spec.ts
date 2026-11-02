@@ -1,92 +1,48 @@
 import { test, expect } from '@playwright/test';
 import { mockSession } from './audit-fixtures';
 
-for (const outcome of ['lost-response', 'conflict']) {
-  test(`critical customer deletion recovers ${outcome} with the correct confirmation lifecycle`, async ({ page }, info) => {
-    await mockSession(page, '/customers', false);
-    let removed = false;
-    let previews = 0;
-    const commands: string[] = [];
-    await page.route('**/api/customers?**', route => route.fulfill({ json: removed ? [] : [
-      { id: 'retry-target', name: 'Retry Buyer', company: 'Retry Buyer', phone: '9000000002' },
-    ] }));
-    await page.route('**/api/customers/retry-target/deletion-preview?**', route => {
-      previews += 1;
-      expect(removed).toBe(false);
-      return route.fulfill({ json: { customer_id: 'retry-target', confirmation: `review-${previews}`,
-        counts: { customers: 1, quotations: 2 }, selected_furniture_ids: [], furniture_candidates: [] } });
-    });
-    await page.route('**/api/customers/retry-target?**', route => {
-      commands.push(new URL(route.request().url()).searchParams.get('confirmation')!);
-      if (commands.length === 1) {
-        removed = outcome === 'lost-response';
-        return route.fulfill({ status: removed ? 504 : 409, json: { detail: removed ? 'Response lost' : 'Customer data changed. Review again.' } });
-      }
-      removed = true;
-      return route.fulfill({ json: { ok: true, already_deleted: outcome === 'lost-response' } });
-    });
-    await page.goto('/customers');
-    await page.getByTestId('delete-customer-retry-target').click();
-    const dialog = page.getByTestId('confirm-delete-customer-list');
-    const confirm = dialog.getByTestId('confirm-delete-customer-list-confirm');
-    await expect(dialog.getByTestId('customer-deletion-summary')).toBeVisible();
-    await confirm.click();
-    if (outcome === 'lost-response') {
-      await expect(confirm).toHaveText('Retry confirmed deletion');
-      await expect(dialog.getByTestId('customer-deletion-summary')).toBeVisible();
-      expect(previews).toBe(1);
-      await page.screenshot({ path: info.outputPath('customer-deletion-outcome-unknown.png') });
-      await confirm.click();
-      expect(commands).toEqual(['review-1', 'review-1']);
-    } else {
-      await expect(confirm).toBeDisabled();
-      await expect(dialog.getByTestId('customer-deletion-summary')).toHaveCount(0);
-      await page.screenshot({ path: info.outputPath('customer-deletion-conflict-review.png') });
-      await dialog.getByRole('button', { name: 'Review current data', exact: true }).click();
-      await expect(confirm).toBeEnabled();
-      await confirm.click();
-      expect(commands).toEqual(['review-1', 'review-2']);
-    }
-    await expect(page.getByTestId('customer-retry-target')).toHaveCount(0);
-    await expect(dialog).toHaveCount(0);
-  });
-}
-
-test('critical customer deletion reviews linked records and legacy Furniture without affecting another customer', async ({ page }) => {
+test('critical customer deletes immediately without review and keeps other customers', async ({ page }) => {
   await mockSession(page, '/customers', false);
-  let removed = false;
   await page.route('**/api/customers?**', route => route.fulfill({json: [
-    ...(!removed ? [{id:'delete-target',name:'Synthetic Buyer',company:'Synthetic Buyer',phone:'9000000000'}] : []),
+    {id:'delete-target',name:'Synthetic Buyer',company:'Synthetic Buyer',phone:'9000000000'},
     {id:'keep-other',name:'Other Buyer',company:'Other Buyer',phone:'9000000001'},
   ]}));
-  await page.route('**/api/customers/delete-target/deletion-preview?**', route => {
-    const selected = new URL(route.request().url()).searchParams.get('furniture_ids')?.includes('legacy-furniture');
-    return route.fulfill({json: {customer_id:'delete-target', confirmation:selected?'with-furniture':'without-furniture',
-      counts:{customers:1,quotations:3,payments:2,purchase_orders:1,furniture_quotations:selected?1:0},
-      selected_furniture_ids:selected?['legacy-furniture']:[],
-      furniture_candidates:[{id:'legacy-furniture',customer_name:'Synthetic ledger',customer_phone:'9000000000',selected:!!selected}]}});
-  });
   let deletes = 0;
-  await page.route('**/api/customers/delete-target?**', route => {
+  await page.route(/\/api\/customers\/delete-target(?:\?.*)?$/, route => {
     expect(route.request().method()).toBe('DELETE');
-    const params = new URL(route.request().url()).searchParams;
-    expect(params.get('confirmation')).toBe('with-furniture');
-    expect(params.get('furniture_ids')).toBe('legacy-furniture');
-    deletes++; removed = true;
-    return route.fulfill({json:{ok:true,customer_id:'delete-target'}});
+    expect(new URL(route.request().url()).searchParams.has('confirmation')).toBe(false);
+    deletes++;
+    return route.fulfill({json:{ok:true}});
   });
   await page.goto('/customers');
-  await expect(page.getByTestId('customer-delete-target')).toBeVisible();
   await page.getByTestId('delete-customer-delete-target').click();
-  const dialog = page.getByTestId('confirm-delete-customer-list');
-  await expect(dialog.getByTestId('customer-deletion-summary')).toBeVisible();
-  expect(deletes).toBe(0);
-  await dialog.getByRole('checkbox', { name:'Include furniture quotation Synthetic ledger' }).click();
-  await expect(dialog.getByRole('checkbox')).toHaveAttribute('aria-checked','true');
-  await dialog.getByTestId('confirm-delete-customer-list-confirm').click();
   await expect(page.getByTestId('customer-delete-target')).toHaveCount(0);
   await expect(page.getByTestId('customer-keep-other')).toBeVisible();
   expect(deletes).toBe(1);
+});
+
+for (const floor of ['first-floor', 'ground-floor']) test(`critical ${floor} customer reset sends one stable command and reloads the list`, async ({ page }) => {
+  await mockSession(page, '/customers', false, { floorId: floor });
+  let reset = false;
+  let commands = 0;
+  await page.route('**/api/customers?**', route => route.fulfill({json:reset ? [] : [{id:'buyer',name:'Buyer',phone:'9000000000'}]}));
+  await page.route('**/api/customers/floor-reset', route => {
+    expect(route.request().method()).toBe('POST');
+    expect(route.request().headers()['x-floor-id']).toBe(floor);
+    expect(route.request().postDataJSON().request_id).toMatch(/^[0-9a-f-]{36}$/);
+    commands++; reset = true;
+    return route.fulfill({json:{ok:true}});
+  });
+  await page.goto('/customers');
+  await page.getByTestId('reset-floor-customer-data').click();
+  await expect(page.getByTestId('customer-buyer')).toHaveCount(0);
+  expect(commands).toBe(1);
+});
+
+for (const floor of ['second-floor', 'third-floor']) test(`critical ${floor} does not receive the new reset action`, async ({ page }) => {
+  await mockSession(page, '/customers', false, { floorId: floor });
+  await page.goto('/customers');
+  await expect(page.getByTestId('reset-floor-customer-data')).toHaveCount(0);
 });
 
 test('critical new Furniture ledger carries the selected canonical customer through save and reopen', async ({ page }) => {

@@ -9,6 +9,7 @@ export type BuilderDraft = {
   quotationId: string | null;
   quotationNumber: string | null;
   serverSavedAt: string | null;
+  resetGeneration?: string;
   state: BuilderState;
 };
 

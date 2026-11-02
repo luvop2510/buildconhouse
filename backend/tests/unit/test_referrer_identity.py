@@ -95,6 +95,12 @@ def test_addressed_reference_preserves_accessible_floor_scope_and_shared_reuse()
     assert hidden.value.status_code == 404
     directory.document['shared_across_floors'] = True
     assert asyncio.run(resolve_referrer(database, 'reference', worker))['id'] == 'reference'
+    directory.document['excluded_floor_ids'] = ['ground-floor']
+    with pytest.raises(HTTPException) as excluded:
+        asyncio.run(resolve_referrer(database, 'reference', worker))
+    assert excluded.value.status_code == 404
+    directory.document['excluded_floor_ids'] = ['first-floor']
+    assert asyncio.run(resolve_referrer(database, 'reference', worker))['id'] == 'reference'
     worker.floor_ids = []
     with pytest.raises(HTTPException) as no_access:
         asyncio.run(resolve_referrer(database, 'reference', worker))

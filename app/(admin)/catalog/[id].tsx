@@ -124,9 +124,23 @@ function ProductDetailWorkspace({ floorId }: { floorId: string }) {
   // Same threshold as backend's require_min_role("purchase") for the media
   // endpoints — keep in sync if that ever changes.
   const canManageImages = useActionAccess("catalog", "update", !!staff && ["owner", "admin", "manager", "accounts", "purchase"].includes(staff.role));
+  const canDeleteProduct = useActionAccess("catalog", "delete", !!staff && ["owner", "admin", "manager", "accounts", "purchase"].includes(staff.role)) && ["first-floor", "ground-floor"].includes(floorId);
+  const deletingProduct = useRef(false);
   const [editorTab, setEditorTab] = useState<"General" | "Pricing" | "Media">("General");
 
   const [p, setP] = useState<Product | null>(null);
+  const deleteProduct = async () => {
+    if (!p || deletingProduct.current) return;
+    deletingProduct.current = true;
+    const productId = p.id;
+    const request = loadRequestRef.current;
+    try {
+      await api.delete(`/products/${encodeURIComponent(productId)}`, { floorId });
+      if (request === loadRequestRef.current) router.replace("/(admin)/catalog" as any);
+    } catch (error: any) {
+      if (request === loadRequestRef.current) toast.error(error?.detail || "Could not delete product");
+    } finally { deletingProduct.current = false; }
+  };
   const [siblings, setSiblings] = useState<Product[]>([]);
   const [alternates, setAlternates] = useState<Product[]>([]);
   const [brandName, setBrandName] = useState<string>("");
@@ -795,6 +809,7 @@ function ProductDetailWorkspace({ floorId }: { floorId: string }) {
             accessibilityLabel="Edit product" testID="manage-images-btn"
           />
         ) : null}
+        {canDeleteProduct ? <IconButton icon="trash-2" onPress={() => { void deleteProduct(); }} size={36} tone="surface" accessibilityLabel="Delete product" testID="delete-catalog-product" /> : null}
         <IconButton icon="share-2" onPress={shareProduct} size={36} tone="surface" accessibilityLabel="Share" testID="share-product-top" />
       </SafeAreaView>
 

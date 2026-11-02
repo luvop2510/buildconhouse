@@ -41,15 +41,23 @@ def referrer_query(scope, base=None):
         return {**scope, **(base or {})}
     # A caller without any floor access cannot read the shared directory.
     shared = [] if isinstance(floor, dict) and floor.get('$in') == [] else [{'shared_across_floors': True}]
-    return {**scope, **(base or {}), '$or': [{'floor_id': floor}, *shared]}
+    query = {**scope, **(base or {}), '$or': [{'floor_id': floor}, *shared]}
+    # A floor reset can remove a shared contact from one workspace without
+    # deleting the identity that other floors still use. A multi-floor view
+    # may see it if at least one selected floor has not excluded it.
+    floors = [floor] if isinstance(floor, str) else floor.get('$in', []) if isinstance(floor, dict) else []
+    if floors:
+        query['excluded_floor_ids'] = {'$not': {'$all': floors}}
+    return query
 
 
 async def resolve_referrer(database, referrer_id, user):
-    from auth import accessible_floor_ids
+    from auth import accessible_floor_ids, floor_scope_ids
     from fastapi import HTTPException
     referrer = await database.referrers.find_one({'id': referrer_id}, {'_id': 0})
     allowed = accessible_floor_ids(user)
-    if not referrer or not referrer.get('floor_id') or (allowed is not None and (
+    selected = floor_scope_ids(user)
+    if not referrer or not referrer.get('floor_id') or (selected and all(floor in (referrer.get('excluded_floor_ids') or []) for floor in selected)) or (allowed is not None and (
         not allowed or (referrer['floor_id'] not in allowed and not referrer.get('shared_across_floors'))
     )):
         raise HTTPException(status_code=404, detail='Referrer not found')

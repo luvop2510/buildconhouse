@@ -5,11 +5,13 @@ import vm from 'node:vm';
 import ts from 'typescript';
 const data = new Map();
 let epoch = 3;
+let generation = '';
 const registered = [];
 const compiled = ts.transpileModule(readFileSync(new URL('../src/components/tiles/tileDraftStorage.ts', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
 const exports = {};
 vm.runInNewContext(compiled, { exports, require: name => ({
   '@/src/utils/storage': { storage: { getItem: async (key, fallback) => data.get(key) || fallback } },
+  '@/src/api/client': { api: { get: async () => ({ generation }) } },
   '@/src/components/quotation/helpers/draftRecovery': { DRAFT_TTL_MS: 7 * 86400000 },
   '@/src/components/quotation/helpers/draftStorage': {
     writeRegisteredBuilderDraft: async (key, draft, expected) => { registered.push(key); if (epoch === expected) data.set(key, JSON.stringify(draft)); },
@@ -37,6 +39,7 @@ test('tile draft recovery rejects account/type/document mismatches, stale data a
 });
 
 test('tiles use the shared customer-draft registry, revocation epoch and independent type scopes', async () => {
+  await exports.readTileDraft('owner', 'tiles_selection', null);
   await exports.writeTileDraft(draft, 3);
   assert.equal(registered.at(-1).startsWith('forge.builder.draft.v1.'), true);
   assert.equal((await exports.readTileDraft('owner', 'tiles_selection', null)).rows[0].image, draft.rows[0].image);
@@ -47,6 +50,17 @@ test('tiles use the shared customer-draft registry, revocation epoch and indepen
   assert.equal((await exports.readTileDraft('owner', 'tiles_selection', null)).header.address, '');
   await exports.removeTileDraft('owner', 'tiles_selection', null);
   assert.equal(await exports.readTileDraft('owner', 'tiles_selection', null), null);
+});
+
+test('floor reset generation removes old tiles drafts without affecting new ones', async () => {
+  epoch = 3;
+  generation = 'before';
+  await exports.readTileDraft('owner', 'tiles_selection', null);
+  await exports.writeTileDraft(draft, epoch);
+  generation = 'after';
+  assert.equal(await exports.readTileDraft('owner', 'tiles_selection', null), null);
+  await exports.writeTileDraft(draft, epoch);
+  assert.equal((await exports.readTileDraft('owner', 'tiles_selection', null)).resetGeneration, 'after');
 });
 
 test('automatic recovery requires exact base revision and refuses already ordered records', () => {

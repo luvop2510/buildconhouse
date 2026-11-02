@@ -190,8 +190,20 @@ export default function CustomerDetail() {
   const coreAbortRef = useRef<AbortController | null>(null);
   const coreActiveRef = useRef(false);
   const coreContextRef = useRef("");
+  const deletingCustomer = useRef(false);
   const coreContext = `${selectedFloorId}:${id}`;
   coreContextRef.current = coreContext;
+
+  const deleteCustomer = async () => {
+    if (!id || !selectedFloorId || deletingCustomer.current) return;
+    deletingCustomer.current = true;
+    try {
+      await api.delete(`/customers/${encodeURIComponent(id)}`, { floorId: selectedFloorId });
+      if (coreContextRef.current === coreContext) router.replace("/(admin)/customers" as any);
+    } catch (error: any) {
+      if (coreContextRef.current === coreContext) toast.error(error?.detail || "Could not delete customer data");
+    } finally { deletingCustomer.current = false; }
+  };
 
   const workspaceFilters = useMemo<WorkspaceServerFilters>(() => ({
     productSearch: productSearch.trim(),
@@ -514,11 +526,11 @@ export default function CustomerDetail() {
             />
             {canDeleteCustomers ? (
               <Button
-                icon="settings"
-                label="Manage customer data"
+                icon={["first-floor", "ground-floor"].includes(selectedFloorId) ? "trash-2" : "settings"}
+                label={["first-floor", "ground-floor"].includes(selectedFloorId) ? "Delete customer data" : "Manage customer data"}
                 variant="secondary"
                 size="md"
-                onPress={() => router.push("/(admin)/customers" as any)}
+                onPress={() => { if (["first-floor", "ground-floor"].includes(selectedFloorId)) void deleteCustomer(); else router.push("/(admin)/customers" as any); }}
                 testID="delete-customer-detail"
               />
             ) : null}

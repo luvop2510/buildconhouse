@@ -49,6 +49,7 @@ export type WalkInsAnalytics = {
 };
 
 export const walkinsApi = {
+  remove: (id: string, floorId: string) => api.delete<{ ok: boolean }>(`/walkins/${encodeURIComponent(id)}`, { floorId }),
   list: (params?: {
     status?: string; priority?: string; salesperson_id?: string; source?: string; floor_id?: string; floor_ids?: string;
     date_from?: string; date_to?: string; search?: string;

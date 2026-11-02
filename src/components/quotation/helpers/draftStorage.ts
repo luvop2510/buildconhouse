@@ -1,25 +1,39 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { storage } from "@/src/utils/storage";
+import { api } from "@/src/api/client";
 import { parseBuilderDraft, type BuilderDraft } from "./draftRecovery";
 
 const PREFIX = "forge.builder.draft.v1";
 const INDEX = `${PREFIX}.keys`;
 let epoch = 0;
 let queue: Promise<unknown> = Promise.resolve();
+const resetGenerations = new Map<string, string>();
 const keyFor = (accountId: string, floorId: string) => `${PREFIX}.${encodeURIComponent(accountId)}.${encodeURIComponent(floorId)}`;
 export const builderDraftEpoch = () => epoch;
 
 export async function readBuilderDraft(accountId: string, floorId: string) {
   const key = keyFor(accountId, floorId);
+  if (accountId && floorId === "first-floor") {
+    const result = await api.get<{ generation: string }>("/quotations/floor-reset-generation", { floorId });
+    if (typeof result?.generation !== "string") throw new Error("Could not verify quotation recovery.");
+    resetGenerations.set(key, result.generation);
+  }
   const raw = await storage.getItem<string | null>(key, null);
   const draft = parseBuilderDraft(raw, accountId, floorId);
   if (raw && !draft) await storage.removeItem(key);
+  if (draft && floorId === "first-floor" && (draft.resetGeneration || "") !== resetGenerations.get(key)) {
+    if (!await storage.removeItem(key)) throw new Error("Could not clear an old quotation draft.");
+    return null;
+  }
   return draft;
 }
 
 export function writeBuilderDraft(draft: BuilderDraft, expectedEpoch: number) {
-  return writeRegisteredBuilderDraft(keyFor(draft.accountId, draft.floorId), draft, expectedEpoch);
+  const key = keyFor(draft.accountId, draft.floorId);
+  if (draft.floorId === "first-floor" && !resetGenerations.has(key)) return Promise.resolve(false);
+  return writeRegisteredBuilderDraft(key, draft.floorId === "first-floor"
+    ? { ...draft, resetGeneration: resetGenerations.get(key) } : draft, expectedEpoch);
 }
 
 /** Tile drafts share the registry and revocation queue with sanitary drafts. */
@@ -69,15 +83,22 @@ let resetMigration: Promise<void> | null = null;
 export function ensureBuilderDraftReset(): Promise<void> {
   if (resetMigration) return resetMigration;
   resetMigration = (async () => {
-    if (await storage.getItem<string | null>(RESET_MARKER, null) === CUSTOMER_RESET_EPOCH) return;
+    const oldResetDone = await storage.getItem<string | null>(RESET_MARKER, null) === CUSTOMER_RESET_EPOCH;
+    const floorResetMarker = "forge.builder.sanitaryResetEpoch.v1";
+    const floorResetDone = await storage.getItem<string | null>(floorResetMarker, null) === "sanitary-reset-20261102";
+    if (oldResetDone && floorResetDone) return;
     epoch += 1;
     await queue.catch(() => {});
     // Enumerate the underlying store as well as removing the old registry:
     // interrupted historical writes can leave a draft without an index entry.
     const keys = await AsyncStorage.getAllKeys();
-    const customerKeys = keys.filter((key) => key.startsWith(`${PREFIX}.`) || key === "forge.builder.snapshot.v4");
+    const customerKeys = oldResetDone
+      ? keys.filter((key) => key.startsWith(`${PREFIX}.`) && key.endsWith(".first-floor"))
+      : keys.filter((key) => key.startsWith(`${PREFIX}.`) || key === "forge.builder.snapshot.v4");
     const removed = await Promise.all(customerKeys.map((key) => storage.removeItem(key)));
-    if (removed.some((ok) => !ok) || !await storage.setItem(RESET_MARKER, CUSTOMER_RESET_EPOCH)) {
+    if (removed.some((ok) => !ok)
+      || (!oldResetDone && !await storage.setItem(RESET_MARKER, CUSTOMER_RESET_EPOCH))
+      || !await storage.setItem(floorResetMarker, "sanitary-reset-20261102")) {
       throw new Error("Could not clear previous quotation drafts. Please retry signing in.");
     }
   })().catch((error) => {

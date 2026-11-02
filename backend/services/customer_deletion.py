@@ -360,7 +360,7 @@ async def apply_plan(database, plan, session):
     return counts
 
 
-async def delete_customer_graph(database, client, customer_id, actor_id, confirmation, furniture_ids=()):
+async def delete_customer_graph(database, client, customer_id, actor_id, confirmation="", furniture_ids=(), allowed_floors=None):
     async def operation(session):
         receipt_id = "customer-deletion:" + customer_id
         previous = await database.settings.find_one({"id": receipt_id}, session=session)
@@ -369,7 +369,14 @@ async def delete_customer_graph(database, client, customer_id, actor_id, confirm
         plan = await plan_deletion(database, customer_id=customer_id, furniture_ids=furniture_ids, session=session)
         if not plan["delete"].get("customers"):
             raise HTTPException(404, "Customer not found")
-        if not confirmation or not hmac.compare_digest(confirmation, _snapshot_token(plan, actor_id)):
+        if allowed_floors is not None:
+            for collection, documents in plan["delete"].items():
+                if any(row.get("floor_id") and row["floor_id"] not in allowed_floors for row in documents):
+                    raise HTTPException(409, f"This customer has linked data on another floor ({collection}).")
+            for collection, changes in plan["updates"].items():
+                if any(row.get("floor_id") and row["floor_id"] not in allowed_floors for row, _ in changes):
+                    raise HTTPException(409, f"This customer has linked data on another floor ({collection}).")
+        if confirmation and not hmac.compare_digest(confirmation, _snapshot_token(plan, actor_id)):
             raise HTTPException(409, "Customer data changed. Review the deletion summary again before confirming.")
         deleted = await apply_plan(database, plan, session)
         # Counts and actor are retained for accountability. Names, contacts and

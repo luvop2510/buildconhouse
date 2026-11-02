@@ -319,8 +319,8 @@ def test_outbox_sessions_downloads_whatsapp_and_saved_views_cannot_resurrect_dat
     assert database.followup_saved_views.rows[0]['filters'] == {'status': 'open'}
 
 
-@pytest.mark.parametrize('actor,confirmation', [('owner-2', None), ('owner-1', ''), ('owner-1', 'forged')])
-def test_confirmation_is_explicit_and_bound_to_owner_and_snapshot(actor, confirmation):
+@pytest.mark.parametrize('actor,confirmation', [('owner-2', None), ('owner-1', 'forged')])
+def test_supplied_confirmation_is_bound_to_owner_and_snapshot(actor, confirmation):
     database = sample()
     token = preview(database, actor)['confirmation'] if confirmation is None else confirmation
     with pytest.raises(HTTPException) as error:
@@ -372,11 +372,19 @@ def test_all_customer_deletion_requires_owner_even_with_custom_page_grants(role)
     assert error.value.status_code == 403
 
 
-def test_customer_deletion_without_review_confirmation_is_rejected():
+def test_customer_deletion_without_review_uses_current_transaction_snapshot():
+    database = sample()
+    result = remove(database, '')
+    assert result['ok'] is True
+    assert 'c1' not in ids(database, 'customers')
+
+
+def test_direct_deletion_does_not_cross_selected_floor():
+    database = sample()
     with pytest.raises(HTTPException) as error:
-        asyncio.run(customer_routes.delete_customer('c1', user=user()))
+        asyncio.run(delete_customer_graph(database, Client(database), 'c1', 'owner-1', '', allowed_floors={'first-floor'}))
     assert error.value.status_code == 409
-    assert 'Review' in error.value.detail
+    assert ids(database, 'customers') == {'c1', 'c2', 'c3'}
 
 
 def test_explicit_import_field_works_without_historical_activity_and_reverse_selection():

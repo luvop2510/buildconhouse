@@ -73,7 +73,8 @@ def test_gather_referrer_profile_directory_lookup_is_floor_scoped():
     ))
 
     assert referrer is None
-    assert db.referrers.queries == [{"id": "r-hidden", "$or": [{"floor_id": {"$in": ["ground-floor"]}}, {"shared_across_floors": True}]}]
+    assert db.referrers.queries == [{"id": "r-hidden", "$or": [{"floor_id": {"$in": ["ground-floor"]}}, {"shared_across_floors": True}],
+        "excluded_floor_ids": {"$not": {"$all": ["ground-floor"]}}}]
 
 
 def test_gather_referrer_profile_data_returns_none_referrer_when_not_found():

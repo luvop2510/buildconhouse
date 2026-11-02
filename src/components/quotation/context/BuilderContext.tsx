@@ -203,6 +203,8 @@ export type BuilderApi = {
   recoveryDraft: BuilderDraft | null;
   recoveryBusy: boolean;
   recoveryError: string | null;
+  recoveryCheckError: string | null;
+  retryRecoveryCheck: () => void;
   restoreLocalDraft: () => Promise<void>;
   dismissRecovery: () => void;
 
@@ -386,6 +388,9 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
   const [recoveryReady, setRecoveryReady] = useState(false);
   const [recoveryBusy, setRecoveryBusy] = useState(false);
   const [recoveryError, setRecoveryError] = useState<string | null>(null);
+  const [recoveryCheckError, setRecoveryCheckError] = useState<string | null>(null);
+  const [recoveryCheckAttempt, setRecoveryCheckAttempt] = useState(0);
+  const retryRecoveryCheck = useCallback(() => setRecoveryCheckAttempt(value => value + 1), []);
   const restoredInitialQuotationRef = useRef<string | null>(null);
   useUndoRedoShortcuts(history as any, true);
 
@@ -515,7 +520,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
         if (error?.name !== "AbortError") console.warn(`Failed to load ${pickerTab} products`, error);
       });
     return () => controller.abort();
-  }, [pickerTab, activeFloorId]);
+  }, [pickerTab, activeFloorId, productRetry]);
 
   // The recent-quotation rail is intentionally deferred until the first frame
   // has painted. It remains available immediately afterwards, without
@@ -761,12 +766,16 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
   // a document without an explicit choice. Only unacknowledged edits remain.
   useEffect(() => {
     let current = true;
+    setRecoveryReady(false);
+    setRecoveryCheckError(null);
     void readBuilderDraft(accountId, activeFloorId).then((draft) => {
       // A saved-document route recovers only its own unacknowledged edits.
       if (current) { setRecoveryDraft(!initialQuotationId || draft?.quotationId === initialQuotationId ? draft : null); setRecoveryReady(true); }
+    }).catch(() => {
+      if (current) setRecoveryCheckError("Could not verify saved drafts. Check your connection and try again.");
     });
     return () => { current = false; documentGeneration.current += 1; restoreRequest.current += 1; };
-  }, [accountId, activeFloorId, initialQuotationId]);
+  }, [accountId, activeFloorId, initialQuotationId, recoveryCheckAttempt]);
 
   useEffect(() => {
     if (!recoveryReady || recoveryDraft || !accountId || !activeFloorId || lastSavedStateRef.current === s) return;
@@ -790,6 +799,17 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
     setRecoveryError(null);
     setRecoveryBusy(true);
     try {
+      const fresh = await readBuilderDraft(accountId, activeFloorId);
+      if (!fresh) {
+        setRecoveryDraft(null);
+        setRecoveryReady(true);
+        return;
+      }
+      if (fresh.at !== draft.at || fresh.quotationId !== draft.quotationId) {
+        setRecoveryDraft(fresh);
+        setRecoveryError("The saved draft changed. Review it and try again.");
+        return;
+      }
       let copy = false;
       let recoveredOutcome: "won" | "lost" | null = null;
       if (draft.quotationId) {
@@ -824,7 +844,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
       setRecoveryError(message);
       toast.error(message);
     } finally { setRecoveryBusy(false); }
-  }, [recoveryDraft, recoveryBusy, activeFloorId, history, canCreateQuotation, canUpdateQuotation]);
+  }, [recoveryDraft, recoveryBusy, activeFloorId, accountId, history, canCreateQuotation, canUpdateQuotation]);
 
   // ---------- Restore an existing quotation ----------
   const refreshRecentQuotations = useCallback(async () => {
@@ -1639,7 +1659,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
     productModal, openProductModal, closeProductModal, patchProduct,
     customProductSheetOpen, setCustomProductSheetOpen,
     recentQuotations, refreshRecentQuotations, restoreQuotation, deleteQuotation, startNewQuotation,
-    totals, usedCategoryIds, flatRows, lineBreakdownById, recoveryDraft, recoveryBusy, recoveryError, restoreLocalDraft, dismissRecovery,
+    totals, usedCategoryIds, flatRows, lineBreakdownById, recoveryDraft, recoveryBusy, recoveryError, recoveryCheckError, retryRecoveryCheck, restoreLocalDraft, dismissRecovery,
     quotationId, quotationNumber, customerCompleted, customerOutcome, saveState, savedAt, saveLabel, persist, finalize,
     workflowBusy, generateOfficialQuotation, generateQuotationExcel, generateProductPpt, placeOrder,
     setCustomer, createCustomer, importCustomerFromGround, customerSwitcherOpen, setCustomerSwitcherOpen,
@@ -1668,7 +1688,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
     productModal, openProductModal, closeProductModal, patchProduct,
     customProductSheetOpen, setCustomProductSheetOpen,
     recentQuotations, refreshRecentQuotations, restoreQuotation, deleteQuotation, startNewQuotation,
-    totals, usedCategoryIds, flatRows, lineBreakdownById, recoveryDraft, recoveryBusy, recoveryError, restoreLocalDraft, dismissRecovery,
+    totals, usedCategoryIds, flatRows, lineBreakdownById, recoveryDraft, recoveryBusy, recoveryError, recoveryCheckError, retryRecoveryCheck, restoreLocalDraft, dismissRecovery,
     quotationId, quotationNumber, customerCompleted, customerOutcome, saveState, savedAt, saveLabel, persist, finalize,
     workflowBusy, generateOfficialQuotation, generateQuotationExcel, generateProductPpt, placeOrder,
     setCustomer, createCustomer, importCustomerFromGround, customerSwitcherOpen, setCustomerSwitcherOpen,

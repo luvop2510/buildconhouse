@@ -9,11 +9,13 @@ from typing import Optional
 from uuid import NAMESPACE_URL, uuid5
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import ValidationError
+from pydantic import BaseModel, Field, ValidationError
 from pymongo.errors import DuplicateKeyError
 
 from auth import floor_for_write, floor_inherit, floor_query, floor_scope_ids, get_current_user, get_floor_scoped_or_404, require_min_role
 from db import db, strip_ids
+from pymongo.read_concern import ReadConcern
+from pymongo.write_concern import WriteConcern
 from catalog_policy import removed_brand_document
 from models import Brand, BrandCreate, Category, CategoryCreate, ConcealedPart, Product, ProductCreate, ProductPatch, SizeVariantResolution, UserPublic
 from services import catalog_service, media_service
@@ -457,6 +459,8 @@ async def resolve_product_size_variant(
 async def get_product(product_id: str, user: UserPublic = Depends(get_current_user),
                       catalog_entry_id: Optional[str] = None):
     source = await get_floor_scoped_or_404(db.products, product_id, user, not_found="Product not found", projection={"_id": 0})
+    if source.get("catalog_deleted_at"):
+        raise HTTPException(status_code=404, detail="Product not found")
     if catalog_entry_id:
         doc = await catalog_service.product_by_id(product_id, floor_ids=None, catalog_entry_id=catalog_entry_id)
     else:
@@ -471,6 +475,59 @@ async def get_product(product_id: str, user: UserPublic = Depends(get_current_us
     doc["images"] = source.get("images") or []
     doc["floor_id"] = source["floor_id"]
     return await media_service.hydrate_product_media(doc)
+
+
+@router.delete("/products/{product_id}")
+async def delete_product(product_id: str, user: UserPublic = Depends(require_min_role("purchase"))):
+    """Remove a product from this floor's catalog while retaining order history."""
+    floor_id = floor_for_write(user)
+    if floor_id not in {"ground-floor", "first-floor"}:
+        raise HTTPException(403, "Product deletion is available on the Ground and Sanitary floors")
+    source = await get_floor_scoped_or_404(db.products, product_id, user, not_found="Product not found", projection={"_id": 0})
+    if source.get("floor_id") != floor_id:
+        raise HTTPException(404, "Product not found")
+    async def remove(session):
+        await db.products.update_one({"id": product_id, "floor_id": floor_id, "catalog_deleted_at": None}, {"$set": {
+            "active": False, "catalog_deleted_at": datetime.now(timezone.utc).isoformat(), "catalog_deleted_by": user.id,
+        }}, session=session)
+        # Older imported families can embed a copy of the same SKU. Remove
+        # only that exact floor/brand variant and explicit ID relationships.
+        variant = {"$or": [{"id": product_id}, {"$and": [{"id": None}, {"sku": source.get("sku")}]}]}
+        others = {"floor_id": floor_id, "id": {"$ne": product_id}}
+        await db.products.update_many({**others, "brand_id": source.get("brand_id"), "variants": {"$elemMatch": variant}}, {"$pull": {"variants": variant}}, session=session)
+        for field in ("related_ids", "accessory_ids", "compatible_ids"):
+            await db.products.update_many({**others, field: {"$type": "array", "$in": [product_id]}}, {"$pull": {field: product_id}}, session=session)
+    async with await db.client.start_session() as session:
+        await session.with_transaction(remove, read_concern=ReadConcern("snapshot"), write_concern=WriteConcern("majority"))
+    # Publishing an inactive flag alone leaves the warm snapshot's search and
+    # family indexes stale; rebuild before acknowledging the deletion.
+    await catalog_service.refresh_catalog_snapshot()
+    return {"ok": True}
+
+
+@router.delete("/products/{product_id}/variants")
+async def delete_product_variant(product_id: str, sku: str = Query(min_length=1, max_length=200), user: UserPublic = Depends(require_min_role("purchase"))):
+    floor_id = floor_for_write(user)
+    if floor_id not in {"ground-floor", "first-floor"}:
+        raise HTTPException(403, "Product deletion is available on the Ground and Sanitary floors")
+    parent = await get_floor_scoped_or_404(db.products, product_id, user, not_found="Product not found", projection={"_id": 0})
+    if parent.get("floor_id") != floor_id or parent.get("catalog_deleted_at"):
+        raise HTTPException(404, "Product not found")
+    if sku == parent.get("sku"):
+        return await delete_product(product_id, user)
+    if not any(variant.get("sku") == sku for variant in parent.get("variants", []) if isinstance(variant, dict)):
+        await catalog_service.refresh_catalog_snapshot()
+        return {"ok": True}
+    separate = await db.products.find_one({"floor_id": floor_id, "brand_id": parent.get("brand_id"), "sku": sku, "active": True}, {"_id": 0, "id": 1})
+    if separate:
+        return await delete_product(separate["id"], user)
+    async def remove(session):
+        await db.products.update_many({"floor_id": floor_id, "brand_id": parent.get("brand_id"), "variants.sku": sku},
+            {"$pull": {"variants": {"sku": sku}}}, session=session)
+    async with await db.client.start_session() as session:
+        await session.with_transaction(remove, read_concern=ReadConcern("snapshot"), write_concern=WriteConcern("majority"))
+    await catalog_service.refresh_catalog_snapshot()
+    return {"ok": True}
 
 
 @router.get("/products/{product_id}/alternates")
@@ -528,6 +585,51 @@ async def create_custom_product(
     prod = await _create_custom_record(body, user, keep_in_catalog=body.keep_in_catalog)
     catalog_service.schedule_catalog_refresh()
     return Product(**prod)
+
+
+class CatalogCustomProductInput(BaseModel):
+    model_config = {"allow_inf_nan": False}
+    name: str = Field(min_length=1, max_length=200)
+    sku: str = Field(default="", max_length=100)
+    price: float = Field(ge=0)
+    mrp: float = Field(ge=0)
+    brand_id: str = ""
+    category_id: str = ""
+    request_id: str = Field(min_length=8, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
+
+
+async def _custom_reference(collection, model, floor_id):
+    query = {"floor_id": floor_id, "slug": "custom"}
+    row = await collection.find_one(query, {"_id": 0})
+    if row:
+        return row["id"]
+    record = model(name="Custom", slug="custom", floor_id=floor_id,
+                   id=str(uuid5(NAMESPACE_URL, f"forge-custom-reference:{collection.name}:{floor_id}"))).model_dump()
+    try:
+        await collection.update_one(query, {"$setOnInsert": record}, upsert=True)
+    except DuplicateKeyError:
+        pass
+    row = await collection.find_one(query, {"_id": 0})
+    if not row:
+        raise HTTPException(409, "Could not prepare the custom product category. Try again.")
+    return row["id"]
+
+
+@router.post("/products/catalog-custom", response_model=Product)
+async def create_catalog_custom_product(body: CatalogCustomProductInput, user: UserPublic = Depends(require_min_role("purchase"))):
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(422, "Enter a product name")
+    floor_id = floor_for_write(user)
+    if floor_id not in {"ground-floor", "first-floor"}:
+        raise HTTPException(403, "Custom catalog addition is available on the Ground and Sanitary floors")
+    brand_id = body.brand_id or await _custom_reference(db.brands, Brand, floor_id)
+    category_id = body.category_id or await _custom_reference(db.categories, Category, floor_id)
+    product = await _create_custom_record(ProductCreate(name=name, sku=body.sku.strip(), brand_id=brand_id,
+        category_id=category_id, price=body.price, mrp=body.mrp, is_custom=True,
+        keep_in_catalog=True, request_id=body.request_id), user, keep_in_catalog=True)
+    await catalog_service.refresh_catalog_snapshot()
+    return Product(**product)
 
 
 async def _create_custom_record(body: ProductCreate, user: UserPublic, *, keep_in_catalog: bool = True,

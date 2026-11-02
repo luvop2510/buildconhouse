@@ -12,7 +12,7 @@
 import Feather from "@expo/vector-icons/Feather";
 import * as DocumentPicker from "expo-document-picker";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, KeyboardAvoidingView, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { Text, TextInput } from "@/src/components/AppText";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -29,6 +29,7 @@ import {
 import { useRoles } from "@/src/hooks/use-roles";
 import { useAuth } from "@/src/state/auth";
 import { useActionAccess } from "@/src/hooks/use-permissions";
+import { useFloorAccess } from "@/src/hooks/use-floor-access";
 import { downloadApiFile } from "@/src/utils/downloadFile";
 
 type PoStatus =
@@ -111,6 +112,7 @@ type Attachment = {
 
 type PO = {
   id: string;
+  floor_id: string;
   number: string;
   quotation_id?: string | null;
   quotation_number?: string | null;
@@ -230,6 +232,9 @@ export default function PurchaseOrderDetail() {
   const router = useRouter();
   const { isPhone, isDesktop } = useBp();
   const { staff } = useAuth();
+  const { selectedFloorId } = useFloorAccess();
+  const activeFloor = useRef(selectedFloorId); activeFloor.current = selectedFloorId;
+  const deletingPurchase = useRef(false);
   const { roles, loading: rolesLoading, error: rolesError, refresh: refreshRoles } = useRoles();
 
   const [po, setPo] = useState<PO | null>(null);
@@ -311,6 +316,19 @@ export default function PurchaseOrderDetail() {
   const staffLevel = roles.find((role) => role.role === staff?.role)?.level;
   const canManageChalans = useActionAccess("purchases", "update", warehouseLevel !== undefined && staffLevel !== undefined && staffLevel >= warehouseLevel);
   const canCreateChalans = useActionAccess("purchases", "create", warehouseLevel !== undefined && staffLevel !== undefined && staffLevel >= warehouseLevel);
+  const canDeletePurchase = useActionAccess("purchases", "delete", !!staff && ["owner", "admin", "manager"].includes(staff.role))
+    && !!po && po.floor_id === selectedFloorId && ["first-floor", "ground-floor"].includes(po.floor_id);
+  const deletePurchase = async () => {
+    if (!po || !canDeletePurchase || deletingPurchase.current) return;
+    const floor = po.floor_id;
+    deletingPurchase.current = true;
+    try {
+      await api.delete(`/purchase-orders/${encodeURIComponent(po.id)}`, { floorId: floor });
+      if (activeFloor.current === floor) router.replace("/(admin)/purchases" as any);
+    } catch (error: any) {
+      if (activeFloor.current === floor) toast.error(error?.detail || "Could not delete purchase");
+    } finally { deletingPurchase.current = false; }
+  };
 
   const applyGeneratedChalan = useCallback((chalan: Chalan, stage: ChalanOrderStage, items: GenerateChalanPayload["items"]) => {
     setPo((current) => {
@@ -552,6 +570,7 @@ export default function PurchaseOrderDetail() {
           <Text style={{ fontSize: 14, fontWeight: "500" }}>Purchases</Text>
         </Pressable>
         <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+          {canDeletePurchase ? <Button label="Delete purchase" icon="trash-2" variant="danger" size="sm" onPress={() => { void deletePurchase(); }} testID="delete-purchase-order" /> : null}
           {po.status !== "draft" && po.status !== "cancelled" && po.status !== "packed" && po.status !== "ready_for_dispatch" ? (
             <Button label="Receive" icon="package" variant="secondary" size="sm" onPress={() => setReceiveOpen(true)} testID="receive-btn" />
           ) : null}

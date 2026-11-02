@@ -86,6 +86,7 @@ def _run_order_placed(monkeypatch):
         products = _Recorder()
         brands = _Recorder()
         suppliers = _Recorder()
+        settings = _Recorder()
         purchase_orders = _Recorder()
         payments = _Recorder()
         activity_events = _Recorder()

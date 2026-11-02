@@ -256,6 +256,19 @@ def _aging_range(period: str | None, minimum: int | None, maximum: int | None) -
 # ---------------------------------------------------------------------------
 # Stats (KPI cards at the top of the page)
 # ---------------------------------------------------------------------------
+@router.delete("/{payment_id}")
+async def delete_payment(payment_id: str, user: UserPublic = Depends(require_min_role("manager"))):
+    from services.payment_reversal import reverse_payment
+    result = await reverse_payment(db, client, payment_id, floor_for_write(user), user.id)
+    try:
+        await cache.bump("payments")
+        await cache.bump("purchase_orders")
+    except Exception:
+        logger.exception("Payment reversal cache invalidation failed")
+    asyncio.create_task(reconcile_followups_admitted())
+    return result
+
+
 @router.get("/stats")
 async def payment_stats(user: UserPublic = Depends(get_current_user)):
     """Four KPIs: Total Outstanding · Collected This Month · Active Orders · Fully Paid."""
@@ -554,6 +567,9 @@ async def update_ground_floor_manual_extra(
         if not current or current.get("status") not in ORDER_STATUSES:
             raise HTTPException(status_code=409, detail="Order changed; refresh before adding a cost")
         if request_key:
+            if await db.settings.find_one({"kind": "payment_reversal_receipt", "floor_id": current.get("floor_id"),
+                    "quotation_id": order_id, "cost_key": request_key}, session=session):
+                raise HTTPException(409, "This added cost was deleted. Start a new entry.")
             existing = next((cost for cost in current.get("payment_extra_history", []) if cost.get("request_key") == request_key), None)
             if existing:
                 if existing["amount"] != extra or existing["name"] != name or existing.get("note") != entry["note"]:
@@ -670,6 +686,9 @@ async def create_payment(
     async def _check_and_insert(session=None):
         """Balance check + insert, optionally inside a transaction session."""
         if idempotency_key:
+            if await db.settings.find_one({"kind": "payment_reversal_receipt", "floor_id": payment.floor_id,
+                    "payment_key": idempotency_key}, session=session):
+                raise HTTPException(409, "This payment was deleted. Start a new entry.")
             existing = replay_payment(await db.payments.find_one(replay_query, {"_id": 0}, session=session))
             if existing:
                 return existing

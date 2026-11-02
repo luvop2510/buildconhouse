@@ -702,11 +702,11 @@ test('name field unmount releases autosave and refocus cancels the obsolete dela
   const exports={};
   vm.runInNewContext(compiled,{...react,exports,require:()=>({jsx:(type,props)=>({type,props}),jsxs:(type,props)=>({type,props})}),
     AbortController,useAuth:()=>({staff:{id:'owner'}}),api:{get:()=>new Promise(()=>{})},TILES_FLOOR_ID:'ground-floor',
-    View:'View',TextInput:'TextInput',ScrollView:'ScrollView',Text:'Text',Button:'Button',cellStyles:{input:{}},suggestStyles:{},colors:{},
+    View:'View',TextInput:'TextInput',ScrollView:'ScrollView',Text:'Text',Button:'Button',ExistingTileCustomer:'ExistingTileCustomer',cellStyles:{input:{}},suggestStyles:{},colors:{},
     setTimeout:(fn,delay)=>{const id=++next;timers.set(id,{fn,delay});return id;},clearTimeout:id=>timers.delete(id),
   });
   const props={value:'Existing visitor',customerId:null,onChangeText(){},onPickCustomer(){},onLookupActive:(active,owner)=>changes.push({active,owner})};
-  const render=()=>{cursor=0;const tree=exports.CustomerNameField(props);while(effects.length)effects.shift()();return tree.props.children[0].props;};
+  const render=()=>{cursor=0;const tree=exports.CustomerNameField(props);while(effects.length)effects.shift()();return tree.props.children.find(child => child?.type === 'TextInput').props;};
   let input=render();input.onFocus();input=render();input.onBlur();
   assert([...timers.values()].some(t=>t.delay===180));
   input.onFocus();assert(![...timers.values()].some(t=>t.delay===180));

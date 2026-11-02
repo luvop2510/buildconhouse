@@ -62,6 +62,7 @@ export function ProductModal() {
   const b = useBuilder();
   const { staff } = useAuth();
   const canEditProduct = useActionAccess("catalog", "update", !!staff && ["owner", "admin", "manager", "accounts", "purchase"].includes(staff.role));
+  const mayDeleteProduct = useActionAccess("catalog", "delete", !!staff && ["owner", "admin", "manager", "accounts", "purchase"].includes(staff.role));
   const canCreateQuotation = useActionAccess("quotations", "create", !!staff && ["owner", "admin", "manager", "accounts", "purchase", "sales"].includes(staff.role));
   const canUpdateQuotation = useActionAccess("quotations", "update", !!staff && ["owner", "admin", "manager", "accounts", "purchase", "sales"].includes(staff.role));
   const canAddGodownStock = useActionAccess("godown_stock", "create", true);
@@ -72,6 +73,7 @@ export function ProductModal() {
   const commitBusyRef = useRef(false);
   const resetProductIdRef = useRef<string | null>(null);
   const activeSelectionRef = useRef("");
+  const deletingProduct = useRef(false);
   const open = !!b.productModal;
   const product = b.productModal;
   const { isPhone } = useBp();
@@ -140,6 +142,22 @@ export function ProductModal() {
       configuration_options: variant.configuration_options ?? product.configuration_options,
     };
   }, [product, selectedVariant]);
+
+  const deleteProduct = async () => {
+    if (!selectedProduct || !product || !mayDeleteProduct || !["first-floor", "ground-floor"].includes(activeFloorId) || deletingProduct.current) return;
+    const selection = activeSelectionRef.current;
+    deletingProduct.current = true;
+    try {
+      const path = selectedVariant && !selectedVariant.id && selectedVariant.sku !== product.sku
+        ? `/products/${encodeURIComponent(product.id)}/variants?sku=${encodeURIComponent(selectedVariant.sku)}`
+        : `/products/${encodeURIComponent(selectedProduct.id)}`;
+      await api.delete(path, { floorId: activeFloorId });
+      b.retryProducts();
+      if (selection === activeSelectionRef.current) b.closeProductModal();
+    } catch (error: any) {
+      if (selection === activeSelectionRef.current) toast.error(error?.detail || "Could not delete product");
+    } finally { deletingProduct.current = false; }
+  };
 
   useEffect(() => {
     setVariantNameEditing(false);
@@ -341,6 +359,7 @@ export function ProductModal() {
                 {!isPhone ? <Text style={styles.editBtnLabel}>Edit product</Text> : null}
               </Pressable>
             ) : null}
+            {mayDeleteProduct && ["first-floor", "ground-floor"].includes(activeFloorId) ? <Pressable accessibilityRole="button" accessibilityLabel="Delete product" testID="product-modal-delete" onPress={() => { void deleteProduct(); }} style={styles.editBtn} hitSlop={6}><Feather name="trash-2" size={16} color={colors.error} /></Pressable> : null}
             <Pressable accessibilityRole="button" accessibilityLabel="Close product details" onPress={b.closeProductModal} style={styles.close} hitSlop={6}>
               <Feather name="x" size={18} color={colors.onSurface} />
             </Pressable>

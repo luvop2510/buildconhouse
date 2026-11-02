@@ -19,6 +19,8 @@ import { api } from "@/src/api/client";
 import { useBp } from "@/src/design/responsive";
 import { toast } from "@/src/components/Toast";
 import { useFloorAccess } from "@/src/hooks/use-floor-access";
+import { useAuth } from "@/src/state/auth";
+import { hasGrantAccess } from "@/src/team-delegation";
 import { quotationDestination } from "@/src/utils/quotationNavigation";
 import { downloadApiFile } from "@/src/utils/downloadFile";
 import {
@@ -237,6 +239,8 @@ export default function PaymentsScreen() {
   const sideBySide = isDesktop || isTabletLandscape;
   const compactCostForm = isPhone || isTabletLandscape;
   const { selectedFloorId, selectFloor } = useFloorAccess();
+  const { staff } = useAuth();
+  const deletingPayment = useRef(new Set<string>());
   const router = useRouter();
   const [displayedFloor, setDisplayedFloor] = useState(selectedFloorId);
   const activeFloorRef = useRef(selectedFloorId);
@@ -611,6 +615,24 @@ export default function PaymentsScreen() {
       if (request === historyRequest.current && activeFloorRef.current === selectedFloorId) setHistoryLoading(false);
     }
   }, [historyParams, selectedFloorId]);
+
+  const canDeletePayment = (floor: string) => ["first-floor", "ground-floor"].includes(floor) && !!staff && (staff.custom_access
+    ? hasGrantAccess(staff.access_grants, floor, "payments", "delete")
+    : ["owner", "admin", "manager"].includes(staff.role));
+  const deletePayment = async (id: string, floor: string) => {
+    if (!canDeletePayment(floor) || deletingPayment.current.has(id)) return;
+    deletingPayment.current.add(id);
+    try {
+      await api.delete(`/payments/${encodeURIComponent(id)}`, { floorId: floor });
+      if (activeFloorRef.current === selectedFloorId) {
+        void loadHistory(historyPage);
+        void loadStats();
+        if (selectedOrderRef.current) void refreshCollections(selectedOrderRef.current);
+      }
+    } catch (error: any) {
+      if (activeFloorRef.current === selectedFloorId) toast.error(error?.detail || "Could not reverse payment");
+    } finally { deletingPayment.current.delete(id); }
+  };
 
   // A single effect handles every page, including Previous back to page one.
   // Invalidate old reads immediately when filters, workspace or tab change.
@@ -1043,6 +1065,8 @@ export default function PaymentsScreen() {
           sort={historySort} onSortChange={setHistorySort}
           onOpenCustomer={(id) => router.push(`/(admin)/customers/${id}` as any)}
           onOpenOrder={(row) => void openHistoryQuotation(row)}
+          canDelete={canDeletePayment}
+          onDelete={(row) => { void deletePayment(row.id, row.floor_id); }}
         />
       )}
 
@@ -1115,6 +1139,8 @@ function PaymentHistoryTab(props: {
   sort: string; onSortChange: (v: string) => void;
   onOpenCustomer: (customerId: string) => void;
   onOpenOrder: (row: HistoryRow) => void;
+  canDelete: (floor: string) => boolean;
+  onDelete: (row: HistoryRow) => void;
 }) {
   const { isPhone } = useBp();
   const {
@@ -1122,7 +1148,7 @@ function PaymentHistoryTab(props: {
     rows, total, loading, error, onRetry, page, pageSize, onPageChange,
     q, onQChange, unit, onUnitChange, floors, hideUnitFilter,
     mode, onModeChange, dateFrom, onDateFromChange, dateTo, onDateToChange,
-    sort, onSortChange, onOpenCustomer, onOpenOrder,
+    sort, onSortChange, onOpenCustomer, onOpenOrder, canDelete, onDelete,
   } = props;
 
   const unitOptions = [{ value: "all", label: "All business units" }, ...floors.map((f) => ({ value: f.id, label: f.name }))];
@@ -1175,6 +1201,11 @@ function PaymentHistoryTab(props: {
       key: "notes", label: "NOTES", grow: 1, minWidth: 160,
       render: (r) => <CellText muted>{r.label ? `${r.label}${r.note ? ` · ${r.note}` : ""}` : r.note || "—"}</CellText>,
     },
+    { key: "delete", label: "", width: 110, render: (r) => canDelete(r.floor_id)
+      ? <Pressable accessibilityRole="button" accessibilityLabel="Delete payment" testID={`delete-payment-${r.id}`}
+          onPress={(event) => { event.stopPropagation(); onDelete(r); }} style={{ minHeight: 44, justifyContent: "center", paddingHorizontal: spacing.sm }}>
+          <Text style={[type.body, { color: colors.error }]}>Delete</Text>
+        </Pressable> : null },
   ];
 
   return (
