@@ -110,6 +110,27 @@ async def create_category(
     return category
 
 
+@router.delete("/categories/{category_id}")
+async def delete_empty_category(category_id: str, user: UserPublic = Depends(require_min_role("purchase"))):
+    floor = floor_for_write(user)
+    if floor not in {"first-floor", "ground-floor"}:
+        raise HTTPException(403, "Category deletion is available on Ground and Sanitary floors")
+    async def remove(session):
+        category = await db.categories.find_one({"id": category_id, "floor_id": floor}, session=session)
+        if not category:
+            raise HTTPException(404, "Category not found")
+        if await db.products.find_one({"floor_id": floor, "active": True, "$or": [
+            {"category_id": category_id}, {"catalog_entries.category_id": category_id}]}, {"_id": 1}, session=session):
+            raise HTTPException(409, "Move or delete the remaining products before deleting this category.")
+        if await db.categories.find_one({"floor_id": floor, "parent_id": category_id}, {"_id": 1}, session=session):
+            raise HTTPException(409, "Remove the subcategories before deleting this category.")
+        await db.categories.delete_one({"_id": category["_id"]}, session=session)
+    async with await db.client.start_session() as session:
+        await session.with_transaction(remove, read_concern=ReadConcern("snapshot"), write_concern=WriteConcern("majority"))
+    await catalog_service.refresh_catalog_snapshot()
+    return {"ok": True}
+
+
 async def _usage_ranked_product_page(
     *,
     query: dict,

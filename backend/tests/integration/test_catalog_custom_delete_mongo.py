@@ -11,6 +11,33 @@ URL = os.environ.get('SANITARY_RESET_TEST_MONGO_URL', '')
 pytestmark = pytest.mark.skipif(not URL.startswith('mongodb://127.0.0.1:'), reason='requires disposable local MongoDB')
 
 
+def test_category_deletion_requires_no_active_products_and_preserves_other_floors(monkeypatch):
+    from models import UserPublic
+    from routes import catalog_routes
+    async def run():
+        client = AsyncIOMotorClient(URL, serverSelectionTimeoutMS=10000)
+        db = client.catalog_category_delete_disposable
+        await client.drop_database(db.name)
+        monkeypatch.setattr(catalog_routes, 'db', db)
+        async def refresh(): return None
+        monkeypatch.setattr(catalog_routes.catalog_service, 'refresh_catalog_snapshot', refresh)
+        user = UserPublic(id='owner', email='owner@example.test', full_name='Owner', role='owner', active_floor_id='first-floor')
+        try:
+            await db.categories.insert_many([{'id':'cat','floor_id':'first-floor'}, {'id':'other','floor_id':'third-floor'}])
+            await db.products.insert_one({'id':'product','floor_id':'first-floor','active':True,'category_id':'cat'})
+            with pytest.raises(HTTPException) as error:
+                await catalog_routes.delete_empty_category('cat', user)
+            assert error.value.status_code == 409
+            await db.products.update_one({'id':'product'}, {'$set':{'active':False}})
+            assert (await catalog_routes.delete_empty_category('cat', user))['ok']
+            assert await db.products.count_documents({'id':'product'}) == 1
+            assert await db.categories.count_documents({'id':'other'}) == 1
+        finally:
+            await client.drop_database(db.name)
+            client.close()
+    asyncio.run(run())
+
+
 def test_create_delete_custom_product_for_each_floor(monkeypatch):
     from models import UserPublic
     from routes import catalog_routes

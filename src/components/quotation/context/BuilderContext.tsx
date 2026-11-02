@@ -19,7 +19,7 @@ import { Platform } from "react-native";
 import { TextInput } from "@/src/components/AppText";
 
 import { QuotationPriceReviewSheet, type CatalogPriceReview } from "../QuotationPriceReviewSheet";
-import { api } from "@/src/api/client";
+import { api, subscribeCatalogMutations } from "@/src/api/client";
 import { toast } from "@/src/components/Toast";
 import { useHistory, useUndoRedoShortcuts } from "@/src/hooks/useHistory";
 import { useActionAccess } from "@/src/hooks/use-permissions";
@@ -447,6 +447,9 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
   const [referenceError, setReferenceError] = useState<string | null>(null);
   const [referenceRetry, setReferenceRetry] = useState(0);
   const retryReferenceData = useCallback(() => setReferenceRetry((value) => value + 1), []);
+  useEffect(() => subscribeCatalogMutations(floor => {
+    if (!floor || floor === activeFloorId) { retryReferenceData(); retryCategories(); }
+  }), [activeFloorId, retryReferenceData, retryCategories]);
 
 // Refresh customers after returning from customer/quotation deletion.
 // ---------- Load reference data ----------

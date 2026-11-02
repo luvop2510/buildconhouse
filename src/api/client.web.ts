@@ -25,6 +25,22 @@ const responseCache = new Map<string, { expiresAt: number; value: unknown }>();
 const MAX_RESPONSE_CACHE_ENTRIES = 64;
 type CacheInvalidation = "identity" | "workspace" | "mutation";
 const cacheInvalidationListeners = new Set<(scope: CacheInvalidation) => void>();
+let pendingDeletions = 0;
+const deletionListeners = new Set<(count: number) => void>();
+const catalogMutationListeners = new Set<(floorId?: string) => void>();
+
+export function subscribeDeletionProgress(listener: (count: number) => void) {
+  deletionListeners.add(listener); listener(pendingDeletions);
+  return () => { deletionListeners.delete(listener); };
+}
+export function subscribeCatalogMutations(listener: (floorId?: string) => void) {
+  catalogMutationListeners.add(listener);
+  return () => { catalogMutationListeners.delete(listener); };
+}
+function updateDeletionProgress(delta: number) {
+  pendingDeletions = Math.max(0, pendingDeletions + delta);
+  deletionListeners.forEach(listener => listener(pendingDeletions));
+}
 
 /** View caches follow the same mutation, workspace and session boundaries. */
 export function subscribeApiCacheInvalidation(listener: (scope: CacheInvalidation) => void) {
@@ -287,9 +303,18 @@ async function request<T>(method: string, path: string, body?: unknown, opts?: R
 }
 /** Refreshes after a write must not reuse reads started before it committed. */
 async function mutate<T>(method: string, path: string, body?: unknown, opts?: RequestOptions): Promise<T> {
+  const deleting = method === "DELETE" || (method === "POST" && path === "/customers/floor-reset");
+  let committed = false;
+  if (deleting) updateDeletionProgress(1);
   clearApiResponseCache();
-  try { return await request<T>(method, path, body, opts); }
-  finally { clearApiResponseCache(); }
+  try { const result = await request<T>(method, path, body, opts); committed = true; return result; }
+  finally {
+    clearApiResponseCache();
+    if (committed && ((method === "DELETE" && (path.startsWith("/products/") || path.startsWith("/categories/"))) || (method === "POST" && path === "/products/catalog-custom"))) {
+      catalogMutationListeners.forEach(listener => listener(opts?.floorId));
+    }
+    if (deleting) updateDeletionProgress(-1);
+  }
 }
 
 export const api = {

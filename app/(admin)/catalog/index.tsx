@@ -24,6 +24,8 @@ import { productImageList } from "@/src/components/quotation/helpers/media";
 import { BottomSheet } from "@/src/components/BottomSheet";
 import { Alert, Chip, EmptyState, IconButton, PriceTag, ScreenTitle, SegmentedControl, Skeleton, Button } from "@/src/components/ui";
 import { CATALOG_PAGE_SIZE as PAGE_SIZE, catalogGridRows, catalogPageProgress, catalogItemKey, catalogReferences, fetchCatalogPage, mergeCatalogPage, type CatalogEntry } from "@/src/services/catalogService";
+import { api, subscribeCatalogMutations } from "@/src/api/client";
+import { toast } from "@/src/components/Toast";
 import { useBreakpoint } from "@/src/hooks/use-breakpoint";
 import { useFloorAccess } from "@/src/hooks/use-floor-access";
 import { colors, money, PRODUCT_IMAGE_ASPECT_RATIO, radius, spacing, type } from "@/src/theme/tokens";
@@ -116,6 +118,8 @@ export default function Catalog() {
   const { selectedFloorId } = useFloorAccess();
   const { staff } = useAuth();
   const canCreateProduct = useActionAccess("catalog", "create", !!staff && ["owner", "admin", "manager", "accounts", "purchase"].includes(staff.role)) && ["first-floor", "ground-floor"].includes(selectedFloorId);
+  const canDeleteCategory = useActionAccess("catalog", "delete", !!staff && ["owner", "admin", "manager", "accounts", "purchase"].includes(staff.role)) && ["first-floor", "ground-floor"].includes(selectedFloorId);
+  const categoryDeleting = useRef(false);
   const [createOpen, setCreateOpen] = useState(false);
 
   const [brands, setBrands] = useState<Brand[]>([]);
@@ -141,6 +145,9 @@ export default function Catalog() {
   const [referencesLoading, setReferencesLoading] = useState(false);
   const [hierarchyLoading, setHierarchyLoading] = useState(false);
   const [filterRevision, setFilterRevision] = useState(0);
+  useEffect(() => subscribeCatalogMutations(floor => {
+    if (!floor || floor === selectedFloorId) setFilterRevision(revision => revision + 1);
+  }), [selectedFloorId]);
 
   const [q, setQ] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
@@ -313,7 +320,7 @@ export default function Catalog() {
   useEffect(() => {
     void load();
     return () => { requestIdRef.current += 1; };
-  }, [load]);
+  }, [load, filterRevision]);
 
   const loadMore = useCallback(async () => {
     if (!mounted.current || queryScope !== currentQueryScope.current || !selectedFloorId || q !== searchQuery || loadingMoreRef.current || total === null || !hasMore) return;
@@ -478,16 +485,24 @@ export default function Catalog() {
         style={{ marginHorizontal: -gridPadding, paddingHorizontal: gridPadding }}
       >
         <CategoryPill label="All categories" icon="grid" active={!cat.length} onPress={() => { setCat(null); setSubcat(null); setSeries(null); }} testID="cat-all" />
-        {(categoriesForBrand ?? categories).map((c) => (
+        {(categoriesForBrand ?? categories).map((c) => <View key={c.id} style={{ flexDirection: "row", alignItems: "center", gap: 2 }}>
           <CategoryPill
-            key={c.id}
             label={c.name}
             icon={iconFor(c.name)}
             active={cat.includes(c.id)}
             onPress={() => { setCat(c.id); }}
             testID={`cat-${c.id}`}
           />
-        ))}
+          {canDeleteCategory ? <IconButton icon="trash-2" size={36} tone="ghost" accessibilityLabel={`Delete category ${c.name}`} testID={`delete-category-${c.id}`} onPress={() => {
+            if (categoryDeleting.current) return;
+            categoryDeleting.current = true;
+            const floor = selectedFloorId;
+            void api.delete(`/categories/${encodeURIComponent(c.id)}`, { floorId: floor }).then(() => {
+              setCatValues(current => current.filter(id => id !== c.id));
+            }).catch((error: any) => toast.error(typeof error?.detail === "string" ? error.detail : "Could not delete category. Please try again."))
+              .finally(() => { categoryDeleting.current = false; });
+          }} /> : null}
+        </View>)}
       </ScrollView>
       <Pressable accessibilityRole="button" accessibilityLabel="Scroll categories right"
         testID="category-scroll-right" onPress={() => { categoryScrollOffset.current += 300; categoryScrollRef.current?.scrollTo({ x: categoryScrollOffset.current, animated: true }); }}

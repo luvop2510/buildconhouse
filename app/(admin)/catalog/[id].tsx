@@ -126,20 +126,27 @@ function ProductDetailWorkspace({ floorId }: { floorId: string }) {
   const canManageImages = useActionAccess("catalog", "update", !!staff && ["owner", "admin", "manager", "accounts", "purchase"].includes(staff.role));
   const canDeleteProduct = useActionAccess("catalog", "delete", !!staff && ["owner", "admin", "manager", "accounts", "purchase"].includes(staff.role)) && ["first-floor", "ground-floor"].includes(floorId);
   const deletingProduct = useRef(false);
+  const [deletePending, setDeletePending] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
   const [editorTab, setEditorTab] = useState<"General" | "Pricing" | "Media">("General");
 
   const [p, setP] = useState<Product | null>(null);
   const deleteProduct = async () => {
     if (!p || deletingProduct.current) return;
     deletingProduct.current = true;
+    setDeletePending(true);
+    setDeleteError("");
     const productId = p.id;
     const request = loadRequestRef.current;
     try {
       await api.delete(`/products/${encodeURIComponent(productId)}`, { floorId });
       if (request === loadRequestRef.current) router.replace("/(admin)/catalog" as any);
     } catch (error: any) {
-      if (request === loadRequestRef.current) toast.error(error?.detail || "Could not delete product");
-    } finally { deletingProduct.current = false; }
+      if (request === loadRequestRef.current) setDeleteError(typeof error?.detail === "string" ? error.detail : "Could not delete product. Please try again.");
+    } finally {
+      deletingProduct.current = false;
+      if (request === loadRequestRef.current) setDeletePending(false);
+    }
   };
   const [siblings, setSiblings] = useState<Product[]>([]);
   const [alternates, setAlternates] = useState<Product[]>([]);
@@ -809,9 +816,12 @@ function ProductDetailWorkspace({ floorId }: { floorId: string }) {
             accessibilityLabel="Edit product" testID="manage-images-btn"
           />
         ) : null}
-        {canDeleteProduct ? <IconButton icon="trash-2" onPress={() => { void deleteProduct(); }} size={36} tone="surface" accessibilityLabel="Delete product" testID="delete-catalog-product" /> : null}
+        {canDeleteProduct ? <IconButton icon="trash-2" onPress={() => { void deleteProduct(); }} size={36} tone="surface" disabled={deletePending} accessibilityLabel="Delete product" testID="delete-catalog-product" /> : null}
         <IconButton icon="share-2" onPress={shareProduct} size={36} tone="surface" accessibilityLabel="Share" testID="share-product-top" />
       </SafeAreaView>
+
+      {deletePending ? <View accessibilityRole="progressbar" accessibilityLabel="Deleting product" accessibilityState={{ busy: true }} testID="delete-catalog-progress" style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm }}><ActivityIndicator size="small" color={colors.brand} /><Text style={type.body}>Deleting product…</Text></View> : null}
+      {deleteError ? <View accessibilityRole="alert" style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: spacing.sm, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm }}><Text style={type.body}>{deleteError}</Text><Button label="Try again" size="sm" variant="secondary" onPress={() => { void deleteProduct(); }} testID="retry-delete-catalog-product" /></View> : null}
 
       <ScrollView
         contentContainerStyle={{ paddingBottom: isPhone ? bottomBarHeight + insets.bottom + spacing.lg : spacing.xxxl }}

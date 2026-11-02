@@ -28,6 +28,38 @@ for (const floor of ['first-floor', 'ground-floor']) {
   });
 }
 
+test('catalog deletion shows progress and permits retry after failure', async ({ page }) => {
+  await mockSession(page, '/catalog/product-one', false, { floorId: 'first-floor' });
+  await page.route('**/api/brands**', route => route.fulfill({ json: [] }));
+  let attempts = 0;
+  let release: (() => void) | undefined;
+  await page.route('**/api/products/**', async route => {
+    const url = new URL(route.request().url());
+    if (url.pathname === '/api/products/product-one' && route.request().method() === 'DELETE') {
+      attempts++;
+      if (attempts === 1) {
+        await new Promise<void>(resolve => { release = resolve; });
+        return route.fulfill({ status: 503, json: { detail: 'Please retry deletion' } });
+      }
+      return route.fulfill({ json: { ok: true } });
+    }
+    if (url.pathname === '/api/products/product-one') return route.fulfill({ json: {
+      id:'product-one', sku:'TEST', name:'Test', brand_id:'b', category_id:'c', floor_id:'first-floor',
+      price:120, mrp:150, stock:0, images:[], specs:{}, variants:[],
+    } });
+    return route.fulfill({ json: { items:[], total:0 } });
+  });
+  await page.goto('/catalog/product-one');
+  await page.getByTestId('delete-catalog-product').click();
+  await expect(page.getByTestId('delete-catalog-progress')).toBeVisible();
+  await expect(page.getByTestId('delete-catalog-product')).toBeDisabled();
+  release?.();
+  await expect(page.getByRole('alert')).toContainText('Please retry deletion');
+  await page.getByTestId('retry-delete-catalog-product').click();
+  await expect(page).toHaveURL(/\/catalog$/);
+  expect(attempts).toBe(2);
+});
+
 for (const floor of ['second-floor', 'third-floor']) {
   test(`critical catalog addition is not introduced on ${floor}`, async ({ page }) => {
     await mockSession(page, '/catalog', false, { floorId: floor });
