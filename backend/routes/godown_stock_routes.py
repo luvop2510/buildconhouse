@@ -1156,6 +1156,9 @@ async def record_missing_quantity(stock_id: str, body: MissingQuantityCount, use
 @router.post("/{stock_id}/movements")
 async def record_stock_movement(stock_id: str, body: StockMovement, user: UserPublic = Depends(require_min_role("warehouse"))):
     lot = await get_floor_scoped_or_404(db.godown_stock, stock_id, user, not_found="Godown stock lot not found", projection={"_id": 0})
+    if await db.settings.find_one({"kind":"stock_movement_deletion_receipt", "floor_id":lot["floor_id"],
+                                  "stock_id":stock_id, "command_key":body.idempotency_key, "command_actor":user.id}, {"_id":1}):
+        raise HTTPException(409, "This movement was deleted. Start a new movement.")
     fingerprint = hashlib.sha256(json.dumps([user.id, body.model_dump(mode="json", exclude={"idempotency_key"})], sort_keys=True).encode()).hexdigest()
     def replay(row):
         for movement in row.get("stock_movements", []):
@@ -1208,6 +1211,49 @@ async def record_stock_movement(stock_id: str, body: StockMovement, user: UserPu
             return await _stock_response(previous)
         raise HTTPException(409, "Stock changed while saving. Refresh and review current stock.")
     return await _stock_response(updated)
+
+
+@router.delete("/{stock_id}/movements/{movement_id}")
+async def delete_stock_movement(stock_id: str, movement_id: str, user: UserPublic = Depends(require_min_role("manager"))):
+    """Reverse a recorded receipt or adjustment without disturbing later stock use."""
+    floor = floor_for_write(user)
+    if floor not in {"first-floor", "ground-floor"}:
+        raise HTTPException(403, "Movement deletion is available on Ground and Sanitary floors")
+    receipt_id = f"stock-movement-deletion:{floor}:{stock_id}:{movement_id}"
+    async def reverse(session):
+        if await db.settings.find_one({"_id":receipt_id}, session=session):
+            return {"ok":True, "already_deleted":True}
+        lot = await db.godown_stock.find_one({"id":stock_id,"floor_id":floor}, session=session)
+        if not lot:
+            raise HTTPException(404, "Stock not found")
+        matches = [row for row in lot.get("stock_movements", []) if row.get("id") == movement_id]
+        if len(matches) != 1:
+            raise HTTPException(404, "Stock movement not found")
+        movement = matches[0]
+        qty = float(movement.get("qty") or 0)
+        if not isfinite(qty) or qty <= 0 or movement.get("kind") not in {"receipt", "adjustment_out"}:
+            raise HTTPException(409, "Stock movement needs attention before deletion")
+        received = float(lot.get("qty_received") or 0)
+        available = float(lot.get("available_qty") or 0)
+        reserved = float(lot.get("loaned_out_qty") or 0)
+        change = -qty if movement["kind"] == "receipt" else qty
+        new_received = received + change if movement["kind"] == "receipt" else received
+        new_available = available + change
+        if not all(isfinite(x) for x in (received,available,reserved,new_received,new_available)) or new_received < 0 or new_available < reserved:
+            raise HTTPException(409, "Later stock use must be reversed before deleting this movement")
+        _require_stock_financials({**lot, "qty_received":new_received, "available_qty":new_available})
+        increments = {"available_qty":change}
+        if movement["kind"] == "receipt": increments["qty_received"] = change
+        await db.godown_stock.update_one({"_id":lot["_id"]}, {"$inc":increments,
+            "$pull":{"stock_movements":{"id":movement_id}}, "$set":{"updated_at":now_iso()}}, session=session)
+        await db.settings.insert_one({"_id":receipt_id,"kind":"stock_movement_deletion_receipt", "floor_id":floor,
+            "stock_id":stock_id,"command_key":movement.get("command_key"),"command_actor":movement.get("actor_id")}, session=session)
+        return {"ok":True,"already_deleted":False}
+    from pymongo.read_concern import ReadConcern
+    from pymongo.write_concern import WriteConcern
+    async with await client.start_session() as session:
+        result = await session.with_transaction(reverse, read_concern=ReadConcern("snapshot"), write_concern=WriteConcern("majority"))
+    return result
 
 
 @router.patch("/{stock_id}/details")
