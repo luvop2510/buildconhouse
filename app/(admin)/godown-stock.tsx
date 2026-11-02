@@ -322,17 +322,17 @@ function LotCard({ lot, floorId, width, compact, canEditPricing, onDelete, onUpd
     } catch (e: any) { if (!controller.signal.aborted && generation === historyGeneration.current) setHistoryError(e?.detail || e?.message || "Could not load stock movements"); }
     finally { if (historyPending.current === token) { historyPending.current = null; setLoadingHistory(false); } }
   }, [lot.id, floorId]);
-  const deleteMovement = async (movementId: string) => {
+  const deleteMovement = async (movementId: string, count = false) => {
     const controller = lifecycle.current;
     if (!onDelete || !floorId || !controller || controller.signal.aborted || deletingMovementRef.current) return;
     deletingMovementRef.current = true; setDeletingMovement(movementId);
     try {
-      await api.delete(`/godown-stock/${encodeURIComponent(lot.id)}/movements/${encodeURIComponent(movementId)}`, { floorId });
+      await api.delete(`/godown-stock/${encodeURIComponent(lot.id)}/${count ? "quantity-counts" : "movements"}/${encodeURIComponent(movementId)}`, { floorId });
       if (controller.signal.aborted) return;
       const current = await getGodownLot(lot.id, controller.signal, floorId);
       if (!controller.signal.aborted) onUpdated(current);
     } catch (e: any) {
-      if (!controller.signal.aborted) toast.error(e?.detail || "Could not delete stock movement");
+      if (!controller.signal.aborted) toast.error(e?.detail || "Could not delete stock history");
     } finally {
       deletingMovementRef.current = false;
       if (!controller.signal.aborted) setDeletingMovement(null);
@@ -464,7 +464,7 @@ function LotCard({ lot, floorId, width, compact, canEditPricing, onDelete, onUpd
       <Text style={[styles.provenanceTitle, { marginTop: 8 }]}>Arrival in godown</Text><Text style={type.caption}>{fmt(lot.transferred_at)} · {lot.reason || "Stock intake"}</Text>
       {lot.transferred_by_name ? <Text style={type.caption}>Recorded by {lot.transferred_by_name}</Text> : null}
       <Text style={[styles.provenanceTitle, { marginTop: 8 }]}>Stock cycle</Text><Text style={type.caption}>{lot.quantity_missing ? "Quantity not recorded" : `${lot.quantity_counts?.length ? "Counted opening balance" : "Received"} ${lot.qty_received} · Allocated ${lot.qty_received - lot.available_qty} · Available ${lot.available_qty}`}</Text>
-      {(lot.quantity_counts || []).map(count => <Text key={count.id} style={type.caption}>Counted {count.qty} stock units on {count.counted_on} · {count.actor_name} · {count.reason}</Text>)}
+      {(lot.quantity_counts || []).map(count => <View key={count.id} style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}><Text style={type.caption}>Counted {count.qty} stock units on {count.counted_on} · {count.actor_name} · {count.reason}</Text>{onDelete ? <Pressable accessibilityRole="button" accessibilityLabel="Delete stock count" testID={`delete-stock-count-${count.id}`} disabled={!!deletingMovement} onPress={() => { void deleteMovement(count.id, true); }}><Text style={styles.detailsText}>{deletingMovement === count.id ? "Deleting…" : "Delete"}</Text></Pressable> : null}</View>)}
       {(history?.stock_movements || lot.stock_movements || []).map(movement => <View key={movement.id} style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}><Text style={type.caption}>{movement.occurred_on} · {movement.kind === "receipt" ? "Received" : "Removed"} {movement.qty} · {movement.actor_name} · {movement.reason}</Text>{onDelete ? <Pressable accessibilityRole="button" accessibilityLabel="Delete stock movement" testID={`delete-stock-movement-${movement.id}`} disabled={!!deletingMovement} onPress={() => { void deleteMovement(movement.id); }}><Text style={styles.detailsText}>{deletingMovement === movement.id ? "Deleting…" : "Delete"}</Text></Pressable> : null}</View>)}
       {loadingHistory ? <Text accessibilityLiveRegion="polite" style={type.body}>Loading stock movements…</Text> : null}
       {historyError ? <View><Text accessibilityRole="alert" style={type.body}>{historyError}</Text><Pressable accessibilityRole="button" accessibilityLabel={`Retry stock history for ${lot.name}`} onPress={() => void loadHistory(history?.next_offset ?? 0)} style={styles.details}><Text style={styles.detailsText}>Retry stock history</Text></Pressable></View> : null}
