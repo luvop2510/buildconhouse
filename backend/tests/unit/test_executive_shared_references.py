@@ -12,6 +12,8 @@ def _matches(document, query):
     for key, value in query.items():
         if key == '$or':
             if not any(_matches(document, clause) for clause in value): return False
+        elif key == 'excluded_floor_ids' and isinstance(value, dict) and '$not' in value:
+            if all(floor in document.get(key, []) for floor in value['$not']['$all']): return False
         elif isinstance(value, dict) and '$in' in value:
             if document.get(key) not in value['$in']: return False
         elif document.get(key) != value: return False

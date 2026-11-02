@@ -22,10 +22,15 @@ def match(row, query):
         if key == "$and":
             if not all(match(row, item) for item in wanted):
                 return False
+        elif key == "$or":
+            if not any(match(row, item) for item in wanted):
+                return False
         elif isinstance(wanted, dict):
             if "$in" in wanted and row.get(key) not in wanted["$in"]:
                 return False
             if "$ne" in wanted and row.get(key) == wanted["$ne"]:
+                return False
+            if "$nin" in wanted and row.get(key) in wanted["$nin"]:
                 return False
         elif row.get(key) != wanted:
             return False

@@ -82,6 +82,7 @@ def test_order_placed_skips_payment_for_zero_total_without_crashing(monkeypatch)
         customers = _Recorder()
         followups = _Recorder()
         notifications = _Recorder()
+        settings = _Recorder()
 
     fake_db = _FakeDb()
     monkeypatch.setattr(domain_outbox, "db", fake_db)

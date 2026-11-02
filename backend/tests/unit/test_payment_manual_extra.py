@@ -64,8 +64,11 @@ class _Client:
 
 class _Db:
     def __init__(self, doc: dict):
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock
         self.quotations = _Quotations(doc)
         self.payments = _Payments()
+        self.settings = SimpleNamespace(find_one=AsyncMock(return_value=None))
 
 
 class _Cache:

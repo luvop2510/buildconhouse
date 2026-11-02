@@ -458,7 +458,7 @@ def test_report_drilldown_combined_admin_keeps_source_and_directory_scope(monkey
     async def products(*args): return {}
     async def directory(query, *_args):
         calls.append("directory")
-        assert query == {"id": "reference", "$or": [{"floor_id": {"$in": ["ground-floor"]}}, {"shared_across_floors": True}]}
+        assert query == {"id": "reference", "$or": [{"floor_id": {"$in": ["ground-floor"]}}, {"shared_across_floors": True}], "excluded_floor_ids": {"$not": {"$all": ["ground-floor"]}}}
         return {"id": "reference", "name": "Shared reference", "type": "architect"}
     async def brand(query, *_args):
         calls.append("brand")

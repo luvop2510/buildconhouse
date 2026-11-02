@@ -104,7 +104,7 @@ def test_price_write_binds_validated_quantity_and_price_snapshot(monkeypatch, ro
 def test_receipt_rejects_derived_overflow_before_catalog_or_quantity_write(monkeypatch, changes, qty):
     update = AsyncMock()
     register = AsyncMock()
-    monkeypatch.setattr(routes, "db", SimpleNamespace(godown_stock=SimpleNamespace(
+    monkeypatch.setattr(routes, "db", SimpleNamespace(settings=SimpleNamespace(find_one=AsyncMock(return_value=None)), godown_stock=SimpleNamespace(
         find_one=AsyncMock(return_value=stock(product_id="godown:stock", **changes)), find_one_and_update=update)))
     monkeypatch.setattr(routes, "_intake_catalog_product", register)
     body = routes.StockMovement(kind="receipt", qty=qty, occurred_on=date(2026, 1, 1),

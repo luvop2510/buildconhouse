@@ -63,7 +63,7 @@ def test_quotation_price_update_reads_the_active_floor_then_persists(monkeypatch
     ))
 
     assert walkins.find_queries[0] == {
-        "$and": [{"floor_id": {"$in": ["second-floor"]}}, {"id": "wi-kitchen"}],
+        "$and": [{"floor_id": {"$in": ["second-floor"]}}, {"id": "wi-kitchen", "$or": [{"floor_id": {"$nin": ["first-floor", "ground-floor"]}}, {"is_deleted": {"$ne": True}}]}],
     }
     assert walkins.row["quotation_price"] == 98000
     assert updated.quotation_price == 98000

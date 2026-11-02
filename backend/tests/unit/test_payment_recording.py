@@ -90,7 +90,8 @@ def context(monkeypatch):
     async def paid(*_args, **_kwargs):
         return {'q-one': sum(doc['amount'] for doc in payments.docs)}
 
-    monkeypatch.setattr(routes, 'db', SimpleNamespace(quotations=quotations, payments=payments))
+    from unittest.mock import AsyncMock
+    monkeypatch.setattr(routes, 'db', SimpleNamespace(quotations=quotations, payments=payments, settings=SimpleNamespace(find_one=AsyncMock(return_value=None))))
     monkeypatch.setattr(routes, 'client', SimpleNamespace(start_session=start_session))
     monkeypatch.setattr(routes, 'log_event', noop)
     monkeypatch.setattr(routes, 'notify', noop)

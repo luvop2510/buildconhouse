@@ -1,6 +1,7 @@
 """Direct godown intake and customer purchase visibility regression tests."""
 import asyncio
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 from models import UserPublic
 
 import pytest
@@ -47,7 +48,7 @@ def user():
 
 def test_direct_manual_intake_has_no_customer_source(monkeypatch):
     stock = Stock()
-    monkeypatch.setattr(godown, "db", SimpleNamespace(products=Products(), godown_stock=stock))
+    monkeypatch.setattr(godown, "db", SimpleNamespace(settings=SimpleNamespace(find_one=AsyncMock(return_value=None)), products=Products(), godown_stock=stock))
     monkeypatch.setattr(godown, "log_event", lambda **_kwargs: asyncio.sleep(0))
     row = asyncio.run(godown.direct_intake(godown.DirectIntake(qty=3, sku="321", name="Valve", brand="Acme", image="https://example.com/valve.jpg", size="10mm", feature="brass", category="Fittings", unit_price=125, price_variants=[{"label": "Chrome", "price": 140}]), user()))
     assert row["floor_id"] == "first-floor"
@@ -64,7 +65,7 @@ def test_direct_manual_intake_has_no_customer_source(monkeypatch):
 def test_direct_catalog_intake_uses_product_floor(monkeypatch):
     product = {"id": "p-1", "floor_id": "ground-floor", "sku": "334", "name": "Tile", "brand_id": "b-1", "images": ["https://example.com/tile.jpg"]}
     products = Products(product)
-    monkeypatch.setattr(godown, "db", SimpleNamespace(products=products, godown_stock=Stock()))
+    monkeypatch.setattr(godown, "db", SimpleNamespace(settings=SimpleNamespace(find_one=AsyncMock(return_value=None)), products=products, godown_stock=Stock()))
     monkeypatch.setattr(godown, "log_event", lambda **_kwargs: asyncio.sleep(0))
     row = asyncio.run(godown.direct_intake(godown.DirectIntake(product_id="p-1", qty=2), user()))
     assert row["floor_id"] == "ground-floor"
@@ -74,14 +75,14 @@ def test_direct_catalog_intake_uses_product_floor(monkeypatch):
 
 
 def test_manual_intake_requires_sku_and_name(monkeypatch):
-    monkeypatch.setattr(godown, "db", SimpleNamespace(products=Products(), godown_stock=Stock()))
+    monkeypatch.setattr(godown, "db", SimpleNamespace(settings=SimpleNamespace(find_one=AsyncMock(return_value=None)), products=Products(), godown_stock=Stock()))
     with pytest.raises(HTTPException) as exc:
         asyncio.run(godown.direct_intake(godown.DirectIntake(qty=1, sku="321"), user()))
     assert exc.value.status_code == 422
 
 
 def test_manual_intake_requires_price(monkeypatch):
-    monkeypatch.setattr(godown, "db", SimpleNamespace(products=Products(), godown_stock=Stock()))
+    monkeypatch.setattr(godown, "db", SimpleNamespace(settings=SimpleNamespace(find_one=AsyncMock(return_value=None)), products=Products(), godown_stock=Stock()))
     with pytest.raises(HTTPException) as exc:
         asyncio.run(godown.direct_intake(godown.DirectIntake(qty=1, sku="321", name="Valve"), user()))
     assert exc.value.status_code == 422
@@ -113,7 +114,7 @@ def test_direct_intake_retry_returns_original_lot_and_preserves_later_balance(mo
     stock = CommandStock()
     events = []
     async def log(**kwargs): events.append(kwargs)
-    monkeypatch.setattr(godown, "db", SimpleNamespace(products=Products(), godown_stock=stock))
+    monkeypatch.setattr(godown, "db", SimpleNamespace(settings=SimpleNamespace(find_one=AsyncMock(return_value=None)), products=Products(), godown_stock=stock))
     monkeypatch.setattr(godown, "log_event", log)
     first = asyncio.run(godown.direct_intake(command_body(), user()))
     stock.inserted[0]["available_qty"] = 1
@@ -127,7 +128,7 @@ def test_direct_intake_retry_returns_original_lot_and_preserves_later_balance(mo
 
 def test_direct_intake_rejects_changed_command_details(monkeypatch):
     stock = CommandStock()
-    monkeypatch.setattr(godown, "db", SimpleNamespace(products=Products(), godown_stock=stock))
+    monkeypatch.setattr(godown, "db", SimpleNamespace(settings=SimpleNamespace(find_one=AsyncMock(return_value=None)), products=Products(), godown_stock=stock))
     monkeypatch.setattr(godown, "log_event", lambda **_kwargs: asyncio.sleep(0))
     asyncio.run(godown.direct_intake(command_body(), user()))
     with pytest.raises(HTTPException) as exc:
@@ -138,7 +139,7 @@ def test_direct_intake_rejects_changed_command_details(monkeypatch):
 
 def test_direct_intake_command_is_actor_and_floor_bound(monkeypatch):
     stock = CommandStock()
-    monkeypatch.setattr(godown, "db", SimpleNamespace(products=Products(), godown_stock=stock))
+    monkeypatch.setattr(godown, "db", SimpleNamespace(settings=SimpleNamespace(find_one=AsyncMock(return_value=None)), products=Products(), godown_stock=stock))
     monkeypatch.setattr(godown, "log_event", lambda **_kwargs: asyncio.sleep(0))
     first = asyncio.run(godown.direct_intake(command_body(), user()))
     another_actor = asyncio.run(godown.direct_intake(command_body(), user().model_copy(update={"id": "u-2"})))
@@ -148,7 +149,7 @@ def test_direct_intake_command_is_actor_and_floor_bound(monkeypatch):
 
 def test_concurrent_direct_intake_requests_insert_once(monkeypatch):
     stock = CommandStock()
-    monkeypatch.setattr(godown, "db", SimpleNamespace(products=Products(), godown_stock=stock))
+    monkeypatch.setattr(godown, "db", SimpleNamespace(settings=SimpleNamespace(find_one=AsyncMock(return_value=None)), products=Products(), godown_stock=stock))
     monkeypatch.setattr(godown, "log_event", lambda **_kwargs: asyncio.sleep(0))
     async def submit():
         return await asyncio.gather(*(godown.direct_intake(command_body(), user()) for _ in range(2)))
@@ -164,7 +165,7 @@ def test_unknown_insert_outcome_replays_without_adding_again(monkeypatch):
             await super().insert_one(row)
             raise ConnectionFailure("response lost after commit")
     stock = LostResponseStock()
-    monkeypatch.setattr(godown, "db", SimpleNamespace(products=Products(), godown_stock=stock))
+    monkeypatch.setattr(godown, "db", SimpleNamespace(settings=SimpleNamespace(find_one=AsyncMock(return_value=None)), products=Products(), godown_stock=stock))
     monkeypatch.setattr(godown, "log_event", lambda **_kwargs: asyncio.sleep(0))
     with pytest.raises(ConnectionFailure):
         asyncio.run(godown.direct_intake(command_body(), user()))
@@ -175,7 +176,7 @@ def test_unknown_insert_outcome_replays_without_adding_again(monkeypatch):
 
 def test_archived_intake_receipt_cannot_recreate_stock(monkeypatch):
     stock = CommandStock()
-    monkeypatch.setattr(godown, "db", SimpleNamespace(products=Products(), godown_stock=stock))
+    monkeypatch.setattr(godown, "db", SimpleNamespace(settings=SimpleNamespace(find_one=AsyncMock(return_value=None)), products=Products(), godown_stock=stock))
     monkeypatch.setattr(godown, "log_event", lambda **_kwargs: asyncio.sleep(0))
     asyncio.run(godown.direct_intake(command_body(), user()))
     stock.inserted[0]["archived"] = True
@@ -200,7 +201,7 @@ def test_existing_lot_price_can_be_completed(monkeypatch):
             assert query["$and"][1] == {"id": "lot-1", "archived": {"$ne": True}, **godown._stock_financial_guard({"available_qty": 2})}
             return {"id": "lot-1", "floor_id": "first-floor", "name": "Valve", "available_qty": 2, **update["$set"]}
 
-    monkeypatch.setattr(godown, "db", SimpleNamespace(godown_stock=PriceStock()))
+    monkeypatch.setattr(godown, "db", SimpleNamespace(settings=SimpleNamespace(find_one=AsyncMock(return_value=None)), godown_stock=PriceStock()))
     monkeypatch.setattr(godown, "log_event", lambda **_kwargs: asyncio.sleep(0))
     row = asyncio.run(godown.update_stock_pricing("lot-1", godown.StockPricingUpdate(unit_price=50, price_variants=[{"label": "Chrome", "price": 60}]), user()))
     assert row["stock_value"] == 100
@@ -209,7 +210,7 @@ def test_existing_lot_price_can_be_completed(monkeypatch):
 
 def test_sku_suggestions_use_literal_floor_scoped_prefix(monkeypatch):
     products = Products()
-    monkeypatch.setattr(godown, "db", SimpleNamespace(products=products))
+    monkeypatch.setattr(godown, "db", SimpleNamespace(settings=SimpleNamespace(find_one=AsyncMock(return_value=None)), products=products))
     rows = asyncio.run(godown.sku_suggestions(prefix="3.*", user=user()))
     assert rows == []
     assert products.query["$and"][1]["sku"]["$regex"] == r"^3\.\*"
@@ -218,7 +219,7 @@ def test_sku_suggestions_use_literal_floor_scoped_prefix(monkeypatch):
 @pytest.mark.parametrize("history", [False, True])
 def test_stock_search_is_literal_and_keeps_floor_and_availability_scope(monkeypatch, history):
     stock = Products()
-    monkeypatch.setattr(godown, "db", SimpleNamespace(godown_stock=stock))
+    monkeypatch.setattr(godown, "db", SimpleNamespace(settings=SimpleNamespace(find_one=AsyncMock(return_value=None)), godown_stock=stock))
     result = asyncio.run(godown.list_stock(q="  131.221.(a+)+  ", include_history=history, user=user()))
     assert result["lots"] == []
     scope = stock.query if history else stock.query["$and"][0]
@@ -275,7 +276,7 @@ def test_manual_intake_accepts_the_forms_empty_optional_photo_but_rejects_unsafe
 
 @pytest.mark.parametrize("changes", [{"sku": "  ", "name": "Basin"}, {"sku": "BASIN", "name": None}])
 def test_reusable_catalog_registration_requires_labelled_material_before_writes(monkeypatch, changes):
-    monkeypatch.setattr(godown, "db", SimpleNamespace())
+    monkeypatch.setattr(godown, "db", SimpleNamespace(settings=SimpleNamespace(find_one=AsyncMock(return_value=None)), ))
     with pytest.raises(HTTPException) as error:
         asyncio.run(_intake_catalog_product(godown.DirectIntake(qty=1, **changes), "first-floor"))
     assert error.value.status_code == 422
