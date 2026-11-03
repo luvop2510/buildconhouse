@@ -57,7 +57,8 @@ function isNavActive(item: NavItem, segments: string[]): boolean {
   if (segments.includes("sales-data")) return item.match === "sales-data";
   if (item.match.startsWith("kitchen-") && segments.includes("kitchen") && !segments.includes("notebook")) {
     const stageIndex = segments.indexOf("stages");
-    if (item.match === "kitchen-dashboard") return stageIndex < 0;
+    if (item.match === "kitchen-lost") return segments.includes("lost");
+    if (item.match === "kitchen-dashboard") return stageIndex < 0 && !segments.includes("lost");
     return stageIndex >= 0 && item.match === `kitchen-${segments[stageIndex + 1]}`;
   }
   if (item.match === "tiles") return segments.includes("tiles") && !segments.includes("orders");

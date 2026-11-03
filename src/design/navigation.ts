@@ -25,6 +25,7 @@ export const PRIMARY: NavItem[] = [
     href: `/(admin)/kitchen/stages/${page.stage}`, label: page.label, icon: page.icon,
     match: `kitchen-${page.stage}`, floors: [KITCHEN_FLOOR_ID],
   })),
+  { href: "/(admin)/kitchen/lost", label: "Lost Customers", icon: "user-x", match: "kitchen-lost", floors: [KITCHEN_FLOOR_ID] },
   { href: "/(admin)/walkins", label: "Walk-ins", icon: "user-plus", match: "walkins" },
   { href: "/(admin)/quotations", label: "Quotations", icon: "file-text", match: "quotations", floors: [SANITARY_FLOOR_ID] },
   { href: "/(admin)/catalog", label: "Catalog", icon: "package", match: "catalog", floors: [SANITARY_FLOOR_ID, TILES_FLOOR_ID] },

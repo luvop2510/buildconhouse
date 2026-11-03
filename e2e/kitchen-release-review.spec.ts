@@ -196,6 +196,21 @@ test('Kitchen missing quotation PDF and order prerequisites retain entry across 
 });
 
 for (const stage of ['visit', 'quotation'] as const) {
+  test(`Mark a customer lost directly from the ${stage} list`, async ({ page, context }) => {
+    const project = await projectAt(context.request, stage);
+    await seed(page);
+    await page.goto(`/kitchen/stages/${stage}`);
+    await page.getByTestId('kitchen-search').fill(project.reference);
+    await page.getByTestId(`kitchen-list-mark-lost-${project.id}`).click();
+    await page.getByTestId('kitchen-list-lost-reason').fill('Selected another supplier');
+    await clickCommand(page, 'kitchen-list-confirm-lost', 'mark_lost');
+    await expect(page.getByText('No matching projects')).toBeVisible();
+    await page.getByRole('link', { name: 'Lost Customers', exact: true }).click();
+    await expect(page).toHaveURL(/\/kitchen\/lost/);
+    await page.getByTestId('kitchen-search').fill(project.reference);
+    await expect(page.getByRole('link').filter({ hasText: project.reference })).toContainText('Selected another supplier');
+  });
+
   test(`Mark a customer lost from ${stage} and find their details`, async ({ page, context }) => {
     const project = await projectAt(context.request, stage);
     const reason = `Synthetic ${stage} lost reason`;
