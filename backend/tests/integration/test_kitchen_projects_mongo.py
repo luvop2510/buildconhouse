@@ -841,7 +841,7 @@ def test_independent_q17_q19_q20_numeric_sort_full_export_filters_and_ist_bounda
             assert metrics["next_action_overdue_projects"] == 0
             assert metrics["completion_overdue_projects"] == 1
             assert metrics["active_order_value"] == "10.01"
-            assert metrics["stage_counts"] == {"lead": 3, "visit": 0, "cad": 0, "design": 0,
+            assert metrics["stage_counts"] == {"lead": 2, "visit": 0, "cad": 0, "design": 0,
                 "quotation": 0, "order": 3, "production": 0, "installation": 0, "completed": 105}
             assert metrics["workload"] == [{"assignee_id": env["ids"]["worker"], "assignee_name": None, "project_count": 3}]
             for attention, expected in (("active", 3), ("on_hold", 1), ("pending_approval", 0),
@@ -2444,4 +2444,28 @@ def test_universal_search_and_distinct_customer_stage_counts_use_authorized_curr
             assert saved.json()["customer"]["email"] == "changed.current@example.com"
             denied = await env["api"].get("/api/kitchen-projects/dashboard", headers=headers(env, "denied"))
             assert denied.status_code == 403
+    asyncio.run(run())
+
+
+def test_lost_customers_are_scoped_and_excluded_from_stage_queues():
+    from services.access_grants import build_grant
+    async def run():
+        async with environment() as env:
+            await configure(env)
+            project = await reach_stage(env, "visit")
+            grant = build_grant(user_id=env["ids"]["worker"], resource="kitchen_visit",
+                actions=["view", "update"], floor_id="second-floor", expires_at=None,
+                actor_id=env["ids"]["owner"], actor_name="Owner")
+            await env["db"].users.update_one({"id": env["ids"]["worker"]}, {"$set": {"delegation_grants": [grant]}})
+            lost = await accepted(env, project, "mark_lost", {"reason": "Selected another supplier"}, actor="worker")
+            assert lost["status"] == "Lost" and lost["lost_customer"]["reason"] == "Selected another supplier"
+            queue = await env["api"].get("/api/kitchen-projects?stage=visit", headers=headers(env, "worker"))
+            assert queue.status_code == 200 and queue.json()["total"] == 0
+            listing = await env["api"].get("/api/kitchen-projects?status=Lost", headers=headers(env, "worker"))
+            assert listing.status_code == 200 and listing.json()["total"] == 1
+            assert listing.json()["rows"][0]["lost_customer"]["reason"] == "Selected another supplier"
+            dashboard = await env["api"].get("/api/kitchen-projects/dashboard", headers=headers(env, "worker"))
+            assert dashboard.json()["stage_counts"]["visit"] == 0
+            denied = await command(env, lost, "save_visit", {"status": "Visited"}, actor="worker")
+            assert denied.status_code == 422
     asyncio.run(run())

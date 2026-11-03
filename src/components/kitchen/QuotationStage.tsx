@@ -56,7 +56,7 @@ function QuotationForm({ project, quote, seed, revision = false, disabled, comma
   const finalFile = project.attachments?.find(file => file.id === finalOption?.attachment_id && file.content_type === "application/pdf");
   const uploadDate = draft.upload_date ?? (finalFile?.upload_date || kitchenApprovalDate(finalFile?.uploaded_at) || "");
   const sharedDate = draft.sent_status === "Yes" ? draft.shared_date : "";
-  const problem = !draft.pdf_options.length ? "Upload at least one GI, SS or Mix quotation PDF." : !finalOption || !finalFile ? "Select one finalized PDF and its kitchen type." : !uploadDate ? "Enter the PDF upload date." : draft.response !== "Pending" && (draft.sent_status !== "Yes" || !sharedDate) ? "Record sent to customer and its date before a customer response." : sharedDate && design?.handoff_date && sharedDate < design.handoff_date ? "The sent date cannot precede design company handoff." : null;
+  const problem = !draft.pdf_options.length ? "Upload at least one GI, SS or Mix quotation PDF." : !finalOption || !finalFile ? "Select one finalized PDF and its kitchen type." : !uploadDate ? "Enter the PDF upload date." : draft.response !== "Pending" && (draft.sent_status !== "Yes" || !sharedDate) ? "Record sent to customer and its date before a customer response." : null;
   return <View style={{ gap: spacing.md }}>
     <Text style={type.bodyStrong}>Finalized design{displayedDesign ? ` · Design ${displayedDesign.number}` : ""}</Text>
     {finalizedDesignFile ? <KitchenPdfFile project={project} file={finalizedDesignFile} selected testID="kitchen-quotation-final-design" /> : <Text style={type.bodyMuted}>No finalized design PDF selected.</Text>}

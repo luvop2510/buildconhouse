@@ -41,6 +41,7 @@ function DashboardContent() {
           <Text style={[type.titleLg, { fontVariant: ["tabular-nums"] }]} testID={`kitchen-dashboard-count-${stage}`}>{result.stage_customer_counts?.[stage] ?? "—"}</Text>
           <Text style={type.caption}>{result.stage_customer_counts?.[stage] === 1 ? "customer" : "customers"} · {result.stage_counts?.[stage] ?? 0} {result.stage_counts?.[stage] === 1 ? "project" : "projects"}</Text>
         </NavigationLink> : null)}</View>
+        <NavigationLink href={"/kitchen/lost" as any} testID="kitchen-dashboard-lost" style={{ minHeight: 44, justifyContent: "center" }}><Text style={[type.bodyStrong, { color: colors.brand }]}>Lost Customers →</Text></NavigationLink>
         <NavigationLink href={"/kitchen/projects" as any} testID="kitchen-dashboard-projects" style={{ minHeight: 44, justifyContent: "center" }}><Text style={[type.bodyStrong, { color: colors.brand }]}>View all customer projects →</Text></NavigationLink>
       </> : null}
     </View>

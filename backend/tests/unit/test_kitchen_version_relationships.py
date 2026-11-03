@@ -340,7 +340,6 @@ def test_pdf_upload_derives_receipt_without_inventing_sharing(setup):
 @pytest.mark.parametrize("fields", [
     {"sent_status": "No", "shared_date": "2026-10-25"},
     {"response": "Approved", "sent_status": "Not recorded"},
-    {"received_date": "2026-10-25", "shared_date": "2026-10-22"},
 ])
 def test_editable_quotation_keeps_date_and_approval_validation(setup, fields):
     _, _, owner = setup
@@ -403,18 +402,34 @@ def test_advance_status_is_explicit_and_independent_of_confirmation(setup, statu
     assert project["customer_order_confirmation"] == "Yes"
 
 
-@pytest.mark.parametrize("command", ["quotation_receive", "quotation_update"])
-def test_quotation_without_receipt_date_cannot_be_shared_before_design_handoff(setup, command):
+@pytest.mark.parametrize("command", ["quotation_receive", "quotation_update", "quotation_share"])
+@pytest.mark.parametrize("sent_date", ["2021-01-01", "2031-01-01"])
+def test_quotation_sent_date_is_independent_of_design_and_receipt_dates(setup, command, sent_date):
     _, _, owner = setup
     project = aggregate()
     fields = {"received_date": None, "received_status": "Not recorded", "sent_status": "Yes",
-        "shared_date": "2026-10-22", "response": "Approved"}
+        "shared_date": sent_date, "response": "Approved"}
     if command == "quotation_receive":
         fields["design_version_id"] = "d1"
-    else:
+    elif command == "quotation_update":
         fields["version_id"] = "q1"
-    with pytest.raises(HTTPException, match="design handoff|precede receipt"):
-        apply(project, command, fields, owner)
+    else:
+        project["quotation_versions"][0]["shared_date"] = None
+        fields = {"version_id": "q1", "date": sent_date}
+    apply(project, command, fields, owner)
+    quote = project["quotation_versions"][-1] if command == "quotation_receive" else project["quotation_versions"][0]
+    assert quote["shared_date"] == sent_date
+
+
+def test_quotation_sent_date_can_be_corrected_after_linked_order_date(setup):
+    _, _, owner = setup
+    project = aggregate("order")
+    apply(project, "order_confirm", {"quotation_version_id": "q1", "order_date": "2026-10-25"}, owner)
+    order = copy.deepcopy(project["orders"][0])
+    project["stage"] = "quotation"
+    apply(project, "quotation_update", {"version_id": "q1", "shared_date": "2031-01-01"}, owner)
+    assert project["quotation_versions"][0]["shared_date"] == "2031-01-01"
+    assert project["orders"][0] == order
 
 
 @pytest.mark.parametrize('status,date', [('Yes', '2026-10-25'), ('No', None)])

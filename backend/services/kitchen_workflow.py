@@ -370,7 +370,7 @@ def apply(project, command, payload, policy, user, now, validate):
         earliest = row.get("presentation_date") or row.get("received_date")
         if row.get("final_attachment_id"):
             earliest = None if is_design else design.get("handoff_date")
-        if earliest and body.date < earliest:
+        if is_design and earliest and body.date < earliest:
             reject("Sharing/handoff date cannot precede presentation/receipt")
         if command == "design_handoff":
             approved_design(project, row["id"])
@@ -471,12 +471,6 @@ def apply(project, command, payload, policy, user, now, validate):
                 reject("A quotation date requires its corresponding status to be Yes; edit the date or status explicitly")
         if not pdf_workflow and proposed.get("received_date") and proposed["received_date"] < design["handoff_date"]:
             reject("Quotation receipt cannot precede design handoff")
-        if proposed.get("shared_date") and proposed["shared_date"] < design["handoff_date"]:
-            reject("Quotation sharing cannot precede design handoff")
-        if proposed.get("shared_date") and any(proposed["shared_date"] > order["order_date"] for order in bound_orders):
-            reject("Quotation sharing cannot follow an order linked to this quotation")
-        if not pdf_workflow and proposed.get("shared_date") and proposed.get("received_date") and proposed["shared_date"] < proposed["received_date"]:
-            reject("Quotation sharing cannot precede receipt")
         if proposed.get("response", "Pending") != "Pending" and (proposed["sent_status"] != "Yes" or not proposed.get("shared_date")):
             reject("Record quotation sent to customer and its date before recording a customer response")
         before = copy.deepcopy(row)

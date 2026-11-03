@@ -1,5 +1,20 @@
 # BuildCon House project documentation
 
+## Kitchen lost customers and quotation dates delta — 3 November 2026
+
+Native fallback delta scan covers the Kitchen workflow, project summaries, access,
+file transfers, date form, route and focused regressions, together with the previous
+quotation revision commit. Visit and Quotation can record a lost outcome in the
+existing project aggregate; the scoped Lost Customers page retains customer details
+and stage queues exclude lost projects. Quotation sent dates no longer depend on
+design handoff or linked-order dates. Existing Expo, FastAPI, MongoDB, permissions
+and architecture remain; no migration, dependency or AGENTS.md regeneration is
+needed. Coverage percentage is not measured.
+
+Changed files: Kitchen models, project/workflow and file transfer services, Kitchen
+workspace/detail/dashboard and quotation components, route, API types, tests and
+version metadata. Last scanned: 2026-11-03.
+
 ## Sales Data simplification delta — 31 October 2026
 
 Native fallback delta scan retains the existing Expo/React Native Web, FastAPI

@@ -799,3 +799,36 @@ async def test_committed_route_does_not_fail_when_analytics_invalidation_is_unav
     assert len(database.kitchen_projects.rows) == 1
     assert database.kitchen_projects.rows[0]['version'] == result['version'] == (1 if operation == 'create' else 2)
     assert calls == ['kitchen_projects', 'kitchen_projects']
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stage", ["visit", "quotation"])
+async def test_mark_lost_records_outcome_and_blocks_further_changes(setup, stage):
+    database, service, owner = setup
+    project = await service.create(owner, create_request(customer_id="customer-a", idempotency_key="lost-create"))
+    row = database.kitchen_projects.rows[0]
+    row["stage"] = stage
+    request = cmd(project["version"], "mark_lost", {"reason": "  Chose another supplier  "}, key="mark-lost-key")
+    result = await service.command(owner, project["id"], request)
+    assert result["status"] == result["lifecycle_status"] == "Lost"
+    assert result["lost_customer"]["reason"] == "Chose another supplier"
+    assert result["lost_customer"]["stage"] == stage
+    assert result["lost_customer"]["actor_name"] == "Owner"
+    replay = await service.command(owner, project["id"], request)
+    assert replay["replayed"] is True
+    with pytest.raises(HTTPException) as rejected:
+        await service.command(owner, project["id"], cmd(result["version"], "move_stage", {"target_stage": "lead"}))
+    assert rejected.value.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_mark_lost_rejects_other_stages_and_blank_reasons(setup):
+    database, service, owner = setup
+    project = await service.create(owner, create_request(customer_id="customer-a", idempotency_key="lost-invalid"))
+    with pytest.raises(HTTPException) as wrong_stage:
+        await service.command(owner, project["id"], cmd(project["version"], "mark_lost", {"reason": "Other supplier"}))
+    assert wrong_stage.value.status_code == 422
+    database.kitchen_projects.rows[0]["stage"] = "visit"
+    with pytest.raises(HTTPException) as blank:
+        await service.command(owner, project["id"], cmd(project["version"], "mark_lost", {"reason": "  "}))
+    assert blank.value.status_code == 422

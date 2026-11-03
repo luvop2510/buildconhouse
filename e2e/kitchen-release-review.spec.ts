@@ -195,6 +195,58 @@ test('Kitchen missing quotation PDF and order prerequisites retain entry across 
   await health.assertHealthy();
 });
 
+for (const stage of ['visit', 'quotation'] as const) {
+  test(`Mark a customer lost from ${stage} and find their details`, async ({ page, context }) => {
+    const project = await projectAt(context.request, stage);
+    const reason = `Synthetic ${stage} lost reason`;
+    await seed(page);
+    await page.goto(`/kitchen/${project.id}/stages/${stage}`);
+    await expect(page.getByTestId('kitchen-project-ready')).toBeAttached();
+    await page.getByTestId(`kitchen-${stage}-mark-lost`).click();
+    await expect(page.getByTestId('kitchen-confirm-lost')).toBeDisabled();
+    await page.getByTestId('kitchen-lost-reason').fill(reason);
+    const result = await clickCommand(page, 'kitchen-confirm-lost', 'mark_lost');
+    expect(result.stage).toBe(stage);
+    expect(result.lifecycle_status).toBe('Lost');
+    expect(result.lost_customer.reason).toBe(reason);
+    await expect(page.getByText(`Lost reason: ${reason}`)).toBeVisible();
+
+    await page.goto(`/kitchen/stages/${stage}`);
+    await page.getByTestId('kitchen-search').fill(project.reference);
+    await expect(page.getByText('No matching projects')).toBeVisible();
+    await page.goto('/kitchen');
+    await page.getByTestId('kitchen-dashboard-lost').click();
+    await expect(page).toHaveURL(/\/kitchen\/lost/);
+    await page.getByTestId('kitchen-search').fill(project.reference);
+    const row = page.getByRole('link').filter({ hasText: project.reference });
+    await expect(row).toContainText(project.customer.name);
+    await expect(row).toContainText(reason);
+    await expect(row).toContainText(stage === 'visit' ? 'Visit' : 'Quotation');
+    await row.click();
+    await expect(page.getByText(`Lost reason: ${reason}`)).toBeVisible();
+  });
+}
+
+test('Quotation sent date can be saved and corrected years before or after the design', async ({ page, context }) => {
+  const project = await projectAt(context.request, 'quotation');
+  await seed(page);
+  await page.goto(`/kitchen/${project.id}/stages/quotation`);
+  const file = await uploadKitchenPdfInForm(page, 'kitchen-quotation-GI-pdf', 'editable-date.pdf');
+  await page.getByTestId(`kitchen-quotation-GI-pdf-${file.attachment.id}-final`).click();
+  await page.getByTestId('kitchen-quotation-sent-yes').click();
+  const date = page.getByTestId('kitchen-quotation-shared-date');
+  await date.fill('2021-01-01');
+  let saved = await clickCommand(page, 'kitchen-quotation-receive', 'quotation_receive');
+  expect(saved.quotation_versions.at(-1).shared_date).toBe('2021-01-01');
+  await page.reload();
+  await expect(date).toHaveValue('2021-01-01');
+  await date.fill('2031-01-01');
+  saved = await clickCommand(page, 'kitchen-quotation-edit-save', 'quotation_update');
+  expect(saved.quotation_versions.at(-1).shared_date).toBe('2031-01-01');
+  await page.reload();
+  await expect(date).toHaveValue('2031-01-01');
+});
+
 test('Kitchen save and next persists production, actual site visit and installation in one journey', async ({ page, context }, info) => {
   const project = await projectAt(context.request, 'production');
   const health = captureRuntimeHealth(page);

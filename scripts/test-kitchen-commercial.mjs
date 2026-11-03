@@ -132,7 +132,7 @@ view = view.refresh();
 assert.equal(view.control('kitchen-quotation-receive').props.disabled, false);
 await view.control('kitchen-quotation-receive').props.onPress();
 assert.equal(calls.pop()[1].shared_date, '2026-10-26', 'Saving the uploaded quotation preserves the automatic date without a redundant picker interaction');
-for (const year of ['2024', '2025', '2030']) {
+for (const year of ['2021', '2025', '2031']) {
   view=render('quotation',{design_versions:[{...design,shared_date:`${year}-01-01`,approval_date:`${year}-01-02`,handoff_date:`${year}-01-03`}],quotation_versions:[]});
   view=chooseQuotation(view);
   view.control('kitchen-quotation-sent').props.onChange('Yes');
@@ -144,7 +144,9 @@ for (const year of ['2024', '2025', '2030']) {
   assert.equal(calls.pop()[1].shared_date,`${year}-01-04`);
   view.control('kitchen-quotation-shared-date').props.onChange(`${year}-01-02`);
   view=view.refresh();
-  assert.equal(view.control('kitchen-quotation-receive').props.disabled,true,'Business-date chronology still rejects sending a quotation before company handoff');
+  assert.equal(view.control('kitchen-quotation-receive').props.disabled,false,'Quotation sent date is independent of design handoff');
+  await view.control('kitchen-quotation-receive').props.onPress();
+  assert.equal(calls.pop()[1].shared_date,`${year}-01-02`);
 }
 for (const response of ['Pending', 'Approved']) {
   for (const owner of [true, false]) {

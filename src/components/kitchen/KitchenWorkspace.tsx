@@ -27,7 +27,7 @@ import { collectPagedExportRows } from "@/src/utils/pagedExcel";
 export { LeadFields } from "./KitchenLeadFields";
 
 const LIMIT = 25;
-export type KitchenWorkspacePage = "overview" | "projects" | "workflow" | "stage" | "completed" | "review" | "settings" | "new";
+export type KitchenWorkspacePage = "overview" | "projects" | "workflow" | "stage" | "completed" | "lost" | "review" | "settings" | "new";
 type WorkspaceProps = { page?: KitchenWorkspacePage; stage?: KitchenStage };
 const stageDescriptions: Record<KitchenStage, string> = { lead: "Record the enquiry, then convert it to a showroom visit.", visit: "Record the showroom visit and preferred display model.", cad: "Record CAD receipt and prepare the design for presentation.", design: "Present the design, record revisions and obtain customer approval.", quotation: "Receive the company quotation and record the customer's response.", order: "Confirm the approved quotation and record the advance payment.", production: "Record when production starts and finishes.", installation: "Record installation progress and actual site visits.", completed: "Finished installations, with their complete project history." };
 const one = (value: string | string[] | undefined) => Array.isArray(value) ? value[0] || "" : value || "";
@@ -40,7 +40,7 @@ function Workspace({ stage = "lead", page: requestedPage }: WorkspaceProps) {
   const { staff } = useAuth();
   const createAccess = useActionAccess("kitchen_lead", "create", true);
   const stageExport = useActionAccess(`kitchen_${stage}`, "export", true);
-  const canExport = requestedPage === "projects" && staff?.custom_access
+  const canExport = (requestedPage === "projects" || requestedPage === "lost") && staff?.custom_access
     ? KITCHEN_STAGES.filter(value => hasGrantAccess(staff.access_grants, KITCHEN_FLOOR_ID, `kitchen_${value}`)).every(value => hasGrantAccess(staff.access_grants, KITCHEN_FLOOR_ID, `kitchen_${value}`, "export"))
     : stageExport;
   const [policy, setPolicy] = useState<KitchenPolicy | null>(null);
@@ -52,8 +52,8 @@ function Workspace({ stage = "lead", page: requestedPage }: WorkspaceProps) {
   const [retry, setRetry] = useState(0);
   const owner = staff?.role === "owner";
   const canCreate = createAccess;
-  const page = requestedPage === "projects" ? "projects" : stage === "completed" ? "completed" : "stage";
-  const path = page === "projects" ? "/kitchen/projects" : `/kitchen/stages/${stage}`;
+  const page = requestedPage === "lost" ? "lost" : requestedPage === "projects" ? "projects" : stage === "completed" ? "completed" : "stage";
+  const path = page === "lost" ? "/kitchen/lost" : page === "projects" ? "/kitchen/projects" : `/kitchen/stages/${stage}`;
   // Retired filter bookmarks cannot silently narrow the visible queue.
   const values = { search: one(params.search), page: one(params.page) };
   const returnTo = url(path, values);
@@ -80,8 +80,8 @@ function Workspace({ stage = "lead", page: requestedPage }: WorkspaceProps) {
   const requestCreateClose = useRef<(() => void) | null>(null);
   const closeCreate = () => { setCreateOpen(false); router.setParams({ create: "" }); };
   const closeSettings = () => { setSettingsOpen(false); router.setParams({ settings: "" }); };
-  return <KitchenPageFrame title={page === "projects" ? "Customer projects" : STAGE_LABELS[stage]} subtitle={page === "projects" ? "View customer projects across all nine stages." : stageDescriptions[stage]} overline={page === "projects" ? "Kitchen · All stages" : `Kitchen · Stage ${KITCHEN_STAGES.indexOf(stage) + 1} of 9`}
-    right={<View style={{ flexDirection: "row", flexWrap: "wrap", minWidth: 0, maxWidth: "100%", flexShrink: 1, gap: spacing.sm }}>{owner ? <Button label="Department settings" icon="settings" variant="ghost" onPress={() => setSettingsOpen(true)} testID="kitchen-settings-open" /> : null}{stage === "lead" && canCreate ? <Button label="Add lead" icon="plus" onPress={() => setCreateOpen(true)} testID="kitchen-create" /> : null}</View>}>
+  return <KitchenPageFrame title={page === "lost" ? "Lost Customers" : page === "projects" ? "Customer projects" : STAGE_LABELS[stage]} subtitle={page === "lost" ? "Customers marked lost across Kitchen stages." : page === "projects" ? "View customer projects across all nine stages." : stageDescriptions[stage]} overline={page === "lost" || page === "projects" ? "Kitchen · All stages" : `Kitchen · Stage ${KITCHEN_STAGES.indexOf(stage) + 1} of 9`}
+    right={<View style={{ flexDirection: "row", flexWrap: "wrap", minWidth: 0, maxWidth: "100%", flexShrink: 1, gap: spacing.sm }}>{owner ? <Button label="Department settings" icon="settings" variant="ghost" onPress={() => setSettingsOpen(true)} testID="kitchen-settings-open" /> : null}{page === "stage" && stage === "lead" && canCreate ? <Button label="Add lead" icon="plus" onPress={() => setCreateOpen(true)} testID="kitchen-create" /> : null}</View>}>
     <View style={{ width: "100%", minWidth: 0, gap: 28 }}>
       <NavigationLink href={"/kitchen" as any} testID="kitchen-dashboard-link" style={{ minHeight: 44, justifyContent: "center" }}><Text style={[type.bodyStrong, { color: colors.brand }]}>← Kitchen dashboard</Text></NavigationLink>
       {intakeNotice ? <Alert tone="info" title="Lead saved" description={intakeNotice} /> : null}
@@ -104,7 +104,7 @@ function ProjectList({ page, stage, values, setValues, returnTo, search, setSear
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
   const currentPage = /^\d+$/.test(values.page) ? Math.max(1, Number(values.page)) : 1;
-  const query: KitchenQuery = { search: values.search, stage: page === "completed" ? "completed" : page === "review" ? "lead" : page === "stage" ? stage : undefined, duplicate_review: page === "review" ? "pending" : undefined, sort: "updated_at", direction: "desc", page: currentPage, limit: LIMIT };
+  const query: KitchenQuery = { search: values.search, status: page === "lost" ? "Lost" : undefined, stage: page === "completed" ? "completed" : page === "review" ? "lead" : page === "stage" ? stage : undefined, duplicate_review: page === "review" ? "pending" : undefined, sort: "updated_at", direction: "desc", page: currentPage, limit: LIMIT };
   const queryKey = JSON.stringify(query);
   useEffect(() => { const controller = new AbortController(); setLoading(true); setFailure(null); setResult(null); kitchenProjectsApi.list(JSON.parse(queryKey), controller.signal).then(value => { if (!controller.signal.aborted) setResult(value); }).catch(error => { if (!controller.signal.aborted) setFailure(errorText(error)); }).finally(() => { if (!controller.signal.aborted) setLoading(false); }); return () => controller.abort(); }, [queryKey, retry]);
   const rows = result?.rows || [];
@@ -120,7 +120,7 @@ function ProjectList({ page, stage, values, setValues, returnTo, search, setSear
           const hasMore = response.page * response.limit < response.total;
           return { ...response, page_size: response.limit, has_more: hasMore, next_page: hasMore ? response.page + 1 : null };
         }, signal, onProgress);
-        const columns = stageColumns(page === "projects" ? undefined : stage);
+        const columns = stageColumns(page === "projects" || page === "lost" ? undefined : stage);
         return [["Project", "Customer", "Phone", "Stage", "Status", "Assigned to", "Target completion", ...columns.map(column => column.label)], ...projects.map(project => [project.project_reference || project.reference, project.customer.name, formatPhone(project.customer.phone), STAGE_LABELS[project.stage], projectStatus(project), project.assigned_to_name || "Unassigned", project.target_completion_date, ...columns.map(column => column.value(project))])];
       }} /> : null}
       {page === "completed" && canExport ? <Button label="Export" icon="download" variant="secondary" loading={exporting} onPress={() => { setExporting(true); setExportError(null); void downloadApiFile(kitchenProjectsApi.exportPath({ search: values.search }), "kitchen-completed.csv", "completed projects CSV", KITCHEN_FLOOR_ID).catch(error => setExportError(errorText(error))).finally(() => setExporting(false)); }} testID="kitchen-completed-export" /> : null}
@@ -143,7 +143,8 @@ function ProjectCard({ project, href }: { project: KitchenProject; href: string 
       <Feather name="chevron-right" size={20} color={colors.brand} />
     </View>
     <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: spacing.sm }}><Text style={type.bodyStrong}>{STAGE_LABELS[project.stage]}</Text><Text style={type.bodyMuted}>{projectStatus(project) !== STAGE_LABELS[project.stage] ? projectStatus(project) : ""}</Text></View>
-    {project.stage !== "lead" ? <Text style={type.body}>{formatPhone(project.customer.phone) || "Phone not recorded"}</Text> : null}
+    {project.stage !== "lead" || project.status === "Lost" ? <Text style={type.body}>{formatPhone(project.customer.phone) || "Phone not recorded"}</Text> : null}
+    {project.status === "Lost" ? <><Text style={type.body}>Reason · {project.lost_customer?.reason || project.lead.lost_reason || "Not recorded"}</Text>{project.customer.address ? <Text style={type.body}>Address · {project.customer.address}</Text> : null}{project.customer.email ? <Text style={type.body}>Email · {project.customer.email}</Text> : null}{project.lost_customer?.at ? <Text style={type.caption}>Marked lost · {displayDate(project.lost_customer.at)}{project.lost_customer.actor_name ? ` · ${project.lost_customer.actor_name}` : ""}</Text> : null}</> : null}
     {project.duplicate_review?.status === "pending" ? <Text style={[type.bodyStrong, { color: colors.warning }]}>Owner duplicate review pending</Text> : null}
     <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.lg, borderTopWidth: 1, borderColor: colors.border, paddingTop: spacing.md }}>
       {stageColumns(project.stage).map(column => <View key={column.label} style={{ flexGrow: 1, flexBasis: 150, minWidth: 0, gap: spacing.xs }}><Text style={type.caption}>{column.label}</Text><Text style={type.body}>{column.value(project)}</Text></View>)}

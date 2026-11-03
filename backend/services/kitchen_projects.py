@@ -17,7 +17,7 @@ from pydantic import ValidationError
 from pymongo.errors import DuplicateKeyError, ExecutionTimeout
 
 from models_kitchen import (AdvancePayload, CadFields, ConfigurePolicy,
-                            LeadCustomer, LeadFields, MetadataPayload, PolicyFields, STAGES, VisitFields, AssignmentPayload)
+                            LeadCustomer, LeadFields, LostPayload, MetadataPayload, PolicyFields, STAGES, VisitFields, AssignmentPayload)
 from services import kitchen_access as access
 from services import kitchen_workflow as workflow
 from services.referrer_identity import referrer_query
@@ -169,7 +169,7 @@ def event(user, kind, payload):
 
 def current_status(project):
     stage = project["stage"]
-    if project.get("lifecycle_status") in {"On Hold", "Cancelled"}:
+    if project.get("lifecycle_status") in {"On Hold", "Cancelled", "Lost"}:
         return project["lifecycle_status"]
     if stage == "completed":
         return "Completed"
@@ -473,7 +473,7 @@ class KitchenProjectService:
         if project["version"] != expected_version:
             raise HTTPException(409, "Kitchen project changed; reload before uploading")
         await asyncio.to_thread(validate_file, data, content_type, filename, policy, max_file_bytes)
-        if project.get("lifecycle_status") in {"On Hold", "Cancelled"}:
+        if project.get("lifecycle_status") in {"On Hold", "Cancelled", "Lost"}:
             raise HTTPException(422, "The owner must resume the project before adding files")
         metadata = await prepare_private_upload(self.db, storage, user=user, project=project, policy=policy,
             data=data, content_type=content_type, filename=filename, bucket=bucket, max_file_bytes=max_file_bytes)
@@ -731,6 +731,8 @@ class KitchenProjectService:
                 return {"id": project["id"], "stage": project["stage"], "version": project["version"], "access_handoff": True, "replayed": True}
             return await self.public(project, user, policy, replayed=True)
         await access.require_command(self.db, user, project, body.command)
+        if project.get("lifecycle_status") == "Lost":
+            raise HTTPException(422, "Lost projects cannot be changed")
         # Replays above are read-only acknowledgments of committed work. New
         # routine writes must respect an owner hold/cancellation in every stage,
         # including early-stage/plan commands outside workflow.apply. Duplicate
@@ -743,7 +745,13 @@ class KitchenProjectService:
         updated = copy.deepcopy(project)
         payload = body.payload
         command = body.command
-        if command == "assign":
+        if command == "mark_lost":
+            if project["stage"] not in {"visit", "quotation"}:
+                raise HTTPException(422, "Customers can be marked lost only from Visit or Quotation")
+            loss = validate(LostPayload, payload)
+            updated["lifecycle_status"] = "Lost"
+            updated["lost_customer"] = {"reason": loss.reason, "stage": project["stage"], "at": timestamp(), "actor_id": user.id, "actor_name": user.full_name}
+        elif command == "assign":
             assignment = validate(AssignmentPayload, payload)
             employee = await self.resolve_assignee(user, assignment.user_id)
             updated["assignments"][assignment.stage] = employee["id"] if employee else None
@@ -859,7 +867,7 @@ class KitchenProjectService:
         updated["assigned_to"] = updated["assignments"].get(updated["stage"])
         updated["assigned_to_name"] = updated["assignment_names"].get(updated["stage"])
         record = {"fields": sorted(payload), "from_stage": project["stage"], "to_stage": updated["stage"], "changes": {}}
-        for field in ("lead", "visit", "cad", "production", "installation", "assignments", "next_action", "deadline", "target_completion_date", "duplicate_review", "lifecycle_status", "workflow_cycle", "commercial_basis_invalidated", "manual_stage_navigation", "completion_date", "closure_pending_reason", "customer_order_confirmation", "final_design_version_id"):
+        for field in ("lead", "visit", "cad", "production", "installation", "assignments", "next_action", "deadline", "target_completion_date", "duplicate_review", "lifecycle_status", "lost_customer", "workflow_cycle", "commercial_basis_invalidated", "manual_stage_navigation", "completion_date", "closure_pending_reason", "customer_order_confirmation", "final_design_version_id"):
             if project.get(field) != updated.get(field):
                 record["changes"][field] = {"before": project.get(field), "after": updated.get(field)}
         if command in workflow.COMMANDS:
@@ -944,13 +952,13 @@ class KitchenProjectService:
                 {"$convert": {"input": "$order.final_amount", "to": "decimal", "onError": 0, "onNull": 0}}, 0]}}
             # Aggregate in Mongo; no project histories or per-customer arrays cross the wire.
             pipeline = [{"$match": access.scope_query(user, policy)}, {"$project": {
-                "stage": 1, "customer_id": {"$ifNull": ["$customer_id", "$id"]},
+                "stage": 1, "status": 1, "customer_id": {"$ifNull": ["$customer_id", "$id"]},
                 "assigned_to": 1, "assigned_to_name": 1, "attention": expressions,
                 "order": {"$arrayElemAt": [{"$ifNull": ["$orders", []]}, -1]}}},
                 {"$facet": {
                     "totals": [{"$group": {"_id": None, **totals, "projects": {"$sum": 1}}}],
                     "customers": [{"$group": {"_id": "$customer_id"}}, {"$count": "count"}],
-                    "stages": [{"$group": {"_id": {"stage": "$stage", "customer": "$customer_id"}, "projects": {"$sum": 1}}},
+                    "stages": [{"$match": {"status": {"$ne": "Lost"}}}, {"$group": {"_id": {"stage": "$stage", "customer": "$customer_id"}, "projects": {"$sum": 1}}},
                         {"$group": {"_id": "$_id.stage", "projects": {"$sum": "$projects"}, "customers": {"$sum": 1}}}],
                     "workload": [{"$match": {"attention.active": True}}, {"$group": {
                         "_id": "$assigned_to", "assignee_name": {"$first": "$assigned_to_name"}, "project_count": {"$sum": 1}}}],
@@ -1018,6 +1026,8 @@ class KitchenProjectService:
                 filters.append({"duplicate_review.status": duplicate_review})
             if stage:
                 filters.append({"stage": stage})
+                if status is None:
+                    filters.append({"status": {"$ne": "Lost"}})
             if completed is not None:
                 filters.append({"stage": "completed" if completed else {"$ne": "completed"}})
             if status:

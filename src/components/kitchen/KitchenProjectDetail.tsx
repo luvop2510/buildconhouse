@@ -32,6 +32,8 @@ export function KitchenProjectDetail({ page = "stage" }: { page?: ProjectPage })
   const { stage: parameter, details } = useLocalSearchParams<{ stage?: string; details?: string }>();
   const router = useRouter();
   const [panel, setPanel] = useState<ProjectPage | "workflow" | "assignee" | "advance" | "visits" | null>(["documents", "history", "assignments", "exceptions"].includes(page) ? page : null);
+  const [lostOpen, setLostOpen] = useState(false);
+  const [lostReason, setLostReason] = useState("");
   const [detailsExpanded, setDetailsExpanded] = useState(details === "1");
   const lastStage = useRef(project?.stage);
   useEffect(() => { if (lastStage.current && project?.stage !== lastStage.current) setPanel(null); lastStage.current = project?.stage; }, [project?.stage]);
@@ -42,7 +44,7 @@ export function KitchenProjectDetail({ page = "stage" }: { page?: ProjectPage })
   const canUpdate = project?.permissions?.can_update === true;
   const canEditCustomer = customerAccess || canUpdate;
   const fullHistory = !project?.access_scoped;
-  const held = project?.lifecycle_status === "On Hold" || project?.lifecycle_status === "Cancelled";
+  const held = project?.lifecycle_status === "On Hold" || project?.lifecycle_status === "Cancelled" || project?.lifecycle_status === "Lost";
   const back = () => { if (router.canGoBack()) router.back(); else router.replace(returnTo as any); };
   const actionLabel = project ? currentTaskLabel(project) : "Open current task";
   const disabled = !canUpdate || submission.busy && !state.backgroundSaving || state.documentSubmission.busy || loading || Boolean(failure);
@@ -83,14 +85,16 @@ export function KitchenProjectDetail({ page = "stage" }: { page?: ProjectPage })
       <ScrollView horizontal keyboardShouldPersistTaps="handled" showsHorizontalScrollIndicator={false} style={{ flexGrow: 0 }} contentContainerStyle={{ gap: spacing.sm }} testID="kitchen-project-stages" accessibilityLabel="Kitchen stages">
         {KITCHEN_STAGES.map((stage, index) => hasAccess(`kitchen-${stage}`) ? <NavigationLink key={stage} href={path(`/stages/${stage}`) as any} testID={`kitchen-project-stage-${stage}`} accessibilityState={{ selected: selected === stage }} aria-current={selected === stage ? "page" : undefined} style={{ flexShrink: 0, minHeight: 44, justifyContent: "center", paddingHorizontal: spacing.md, borderWidth: 1, borderColor: selected === stage ? colors.brand : colors.border, borderRadius: 8, backgroundColor: selected === stage ? colors.brandTint : colors.surfaceSecondary }}><Text numberOfLines={1} style={type.body}>{index + 1}. {STAGE_LABELS[stage]}</Text></NavigationLink> : null)}
       </ScrollView>
-      {selected === project.stage && canUpdate ? <StageNavigation project={project} disabled={disabled} /> : null}
+      {selected === project.stage && canUpdate && !held ? <StageNavigation project={project} disabled={disabled} /> : null}
+      {selected === project.stage && ["visit", "quotation"].includes(selected) && canUpdate && !held ? <Button label="Mark customer as lost" icon="user-x" variant="secondary" disabled={disabled || state.dirty} onPress={() => { setLostReason(""); setLostOpen(true); }} testID={`kitchen-${selected}-mark-lost`} /> : null}
+      {state.dirty && ["visit", "quotation"].includes(selected) ? <Text style={type.caption}>Save your changes before marking the customer lost.</Text> : null}
       {loading ? <Text style={type.caption}>Refreshing saved project…</Text> : null}
       <View testID="kitchen-save-status" style={{ minHeight: 19 }}>
         <Text accessibilityLiveRegion="polite" numberOfLines={1} style={[type.caption, { minHeight: 19 }]} testID={state.dirty ? "kitchen-unsaved-notice" : undefined}>{submission.busy ? state.pendingStage ? `Moving to ${STAGE_LABELS[state.pendingStage]}…` : "Saving…" : submission.error ? "Save failed · review and retry." : state.dirty ? "Unsaved changes · check the form below." : savedLabel}</Text>
       </View>
       {retainedDraft ? <Alert tone="info" title="Drafts retained" description="The latest saved record is loaded. Your unsaved entries are kept for review." /> : null}
       <ErrorNotice error={submission.error} stale={submission.stale} onReload={reload} />
-      {held ? <Alert tone="warning" title={`Project ${project.lifecycle_status}`} description="The owner must resume the project before routine work can continue." /> : null}
+      {held ? <Alert tone="warning" title={`Project ${project.lifecycle_status}`} description={project.lifecycle_status === "Lost" ? `Lost reason: ${project.lost_customer?.reason || "Not recorded"}` : "The owner must resume the project before routine work can continue."} /> : null}
       <View testID="kitchen-current-task-region" style={{ gap: spacing.md, width: "100%", minWidth: 0 }}>
         {selected !== project.stage ? <Alert tone="info" title="Stage records" description={future ? `Preview of ${STAGE_LABELS[selected]}. Open the current stage to move this project.` : `This project is now in ${STAGE_LABELS[project.stage]}. Earlier records are read only.`} action={<Button label={actionLabel} variant="secondary" onPress={() => router.replace(path(`/stages/${project.stage}`) as any)} testID="kitchen-open-current-stage" />} /> : null}
         {!canUpdate ? <View testID="kitchen-read-only-notice"><Alert tone="info" title="View only" description="Changes and uploads require permission for this project's current stage." /></View> : null}
@@ -99,6 +103,7 @@ export function KitchenProjectDetail({ page = "stage" }: { page?: ProjectPage })
         <EarlyStage project={project} stage={selected} disabled={disabled || Boolean(held)} />
         <CommercialStages project={project} stage={selected} disabled={disabled || Boolean(held)} command={command} />
       </View>
+      <Sheet scroll visible={lostOpen} onClose={() => setLostOpen(false)} title="Mark customer as lost" testID="kitchen-lost-sheet"><View style={{ gap: spacing.md }}><Text style={type.body}>Record why this customer was lost. This closes the project for changes.</Text><TextField label="Lost reason" value={lostReason} onChangeText={setLostReason} multiline testID="kitchen-lost-reason" /><Button label="Mark customer as lost" variant="danger" disabled={!lostReason.trim() || disabled} loading={submission.busy} onPress={() => { void command("mark_lost", { reason: lostReason.trim() }).then(ok => { if (ok) setLostOpen(false); }); }} testID="kitchen-confirm-lost" /></View></Sheet>
       <Sheet scroll visible={panel === "advance"} onClose={() => setPanel(null)} title="Advance details" testID="kitchen-advance-sheet"><CommercialStages project={project} stage={selected} disabled={disabled || submission.busy || Boolean(held)} command={command} mode="advance" /></Sheet>
       <Sheet scroll visible={panel === "visits"} onClose={() => setPanel(null)} title="Site visits" testID="kitchen-site-visits-sheet"><CommercialStages project={project} stage={selected} disabled={disabled || submission.busy || Boolean(held)} command={command} mode="visits" /></Sheet>
       <Sheet scroll visible={panel === "documents"} onClose={() => setPanel(null)} title="Project documents" testID="kitchen-documents-sheet">{policyError ? <Alert tone="warning" title="Upload settings unavailable" action={<Button label="Reload" variant="secondary" onPress={reload} />} /> : null}<KitchenDocuments project={project} policy={policy} disabled={disabled || Boolean(held)} onUpdated={updateProject} onReload={reload} /></Sheet>
