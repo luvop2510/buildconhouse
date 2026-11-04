@@ -34,7 +34,7 @@ async function harness(providerSource = source, record = structuredClone(initial
     '@/src/state/auth': { useAuth: () => ({ staff: { role: 'owner' } }) },
     '@/src/access-profiles': { staffLandingPath: () => '/(admin)/kitchen/stages/lead' },
     '@/src/team-delegation': { hasGrantAccess: () => true },
-    '@/src/api/kitchenProjects': { KITCHEN_STAGES: stages, kitchenProjectsApi: {
+    '@/src/api/kitchenProjects': { KITCHEN_STAGES: stages, kitchenDisplayStage: stage => stage === 'production' ? 'order' : stage, kitchenProjectsApi: {
       get: async () => record, configuration: async () => ({}),
       command: (id, version, key, command, payload) => {
         writes.push({ id, version, key, command, payload });
@@ -246,7 +246,7 @@ for (const confirm of [false, true]) for (const background of [false, true]) for
   const apiExports = {};
   new Function('require', 'exports', ts.transpileModule(confirm ? visitApiSource : visitApiSource.replace('["move_stage", "save_visit"]', '["move_stage"]'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
-  }).outputText)(name => name.endsWith('client') ? { api: transport } : name.endsWith('floors') ? { KITCHEN_FLOOR_ID: 'second-floor' } : { KITCHEN_WORKSPACE_PAGES: [] }, apiExports);
+  }).outputText)(name => name.endsWith('client') ? { api: transport } : name.endsWith('floors') ? { KITCHEN_FLOOR_ID: 'second-floor' } : { KITCHEN_WORKSPACE_PAGES: [], KITCHEN_VISIBLE_PAGES: [] }, apiExports);
   const view = await harness(source, original, apiExports.kitchenProjectsApi.command);
   view.state.setDraftValue('visit.value', original.visit, submitted);
   view.render();

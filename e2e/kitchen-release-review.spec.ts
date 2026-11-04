@@ -46,11 +46,11 @@ async function clickCommand(page: Page, id: string, command: string) {
   return response.json();
 }
 
-test('All nine stages open with a compact header and the task visible before expandable project details', async ({ page, context }, info) => {
+test('All eight stages open with a compact header and the task visible before expandable project details', async ({ page, context }, info) => {
   let project = await projectAt(context.request, 'lead');
   await seed(page);
   if (page.viewportSize()!.width < 768) await page.setViewportSize({ width: 320, height: 720 });
-  for (const stage of ['lead', 'visit', 'cad', 'design', 'quotation', 'order', 'production', 'installation', 'completed']) {
+  for (const stage of ['lead', 'visit', 'cad', 'design', 'quotation', 'order', 'installation', 'completed']) {
     if (stage !== 'lead') {
       project = await prepareKitchenFixtureTransition(context.request, project, stage);
       const moved = await context.request.post(`/api/kitchen-projects/${project.id}/commands`, { headers, data: {
@@ -65,12 +65,12 @@ test('All nine stages open with a compact header and the task visible before exp
     await expect(details).toHaveAttribute('aria-expanded', 'false');
     await expect(page.getByTestId('kitchen-project-details')).toHaveCount(0);
     await expect(page.getByTestId('kitchen-stage-navigation')).toHaveCount(1);
-    await expect(page.getByTestId('kitchen-project-stages').getByRole('link')).toHaveCount(9);
+    await expect(page.getByTestId('kitchen-project-stages').getByRole('link')).toHaveCount(8);
     await expect(page.getByTestId('kitchen-project-actions')).toBeVisible();
     const header = await page.getByTestId('kitchen-compact-header').boundingBox();
     expect(header!.height).toBeLessThanOrEqual(page.viewportSize()!.width < 768 ? 100 : 52);
     const heading = page.getByTestId('kitchen-compact-header').getByRole('heading');
-    await expect(heading).toHaveText(stage === 'cad' ? 'CAD File' : stage[0].toUpperCase() + stage.slice(1));
+    await expect(heading).toHaveText(stage === 'cad' ? 'CAD File' : stage === 'order' ? 'Order/Production' : stage[0].toUpperCase() + stage.slice(1));
     const titleFits = await heading.evaluate(element => {
       const range = document.createRange(); range.selectNodeContents(element);
       return range.getBoundingClientRect().width <= element.getBoundingClientRect().width + 1 && element.getBoundingClientRect().height <= parseFloat(getComputedStyle(element).lineHeight) + 1;
@@ -100,7 +100,7 @@ test('Kitchen stages use one editable or saved source without repeated summary b
   const project = await projectAt(context.request, 'lead');
   await seed(page);
   await page.goto(`/kitchen/${project.id}/stages/lead`);
-  for (const stage of ['lead', 'visit', 'cad', 'design', 'quotation', 'order', 'production', 'installation', 'completed']) {
+  for (const stage of ['lead', 'visit', 'cad', 'design', 'quotation', 'order', 'installation', 'completed']) {
     await (await projectControl(page, 'kitchen-project-actions')).click();
     await page.getByRole('menuitem', { name: 'Stage history', exact: true }).click();
     await page.getByTestId('kitchen-workflow-sheet').getByTestId(`kitchen-stage-${stage}`).click();
@@ -129,8 +129,9 @@ test('Kitchen stages use one editable or saved source without repeated summary b
       if (stage === 'quotation') await expect(page.getByTestId('kitchen-quotation-design-version')).toHaveCount(0);
     } else if (stage === 'order') {
       await expect(page.getByTestId('kitchen-order-details')).toHaveCount(0);
-      await expect(page.getByTestId('kitchen-order-pending')).toHaveText('Status: Pending confirmation');
-      await expect(page.getByTestId('kitchen-order-confirmed')).toHaveCount(1);
+      await expect(page.getByTestId('kitchen-order-pending')).toHaveText('Order not yet recorded');
+      await expect(page.getByTestId('kitchen-order-confirmed')).toHaveCount(0);
+      await expect(page.getByTestId('kitchen-production-status')).toHaveCount(1);
       await expect(page.getByTestId('kitchen-order-amount')).toHaveCount(1);
       await page.getByTestId('kitchen-order-pending').scrollIntoViewIfNeeded();
       await page.screenshot({ path: info.outputPath('order-single-source.png') });
@@ -184,7 +185,7 @@ test('Kitchen missing quotation PDF and order prerequisites retain entry across 
   await clickCommand(page, 'kitchen-quotation-receive', 'quotation_receive');
   await clickCommand(page, 'kitchen-advance-order', 'move_stage');
   await expect(page.getByTestId('kitchen-order-confirm')).toBeDisabled();
-  await expect(page.getByTestId('kitchen-order-pending')).toHaveText('Status: Pending confirmation');
+  await expect(page.getByTestId('kitchen-order-pending')).toHaveText('Order not yet recorded');
   await page.screenshot({ path: info.outputPath('order-pending-confirmation.png') });
   await clickCommand(page, 'kitchen-previous-stage', 'move_stage');
   await expect(page.getByTestId('kitchen-quotation-final-selection')).toContainText('GI');
@@ -411,7 +412,7 @@ test('Kitchen task controls remain reachable at 200 percent text with reduced mo
   await page.screenshot({ path: info.outputPath('kitchen-expanded-text-review.png') });
 });
 
-test('Kitchen records dated installments, material arrival, automatic completion and multiple material photos', async ({page,context}) => {
+test('Kitchen records dated installments and automatic production completion', async ({page,context}) => {
   const health = captureRuntimeHealth(page);
   let project = await projectAt(context.request, 'order');
   const date = kitchenIndiaToday();
@@ -428,11 +429,7 @@ test('Kitchen records dated installments, material arrival, automatic completion
     await expect(page.getByTestId(`kitchen-installment-${index}`)).toContainText('Installment');
   }
   expect(project.orders.at(-1).installments.map((p:any)=>p.amount)).toEqual(['300000.00','200000.00','100000.00','100000.00','300000.00']);
-  await page.getByTestId('kitchen-material-arrived-yes').click();
-  project=await clickCommand(page,'kitchen-material-arrived-save','order_material_arrived');
-  expect(project.orders.at(-1).material_arrived).toBe(true);
-  await page.reload();await expect(page.getByTestId('kitchen-material-arrived-yes')).toHaveAttribute('aria-pressed','true');
-  await send('move_stage',{target_stage:'production'});await page.goto(`/kitchen/${project.id}/stages/production`);
+  await expect(page.getByTestId('kitchen-material-arrived')).toHaveCount(0);
   await page.getByTestId('kitchen-production-start').fill('2026-10-20');
   await expect(page.getByTestId('kitchen-production-complete')).toHaveValue('2026-12-20');
   await expect(page.getByTestId('kitchen-production-complete')).toBeDisabled();
@@ -442,16 +439,6 @@ test('Kitchen records dated installments, material arrival, automatic completion
   const expected = new Date(`${date}T00:00:00Z`);expected.setUTCMonth(expected.getUTCMonth()+2);
   expect(project.production.completion_date).toBe(expected.toISOString().slice(0,10));
   await send('move_stage',{target_stage:'installation'});await page.goto(`/kitchen/${project.id}/stages/installation`);
-  const chooser=page.waitForEvent('filechooser');await page.getByTestId('kitchen-material-photos-pick').click();
-  await (await chooser).setFiles([1,2,3].map(index=>({name:`material-list-${index}.png`,mimeType:'image/png',buffer:Buffer.concat([Buffer.from('89504e470d0a1a0a','hex'),Buffer.from(`Synthetic material page ${index}`)])})));
-  for(const index of [1,2,3]){
-    const linked=page.waitForResponse(r=>r.url().endsWith('/commands')&&r.request().postDataJSON()?.command==='installation_material_photos');
-    await page.getByTestId('kitchen-material-photos-upload').click();
-    const saved=await linked;expect(saved.ok(),await saved.text()).toBe(true);project=await saved.json();
-    expect(project.installation.material_photo_ids).toHaveLength(index);
-  }
-  await page.reload();await expect(page.getByRole('button',{name:'Open photo',exact:true})).toHaveCount(3);
-  const independent=await context.request.get(`/api/kitchen-projects/${project.id}`,{headers});
-  expect((await independent.json()).installation.material_photo_ids).toHaveLength(3);
+  await expect(page.getByTestId('kitchen-material-photos')).toHaveCount(0);
   await health.assertHealthy();
 });

@@ -67,3 +67,17 @@ async def test_existing_pdf_above_new_upload_ceiling_remains_downloadable(setup)
     response = await download_part(database, owner, project["id"], metadata["id"], 0, storage)
     assert base64.b64decode(response["data_base64"]).startswith(b"%PDF-1.4")
     assert response["size_bytes"] == 10_000_001
+
+@pytest.mark.asyncio
+async def test_final_production_pdf_has_no_application_size_ceiling(setup, monkeypatch):
+    from services import kitchen_access
+    _, _, owner = setup
+    collection = SimpleNamespace(find_one=AsyncMock(return_value=None), insert_one=AsyncMock())
+    transfers = KitchenFileTransfers(SimpleNamespace(kitchen_file_transfers=collection))
+    transfers.authorized = AsyncMock(return_value=({"version": 1, "stage": "order"}, resolved_policy({})))
+    monkeypatch.setattr(kitchen_access, "require_command", AsyncMock())
+    body = TransferStart(expected_version=1, idempotency_key="large-pdf-test", filename="Final.pdf", content_type="application/pdf",
+        size_bytes=100_000_000, purpose="final_production", sha256="a" * 64)
+    result = await transfers.begin(owner, "project", body)
+    assert result["size_bytes"] == 100_000_000
+    collection.insert_one.assert_awaited_once()

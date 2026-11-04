@@ -192,15 +192,13 @@ def test_production_admission_needs_financial_basis_without_manager_approval_and
     assert "customer approval" in workflow.transition(project, "production", policy)
 
 
-def test_closure_still_requires_selected_manager_current_subject_and_policy(setup):
+def test_completed_installation_needs_no_closure_manager_approval(setup):
     project = aggregate("installation")
     project["installation"] = {"status": "Completed", "completion_identity": "completed-installation"}
-    policy = resolved_policy({"version": 2, "decision_contract": "2026-10-20", "department_manager_user_ids": ["manager"]})
-    assert "closure approval" in workflow.transition(project, "completed", policy)
-    project["approvals"].append({"scope": "closure", "subject_id": "completed-installation", "decision": "Approved", "policy_version": 1})
-    assert "closure approval" in workflow.transition(project, "completed", policy)
-    project["approvals"].append({"scope": "closure", "subject_id": "completed-installation", "decision": "Approved", "policy_version": 2})
+    policy = resolved_policy({"version": 2, "decision_contract": "2026-10-20", "department_manager_user_ids": []})
     assert workflow.transition(project, "completed", policy) is None
+    project["installation"]["status"] = "In Progress"
+    assert "Mark installation Completed" in workflow.transition(project, "completed", policy)
 
 
 def test_internal_note_correction_does_not_shift_recorded_approval_or_clear_other_fields(setup):

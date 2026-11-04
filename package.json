@@ -78,6 +78,7 @@
   "dependencies": {
     "@expo/metro-runtime": "~55.0.12",
     "@expo/vector-icons": "^15.0.2",
+    "@noble/hashes": "1.8.0",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@sentry/react-native": "~7.11.0",
     "date-fns": "4.1.0",

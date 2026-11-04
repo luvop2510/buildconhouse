@@ -122,3 +122,40 @@ async def test_no_fixed_installment_or_material_photo_count_cap(setup):
     stored["attachments"] += photos
     project = await service.command(owner, project["id"], cmd(project["version"], "installation_material_photos", {"attachment_ids":[p["id"] for p in photos]}))
     assert len(project["installation"]["material_photo_ids"]) == 101
+
+@pytest.mark.asyncio
+async def test_installment_edit_delete_validate_balance_and_preserve_identity(setup):
+    database, service, owner, project = await confirmed(setup)
+    order_id = project["orders"][-1]["id"]
+    project = await service.command(owner, project["id"], cmd(project["version"], "order_installment", {"order_id": order_id, "amount": "100", "date": "2026-10-26"}))
+    installment_id = project["orders"][-1]["installments"][0]["id"]
+    edit = {"order_id": order_id, "installment_id": installment_id, "amount": "200", "date": "2026-10-27"}
+    project = await service.command(owner, project["id"], cmd(project["version"], "order_installment_edit", edit))
+    assert project["orders"][-1]["installments"][0]["id"] == installment_id
+    assert workflow.order_paid(project["orders"][-1]) == Decimal("200")
+    with pytest.raises(HTTPException):
+        await service.command(owner, project["id"], cmd(project["version"], "order_installment_edit", {**edit, "amount": "1000001"}))
+    project = await service.command(owner, project["id"], cmd(project["version"], "order_installment_delete", {"order_id": order_id, "installment_id": installment_id}))
+    assert project["orders"][-1]["installments"] == []
+    assert workflow.order_paid(project["orders"][-1]) == 0
+
+@pytest.mark.asyncio
+async def test_order_production_form_and_pdf_then_installation(setup):
+    database, service, owner, project = await confirmed(setup)
+    database.kitchen_projects.rows[0]["attachments"].append({"id": "final-pdf", "content_type": "application/pdf"})
+    project = await service.command(owner, project["id"], cmd(project["version"], "production_document", {"attachment_id": "final-pdf"}))
+    assert project["production"]["final_attachment_id"] == "final-pdf"
+    project = await service.command(owner, project["id"], cmd(project["version"], "production_update", {"status": "In Production", "start_date": "2026-10-26"}))
+    assert project["production"]["final_attachment_id"] == "final-pdf"
+    project = await service.command(owner, project["id"], cmd(project["version"], "move_stage", {"target_stage": "installation"}))
+    assert project["stage"] == "installation"
+    project = await service.command(owner, project["id"], cmd(project["version"], "move_stage", {"target_stage": "order"}))
+    assert project["stage"] == "order"
+
+@pytest.mark.asyncio
+async def test_final_production_document_requires_project_pdf(setup):
+    database, service, owner, project = await confirmed(setup)
+    database.kitchen_projects.rows[0]["attachments"].append({"id": "photo", "content_type": "image/png"})
+    for identity in ("unknown", "photo"):
+        with pytest.raises(HTTPException):
+            await service.command(owner, project["id"], cmd(project["version"], "production_document", {"attachment_id": identity}))

@@ -37,7 +37,7 @@ def test_simplified_design_form_atomic_dates_versions_and_production_lock():
             await env['db'].kitchen_projects.update_one({'id': project['id']}, {'$set': {
                 'production': {'status': 'In Production', 'start_date': '2026-10-25'}}})
             locked = await command(env, project, 'design_present', {'notes': 'Must return to Design'})
-            assert locked.status_code == 422 and 'Return to Design' in locked.text
+            assert locked.status_code == 422 and 'Production has started' in locked.text
     asyncio.run(run())
 
 
@@ -73,7 +73,7 @@ def test_editable_quotation_fields_round_trip_without_implicit_status_and_keep_o
             await env['db'].kitchen_projects.update_one({'id': project['id']}, {'$set': {
                 'production': {'status': 'In Production', 'start_date': '2026-10-26'}}})
             locked = await command(env, project, 'quotation_update', {'version_id': quote['id'], 'notes': 'No'})
-            assert locked.status_code == 422 and 'Return to Design' in locked.text
+            assert locked.status_code == 422 and 'Production has started' in locked.text
     asyncio.run(run())
 
 

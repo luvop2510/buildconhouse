@@ -138,7 +138,7 @@ class ProjectCommand(StrictModel):
     command: Literal["mark_lost", "edit_lead", "convert", "save_visit", "save_cad", "advance_stage", "move_stage", "assign", "metadata",
                      "design_present", "design_update", "design_share", "design_response", "design_revision", "design_handoff",
                      "quotation_receive", "quotation_update", "quotation_share", "quotation_response", "order_confirm", "order_confirmation", "order_update", "order_advance",
-                     "order_installment", "order_material_arrived", "installation_material_photos", "order_amend", "order_status", "order_document", "exception", "production_update", "installation_update", "site_visit", "approval", "review_duplicate"]
+                     "order_installment", "order_installment_edit", "order_installment_delete", "order_material_arrived", "installation_material_photos", "order_amend", "order_status", "order_document", "exception", "production_update", "production_document", "installation_update", "site_visit", "approval", "review_duplicate"]
     payload: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -408,6 +408,15 @@ class OrderInstallment(StrictModel):
     date: str
     _amount = field_validator("amount", mode="before")(money_text)
     _date = field_validator("date", mode="before")(date_only)
+
+
+class OrderInstallmentEdit(OrderInstallment):
+    installment_id: Identifier
+
+
+class OrderInstallmentDelete(StrictModel):
+    order_id: Identifier
+    installment_id: Identifier
 
 
 class MaterialArrival(StrictModel):

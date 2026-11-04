@@ -127,7 +127,7 @@ test('Kitchen bounded project page loads and searches within existing budgets', 
   const dashboardStart = performance.now();
   await page.goto('/kitchen', { waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('kitchen-dashboard-count-lead')).toHaveText('25');
-  await expect(page.getByTestId('kitchen-dashboard-stages').getByRole('link')).toHaveCount(9);
+  await expect(page.getByTestId('kitchen-dashboard-stages').getByRole('link')).toHaveCount(8);
   const dashboardReadyMs = performance.now() - dashboardStart;
   javascript.ready('/kitchen');
   expect(dashboardReadyMs, 'Dashboard primary content').toBeLessThan(2500);

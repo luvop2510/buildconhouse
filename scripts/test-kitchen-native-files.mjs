@@ -3,6 +3,8 @@ import { createHash, webcrypto } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
+import * as nobleSha from '@noble/hashes/sha256';
+import * as nobleUtils from '@noble/hashes/utils';
 
 // Execute the real transport against the installed native API contract. This
 // proves control flow and byte identity; it is not a signed physical-device run.
@@ -45,6 +47,8 @@ const stableIdentity = () => {
   return { signal: controller.signal, isCurrent: () => !controller.signal.aborted, finish() {} };
 };
 const modules = {
+  '@noble/hashes/sha256': nobleSha,
+  '@noble/hashes/utils': nobleUtils,
   'react-native': { Platform: { OS: 'ios' }, Linking: {} },
   'expo-file-system': { Directory: NativeDirectory, File: NativeFile, Paths: { cache: 'file:///cache' } },
   'expo-crypto': { CryptoDigestAlgorithm: { SHA256: 'SHA-256' }, digest: (algorithm, bytes) => webcrypto.subtle.digest(algorithm, bytes) },
@@ -52,14 +56,14 @@ const modules = {
   '@/src/components/Toast': { toast: { show: value => errors.push(value) } },
   '@/src/api/client': { beginIdentityOperation: stableIdentity, api: { base: 'https://native.invalid' }, getToken: async () => 'synthetic-token', getRequestFloorId: async () => 'second-floor' },
 };
-function load(path, { cryptoImpl = webcrypto } = {}) {
+function load(path, { cryptoImpl = webcrypto, timer = (callback, delay) => blobTimers.push([callback, delay]) } = {}) {
   const module = { exports: {} };
   const code = ts.transpileModule(readFileSync(new URL(path, import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   vm.runInNewContext(code, {
     module, exports: module.exports, Uint8Array, ArrayBuffer, Date, Math, AbortController, DOMException,
     // RN Blob cannot construct from byte arrays and has no arrayBuffer method.
     Blob: modules['react-native'].Platform.OS === 'web' ? Blob : class { constructor() { throw new Error('Unsupported native Blob byte construction'); } },
-    crypto: cryptoImpl, URL: { createObjectURL: blob => { preparedBlobs.push(blob); return 'blob:verified'; }, revokeObjectURL: () => {} }, setTimeout: (callback, delay) => blobTimers.push([callback, delay]), clearTimeout() {},
+    crypto: cryptoImpl, URL: { createObjectURL: blob => { preparedBlobs.push(blob); return 'blob:verified'; }, revokeObjectURL: () => {} }, setTimeout: timer, clearTimeout() {},
     FileReader: class { readAsDataURL(blob) { const finish = () => { this.result = `data:${blob.type};base64,${blob.bytes.toString('base64')}`; this.onload(); }; if (nativeReadWork) nativeReadWork(finish); else finish(); } },
     btoa: value => Buffer.from(value, 'binary').toString('base64'), atob: value => Buffer.from(value, 'base64').toString('binary'),
     require: name => { assert(name in modules, `Unexpected dependency: ${name}`); return modules[name]; },
@@ -193,8 +197,8 @@ for (const phase of ['native-reader', 'share-availability']) {
 }
 console.log('Native private-file publication: held FileReader/share availability cannot outlive A→B→A; private cache files are removed on logout.');
 
-// Kitchen verifies all chunks and then awaits a separate full-file SHA-256.
-// Identity changes in that final gap must not navigate the reserved preview.
+// Kitchen verifies each chunk and incrementally checks the whole-file SHA-256.
+// Identity changes during the last chunk must not navigate the reserved preview.
 modules['react-native'].Platform.OS = 'web';
 await identity.setToken('dummy-A', 'staff'); identity.setRequestFloorId('second-floor');
 let releaseFinalHash, finalHashReached;
@@ -205,7 +209,7 @@ const guardedTransport = load('../src/components/kitchen/KitchenFileTransport.ts
   digest: async (algorithm, bytes) => {
     digestCalls++;
     const result = await webcrypto.subtle.digest(algorithm, bytes);
-    if (digestCalls === Math.ceil(source.length / 524288) + 1) { finalHashReached(); await heldFinalHash; }
+    if (digestCalls === Math.ceil(source.length / 524288)) { finalHashReached(); await heldFinalHash; }
     return result;
   },
 } } });
@@ -218,7 +222,7 @@ assert.equal(privatePreview.closed, true, 'logout closes the pending private pre
 releaseFinalHash(); assert.equal(await waitingDownload, false);
 assert.equal(privatePreview.location.href, 'about:blank');
 assert.equal(preparedBlobs.length, beforePrepared, 'a stale verified PDF never receives a browser blob URL');
-console.log('Kitchen private PDF: identity change during final SHA-256 closes the pending preview and prevents byte publication.');
+console.log('Kitchen private PDF: identity change during last chunk verification closes the pending preview and prevents byte publication.');
 
 // Uploads must keep their originating identity throughout byte preparation and
 // each request gap. The API request guard alone cannot cover work between calls.
@@ -251,3 +255,20 @@ for (const phase of ['bytes', 'hash', 'begin', 'part', 'finish']) {
   assert.deepEqual(transfers, priorTransfers, `${phase}: obsolete transfer state cannot publish`);
 }
 console.log('Kitchen upload identity: byte/hash/begin/part/finish gaps reject A→B→A without later writes or stale success.');
+
+// Final production PDFs use chunked identity checks and async finalization beyond the old limit.
+modules['react-native'].Platform.OS = 'ios';
+selected = Buffer.alloc(10_000_001, 55); selected.write('%PDF-1.7'); files.set(asset.uri, selected);
+let asyncFinalized = false;
+modules['@/src/api/kitchenProjects'] = { kitchenProjectsApi: {
+  beginTransfer: async (_id, body) => { assert.equal(body.purpose, 'final_production'); assert.equal(body.sha256, sha(selected)); uploads.push({ ...body, parts: [] }); return {transfer_id: 'big', size_bytes: selected.length, chunk_bytes: 524288, part_count: Math.ceil(selected.length / 524288), state: 'open'}; },
+  uploadPart: async (_id, _transfer, index, base64) => { uploads.at(-1).parts[index] = Buffer.from(base64, 'base64'); },
+  finishLargePdf: async () => { assert.deepEqual(Buffer.concat(uploads.at(-1).parts), selected); asyncFinalized = true; },
+  largePdfStatus: async () => ({state: asyncFinalized ? 'completed' : 'open', retryable: !asyncFinalized}),
+  get: async () => ({id: 'project', version: 3}),
+} };
+const streamingTransport = load('../src/components/kitchen/KitchenFileTransport.ts', { timer: callback => queueMicrotask(callback) });
+const result = await streamingTransport.uploadKitchenFile({id: 'project', version: 2}, {...asset, size: selected.length}, 'large-final-pdf', () => {}, () => {}, true);
+assert.equal(result.version, 3);
+assert.equal(asyncFinalized, true);
+console.log('Final Production PDF: a file above the old 10 MB cap streams in verified chunks and completes asynchronously.');

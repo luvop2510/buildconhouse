@@ -13,12 +13,14 @@ import base64
 import binascii
 import hashlib
 import math
+import tempfile
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 from weakref import WeakKeyDictionary
 
 from fastapi import HTTPException
 from pydantic import Field, StrictInt
+from typing import Literal
 from pymongo.errors import DuplicateKeyError
 
 from models_kitchen import CommandKey, StrictModel
@@ -45,8 +47,9 @@ class TransferStart(StrictModel):
     idempotency_key: CommandKey
     filename: str = Field(min_length=1, max_length=200)
     content_type: str = Field(min_length=1, max_length=150)
-    size_bytes: StrictInt = Field(ge=1, le=MAX_TRANSFER_BYTES)
+    size_bytes: StrictInt = Field(ge=1)
     sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    purpose: Literal["attachment", "final_production"] = "attachment"
 
 
 class TransferChunk(StrictModel):
@@ -102,12 +105,17 @@ class KitchenFileTransfers:
     async def begin(self, user, project_id, body):
         project, policy = await self.authorized(user, project_id)
         kind = validate_file_metadata(body.content_type, body.filename, policy)
-        validate_upload_size(body.size_bytes, kind, policy)
+        if body.purpose == "final_production":
+            await access.require_command(self.db, user, project, "production_document")
+            if project["stage"] not in {"order", "production"} or kind != "application/pdf":
+                raise HTTPException(422, "Final Production PDF requires an Order/Production project and a PDF")
+        else:
+            validate_upload_size(body.size_bytes, kind, policy)
         signature = fingerprint({"project_id": project_id, "filename": body.filename, "content_type": kind,
-                                 "size_bytes": body.size_bytes, "sha256": body.sha256})
+                                 "size_bytes": body.size_bytes, "sha256": body.sha256, **({"purpose": body.purpose} if body.purpose != "attachment" else {})})
         row = {"_id": user.id, "project_id": project_id, "transfer_id": str(uuid4()), "key": body.idempotency_key,
                "fingerprint": signature, "filename": body.filename, "content_type": kind,
-               "size_bytes": body.size_bytes, "sha256": body.sha256, "state": "open", "expires_at": now() + timedelta(hours=24)}
+               "size_bytes": body.size_bytes, "sha256": body.sha256, "purpose": body.purpose, "state": "open", "expires_at": now() + timedelta(hours=24)}
         existing = await self.db.kitchen_file_transfers.find_one({"_id": user.id})
         if existing:
             if existing["key"] == body.idempotency_key or (body.sha256 is not None and existing["fingerprint"] == signature):
@@ -136,8 +144,16 @@ class KitchenFileTransfers:
     async def put_part(self, user, project_id, transfer_id, index, body):
         _, policy = await self.authorized(user, project_id)
         row = await self.session(user, project_id, transfer_id)
+        if row.get("purpose") == "final_production" and row["expires_at"].replace(tzinfo=timezone.utc) < now() + timedelta(hours=12):
+            expiry = now() + timedelta(hours=24)
+            renewed = await self.db.kitchen_file_transfers.update_one({"_id": user.id, "transfer_id": transfer_id, "state": "open"}, {"$set": {"expires_at": expiry}})
+            if not renewed.matched_count:
+                raise HTTPException(409, "File transfer changed; retry the part")
+            await self.db.kitchen_file_parts.update_many({"transfer_id": transfer_id}, {"$set": {"expires_at": expiry}})
+            row["expires_at"] = expiry
         kind = validate_file_metadata(row["content_type"], row["filename"], policy)
-        validate_upload_size(row["size_bytes"], kind, policy)
+        if row.get("purpose") != "final_production":
+            validate_upload_size(row["size_bytes"], kind, policy)
         if row["state"] != "open":
             raise HTTPException(409, "This transfer has already finished")
         count = math.ceil(row["size_bytes"] / CHUNK_BYTES)
@@ -187,7 +203,8 @@ class KitchenFileTransfers:
                     "state": "finishing", "finish_token": row.get("finish_token")}, {"$set": {"state": "completed"}})
                 await self.db.kitchen_file_parts.delete_many({"transfer_id": transfer_id})
                 return await self.projects.get(user, project_id)
-        validate_upload_size(row["size_bytes"], row["content_type"], policy)
+        if row.get("purpose") != "final_production":
+            validate_upload_size(row["size_bytes"], row["content_type"], policy)
         token = str(uuid4())
         selector = {"_id": user.id, "transfer_id": transfer_id, "state": "open"}
         if row["state"] == "finishing":
@@ -216,6 +233,16 @@ class KitchenFileTransfers:
                         lost.set()
                         work.cancel()
                         return
+                    if row.get("purpose") == "final_production" and row["expires_at"].replace(tzinfo=timezone.utc) < now() + timedelta(hours=12):
+                        expiry = now() + timedelta(hours=24)
+                        renewed = await self.db.kitchen_file_transfers.update_one(
+                            {"_id": user.id, "transfer_id": transfer_id, "state": "finishing", "finish_token": token}, {"$set": {"expires_at": expiry}})
+                        if not renewed.matched_count:
+                            lost.set()
+                            work.cancel()
+                            return
+                        await self.db.kitchen_file_parts.update_many({"transfer_id": transfer_id}, {"$set": {"expires_at": expiry}})
+                        row["expires_at"] = expiry
             except asyncio.CancelledError:
                 raise
             except Exception:
@@ -245,6 +272,8 @@ class KitchenFileTransfers:
         row = await self.session(user, project_id, transfer_id)
         if row["state"] == "completed":
             return await self.projects.get(user, project_id)
+        if row.get("purpose") == "final_production":
+            return await self._finish_production_pdf(user, project_id, transfer_id, body, storage, bucket, token, row)
         async with transfer_limit():
             content = bytearray()
             count = math.ceil(row["size_bytes"] / CHUNK_BYTES)
@@ -284,6 +313,62 @@ class KitchenFileTransfers:
             completed = await self.db.kitchen_file_transfers.update_one({"_id": user.id, "transfer_id": transfer_id,
                 "state": "finishing", "finish_token": token},
                 {"$set": {"state": "completed", "sha256": digest}})
+            if completed.matched_count:
+                await self.db.kitchen_file_parts.delete_many({"transfer_id": transfer_id})
+            return result
+
+    async def _finish_production_pdf(self, user, project_id, transfer_id, body, storage, bucket, token, row):
+        project, _ = await self.authorized(user, project_id)
+        await access.require_command(self.db, user, project, "production_document")
+        if project["stage"] not in {"order", "production"}:
+            raise HTTPException(422, "Final Production PDF requires Order/Production")
+        if not hasattr(storage, "upload_private_file") or not hasattr(storage, "download_range"):
+            raise HTTPException(503, "Private storage does not support large PDF uploads")
+        count = math.ceil(row["size_bytes"] / CHUNK_BYTES)
+        digest = hashlib.sha256()
+        async with transfer_limit():
+            with tempfile.TemporaryFile() as file:
+                for first in range(0, count, 16):
+                    slots = [f"actor:{user.id}:{index}" for index in range(first, min(first + 16, count))]
+                    parts = await self.db.kitchen_file_parts.find({"_id": {"$in": slots}, "transfer_id": transfer_id}).to_list(len(slots))
+                    by_slot = {part["_id"]: part for part in parts}
+                    for index, slot in enumerate(slots, first):
+                        part = by_slot.get(slot)
+                        if not part:
+                            raise HTTPException(409, "File transfer is incomplete; retry the missing parts")
+                        data = part["data"]
+                        if len(data) != min(CHUNK_BYTES, row["size_bytes"] - index * CHUNK_BYTES) or hashlib.sha256(data).hexdigest() != part["sha256"]:
+                            raise HTTPException(409, "Transfer part integrity verification failed")
+                        if index == 0 and not data.startswith(b"%PDF-"):
+                            raise HTTPException(415, "Attachment content does not match PDF format")
+                        digest.update(data)
+                        file.write(data)
+                checksum = digest.hexdigest()
+                if row.get("sha256") and checksum != row["sha256"]:
+                    raise HTTPException(409, "Transferred file does not match its original checksum")
+                owned = await self.db.kitchen_file_transfers.update_one({"_id": user.id, "transfer_id": transfer_id,
+                    "state": "finishing", "finish_token": token, "finish_lease_until": {"$gt": now()}},
+                    {"$set": {"assembled_sha256": checksum}})
+                if not owned.matched_count:
+                    raise HTTPException(409, "File finalization lease changed; retry safely")
+                object_key = f"kitchen/{access.KITCHEN_FLOOR}/{project_id}/{checksum}"
+                await storage.require_private_bucket(bucket)
+                if not await storage.exists(bucket=bucket, key=object_key):
+                    file.seek(0)
+                    await storage.upload_private_file(bucket=bucket, key=object_key, file=file, content_type="application/pdf")
+                check = hashlib.sha256()
+                for offset in range(0, row["size_bytes"], 8 * 1024 * 1024):
+                    check.update(await storage.download_range(bucket=bucket, key=object_key, start=offset,
+                        end=min(row["size_bytes"], offset + 8 * 1024 * 1024) - 1))
+                if check.hexdigest() != checksum:
+                    raise HTTPException(409, "Stored attachment failed immutable-content verification")
+                metadata = {"id": checksum, "storage_key": object_key, "bucket": bucket, "sha256": checksum,
+                    "size_bytes": row["size_bytes"], "content_type": "application/pdf", "filename": row["filename"], "uploaded_by": user.id, "stage": "production"}
+                result = await self.projects.attach(user, project_id, expected_version=body.expected_version,
+                    key=row["key"], filename=row["filename"], content_type="application/pdf", data=None,
+                    storage=storage, bucket=bucket, prepared=metadata)
+            completed = await self.db.kitchen_file_transfers.update_one({"_id": user.id, "transfer_id": transfer_id,
+                "state": "finishing", "finish_token": token}, {"$set": {"state": "completed", "sha256": checksum}})
             if completed.matched_count:
                 await self.db.kitchen_file_parts.delete_many({"transfer_id": transfer_id})
             return result
@@ -330,8 +415,16 @@ async def download_part(database, user, project_id, attachment_id, index, storag
     if visible is not None and attachment_id not in visible:
         raise HTTPException(404, "Kitchen attachment not found")
     size = metadata["size_bytes"]
-    if not 0 < size <= MAX_TRANSFER_BYTES or not 0 <= index < math.ceil(size / CHUNK_BYTES):
+    if not 0 < size or not 0 <= index < math.ceil(size / CHUNK_BYTES):
         raise HTTPException(422, "Download part is outside the supported file")
+    if size > MAX_TRANSFER_BYTES:
+        if not hasattr(storage, "download_range"):
+            raise HTTPException(503, "Private storage does not support large PDF downloads")
+        await storage.require_private_bucket(metadata["bucket"])
+        start = index * CHUNK_BYTES
+        part = await storage.download_range(bucket=metadata["bucket"], key=metadata["storage_key"], start=start, end=min(size, start + CHUNK_BYTES) - 1)
+        return {"index": index, "data_base64": base64.b64encode(part).decode("ascii"),
+                "sha256": hashlib.sha256(part).hexdigest(), "file_sha256": metadata["sha256"], "size_bytes": size}
     loop = asyncio.get_running_loop()
     identity = (id(storage), metadata["bucket"], metadata["storage_key"], metadata["sha256"])
     async with transfer_limit():

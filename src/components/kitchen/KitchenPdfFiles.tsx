@@ -46,7 +46,7 @@ export function KitchenPdfFile({ project, file, selected, onSelect, disabled, te
 type PdfTransfer = Pick<KitchenOwnFileTransfer, "project_id" | "transfer_id" | "filename" | "state">;
 
 /** Uploads attach private files; the parent explicitly saves its PDF selection. */
-export function KitchenPdfFiles({ project, attachmentIds, finalId, onAdd, onSelect, disabled, selectionDisabled = false, label, testID, draftKey, fileKind = "pdf" }: { fileKind?: "pdf" | "photo"; project: KitchenProject; attachmentIds: string[]; finalId: string; onAdd: (id: string) => void | boolean | Promise<void | boolean>; onSelect: (id: string) => void; disabled: boolean; selectionDisabled?: boolean; label?: string; testID: string; draftKey: string }) {
+export function KitchenPdfFiles({ project, attachmentIds, finalId, onAdd, onSelect, disabled, selectionDisabled = false, label, testID, draftKey, fileKind = "pdf", finalProduction = false }: { finalProduction?: boolean; fileKind?: "pdf" | "photo"; project: KitchenProject; attachmentIds: string[]; finalId: string; onAdd: (id: string) => void | boolean | Promise<void | boolean>; onSelect?: (id: string) => void; disabled: boolean; selectionDisabled?: boolean; label?: string; testID: string; draftKey: string }) {
   const { policy, documentSubmission: submission, updateProject, reload } = useKitchenProject();
   const photo = fileKind === "photo";
   const quotationSection = !photo && (label === "GI" || label === "SS" || label === "Mix");
@@ -94,7 +94,7 @@ export function KitchenPdfFiles({ project, attachmentIds, finalId, onAdd, onSele
   };
   const upload = async () => {
     if (!picked || !policy?.files || pending.current || submission.busy || disabled) return;
-    if (!(photo ? /\.(jpe?g|png)$/i : /\.pdf$/i).test(picked.name) || !picked.size || picked.size > Math.min(policy.files.max_bytes, photo ? KITCHEN_MAX_FILE_BYTES : KITCHEN_MAX_PDF_BYTES)) { submission.setError(photo ? "Choose a nonempty JPG or PNG photo up to 25 MB. The server validates its content." : "Choose a nonempty PDF up to 10 MB (10,000,000 bytes). The server validates its content."); return; }
+    if (!(photo ? /\.(jpe?g|png)$/i : /\.pdf$/i).test(picked.name) || !picked.size || !finalProduction && picked.size > Math.min(policy.files.max_bytes, photo ? KITCHEN_MAX_FILE_BYTES : KITCHEN_MAX_PDF_BYTES)) { submission.setError(photo ? "Choose a nonempty JPG or PNG photo up to 25 MB. The server validates its content." : (finalProduction ? "Choose a nonempty PDF. The server validates its content." : "Choose a nonempty PDF up to 10 MB (10,000,000 bytes). The server validates its content.")); return; }
     const currentScope = scope.current;
     const active = () => currentScope.live && scope.current === currentScope;
     const input = { id: project.id, uri: picked.uri, name: picked.name, size: picked.size };
@@ -106,7 +106,7 @@ export function KitchenPdfFiles({ project, attachmentIds, finalId, onAdd, onSele
       if (!addedFileId) {
         const uploaded = await submission.submit(input, key => uploadKitchenFile(project, picked, key,
           percent => { if (active()) setProgress(percent); },
-          (transfer_id, transfer) => { if (active()) setUnfinished({ project_id: project.id, transfer_id, filename: picked.name, state: transfer?.state || "open" }); }), value => {
+          (transfer_id, transfer) => { if (active()) setUnfinished({ project_id: project.id, transfer_id, filename: picked.name, state: transfer?.state || "open" }); }, finalProduction), value => {
           if (!active()) return;
           const uploadedEvent = [...(value.activity || [])].reverse().find(row => row.type === "attachment.added" && row.payload?.filename === picked.name && value.attachments?.some(file => file.id === row.payload?.attachment_id));
           const file = value.attachments?.find(row => row.id === uploadedEvent?.payload?.attachment_id)
@@ -148,8 +148,8 @@ export function KitchenPdfFiles({ project, attachmentIds, finalId, onAdd, onSele
   const progressLabel = discarding ? `Discarding unfinished ${noun} upload…` : progress === 0 ? `Preparing ${noun}…` : progress < 95 ? `Uploading ${noun} · ${progress}%` : progress < 100 ? `Verifying and saving ${noun}…` : `Saving ${noun} entry…`;
   return <View style={[{ gap: spacing.md }, quotationSection && { borderWidth: 1, borderColor: colors.borderStrong, borderRadius: 8, padding: spacing.s16, backgroundColor: colors.surfaceSubtle }]} testID={testID}>
     {label ? <Text style={type.bodyStrong}>{label}</Text> : null}
-    {!disabled ? <Text style={type.caption}>{photo ? "JPG or PNG · Up to 25 MB per photo. Select multiple photos or add more at any time." : "PDF · Up to 10 MB (10,000,000 bytes) per file."}</Text> : null}
-    {included.map(file => <KitchenPdfFile key={file.id} project={project} file={file} photo={photo} bordered={quotationSection} selected={!photo && file.id === finalId} onSelect={photo ? undefined : () => onSelect(file.id)} disabled={disabled || selectionDisabled || busy} testID={`${testID}-${file.id}`} />)}
+    {!disabled ? <Text style={type.caption}>{photo ? "JPG or PNG · Up to 25 MB per photo. Select multiple photos or add more at any time." : finalProduction ? "PDF" : "PDF · Up to 10 MB (10,000,000 bytes) per file."}</Text> : null}
+    {included.map(file => <KitchenPdfFile key={file.id} project={project} file={file} photo={photo} bordered={quotationSection} selected={!photo && file.id === finalId} onSelect={photo || !onSelect ? undefined : () => onSelect(file.id)} disabled={disabled || selectionDisabled || busy} testID={`${testID}-${file.id}`} />)}
     {!disabled ? <>
       <Button label={photo ? "Choose photo" : label ? `Choose ${label} PDF` : "Choose PDF"} variant="secondary" disabled={busy || !policy?.files} onPress={pick} testID={`${testID}-pick`} />
       {picked ? <><Text style={type.body}>{picked.name}{photo && photoQueue.length ? ` · ${photoQueue.length} more selected` : ""}</Text><Button label={uploading ? progressLabel : uploadedFile ? `Retry saving ${noun} entry` : photo ? "Upload photo" : "Upload PDF"} disabled={busy || !policy?.files} loading={uploading} onPress={upload} testID={`${testID}-upload`} /></> : null}

@@ -1,6 +1,6 @@
 import type { FeatherName } from "./components";
 import { SANITARY_FLOOR_ID, TILES_FLOOR_ID, FURNITURE_FLOOR_ID, KITCHEN_FLOOR_ID } from "@/src/constants/floors";
-import { KITCHEN_WORKSPACE_PAGES } from "@/src/kitchen-workspace-pages";
+import { KITCHEN_VISIBLE_PAGES } from "@/src/kitchen-workspace-pages";
 export type NavItem = {
   href: string; label: string; icon: FeatherName; match: string; roles?: string[];
   // Business units this destination exists in. Omitted = every unit.
@@ -21,7 +21,7 @@ export const KITCHEN_OWNER_ONLY = process.env.EXPO_PUBLIC_KITCHEN_OWNER_ONLY ===
 export const PRIMARY: NavItem[] = [
   { href: "/(admin)/dashboard", label: "Today", icon: "sunrise", match: "dashboard" },
   { href: "/(admin)/kitchen", label: "Kitchen dashboard", icon: "grid", match: "kitchen-dashboard", floors: [KITCHEN_FLOOR_ID] },
-  ...KITCHEN_WORKSPACE_PAGES.map(page => ({
+  ...KITCHEN_VISIBLE_PAGES.map(page => ({
     href: `/(admin)/kitchen/stages/${page.stage}`, label: page.label, icon: page.icon,
     match: `kitchen-${page.stage}`, floors: [KITCHEN_FLOOR_ID],
   })),

@@ -62,7 +62,7 @@ test('Every Kitchen date entry point chooses India today when blank and preserve
   await expect(page.getByText('Completion date saved', { exact: true })).toBeVisible();
   // Reload outside the UI to follow the latest optimistic version after routine autosaves.
   project = await (await context.request.get(`/api/kitchen-projects/${project.id}`, { headers })).json();
-  for (const target_stage of ['visit', 'cad', 'design', 'quotation', 'order', 'production', 'installation']) {
+  for (const target_stage of ['visit', 'cad', 'design', 'quotation', 'order', 'installation']) {
     project = await command(context.request, project, 'move_stage', { target_stage });
     await open(page, project.id, target_stage);
     if (target_stage === 'visit') {
@@ -80,7 +80,9 @@ test('Every Kitchen date entry point chooses India today when blank and preserve
       await expect(page.getByTestId('kitchen-quotation-final-design')).toContainText('Finalize PDF');
       await todayDefault(page, 'kitchen-quotation-shared-date');
     } else if (target_stage === 'order') {
-      await todayDefault(page, 'kitchen-order-date');
+      await expect(page.getByTestId('kitchen-order-date')).toHaveCount(0);
+      await todayDefault(page, 'kitchen-production-start');
+      await expect(page.getByTestId('kitchen-production-complete')).toBeDisabled();
       await openProjectTool(page, 'advance');
       await todayDefault(page, 'kitchen-advance-date');
     } else if (target_stage === 'production' || target_stage === 'installation') {

@@ -123,3 +123,28 @@ async def test_discard_race_only_acknowledges_exact_transfer_absence(monkeypatch
     else:
         assert await service.cancel(SimpleNamespace(id="owner"), "project", "transfer") == {"discarded": True}
         parts.delete_many.assert_awaited_once_with({"transfer_id": "transfer"})
+
+@pytest.mark.asyncio
+async def test_final_production_pdf_streams_and_verifies_private_object(monkeypatch):
+    data = b"%PDF-1.7\n" + b"x" * (CHUNK_BYTES + 37)
+    parts = []
+    for index in range(math.ceil(len(data) / CHUNK_BYTES)):
+        chunk = data[index * CHUNK_BYTES:(index + 1) * CHUNK_BYTES]
+        parts.append({"_id": f"actor:owner:{index}", "data": chunk, "sha256": hashlib.sha256(chunk).hexdigest()})
+    service, collection, cursor, sessions = finishing_transfer(parts)
+    service.authorized = AsyncMock(return_value=({"stage": "order"}, {}))
+    monkeypatch.setattr(transfers_module.access, "require_command", AsyncMock())
+    stored = bytearray()
+    async def upload(**kwargs):
+        stored.extend(kwargs["file"].read())
+    async def read_range(**kwargs):
+        return bytes(stored[kwargs["start"]:kwargs["end"] + 1])
+    storage = SimpleNamespace(require_private_bucket=AsyncMock(), exists=AsyncMock(return_value=False),
+        upload_private_file=upload, download_range=read_range)
+    row = {"size_bytes": len(data), "sha256": hashlib.sha256(data).hexdigest(), "key": "same-key", "filename": "final.pdf"}
+    result = await service._finish_production_pdf(SimpleNamespace(id="owner"), "project", "transfer",
+        TransferFinish(expected_version=1), storage, "private", "token", row)
+    assert result == {"version": 2}
+    assert stored == data
+    assert service.projects.attach.await_args.kwargs["prepared"]["sha256"] == hashlib.sha256(data).hexdigest()
+    collection.delete_many.assert_awaited_once_with({"transfer_id": "transfer"})

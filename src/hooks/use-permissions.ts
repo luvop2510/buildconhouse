@@ -98,7 +98,7 @@ export function useModuleAccess() {
       if (staff.custom_access) {
         if (moduleKey === "settings") return true;
         const resource = kitchenStage ? moduleKey.replaceAll("-", "_") : ["kitchen-dashboard", "kitchen-lost"].includes(moduleKey) ? "kitchen_projects" : MODULE_GRANT_RESOURCE[moduleKey];
-        return Boolean(resource && hasGrantAccess(staff.access_grants, selectedFloorId, resource));
+        return Boolean(resource && (hasGrantAccess(staff.access_grants, selectedFloorId, resource) || resource === "kitchen_order" && hasGrantAccess(staff.access_grants, selectedFloorId, "kitchen_production")));
       }
       if (KITCHEN_OWNER_ONLY && moduleKey.startsWith("kitchen-")) return false;
       if (!data) return true;
@@ -119,5 +119,5 @@ export function useActionAccess(resource: string, action: GrantAction, legacyAll
   if (resource === "sales_data") return staff?.role === "owner";
   if (staff?.role === "owner") return true;
   if (!staff?.custom_access) return legacyAllowed;
-  return hasGrantAccess(staff.access_grants, selectedFloorId, resource, action);
+  return hasGrantAccess(staff.access_grants, selectedFloorId, resource, action) || resource === "kitchen_order" && hasGrantAccess(staff.access_grants, selectedFloorId, "kitchen_production", action);
 }

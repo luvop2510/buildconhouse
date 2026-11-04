@@ -153,6 +153,38 @@ class R2StorageDriver(MediaStorage):
         finally:
             await asyncio.to_thread(body.close)
 
+    async def upload_private_file(self, *, bucket, key, file, content_type):
+        """Upload an already verified seekable file without loading it into RAM."""
+        self._scope(bucket, key)
+        if bucket != self.cfg.supabase_private_bucket:
+            raise StorageError("Streaming Kitchen uploads require the private bucket")
+        await self.require_private_bucket(bucket)
+        task = asyncio.create_task(asyncio.to_thread(self._client.upload_fileobj, file, bucket, key,
+            ExtraArgs={"ContentType": content_type, "CacheControl": "private, no-store"}))
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError:
+            # The SDK thread still owns the file; wait before its caller closes it.
+            await asyncio.gather(task, return_exceptions=True)
+            raise
+        except Exception as exc:
+            raise StorageError(f"R2 streaming upload failed ({type(exc).__name__})") from exc
+
+    async def download_range(self, *, bucket, key, start, end):
+        """Read an inclusive byte range from a private object."""
+        self._scope(bucket, key)
+        if bucket != self.cfg.supabase_private_bucket or start < 0 or end < start:
+            raise StorageError("Invalid private object range")
+        response = await self._call("get_object", Bucket=bucket, Key=key, Range=f"bytes={start}-{end}")
+        body = response["Body"]
+        try:
+            data = await asyncio.to_thread(body.read)
+            if len(data) != end - start + 1:
+                raise StorageError("R2 object range has an unexpected length")
+            return data
+        finally:
+            await asyncio.to_thread(body.close)
+
     async def exists(self, *, bucket, key):
         self._scope(bucket, key)
         try:

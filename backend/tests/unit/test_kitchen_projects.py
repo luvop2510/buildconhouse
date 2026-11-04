@@ -379,7 +379,7 @@ async def test_unconfigured_policy_and_aggregate_bound_fail_without_writes(setup
     database, service, owner = setup
     policy = await service.public_policy(owner)
     assert not policy["production"]["require_manager_approval"] and policy["production"]["require_advance"]
-    assert policy["closure"]["require_manager_approval"] and not policy["department_manager_user_ids"]
+    assert not policy["closure"]["require_manager_approval"] and not policy["department_manager_user_ids"]
     assert policy["identity_timing"] == "creation" and policy["files"]["max_bytes"] == 25_000_000
     assert database.kitchen_configuration.rows == []
     monkeypatch.setattr(kitchen_projects, "MAX_AGGREGATE_BYTES", 10)
@@ -397,7 +397,7 @@ async def test_stored_production_approval_policy_resolves_without_migration_or_h
     database.kitchen_configuration.rows = [copy.deepcopy(stored)]
     policy = await service.public_policy(owner)
     assert policy["version"] == 7 and not policy["production"]["require_manager_approval"]
-    assert policy["production"]["require_advance"] and policy["closure"]["require_manager_approval"]
+    assert policy["production"]["require_advance"] and not policy["closure"]["require_manager_approval"]
     assert policy["closure"]["manager_user_ids"] == ["staff-a"]
     assert database.kitchen_configuration.rows == [stored]
 
@@ -768,7 +768,7 @@ async def test_approval_manager_choices_remain_available_to_owner_only(setup):
     assert (await service.assignees(owner))["rows"] == [{"id": "staff-a", "full_name": "Staff A", "role": "sales"}]
     assert (await service.assignees(staff))["rows"] == []
     policy = await service.public_policy(owner)
-    assert not policy["production"]["require_manager_approval"] and policy["closure"]["require_manager_approval"]
+    assert not policy["production"]["require_manager_approval"] and not policy["closure"]["require_manager_approval"]
 
 
 @pytest.mark.asyncio

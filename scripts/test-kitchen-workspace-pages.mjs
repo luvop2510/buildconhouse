@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { KITCHEN_WORKSPACE_PAGES, KITCHEN_WORKSPACE_LANDING, KITCHEN_WORKSPACE_RESOURCE } from '../src/kitchen-workspace-pages.ts';
+import { KITCHEN_WORKSPACE_PAGES, KITCHEN_VISIBLE_PAGES, KITCHEN_WORKSPACE_LANDING, KITCHEN_WORKSPACE_RESOURCE } from '../src/kitchen-workspace-pages.ts';
 import { floorLandingPath, KITCHEN_FLOOR_ID } from '../src/constants/floors.ts';
 import { staffLandingPath } from '../src/access-profiles.ts';
 import { moduleForRoute, hasGrantAccess, delegationPageLabels } from '../src/team-delegation.ts';
@@ -22,7 +22,7 @@ assert.equal(floorLandingPath(KITCHEN_FLOOR_ID), '/kitchen');
 assert.equal(KITCHEN_WORKSPACE_LANDING, '/(admin)/kitchen');
 assert.equal(staffLandingPath(null, [{ resource: KITCHEN_WORKSPACE_RESOURCE, floor_id: 'second-floor', actions: ['view'] }], 'second-floor'), KITCHEN_WORKSPACE_LANDING);
 assert.equal(staffLandingPath(null, [{ resource: 'payments', floor_id: 'second-floor', actions: ['view'] }], 'second-floor'), '/(admin)/access', 'Unrelated historical pages must not silently grant Kitchen authority');
-assert.match(read('src/design/navigation.ts'), /\.\.\.KITCHEN_WORKSPACE_PAGES\.map/);
+assert.match(read('src/design/navigation.ts'), /\.\.\.KITCHEN_VISIBLE_PAGES\.map/);
 assert.match(read('src/api/kitchenProjects.ts'), /KITCHEN_WORKSPACE_PAGES\.map/);
 assert.match(read('src/components/FloorDelegationEditor.tsx'), /delegationPageLabels/);
 console.log(`Kitchen workspace: ${stages.length} stages synchronized across backend, navigation, labels, landing and Team; floor isolation retained`);
@@ -38,14 +38,14 @@ for (const match of navSource.matchAll(/href: "([^"\n]+)", label: "([^"\n]+)"/g)
   const resource = module === 'payments-list' ? 'payments' : module?.replaceAll('-', '_');
   assert.ok(registeredResources.has(resource), `Navigation page ${match[2]} needs a registered delegation capability`);
 }
-const kitchenNav = KITCHEN_WORKSPACE_PAGES.map(page => ({ href: `/(admin)/kitchen/stages/${page.stage}`, label: page.label, floors: ['second-floor'] }));
-assert.deepEqual(delegationPageLabels('kitchen_projects', 'second-floor', kitchenNav), KITCHEN_WORKSPACE_PAGES.map(page => page.label));
+const kitchenNav = KITCHEN_VISIBLE_PAGES.map(page => ({ href: `/(admin)/kitchen/stages/${page.stage}`, label: page.label, floors: ['second-floor'] }));
+assert.deepEqual(delegationPageLabels('kitchen_projects', 'second-floor', kitchenNav), KITCHEN_VISIBLE_PAGES.map(page => page.label));
 assert.deepEqual(delegationPageLabels('kitchen_projects', 'first-floor', kitchenNav), []);
 assert.deepEqual(delegationPageLabels('payments', 'ground-floor', [{href:'/(admin)/payments',label:'Payments'}, {href:'/(admin)/payments-list',label:'Fully paid orders'}]), ['Payments','Fully paid orders']);
 
 for (const stage of stages) {
  const grants = [{ resource: `kitchen_${stage}`, floor_id: 'second-floor', actions: ['view','update'] }];
- assert.equal(staffLandingPath(null, grants, 'second-floor'), `/(admin)/kitchen/stages/${stage}`);
+ assert.equal(staffLandingPath(null, grants, 'second-floor'), `/(admin)/kitchen/stages/${stage === "production" ? "order" : stage}`);
  assert.equal(hasGrantAccess(grants, 'second-floor', 'kitchen_projects'), true);
  for (const other of stages) assert.equal(hasGrantAccess(grants, 'second-floor', `kitchen_${other}`), other === stage);
  assert.equal(hasGrantAccess(grants, 'first-floor', `kitchen_${stage}`), false);

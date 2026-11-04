@@ -1,8 +1,8 @@
 import { expect, test } from '@playwright/test';
 import { mockSession } from './audit-fixtures';
 
-const kitchenStages = ['lead', 'visit', 'cad', 'design', 'quotation', 'order', 'production', 'installation', 'completed'];
-const kitchenLabels = ['Lead', 'Visit', 'CAD File', 'Design', 'Quotation', 'Order', 'Production', 'Installation', 'Completed'];
+const kitchenStages = ['lead', 'visit', 'cad', 'design', 'quotation', 'order', 'installation', 'completed'];
+const kitchenLabels = ['Lead', 'Visit', 'CAD File', 'Design', 'Quotation', 'Order/Production', 'Installation', 'Completed'];
 async function kitchenReads(page: import('@playwright/test').Page) {
   await page.route('**/api/kitchen-projects**', route => {
     const path = new URL(route.request().url()).pathname;

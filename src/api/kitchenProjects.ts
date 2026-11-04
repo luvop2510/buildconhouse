@@ -1,10 +1,12 @@
 import { api } from "@/src/api/client";
 import { KITCHEN_FLOOR_ID } from "@/src/constants/floors";
 
-import { KITCHEN_WORKSPACE_PAGES } from "@/src/kitchen-workspace-pages";
+import { KITCHEN_WORKSPACE_PAGES, KITCHEN_VISIBLE_PAGES } from "@/src/kitchen-workspace-pages";
 
 export type KitchenStage = typeof KITCHEN_WORKSPACE_PAGES[number]["stage"];
 export const KITCHEN_STAGES: readonly KitchenStage[] = KITCHEN_WORKSPACE_PAGES.map(page => page.stage);
+export const KITCHEN_VISIBLE_STAGES: readonly KitchenStage[] = KITCHEN_VISIBLE_PAGES.map(page => page.stage);
+export const kitchenDisplayStage = (stage: KitchenStage): KitchenStage => stage === "production" ? "order" : stage;
 export const STAGE_LABELS = Object.fromEntries(KITCHEN_WORKSPACE_PAGES.map(page => [page.stage, page.label])) as Record<KitchenStage, string>;
 export type KitchenCustomer = { id: string; name: string; phone?: string | null; address?: string | null; email?: string | null; company?: string | null; property_name?: string | null; city?: string | null; state?: string | null; pincode?: string | null; gstin?: string | null; alternate_phone?: string | null; notes?: string | null; referrer_id?: string | null; referrer_name?: string | null; referrer_type?: "architect" | "interior_designer" | null; referrer_company?: string | null };
 export type KitchenAssignee = { id: string; full_name: string; role: string };
@@ -28,7 +30,7 @@ export type KitchenCad = {
 export type KitchenActivity = { id: string; type: string; actor_name?: string; actor_id?: string; at: string; payload?: Record<string, unknown> };
 export type KitchenPdfOption = { attachment_id: string; kitchen_type: "GI" | "SS" | "Mix" };
 export type KitchenVersion = { order_bound?: boolean; attachment_ids?: string[]; final_attachment_id?: string | null; pdf_options?: KitchenPdfOption[]; kitchen_type?: KitchenPdfOption["kitchen_type"] | null; upload_date?: string | null; handoff_status?: "Not recorded" | "Yes" | "No" | null; approval_date?: string | null; requirements?: string | null; budget_discussion?: string | null; id: string; actor_id?: string; at?: string; shared_by?: string; handoff_by?: string; workflow_cycle?: number; number: number; attachment_id?: string | null; url?: string | null; notes?: string | null; received_status?: "Not recorded" | "Yes" | "No"; sent_status?: "Not recorded" | "Yes" | "No"; presentation_date?: string | null; received_date?: string | null; amount?: string | null; design_version_id?: string; response: "Pending" | "Approved" | "Changes Required" | "Rejected"; shared_date?: string | null; handoff_date?: string | null; response_notes?: string | null };
-export type KitchenWork = { material_photo_ids?: string[]; status: "Not Started" | "In Production" | "In Progress" | "Completed"; start_date?: string | null; completion_date?: string | null; notes?: string | null };
+export type KitchenWork = { final_attachment_id?: string | null; material_photo_ids?: string[]; status: "Not Started" | "In Production" | "In Progress" | "Completed"; start_date?: string | null; completion_date?: string | null; notes?: string | null };
 export type KitchenOrder = { installments?: { id: string; amount: string; date: string; actor_id?: string; at?: string }[]; material_arrived?: boolean | null; production_started?: boolean; id: string; approval_identity?: string; authorization_invalidated?: boolean; confirmed: boolean; status: "Confirmed" | "On Hold" | "Cancelled"; order_date: string; original_amount: string | null; final_amount: string; confirmation_document_id?: string | null; notes?: string | null; quotation_version_id: string; advance: { status?: "Not recorded" | "Yes" | "No" | null; received: boolean; amount: string; date?: string | null }; amendments: { id: string; amount: string; reason: string; date: string; customer_approved: boolean }[] };
 export type KitchenAttachment = { id: string; filename: string; size_bytes: number; content_type: string; sha256?: string; uploaded_at?: string; upload_date?: string };
 export const KITCHEN_DECISION_CONTRACT = "2026-10-20" as const;
@@ -60,7 +62,7 @@ export type KitchenProject = {
   work_history?: { id?: string; reason?: string; at?: string; from_stage?: KitchenStage; workflow_cycle?: number; production?: KitchenWork; installation?: KitchenWork; completion_date?: string | null }[];
   order_amount?: string | null; final_order_amount?: string | null;
   duplicate_candidates?: { id: string; reference: string; stage: KitchenStage }[];
-  permissions?: { can_update: boolean; can_assign: boolean; can_configure: boolean; can_approve_production?: boolean; can_approve_closure?: boolean; can_approve_exceptions?: boolean; can_review_duplicate?: boolean };
+  permissions?: { can_update: boolean; can_view_order?: boolean; can_view_production?: boolean; can_update_order?: boolean; can_update_production?: boolean; can_assign: boolean; can_configure: boolean; can_approve_production?: boolean; can_approve_closure?: boolean; can_approve_exceptions?: boolean; can_review_duplicate?: boolean };
   status?: string; completion_date?: string | null; closure_pending_reason?: string | null; design_revision_pending?: boolean;
   design_versions?: KitchenVersion[]; quotation_versions?: KitchenVersion[]; orders?: KitchenOrder[]; production?: KitchenWork; installation?: KitchenWork;
   site_visits?: { id: string; date: string; actual: boolean; notes?: string | null }[]; revision_events?: { id: string; reason: string; version_id: string }[];
@@ -80,7 +82,7 @@ export type KitchenQuery = {
 export type KitchenFileTransfer = { transfer_id: string; filename?: string; size_bytes: number; chunk_bytes: number; part_count: number; state: "open" | "finishing" | "completed"; expires_at: string };
 export type KitchenOwnFileTransfer = KitchenFileTransfer & { project_id: string };
 export type KitchenCreate = { assigned_to?: string | null; customer_id?: string; customer_address?: string; customer?: Omit<KitchenCustomer, "id"> & { phone: string }; idempotency_key: string; lead: KitchenLead };
-export type KitchenCommand = "mark_lost" | "assign" | "move_stage" | "review_duplicate" | "edit_lead" | "convert" | "save_visit" | "save_cad" | "advance_stage" | "metadata" | "design_present" | "design_update" | "design_share" | "design_response" | "design_revision" | "design_handoff" | "quotation_receive" | "quotation_update" | "quotation_share" | "quotation_response" | "order_confirm" | "order_confirmation" | "order_update" | "order_document" | "order_advance" | "order_installment" | "order_material_arrived" | "installation_material_photos" | "order_amend" | "order_status" | "exception" | "production_update" | "installation_update" | "site_visit" | "approval";
+export type KitchenCommand = "mark_lost" | "assign" | "move_stage" | "review_duplicate" | "edit_lead" | "convert" | "save_visit" | "save_cad" | "advance_stage" | "metadata" | "design_present" | "design_update" | "design_share" | "design_response" | "design_revision" | "design_handoff" | "quotation_receive" | "quotation_update" | "quotation_share" | "quotation_response" | "order_confirm" | "order_confirmation" | "order_update" | "order_document" | "order_advance" | "order_installment" | "order_installment_edit" | "order_installment_delete" | "order_material_arrived" | "installation_material_photos" | "order_amend" | "order_status" | "exception" | "production_update" | "production_document" | "installation_update" | "site_visit" | "approval";
 const options = { floorId: KITCHEN_FLOOR_ID, cacheMs: 0 };
 const query = (values: Record<string, string | number | undefined>) => {
   const entries = Object.entries(values).filter(([, value]) => value !== undefined && value !== "");
@@ -95,9 +97,11 @@ export const kitchenProjectsApi = {
   dashboard: (signal?: AbortSignal) => api.get<KitchenDashboard>("/kitchen-projects/dashboard", { ...options, signal }),
   upload: (id: string, form: FormData) => api.upload<KitchenProject>(`/kitchen-projects/${encodeURIComponent(id)}/attachments`, form, options),
   ownTransfer: (id: string, signal?: AbortSignal) => api.get<{ transfer: KitchenOwnFileTransfer | null }>(`/kitchen-projects/${encodeURIComponent(id)}/file-transfers`, { ...options, signal }),
-  beginTransfer: (id: string, body: { expected_version: number; idempotency_key: string; filename: string; content_type: string; size_bytes: number; sha256?: string }) => api.post<KitchenFileTransfer>(`/kitchen-projects/${encodeURIComponent(id)}/file-transfers`, body, options),
+  beginTransfer: (id: string, body: { expected_version: number; idempotency_key: string; filename: string; content_type: string; size_bytes: number; sha256?: string; purpose?: "final_production" }) => api.post<KitchenFileTransfer>(`/kitchen-projects/${encodeURIComponent(id)}/file-transfers`, body, options),
   uploadPart: (id: string, transfer: string, index: number, data_base64: string) => api.put<{ index: number; sha256: string }>(`/kitchen-projects/${encodeURIComponent(id)}/file-transfers/${encodeURIComponent(transfer)}/parts/${index}`, { data_base64 }, options),
   finishTransfer: (id: string, transfer: string, expected_version: number) => api.post<KitchenProject>(`/kitchen-projects/${encodeURIComponent(id)}/file-transfers/${encodeURIComponent(transfer)}/finish`, { expected_version }, options),
+  finishLargePdf: (id: string, transfer: string, expected_version: number) => api.post<{ accepted: boolean }>(`/kitchen-projects/${encodeURIComponent(id)}/file-transfers/${encodeURIComponent(transfer)}/finish-async`, { expected_version }, options),
+  largePdfStatus: (id: string, transfer: string) => api.get<{ state: "open" | "finishing" | "completed"; last_error?: string | null; retryable: boolean }>(`/kitchen-projects/${encodeURIComponent(id)}/file-transfers/${encodeURIComponent(transfer)}/status`, options),
   cancelTransfer: (id: string, transfer: string) => api.delete<{ discarded: boolean }>(`/kitchen-projects/${encodeURIComponent(id)}/file-transfers/${encodeURIComponent(transfer)}`, options),
   downloadPart: (id: string, attachment: string, index: number) => api.get<{ index: number; data_base64: string; sha256: string; file_sha256: string; size_bytes: number }>(`/kitchen-projects/${encodeURIComponent(id)}/attachments/${encodeURIComponent(attachment)}/parts/${index}`, options),
   attachmentPath: (id: string, attachmentId: string) => `/kitchen-projects/${encodeURIComponent(id)}/attachments/${encodeURIComponent(attachmentId)}`,

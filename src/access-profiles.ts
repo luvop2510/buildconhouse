@@ -55,7 +55,7 @@ export function staffLandingPath(profile?: AccessProfile | null, grants?: Person
       orders: "/(admin)/tiles/orders", walkins: "/(admin)/walkins", dashboard: "/(admin)/dashboard",
       tiles: "/(admin)/tiles", godown_stock: "/(admin)/godown-stock",
       kitchen_projects: "/(admin)/kitchen",
-      ...Object.fromEntries(KITCHEN_STAGE_NAMES.map(stage => [`kitchen_${stage}`, `/(admin)/kitchen/stages/${stage}`])),
+      ...Object.fromEntries(KITCHEN_STAGE_NAMES.map(stage => [`kitchen_${stage}`, `/(admin)/kitchen/stages/${stage === "production" ? "order" : stage}`])),
       furniture_quotations: "/(admin)/notebook/furniture-quotations",
   };
   // Legacy stage-specific notebook grants do not authorize the replacement

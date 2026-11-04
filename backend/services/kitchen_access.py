@@ -19,6 +19,13 @@ def hydrate_stage_actions(user, grants):
         if any(grant_allows(grant, user_id=user.id, resource=candidate, action=operation, floor_id=KITCHEN_FLOOR)
                for grant in grants for candidate in (RESOURCE, resource))]
         for operation in ("view", "create", "update", "export")}
+    object.__setattr__(user, "_kitchen_semantic_actions", {action: list(stages) for action, stages in stage_actions.items()})
+    # Either section grant allows reaching the merged workspace; commands retain their own grants.
+    for stages in stage_actions.values():
+        if "order" in stages or "production" in stages:
+            for stage in ("order", "production"):
+                if stage not in stages:
+                    stages.append(stage)
     object.__setattr__(user, "_kitchen_stage_actions", stage_actions)
     return stage_actions
 
@@ -84,7 +91,8 @@ async def require_command(database, user, project, command):
     stage = ({"edit_lead": "lead", "save_visit": "visit", "save_cad": "cad", "site_visit": "installation"}.get(command)
         or next((name for name in ("design", "quotation", "order", "production", "installation") if command.startswith(name + "_")), None))
     if stage:
-        if stage not in allowed_stages(user, "update"):
+        semantic = getattr(user, "_kitchen_semantic_actions", {}).get("update", []) if user.custom_access and not owner(user) else allowed_stages(user, "update")
+        if stage not in semantic:
             raise HTTPException(403, "Kitchen stage action is not permitted")
 
 
@@ -101,8 +109,12 @@ async def require_customer(database, user, customer, action="view"):
         raise HTTPException(404, "Kitchen customer not found in your assigned stages")
 
 
+def semantic_stages(user, action="view"):
+    return getattr(user, "_kitchen_semantic_actions", {}).get(action, []) if user.custom_access and not owner(user) else allowed_stages(user, action)
+
+
 def scoped(user):
-    return user.custom_access and len(allowed_stages(user)) < len(KITCHEN_STAGE_RESOURCES)
+    return user.custom_access and len(semantic_stages(user)) < len(KITCHEN_STAGE_RESOURCES)
 
 
 def visible_attachment_ids(project, user):
@@ -123,9 +135,9 @@ def visible_attachment_ids(project, user):
                     ids.update(item)
                 else:
                     collect(item)
-    for key in ("design_versions", "quotation_versions", "orders", "installation"):
+    for key in ("design_versions", "quotation_versions", "orders", "production", "installation"):
         collect(result.get(key))
-    ids.update(row["id"] for row in project.get("attachments", []) if row.get("stage") in allowed_stages(user))
+    ids.update(row["id"] for row in project.get("attachments", []) if row.get("stage") in semantic_stages(user))
     return ids
 
 
@@ -144,7 +156,7 @@ def redact_project(result, project, user, *, attachments=True):
     if not scoped(user):
         return result
     from models_kitchen import LeadFields, VisitFields, CadFields
-    stages = allowed_stages(user)
+    stages = semantic_stages(user)
     for stage, model in (("lead", LeadFields), ("visit", VisitFields), ("cad", CadFields)):
         if stage not in stages:
             result[stage] = model().model_dump()

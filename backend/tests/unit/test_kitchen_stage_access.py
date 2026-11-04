@@ -29,7 +29,8 @@ async def test_each_stage_grant_is_independent_and_only_lead_supports_creation(s
     assert await access.capability(database, user, "update", stage=stage)
     sibling = "visit" if stage == "lead" else "lead"
     assert not await access.capability(database, user, "view", stage=sibling)
-    assert access.scope_query(user, {}) == {"floor_id": "second-floor", "stage": {"$in": [stage]}}
+    expected = [stage, "production" if stage == "order" else "order"] if stage in {"order", "production"} else [stage]
+    assert access.scope_query(user, {}) == {"floor_id": "second-floor", "stage": {"$in": expected}}
     assert not await access.capability(database, user, "create")
     assert resource_supports(grant["resource"], "second-floor", ["view", "create"]) is (stage == "lead")
     assert not resource_supports(grant["resource"], "first-floor", ["view"])
@@ -85,3 +86,20 @@ async def test_quotation_worker_sees_binding_without_order_details(setup):
     assert quotes["q1"]["order_bound"] is True
     assert quotes["q2"]["order_bound"] is False
     assert project == original
+
+
+@pytest.mark.asyncio
+async def test_merged_workspace_preserves_financial_and_production_boundaries(setup):
+    database, _, _ = setup
+    user, _ = stage_staff(database, "production")
+    await access.capability(database, user, "view")
+    project = aggregate("order")
+    project["orders"] = [{"id": "o", "final_amount": "100", "confirmed": True, "status": "Confirmed", "quotation_version_id": "q1"}]
+    project["order_amount"] = "100"
+    project["production"] = {"status": "In Production", "notes": "factory"}
+    visible = access.redact_project(copy.deepcopy(project), project, user)
+    assert visible["order_amount"] is None
+    assert "final_amount" not in visible["orders"][0]
+    assert visible["production"]["notes"] == "factory"
+    with pytest.raises(HTTPException):
+        await access.require_command(database, user, project, "order_installment_edit")

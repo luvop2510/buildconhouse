@@ -1,0 +1,54 @@
+import { expect, test } from '@playwright/test';
+import { randomUUID } from 'node:crypto';
+import { prepareKitchenFixtureTransition, kitchenFixtureCommand, kitchenIndiaToday } from './kitchen-pdf-fixtures';
+
+const headers = { 'X-Floor-Id': 'second-floor' };
+test('merged order and production saves payments, work and a large final PDF', async ({ page, context }) => {
+  test.setTimeout(180000);
+  const created = await context.request.post('/api/kitchen-projects', { headers, data: { customer_id: process.env.KITCHEN_E2E_CUSTOMER_ID, idempotency_key: randomUUID(), lead: { site_location: 'Synthetic merged workflow' } } });
+  expect(created.ok(), await created.text()).toBeTruthy();
+  let project = await created.json();
+  for (const target of ['visit', 'cad', 'design', 'quotation', 'order']) {
+    project = await prepareKitchenFixtureTransition(context.request, project, target);
+    project = await kitchenFixtureCommand(context.request, project, 'move_stage', { target_stage: target });
+  }
+  project = await kitchenFixtureCommand(context.request, project, 'order_confirm', { quotation_version_id: project.quotation_versions.at(-1).id, final_amount: '1000', amount_customer_approved: true, order_date: kitchenIndiaToday() });
+  await page.addInitScript(() => { localStorage.setItem('forge.jwt.kind', JSON.stringify('staff')); localStorage.setItem('forge.active-floor', JSON.stringify('second-floor')); });
+  await page.goto(`/kitchen/${project.id}/stages/order`);
+  await expect(page.getByTestId('kitchen-project-ready')).toBeAttached();
+  await expect(page.getByTestId('kitchen-project-stage-production')).toHaveCount(0);
+  await expect(page.getByTestId('kitchen-production-status')).toBeVisible();
+  for (const id of ['kitchen-order-status', 'kitchen-order-confirmed', 'kitchen-order-date', 'kitchen-order-notes', 'kitchen-material-arrived', 'kitchen-material-photos', 'kitchen-approve-closure']) await expect(page.getByTestId(id)).toHaveCount(0);
+  await page.getByTestId('kitchen-production-status').getByText('In Production', { exact: true }).click();
+  await page.getByTestId('kitchen-production-save').click();
+  await expect.poll(async () => (await (await context.request.get(`/api/kitchen-projects/${project.id}`, {headers})).json()).production?.status).toBe('In Production');
+  await page.getByTestId('kitchen-installment-amount').fill('100');
+  await page.getByTestId('kitchen-installment-save').click();
+  await expect(page.getByTestId('kitchen-installment-0')).toContainText('100');
+  await page.getByRole('button', { name: 'Edit installment 1' }).click();
+  await page.getByLabel('Edit installment amount (INR)').fill('120');
+  await page.getByRole('button', { name: 'Save installment' }).click();
+  await expect(page.getByTestId('kitchen-installment-0')).toContainText('120');
+  await page.getByRole('button', { name: 'Delete installment 1' }).click();
+  await expect(page.getByTestId('kitchen-installment-0')).toHaveCount(0);
+  const picker = page.waitForEvent('filechooser');
+  await page.getByTestId('kitchen-final-production-pdf-pick').click();
+  const chooser = await picker;
+  const buffer = Buffer.alloc(10_000_001, 32); buffer.write('%PDF-1.4\n');
+  await chooser.setFiles({ name: 'final-production.pdf', mimeType: 'application/pdf', buffer });
+  await page.getByTestId('kitchen-final-production-pdf-upload').click();
+  await expect(page.getByTestId('kitchen-final-production-pdf').getByRole('button', { name: 'Open PDF' })).toBeVisible({ timeout: 120000 });
+  const download = page.waitForEvent('download');
+  await page.getByTestId('kitchen-final-production-pdf').getByRole('button', { name: 'Download PDF' }).click();
+  expect((await download).suggestedFilename()).toBe('final-production.pdf');
+  const popup = page.waitForEvent('popup');
+  const previewDownload = context.waitForEvent('page').then(async opened => (await opened.waitForEvent('download', {timeout: 30000})).url());
+  await page.getByTestId('kitchen-final-production-pdf').getByRole('button', { name: 'Open PDF' }).click();
+  const pdf = await popup;
+  expect(await previewDownload).toMatch(/^blob:/);
+  await pdf.close();
+  const latest = await context.request.get(`/api/kitchen-projects/${project.id}`, {headers});
+  const saved = await latest.json();
+  expect(saved.production.final_attachment_id).toBeTruthy();
+  expect(saved.attachments.find((item: any) => item.id === saved.production.final_attachment_id).size_bytes).toBe(buffer.length);
+});

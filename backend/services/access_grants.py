@@ -130,7 +130,7 @@ MFA_ACCOUNT_REQUESTS = frozenset({
 POST_UPDATE_ROUTE_PATTERNS = (
     r"/api/kitchen-projects/[^/]+/commands",
     r"/api/kitchen-projects/[^/]+/attachments",
-    r"/api/kitchen-projects/[^/]+/file-transfers(?:/[^/]+/finish)?",
+    r"/api/kitchen-projects/[^/]+/file-transfers(?:/[^/]+/finish(?:-async)?)?",
     r"/api/followups/notebook/[^/]+/[^/]+/(?:convert|outcome)",
     r"/api/followups/[^/]+/(?:contact|snooze|complete|log-call)",
     r"/api/walkins/[^/]+/(?:contact|visit-showroom)",

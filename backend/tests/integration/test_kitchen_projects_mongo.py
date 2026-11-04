@@ -643,8 +643,7 @@ def test_q04_to_q09_versions_revisions_production_visits_and_late_closure(tmp_pa
             await ok("site_visit", {"actual": True, "date": "2026-12-20"})
             assert project["site_visit_count"] == 2
             await ok("installation_update", {"status": "Completed", "start_date": "2026-12-20", "completion_date": "2026-12-21"})
-            assert project["stage"] == "installation" and project["closure_pending_reason"]
-            await ok("approval", {"scope": "closure", "decision": "Approved"})
+            assert project["stage"] == "completed" and not project["closure_pending_reason"]
             assert project["stage"] == "completed" and project["completion_date"] == "2026-12-21"
             assert project["order_amount"] == "1200.01" and project["site_visit_count"] == 2 and project["design_revision_count"] == 1
             completed = await env["api"].get("/api/kitchen-projects?completed=true", headers=headers(env))
@@ -734,8 +733,7 @@ def test_production_admission_without_policy_adoption_retains_financial_and_clos
             assert order["production"]["completion_date"] == "2026-12-19"
             order = await accepted(env, order, "advance_stage", {"target_stage": "installation"})
             order = await accepted(env, order, "installation_update", {"status": "Completed", "start_date": "2026-12-20", "completion_date": "2026-12-21"})
-            assert order["stage"] == "installation" and "closure approval" in order["closure_pending_reason"]
-            assert (await command(env, order, "advance_stage", {"target_stage": "completed"})).status_code == 422
+            assert order["stage"] == "completed" and not order["closure_pending_reason"]
     asyncio.run(run())
 
 
@@ -774,10 +772,8 @@ def test_independent_q10_q16_production_admission_preserves_manager_history_and_
             order = await accepted(env, order, "production_update", {"status": "Completed", "start_date": "2026-10-19", "completion_date": "2026-10-20"})
             order = await accepted(env, order, "advance_stage", {"target_stage": "installation"})
             order = await accepted(env, order, "installation_update", {"status": "Completed", "start_date": "2026-12-20", "completion_date": "2026-12-21"})
-            assert order["stage"] == "installation" and order["closure_pending_reason"]
-            assert (await env["api"].get("/api/kitchen-projects?completed=true", headers=headers(env))).json()["total"] == 0
-            assert (await command(env, order, "approval", {"scope": "closure", "decision": "Approved"})).status_code == 403
-            order = await accepted(env, order, "approval", {"scope": "closure", "decision": "Approved"}, actor="manager")
+            assert order["stage"] == "completed" and not order["closure_pending_reason"]
+            assert (await env["api"].get("/api/kitchen-projects?completed=true", headers=headers(env))).json()["total"] == 1
             assert order["stage"] == "completed" and order["completion_date"] == "2026-12-21"
     asyncio.run(run())
 
@@ -903,7 +899,7 @@ def test_independent_q13_all_eight_transition_prerequisites_and_skips():
                 ("quotation", "order", [("quotation_versions.0.response", "Pending"), ("quotation_versions.0.shared_date", None), ("quotation_versions.0.design_version_id", "historical-design"), ("design_versions.0.response", "Pending")]),
                 ("order", "production", [("orders.0.status", "On Hold"), ("orders.0.confirmed", False), ("orders.0.quotation_version_id", "historical-quote"), ("orders.0.advance.received", False), ("orders.0.advance.amount", "0.00")]),
                 ("production", "installation", [("production.status", "In Production")]),
-                ("installation", "completed", [("installation.status", "In Progress"), ("approvals.1.decision", "Rejected")]),
+                ("installation", "completed", [("installation.status", "In Progress")]),
             ]
             for stage, target, missing in cases:
                 valid = copy.deepcopy(base)
@@ -1005,8 +1001,6 @@ def test_independent_q12_q15_q16_dates_required_fields_and_audited_exceptions():
             early_visit = await command(env, order, "site_visit", {"date": "2026-10-19", "actual": True})
             assert early_visit.status_code == 422
             order = await accepted(env, order, "installation_update", {"status": "Completed", "start_date": "2026-12-20", "completion_date": "2026-12-21"})
-            assert order["stage"] == "installation"
-            order = await accepted(env, order, "approval", {"scope": "closure", "decision": "Approved"}, actor="manager")
             assert order["stage"] == "completed"
             original_history_length = len(order["activity"])
             order = await accepted(env, order, "exception", {"action": "reopen", "reason": "Customer requested installation adjustment"})
@@ -1317,7 +1311,7 @@ def test_resolved_d09_legacy_unknown_counts_remain_null_after_new_events_and_exp
             project = await accepted(env, project, "site_visit", {"actual": True, "date": "2026-10-20"})
             assert project["site_visit_count"] is None and project["known_site_visit_count"] == 1
             project = await accepted(env, project, "installation_update", {"status": "Completed", "start_date": "2026-12-20", "completion_date": "2026-12-21"})
-            project = await accepted(env, project, "approval", {"scope": "closure", "decision": "Approved"}, actor="manager")
+            assert project["stage"] == "completed"
             page = await env["api"].get("/api/kitchen-projects?completed=true", headers=headers(env))
             row = next(r for r in page.json()["rows"] if r["id"] == project["id"])
             assert row["site_visit_count"] is None and row["design_revision_count"] is None
@@ -1694,7 +1688,7 @@ def test_attention_drilldowns_share_metrics_dates_approval_subjects_and_role_sco
             hidden = copy.deepcopy(fixtures[0])
             hidden.update(id="other-floor", reference="OTHER-FLOOR", floor_id="first-floor")
             await env["db"].kitchen_projects.insert_many([*fixtures, hidden])
-            for actor, active, pending in (("owner", 7, 1), ("manager", 7, 1), ("worker", 7, 1)):
+            for actor, active, pending in (("owner", 7, 0), ("manager", 7, 0), ("worker", 7, 0)):
                 response = await env["api"].get("/api/kitchen-projects/dashboard", headers=headers(env, actor))
                 assert response.status_code == 200, response.text
                 metrics = response.json()
@@ -1708,7 +1702,7 @@ def test_attention_drilldowns_share_metrics_dates_approval_subjects_and_role_sco
                     assert listed.status_code == 200, listed.text
                     assert listed.json()["total"] == expected, (actor, attention)
                     if attention == "pending_approval":
-                        assert [row["id"] for row in listed.json()["rows"]] == ["attention-4"], "Only closure remains pending; historical production decisions do not block Order"
+                        assert listed.json()["rows"] == [], "Manager approval is no longer required"
                     assert "other-floor" not in [row["id"] for row in listed.json()["rows"]]
                 assert sum(metrics["stage_counts"].values()) == active
                 assert sum(row["project_count"] for row in metrics["workload"]) == active
@@ -1755,6 +1749,16 @@ if __name__ == "__main__":
                     stream.write(data)
             async def download(self, *, bucket, key):
                 return self.path(bucket, key).read_bytes()
+            async def upload_private_file(self, *, bucket, key, file, **kwargs):
+                import shutil
+                path = self.path(bucket, key)
+                path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+                with path.open("wb") as target:
+                    shutil.copyfileobj(file, target)
+            async def download_range(self, *, bucket, key, start, end):
+                with self.path(bucket, key).open("rb") as source:
+                    source.seek(start)
+                    return source.read(end - start + 1)
         original_storage = factory.get_media_storage
         factory.get_media_storage = lambda: PilotPrivateStorage()
         async with environment() as env:
@@ -2390,9 +2394,9 @@ def test_universal_search_and_distinct_customer_stage_counts_use_authorized_curr
                 assert dashboard.headers["Cache-Control"] == "no-store"
                 assert metrics["total_projects"] == 10
                 assert metrics["total_customers"] == 1
-                assert metrics["stage_customer_counts"] == {stage: 1 for stage in STAGES}
-                assert metrics["stage_counts"] == {stage: 2 if stage == "lead" else 1 for stage in STAGES}
-                for stage in STAGES:
+                assert metrics["stage_customer_counts"] == {stage: 0 if stage == "production" else 1 for stage in STAGES}
+                assert metrics["stage_counts"] == {stage: 0 if stage == "production" else 2 if stage in {"lead", "order"} else 1 for stage in STAGES}
+                for stage in (stage for stage in STAGES if stage != "production"):
                     listed = await env["api"].get("/api/kitchen-projects", params={"stage": stage}, headers=headers(env, actor))
                     assert listed.status_code == 200, listed.text
                     data = listed.json()

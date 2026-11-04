@@ -70,15 +70,6 @@ def attention_expressions(policy, now=None):
     today = now.astimezone(timezone(timedelta(hours=5, minutes=30))).date().isoformat()
     active = {"$and": [{"$ne": ["$stage", "completed"]},
         {"$not": [{"$in": [{"$ifNull": ["$status", None]}, ["Lost", "Cancelled", "On Hold"]]}]}]}
-    pending = []
-    for scope, stage in (("closure", "installation"),):
-        subject = {"$ifNull": [f"$approval_subjects.{scope}", None]}
-        decision = f"$approval_decisions.{scope}"
-        pending.append({"$and": [{"$eq": ["$stage", stage]}, {"$ne": [subject, None]},
-            {"$ne": [subject, ""]}, {"$or": [
-                {"$ne": [{"$ifNull": [decision + ".policy_version", None]}, policy["version"]]},
-                {"$ne": [{"$ifNull": [decision + ".subject_id", None]}, subject]},
-                {"$ne": [{"$ifNull": [decision + ".decision", None]}, "Approved"]}]}]})
     valid_order = order_basis_expression({"$and": [
         active,
         {"$not": [{"$ifNull": ["$commercial_basis_invalidated", False]}]},
@@ -94,7 +85,7 @@ def attention_expressions(policy, now=None):
         {"$eq": [{"$ifNull": ["$$design.workflow_cycle", 1]}, {"$ifNull": ["$workflow_cycle", 1]}]},
     ]})
     return {"active": active, "on_hold": {"$eq": ["$status", "On Hold"]},
-        "pending_approval": {"$and": [active, {"$or": pending}]},
+        "pending_approval": {"$literal": False},
         "next_action_overdue": {"$literal": False},
         "completion_overdue": {"$and": [active,
             {"$ne": [{"$ifNull": ["$target_completion_date", None]}, None]},
@@ -117,7 +108,7 @@ def resolved_policy(policy):
         department_manager_user_ids=managers,
         production={"require_advance": True, "minimum_advance_amount": None, "minimum_advance_percent": None,
                     "require_confirmation_document": False, "require_manager_approval": False, "manager_user_ids": managers},
-        closure={"require_manager_approval": True, "manager_user_ids": managers},
+        closure={"require_manager_approval": False, "manager_user_ids": managers},
         exceptions={"allow_hold": True, "allow_cancel": True, "allow_reopen": True,
                     "allow_return_to_design": True, "manager_user_ids": []},
         metrics={"hold_is_active": False, "overdue_date": "target_completion", "confirmed_value_include_completed": False,
@@ -393,6 +384,11 @@ class KitchenProjectService:
                                      for attachment in result["attachments"]]
         result["permissions"] = {"can_update": await access.capability(self.db, user, "update", stage=project["stage"]) if can_update is None else can_update and project["stage"] in access.allowed_stages(user, "update"),
                                  "can_assign": access.owner(user), "can_configure": access.owner(user)}
+        semantic_updates = getattr(user, "_kitchen_semantic_actions", {}).get("update", []) if user.custom_access and not access.owner(user) else access.allowed_stages(user, "update")
+        result["permissions"]["can_view_order"] = "order" in access.semantic_stages(user)
+        result["permissions"]["can_view_production"] = "production" in access.semantic_stages(user)
+        result["permissions"]["can_update_order"] = "order" in semantic_updates
+        result["permissions"]["can_update_production"] = "production" in semantic_updates
         result["permissions"]["can_review_duplicate"] = access.owner(user)
         for scope in ("production", "closure"):
             result["permissions"][f"can_approve_{scope}"] = access.department_manager(user, policy) and result["permissions"]["can_update"]
@@ -454,13 +450,13 @@ class KitchenProjectService:
         async with self.admission(user, "update"):
             return await self._attach(user, project_id, **kwargs)
 
-    async def _attach(self, user, project_id, *, expected_version, key, filename, content_type, data, storage, bucket, max_file_bytes=768 * 1024):
+    async def _attach(self, user, project_id, *, expected_version, key, filename, content_type, data, storage, bucket, max_file_bytes=768 * 1024, prepared=None):
         from services.kitchen_attachments import canonical_type, prepare_private_upload, validate_file
         policy = await self.policy()
         project = await self.db.kitchen_projects.find_one({"id": project_id, "floor_id": access.KITCHEN_FLOOR})
         await access.require_project(self.db, user, project, policy, "update")
         content_type = canonical_type(content_type, filename)
-        digest = hashlib.sha256(data).hexdigest()
+        digest = prepared["sha256"] if prepared else hashlib.sha256(data).hexdigest()
         signature = fingerprint({"command": "attachment", "sha256": digest, "filename": filename, "content_type": content_type})
         def prior(row):
             return next((r for r in row["command_receipts"] if r["actor_id"] == user.id and r["key"] == key), None)
@@ -472,15 +468,16 @@ class KitchenProjectService:
         await access.require_current_task(self.db, user, project, policy)
         if project["version"] != expected_version:
             raise HTTPException(409, "Kitchen project changed; reload before uploading")
-        await asyncio.to_thread(validate_file, data, content_type, filename, policy, max_file_bytes)
+        if not prepared:
+            await asyncio.to_thread(validate_file, data, content_type, filename, policy, max_file_bytes)
         if project.get("lifecycle_status") in {"On Hold", "Cancelled", "Lost"}:
             raise HTTPException(422, "The owner must resume the project before adding files")
-        metadata = await prepare_private_upload(self.db, storage, user=user, project=project, policy=policy,
+        metadata = prepared or await prepare_private_upload(self.db, storage, user=user, project=project, policy=policy,
             data=data, content_type=content_type, filename=filename, bucket=bucket, max_file_bytes=max_file_bytes)
         updated = copy.deepcopy(project)
         if not any(a["id"] == metadata["id"] for a in updated["attachments"]):
             metadata["uploaded_at"] = timestamp()
-            metadata["stage"] = project["stage"]
+            metadata["stage"] = metadata.get("stage", project["stage"])
             updated["attachments"].append(metadata)
         updated["version"] += 1
         updated["updated_at"], updated["updated_by"] = timestamp(), user.id
@@ -779,7 +776,8 @@ class KitchenProjectService:
                 raise HTTPException(422, "A lost reason is required")
         elif command == "move_stage":
             target = validate(AdvancePayload, payload).target_stage
-            if abs(STAGES.index(target) - STAGES.index(project["stage"])) != 1:
+            merged_pair = {target, project["stage"]} in ({"order", "installation"}, {"quotation", "production"})
+            if not merged_pair and abs(STAGES.index(target) - STAGES.index(project["stage"])) != 1:
                 raise HTTPException(422, "Choose the previous or next Kitchen stage")
             # Navigation records the user's position without inventing business
             # evidence or changing saved approvals, work, or held status.
@@ -851,7 +849,7 @@ class KitchenProjectService:
             workflow.apply(updated, command, payload, policy, user, timestamp(), validate)
         else:
             raise HTTPException(422, "Unsupported Kitchen command")
-        if project["stage"] == "completed" and command not in {"exception", "move_stage", "order_installment", "order_material_arrived"}:
+        if project["stage"] == "completed" and command not in {"exception", "move_stage", "order_installment", "order_installment_edit", "order_installment_delete", "order_material_arrived"}:
             raise HTTPException(422, "The owner must explicitly reopen a completed project before editing it")
         if updated["stage"] != project["stage"] and command not in {"exception", "move_stage"}:
             required = required_fields_error(updated, project["stage"], policy)
@@ -872,6 +870,12 @@ class KitchenProjectService:
                 record["changes"][field] = {"before": project.get(field), "after": updated.get(field)}
         if command in workflow.COMMANDS:
             record["subject_id"] = payload.get("version_id") or payload.get("quotation_version_id") or payload.get("design_version_id")
+            if command in {"order_installment_edit", "order_installment_delete"}:
+                installment_id = payload["installment_id"]
+                before = next((item for item in project["orders"][-1].get("installments", []) if item["id"] == installment_id), None)
+                after = next((item for item in updated["orders"][-1].get("installments", []) if item["id"] == installment_id), None)
+                record["subject_id"] = installment_id
+                record["changes"]["installment"] = {"before": before, "after": after}
             for key in ("design_versions", "quotation_versions", "orders", "revision_events", "site_visits", "approvals"):
                 old_rows, new_rows = project.get(key, []), updated.get(key, [])
                 if len(new_rows) > len(old_rows):
@@ -958,7 +962,7 @@ class KitchenProjectService:
                 {"$facet": {
                     "totals": [{"$group": {"_id": None, **totals, "projects": {"$sum": 1}}}],
                     "customers": [{"$group": {"_id": "$customer_id"}}, {"$count": "count"}],
-                    "stages": [{"$match": {"status": {"$ne": "Lost"}}}, {"$group": {"_id": {"stage": "$stage", "customer": "$customer_id"}, "projects": {"$sum": 1}}},
+                    "stages": [{"$match": {"status": {"$ne": "Lost"}}}, {"$group": {"_id": {"stage": {"$cond": [{"$eq": ["$stage", "production"]}, "order", "$stage"]}, "customer": "$customer_id"}, "projects": {"$sum": 1}}},
                         {"$group": {"_id": "$_id.stage", "projects": {"$sum": "$projects"}, "customers": {"$sum": 1}}}],
                     "workload": [{"$match": {"attention.active": True}}, {"$group": {
                         "_id": "$assigned_to", "assignee_name": {"$first": "$assigned_to_name"}, "project_count": {"$sum": 1}}}],
@@ -1025,7 +1029,7 @@ class KitchenProjectService:
             if duplicate_review:
                 filters.append({"duplicate_review.status": duplicate_review})
             if stage:
-                filters.append({"stage": stage})
+                filters.append({"stage": {"$in": ["order", "production"]} if stage == "order" else stage})
                 if status is None:
                     filters.append({"status": {"$ne": "Lost"}})
             if completed is not None:

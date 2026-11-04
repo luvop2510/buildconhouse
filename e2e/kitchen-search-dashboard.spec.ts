@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { captureRuntimeHealth } from './runtime-health';
 import { formatPhone } from '../src/utils/phone';
 
-const stages = ['lead', 'visit', 'cad', 'design', 'quotation', 'order', 'production', 'installation', 'completed'] as const;
+const stages = ['lead', 'visit', 'cad', 'design', 'quotation', 'order', 'installation', 'completed'] as const;
 const headers = { 'X-Floor-Id': 'second-floor' };
 async function command(api: APIRequestContext, project: any, name: string, payload: object) {
   ({ project, payload } = await prepareKitchenFixtureCommand(api, project, name, payload as Record<string, unknown>));
@@ -37,7 +37,7 @@ async function dashboard(page: Page) {
   await expect(page.getByTestId('kitchen-dashboard-stage-lead')).toBeVisible();
 }
 
-test('Dashboard shows all nine authoritative stage totals and opens the matching saved customers', async ({ page, context }, info) => {
+test('Dashboard shows all eight authoritative stage totals and opens the matching saved customers', async ({ page, context }, info) => {
   test.setTimeout(90000);
   const health = captureRuntimeHealth(page);
   const projects: any[] = [];
@@ -63,7 +63,7 @@ test('Dashboard shows all nine authoritative stage totals and opens the matching
   }
   const geometry = await page.evaluate(() => ({ width: innerWidth, content: document.documentElement.scrollWidth }));
   expect(geometry.content).toBeLessThanOrEqual(geometry.width + 1);
-  await page.screenshot({ path: info.outputPath('nine-stage-dashboard.png'), fullPage: true });
+  await page.screenshot({ path: info.outputPath('eight-stage-dashboard.png'), fullPage: true });
   for (const [index, stage] of stages.entries()) {
     await page.getByTestId(`kitchen-dashboard-stage-${stage}`).click();
     await expect(page).toHaveURL(new RegExp(`/kitchen/stages/${stage}(?:\\?.*)?$`));
@@ -74,14 +74,14 @@ test('Dashboard shows all nine authoritative stage totals and opens the matching
     const result = await context.request.get(`/api/kitchen-projects?stage=${stage}&limit=25`, { headers });
     const listed = await result.json();
     expect(listed.total).toBe(snapshot.stage_counts[stage]);
-    expect(listed.rows.every((row: any) => row.stage === stage)).toBe(true);
+    expect(listed.rows.every((row: any) => row.stage === stage || stage === 'order' && row.stage === 'production')).toBe(true);
     const customerRow = page.getByTestId(`kitchen-project-${projects[index].id}`);
     await expect(customerRow).toContainText(formatPhone(projects[index].customer.phone));
     await customerRow.click();
     await expect(page.getByTestId('kitchen-project-details')).toBeVisible();
     await expect(page.getByTestId('kitchen-project-details')).toContainText(projects[index].customer.name);
     await expect(page.getByTestId('kitchen-current-task-region')).toBeVisible();
-    if (stage === 'visit' || stage === 'production') await page.screenshot({ path: info.outputPath(`${stage}-customer-fields.png`), fullPage: true });
+    if (stage === 'visit' || stage === 'order') await page.screenshot({ path: info.outputPath(`${stage}-customer-fields.png`), fullPage: true });
     await dashboard(page);
   }
   // A committed stage change must be reflected immediately when the hub reloads.
@@ -103,7 +103,7 @@ test('Mobile stage hub and customer fields remain usable at narrow widths, rotat
     await page.setViewportSize(viewport);
     await dashboard(page);
     const stageBoxes = page.getByTestId('kitchen-dashboard-stages').getByRole('link');
-    await expect(stageBoxes).toHaveCount(9);
+    await expect(stageBoxes).toHaveCount(8);
     expect(await stageBoxes.evaluateAll(elements => elements.every(element => {
       const box = element.getBoundingClientRect(); return box.width >= 44 && box.height >= 44;
     }))).toBe(true);
@@ -154,7 +154,7 @@ test('Universal search crosses stage queues, opens compact customer identity and
   for (const field of ['email', 'address', 'company', 'property_name', 'city', 'state', 'pincode', 'notes']) await expect(details).not.toContainText(project.customer[field]);
   await expect(page.getByTestId('kitchen-customer-current-stage')).toHaveCount(0);
   await expect(page.getByTestId('kitchen-project-actions')).toBeVisible();
-  await expect(page.getByTestId('kitchen-project-stages').getByRole('link')).toHaveCount(9);
+  await expect(page.getByTestId('kitchen-project-stages').getByRole('link')).toHaveCount(8);
   await page.getByTestId('kitchen-visit-notes').fill(`Changed from global search ${marker}`);
   await page.getByTestId('kitchen-visit-save').click();
   await expect.poll(async () => {

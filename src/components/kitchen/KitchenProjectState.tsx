@@ -3,7 +3,7 @@ import { useAuth } from "@/src/state/auth";
 import { staffLandingPath } from "@/src/access-profiles";
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import { useRouter } from "expo-router";
-import { KITCHEN_STAGES, kitchenProjectsApi, type KitchenCommand, type KitchenPolicy, type KitchenProject, type KitchenStage } from "@/src/api/kitchenProjects";
+import { KITCHEN_STAGES, kitchenDisplayStage, kitchenProjectsApi, type KitchenCommand, type KitchenPolicy, type KitchenProject, type KitchenStage } from "@/src/api/kitchenProjects";
 import { errorText, useKitchenSubmission } from "./shared";
 import { kitchenToday } from "./KitchenDates";
 import { useKitchenExitGuard } from "./KitchenExitGuard";
@@ -84,7 +84,7 @@ export function KitchenProjectProvider({ id, returnTo, children }: { id: string;
   const taskPrefix = `commercial.cycle.${project?.workflow_cycle ?? 1}.${project?.stage}.`;
   const taskKey = taskPrefix.slice(0, -1);
   const sitePrefix = `commercial.cycle.${project?.workflow_cycle ?? 1}.site.`;
-  const currentTaskDirty = Object.keys(drafts).some(key => (key === taskKey || key.startsWith(taskPrefix) || project?.stage === "installation" && key.startsWith(sitePrefix)) && !key.endsWith(".expanded") && key in baselines.current && JSON.stringify(drafts[key]) !== JSON.stringify(baselines.current[key]));
+  const currentTaskDirty = Object.keys(drafts).some(key => (key === taskKey || key.startsWith(taskPrefix) || (project?.stage === "order" || project?.stage === "production") && key.startsWith(`commercial.cycle.${project?.workflow_cycle ?? 1}.production.`) || project?.stage === "installation" && key.startsWith(sitePrefix)) && !key.endsWith(".expanded") && key in baselines.current && JSON.stringify(drafts[key]) !== JSON.stringify(baselines.current[key]));
   const { allowLeave } = useKitchenExitGuard({ dirty, scope: `/kitchen/${encodeURIComponent(id)}` });
   const setDraftValue = useCallback((key: string, initial: unknown, next: SetStateAction<any>) => {
     const source = persistedDraftSource(saved.current, key);
@@ -283,7 +283,7 @@ export function KitchenProjectProvider({ id, returnTo, children }: { id: string;
         }
         return updated;
       });
-      if (value.stage !== current.stage) router.replace(kitchenProjectPath(id, `/stages/${value.stage}`, origin.current) as any);
+      if (value.stage !== current.stage) router.replace(kitchenProjectPath(id, `/stages/${kitchenDisplayStage(value.stage)}`, origin.current) as any);
     }).then(result => result && accepted).finally(() => {
       commandPending.current = false;
       if (live.current) { setBackgroundSaving(false); setPendingStage(null); }
@@ -315,5 +315,5 @@ export function useKitchenDraft<T,>(key: string, initial: T): [T, Dispatch<SetSt
 
 export function kitchenStage(value?: string | string[]) {
   const candidate = Array.isArray(value) ? value[0] : value;
-  return KITCHEN_STAGES.find(stage => stage === candidate);
+  return KITCHEN_STAGES.find(stage => stage === (candidate === "production" ? "order" : candidate));
 }

@@ -29,7 +29,7 @@ for (const scenario of ['saved', 'saved-whitespace', 'saved-empty', 'saved-408',
     module, exports: module.exports, AbortController, DOMException,
     setTimeout: (callback, ms) => { timers.push({ callback, ms }); return callback; },
     clearTimeout: callback => { const index = timers.findIndex(timer => timer.callback === callback); if (index >= 0) timers.splice(index, 1); },
-    require: name => name.endsWith('client') ? { api } : name.endsWith('floors') ? { KITCHEN_FLOOR_ID: 'second-floor' } : { KITCHEN_WORKSPACE_PAGES: [] },
+    require: name => name.endsWith('client') ? { api } : name.endsWith('floors') ? { KITCHEN_FLOOR_ID: 'second-floor' } : { KITCHEN_WORKSPACE_PAGES: [], KITCHEN_VISIBLE_PAGES: [] },
   });
   const result = module.exports.kitchenProjectsApi.command('project', 1, 'visit-receipt', scenario === 'payment' ? 'order_advance' : 'save_visit', payload)
     .then(value => ({ value }), error => ({ error }));

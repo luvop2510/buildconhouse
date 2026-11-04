@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import asyncio
 from contextlib import asynccontextmanager
 
 from typing import Literal
@@ -30,6 +31,7 @@ async def require_kitchen_launch_access(user: UserPublic = Depends(get_current_u
 
 router = APIRouter(prefix="/kitchen-projects", tags=["kitchen-projects"],
                    dependencies=[Depends(require_kitchen_launch_access)])
+_pdf_jobs = {}
 
 
 @asynccontextmanager
@@ -196,6 +198,44 @@ async def finish_file_transfer(project_id: str, transfer_id: str, body: "Transfe
     from media_storage.factory import get_media_storage, private_bucket
     async with _file_storage_operation():
         return await KitchenFileTransfers(db).finish(user, project_id, transfer_id, body, get_media_storage(), private_bucket())
+
+
+@router.post("/{project_id}/file-transfers/{transfer_id}/finish-async")
+async def finish_large_pdf(project_id: str, transfer_id: str, body: "TransferFinish", user: UserPublic = Depends(get_current_user)):
+    if floor_for_write(user) != "second-floor":
+        raise HTTPException(403, "Select the Kitchen Floor for file transfers")
+    from media_storage.factory import get_media_storage, private_bucket
+    service = KitchenFileTransfers(db)
+    await service.authorized(user, project_id)
+    row = await service.session(user, project_id, transfer_id)
+    if row.get("purpose") != "final_production":
+        raise HTTPException(422, "This operation is only for Final Production PDFs")
+    key = (user.id, transfer_id)
+    if key not in _pdf_jobs and row["state"] != "completed":
+        async def run():
+            try:
+                async with _file_storage_operation():
+                    await service.finish(user, project_id, transfer_id, body, get_media_storage(), private_bucket())
+            except Exception as exc:
+                logging.getLogger("forge.kitchen").warning("PDF finalization failed (%s)", type(exc).__name__)
+                message = exc.detail if isinstance(exc, HTTPException) and isinstance(exc.detail, str) else "PDF verification could not finish. Retry the upload."
+                await db.kitchen_file_transfers.update_one({"_id": user.id, "transfer_id": transfer_id, "state": "open"}, {"$set": {"last_error": message}})
+            finally:
+                _pdf_jobs.pop(key, None)
+        await db.kitchen_file_transfers.update_one({"_id": user.id, "transfer_id": transfer_id}, {"$unset": {"last_error": ""}})
+        _pdf_jobs[key] = asyncio.create_task(run())
+    return {"accepted": True}
+
+
+@router.get("/{project_id}/file-transfers/{transfer_id}/status")
+async def large_pdf_status(project_id: str, transfer_id: str, user: UserPublic = Depends(get_current_user)):
+    service = KitchenFileTransfers(db)
+    await service.authorized(user, project_id)
+    row = await service.session(user, project_id, transfer_id)
+    from services.kitchen_file_transfers import now
+    lease = row.get("finish_lease_until")
+    expired = lease is None or lease.replace(tzinfo=__import__("datetime").timezone.utc) <= now()
+    return {"state": row["state"], "last_error": row.get("last_error"), "retryable": row["state"] == "open" or row["state"] == "finishing" and expired}
 
 
 @router.delete("/{project_id}/file-transfers/{transfer_id}")

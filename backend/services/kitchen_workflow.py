@@ -11,13 +11,13 @@ from uuid import uuid4
 
 from fastapi import HTTPException
 
-from models_kitchen import (AdvancePayment, OrderInstallment, MaterialArrival, MaterialPhotos, CustomerResponse, DesignPresentation,
+from models_kitchen import (AdvancePayment, OrderInstallment, OrderInstallmentEdit, OrderInstallmentDelete, MaterialArrival, MaterialPhotos, CustomerResponse, DesignPresentation,
     DesignRevision, DesignUpdate, InternalApproval, OrderAmendment, OrderConfirmation,
     QuotationReceived, QuotationUpdate, SiteVisit, VersionDate, WorkProgress, OrderStatusChange, ExceptionCommand, OrderDocument, OrderUpdate, OrderConfirmationValue)
 
 COMMANDS = {"design_present", "design_update", "design_share", "design_response", "design_revision", "design_handoff",
             "quotation_receive", "quotation_update", "quotation_share", "quotation_response", "order_confirm", "order_confirmation", "order_update", "order_advance",
-            "order_installment", "order_material_arrived", "installation_material_photos", "order_amend", "order_status", "order_document", "exception", "production_update", "installation_update", "site_visit", "approval"}
+            "order_installment", "order_installment_edit", "order_installment_delete", "order_material_arrived", "installation_material_photos", "order_amend", "order_status", "order_document", "exception", "production_update", "production_document", "installation_update", "site_visit", "approval"}
 
 
 def production_end_date(start):
@@ -229,11 +229,6 @@ def transition(project, target, policy):
         elif stage == "installation":
             if project.get("installation", {}).get("status") != "Completed":
                 reject("Mark installation Completed first")
-            rules = policy.get("closure")
-            if rules is None:
-                reject("Adopt the resolved decisions and select the department manager for closure approval")
-            if not policy.get("department_manager_user_ids") or not has_approval(project, "closure", policy):
-                reject("Awaiting selected department manager closure approval")
         return None
     except HTTPException as exc:
         return exc.detail
@@ -255,7 +250,7 @@ def apply(project, command, payload, policy, user, now, validate):
     if project.get("lifecycle_status") in {"On Hold", "Cancelled"} and command not in {"order_status", "exception"}:
         reject("The owner must resume this held or cancelled project first")
     def require_stage(expected):
-        if stage != expected:
+        if stage != expected and not (expected == "order" and stage == "production"):
             reject(f"This command is available only in {expected}")
     def record(row):
         return {**row, "id": str(uuid4()), "actor_id": user.id, "at": now}
@@ -603,23 +598,33 @@ def apply(project, command, payload, policy, user, now, validate):
             reject("Recorded payments cannot exceed the approved final order amount")
         row["advance"] = body.model_dump()
         row["approval_identity"] = str(uuid4())
-    elif command in {"order_installment", "order_material_arrived"}:
+    elif command in {"order_installment", "order_installment_edit", "order_installment_delete", "order_material_arrived"}:
         if stage not in {"order", "production", "installation", "completed"}:
             reject("Confirm the order before recording payments or material arrival")
-        body = validate(OrderInstallment if command == "order_installment" else MaterialArrival, payload)
+        body = validate({"order_installment": OrderInstallment, "order_installment_edit": OrderInstallmentEdit, "order_installment_delete": OrderInstallmentDelete, "order_material_arrived": MaterialArrival}[command], payload)
         row = current(project, "orders")
         if body.order_id != row["id"] or project.get("commercial_basis_invalidated") or row.get("authorization_invalidated"):
             reject("Select the current confirmed order")
         if row.get("status") != "Confirmed" or not row.get("confirmed"):
             reject("Confirm the order before recording payments or material arrival")
-        if command == "order_installment":
+        if command in {"order_installment", "order_installment_edit", "order_installment_delete"}:
+            installments = row.setdefault("installments", [])
+            existing = next((item for item in installments if item.get("id") == body.installment_id), None) if command != "order_installment" else None
+            if command != "order_installment" and existing is None:
+                reject("Installment not found on the current order")
+            if command == "order_installment_delete":
+                installments.remove(existing)
+                return
             if Decimal(body.amount) <= 0 or not body.date:
                 reject("Record a positive installment amount and payment date")
             if body.date < row["order_date"] or body.date > recorded_day(now):
                 reject("Payment date must be between order confirmation and today")
-            if order_paid(row) + Decimal(body.amount) > Decimal(row["final_amount"]):
+            if order_paid(row) - (Decimal(existing["amount"]) if existing else Decimal(0)) + Decimal(body.amount) > Decimal(row["final_amount"]):
                 reject("Installment exceeds the remaining order balance")
-            row.setdefault("installments", []).append(record(body.model_dump(exclude={"order_id"})))
+            if existing:
+                existing.update(amount=body.amount, date=body.date)
+            else:
+                installments.append(record(body.model_dump(exclude={"order_id"})))
         else:
             row["material_arrived"] = body.arrived
     elif command == "installation_material_photos":
@@ -691,9 +696,20 @@ def apply(project, command, payload, policy, user, now, validate):
             project["completion_date"] = None
             project["closure_pending_reason"] = None
         project.setdefault("exceptions", []).append(record(body.model_dump()))
+    elif command == "production_document":
+        if stage not in {"order", "production"}:
+            reject("The production PDF can only be changed during Order/Production")
+        body = validate(OrderDocument, payload)
+        attachment = next((a for a in project.get("attachments", []) if a["id"] == body.attachment_id), None)
+        if not attachment or attachment.get("content_type") != "application/pdf":
+            reject("Select a PDF belonging to this project")
+        project.setdefault("production", {})["final_attachment_id"] = body.attachment_id
     elif command in {"production_update", "installation_update"}:
         expected = "production" if command == "production_update" else "installation"
-        require_stage(expected)
+        if expected == "production" and stage == "order":
+            pass
+        else:
+            require_stage(expected)
         body = validate(WorkProgress, payload)
         if body.status not in ({"Not Started", "In Production", "Completed"} if expected == "production" else {"Not Started", "In Progress", "Completed"}):
             reject("Invalid status for this stage")

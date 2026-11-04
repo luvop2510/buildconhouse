@@ -1,3 +1,5 @@
+import { sha256 } from "@noble/hashes/sha256";
+import { bytesToHex } from "@noble/hashes/utils";
 import { Platform } from "react-native";
 import type { DocumentPickerAsset } from "expo-document-picker";
 import { kitchenProjectsApi, type KitchenAttachment, type KitchenFileTransfer, type KitchenProject } from "@/src/api/kitchenProjects";
@@ -30,9 +32,9 @@ async function digest(bytes: Uint8Array) {
 }
 
 export async function uploadKitchenFile(project: KitchenProject, file: DocumentPickerAsset, key: string,
-  progress: (percent: number) => void, transferStarted: (id: string, transfer?: KitchenFileTransfer) => void) {
+  progress: (percent: number) => void, transferStarted: (id: string, transfer?: KitchenFileTransfer) => void, finalProduction = false) {
   const maximum = /\.pdf$/i.test(file.name) || file.mimeType === "application/pdf" ? KITCHEN_MAX_PDF_BYTES : KITCHEN_MAX_FILE_BYTES;
-  if (!file.size || file.size > maximum) throw new Error(`Choose a nonempty file up to ${maximum === KITCHEN_MAX_PDF_BYTES ? "10 MB (10,000,000 bytes) for PDFs" : "25 MB (25,000,000 bytes)"}.`);
+  if (!file.size || !finalProduction && file.size > maximum) throw new Error(`Choose a nonempty file up to ${maximum === KITCHEN_MAX_PDF_BYTES ? "10 MB (10,000,000 bytes) for PDFs" : "25 MB (25,000,000 bytes)"}.`);
   if (Platform.OS === "web" && !file.file) throw new Error("The original selected file is unavailable. Choose it again.");
   const operation = beginIdentityOperation();
   const assertCurrent = () => {
@@ -40,6 +42,7 @@ export async function uploadKitchenFile(project: KitchenProject, file: DocumentP
   };
   try {
     progress(0);
+    if (finalProduction) return await uploadFinalProductionPdf(project, file, key, progress, transferStarted, assertCurrent);
     const nativeFile = Platform.OS === "web" ? null : new (await import("expo-file-system")).File(file.uri);
     assertCurrent();
     const source = Platform.OS === "web" ? new Uint8Array(await file.file!.arrayBuffer()) : await nativeFile!.bytes();
@@ -73,8 +76,62 @@ export async function uploadKitchenFile(project: KitchenProject, file: DocumentP
   } finally { operation.finish(); }
 }
 
+
+/** Read the same selected file twice in bounded chunks, detecting changes before finalization. */
+async function uploadFinalProductionPdf(project: KitchenProject, file: DocumentPickerAsset, key: string,
+  progress: (percent: number) => void, transferStarted: (id: string, transfer?: KitchenFileTransfer) => void,
+  assertCurrent: () => void) {
+  const size = file.size!;
+  const native = Platform.OS === "web" ? null : new (await import("expo-file-system")).File(file.uri);
+  const read = async (offset: number, length: number) => {
+    if (Platform.OS === "web") return new Uint8Array(await file.file!.slice(offset, offset + length).arrayBuffer());
+    const handle = native!.open();
+    try { handle.offset = offset; return handle.readBytes(length); } finally { handle.close(); }
+  };
+  const checksum = sha256.create();
+  for (let offset = 0; offset < size; offset += PART_BYTES) {
+    const bytes = await read(offset, Math.min(PART_BYTES, size - offset));
+    assertCurrent();
+    if (bytes.length !== Math.min(PART_BYTES, size - offset)) throw new Error("The selected file changed. Choose it again.");
+    checksum.update(bytes);
+  }
+  const originalHash = bytesToHex(checksum.digest());
+  const transfer = await kitchenProjectsApi.beginTransfer(project.id, { expected_version: project.version,
+    idempotency_key: key, filename: file.name, content_type: file.mimeType || "application/pdf", size_bytes: size,
+    sha256: originalHash, purpose: "final_production" });
+  assertCurrent(); transferStarted(transfer.transfer_id, transfer);
+  if (transfer.chunk_bytes !== PART_BYTES || transfer.size_bytes !== size || transfer.part_count !== Math.ceil(size / PART_BYTES)) throw new Error("File transfer settings changed. Choose the PDF again.");
+  if (transfer.state === "open") {
+    const sentHash = sha256.create();
+    for (let index = 0; index < transfer.part_count; index += 1) {
+      const offset = index * PART_BYTES;
+      const bytes = await read(offset, Math.min(PART_BYTES, size - offset));
+      assertCurrent();
+      if (bytes.length !== Math.min(PART_BYTES, size - offset)) throw new Error("The selected file changed. Discard the unfinished upload and choose it again.");
+      sentHash.update(bytes);
+      await kitchenProjectsApi.uploadPart(project.id, transfer.transfer_id, index, encoded(bytes));
+      assertCurrent(); progress(Math.floor((index + 1) * 95 / transfer.part_count));
+    }
+    if (bytesToHex(sentHash.digest()) !== originalHash) throw new Error("The selected file changed. Discard the unfinished upload and choose it again.");
+  }
+  progress(95);
+  await kitchenProjectsApi.finishLargePdf(project.id, transfer.transfer_id, project.version);
+  for (;;) {
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    assertCurrent();
+    const status = await kitchenProjectsApi.largePdfStatus(project.id, transfer.transfer_id);
+    assertCurrent();
+    if (status.last_error) throw new Error(status.last_error);
+    if (status.state === "completed") break;
+    if (status.retryable) await kitchenProjectsApi.finishLargePdf(project.id, transfer.transfer_id, project.version);
+  }
+  const saved = await kitchenProjectsApi.get(project.id);
+  assertCurrent(); progress(100);
+  return saved;
+}
+
 export async function downloadKitchenFile(projectId: string, attachment: KitchenAttachment, progress: (percent: number) => void, preview?: Window) {
-  if (!attachment.size_bytes || attachment.size_bytes > KITCHEN_MAX_FILE_BYTES) throw new Error("This file exceeds the supported download size.");
+  if (!attachment.size_bytes) throw new Error("This file is empty.");
   const operation = beginIdentityOperation();
   const parts: Uint8Array<ArrayBuffer>[] = [];
   let nativeFile: NativeFile | undefined;
@@ -94,6 +151,7 @@ export async function downloadKitchenFile(projectId: string, attachment: Kitchen
     }
     const count = Math.ceil(attachment.size_bytes / PART_BYTES);
     let fullDigest = attachment.sha256;
+    const wholeHash = sha256.create();
     for (let index = 0; index < count; index += 1) {
       const response = await kitchenProjectsApi.downloadPart(projectId, attachment.id, index);
       if (!operation.isCurrent()) return false;
@@ -104,19 +162,20 @@ export async function downloadKitchenFile(projectId: string, attachment: Kitchen
       if (partDigest !== response.sha256) throw new Error("File part failed integrity verification.");
       if (fullDigest && fullDigest !== response.file_sha256) throw new Error("File changed during download.");
       fullDigest = response.file_sha256;
+      wholeHash.update(bytes);
       if (handle) handle.writeBytes(bytes);
       else parts.push(new Uint8Array(bytes));
       progress(Math.floor((index + 1) * 100 / count));
     }
     if (nativeFile) {
       handle!.close(); handle = undefined;
-      const resultDigest = await digest(await nativeFile.bytes());
+      const resultDigest = bytesToHex(wholeHash.digest());
       if (!operation.isCurrent()) return false;
       if (resultDigest !== fullDigest) throw new Error("Downloaded file failed integrity verification.");
       return await sharePreparedNativeFile(nativeFile, attachment.filename, attachment.content_type, "project document", operation);
     }
     const blob = new Blob(parts, { type: attachment.content_type });
-    const resultDigest = await digest(new Uint8Array(await blob.arrayBuffer()));
+    const resultDigest = bytesToHex(wholeHash.digest());
     if (!operation.isCurrent()) return false;
     if (resultDigest !== fullDigest) throw new Error("Downloaded file failed integrity verification.");
     if (preview) {
