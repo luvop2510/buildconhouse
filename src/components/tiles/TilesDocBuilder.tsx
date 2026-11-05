@@ -5,6 +5,7 @@ import { useAuth } from "@/src/state/auth";
 import { useActionAccess } from "@/src/hooks/use-permissions";
 import { useInputActive } from "@/src/hooks/use-input-active";
 import { canManageDestructiveData } from "@/src/constants/roles";
+import { documentReferenceText } from "@/src/utils/referrer";
 import { ReferrerField, type ReferrerValue } from "@/src/components/customer/ReferrerField";
 // TilesDocBuilder — Ground Floor → Tiles → Selection / Quotation.
 // -----------------------------------------------------------------------------
@@ -1568,7 +1569,7 @@ function MetaGrid({ doc }: { doc: ReturnType<typeof useTilesDoc> }) {
           </View>
         ))}
       </View>
-      <TextField label="Reference" value={doc.header.reference} onChangeText={(value: string) => doc.setHeaderField("reference", value)} />
+      <TextField label="Reference" value={documentReferenceText(doc.header.reference)} onChangeText={(value: string) => doc.setHeaderField("reference", value)} />
       <StaffNameFields doc={doc} />
     </View>
   );
@@ -2219,7 +2220,7 @@ function MobileTilesEditor({
                 </View>
               </Disclosure>
               <TextField label={isSelection ? "Address" : "Address (required)"} value={doc.header.address} onChangeText={(t: string) => doc.setHeaderField("address", t)} multiline scrollEnabled={false} style={Platform.OS === "web" ? { overflow: "hidden" } : undefined} testID="mobile-address" />
-              <TextField label="Reference" value={doc.header.reference} onChangeText={(value: string) => doc.setHeaderField("reference", value)} />
+              <TextField label="Reference" value={documentReferenceText(doc.header.reference)} onChangeText={(value: string) => doc.setHeaderField("reference", value)} />
               <StaffNameFields doc={doc} />
             </Card>
 

@@ -5,3 +5,15 @@ export function referrerCode(id?: string | null, kind?: string | null, name?: st
 export function referrerLabel(value: { referrer_id?: string | null; referrer_type?: string | null; referrer_name?: string | null }): string {
   return [value.referrer_name, referrerCode(value.referrer_id, value.referrer_type, value.referrer_name)].filter(Boolean).join(" · ");
 }
+
+/** Customer-facing document reference, without a directory identifier. */
+export function documentReferrerName(name: string, kind: string): string {
+  return `${kind === "architect" ? "ARC" : "INT"}-${name}`;
+}
+
+/** Older reference text can contain a generated code after the person's name. */
+export function documentReferenceText(value: string): string {
+  const match = value.match(/^\s*(.*?)\s*·\s*(ARC|INT)-.+-[0-9a-f]{8}\s*$/i);
+  if (match) return `${match[2].toUpperCase()}-${match[1]}`;
+  return value.replace(/\b((?:ARC|INT)-.+)-[0-9a-f]{8}\s*$/i, "$1");
+}
