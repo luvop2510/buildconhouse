@@ -335,3 +335,11 @@ layer is introduced. See docs/audits/2026-10-29-kitchen-installments-materials.m
 
 Native fallback scan of the requested changes retains Expo/React Native/FastAPI/Mongo and the shared control/transport boundaries. Android inputs prevent fullscreen IME extraction; native hidden navigation releases height and browser keyboard viewports resize. Walk-in intake has name, phone and required address with existing duplicate/floor assignment controls. Register search coalesces reads and its optional summary is independent. PDFs use portrait A4, readable cover metadata, existing logos plus supplied Verantes Living beside Vitra, product-page-only watermark and dated customer filenames. No framework, architectural directory, dependency, authentication change or migration is introduced; AGENTS.md requires no architectural update. See docs/audits/2026-10-29-android-walkins-pdfs.md for final verification and publication evidence.
 Last scanned: 2026-10-29.
+
+## Tile quotation and follow-up delta — 5 November 2026
+
+The tile builder derives its read-only quantity unit from catalog pricing and can seed a separate selection draft from a permitted Ground walk-in follow-up. The shared customer-source route groups permitted contacts by linked identity and normalized phone before paging, with bounded searches. Customer-facing quotation and tile PDFs use a compact typed reference label. These changes add no architecture layer, dependency, migration, or authentication mechanism; AGENTS.md needs no architectural update. Coverage percentage was not measured.
+
+Changed files: `app/(admin)/followups.tsx`, `src/components/tiles/TilesDocBuilder.tsx`, `src/components/tiles/tileQuantityUnit.ts`, `backend/routes/quotation_customer_sources.py`, `backend/services/referrer_identity.py`, `backend/pdf_generator.py`, `backend/pdf_tiles.py`, and their focused tests.
+
+Last scanned: 2026-11-05.

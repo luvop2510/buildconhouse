@@ -68,3 +68,14 @@ test('automatic recovery requires exact base revision and refuses already ordere
   assert.equal(exports.tileDraftMatchesServer(saved, { id: 'doc', updated_at: 'v1', status: 'draft' }), true);
   for (const server of [{ id: 'doc', updated_at: 'v2' }, { id: 'other', updated_at: 'v1' }, { id: 'doc', updated_at: 'v1', status: 'ordered' }]) assert.equal(exports.tileDraftMatchesServer(saved, server), false);
 });
+
+test('follow-up selection draft uses its own scope and preserves an unrelated new draft', async () => {
+  epoch = 3;
+  generation = 'same';
+  await exports.readTileDraft('owner', 'tiles_selection', null);
+  await exports.writeTileDraft({ ...draft, header: { ...draft.header, customerName: 'Unrelated customer' } }, epoch);
+  const followupDraft = { ...draft, routeId: 'followup:followup-1', header: { ...draft.header, customerName: 'Follow-up customer' } };
+  await exports.writeTileDraft(followupDraft, epoch);
+  assert.equal((await exports.readTileDraft('owner', 'tiles_selection', null)).header.customerName, 'Unrelated customer');
+  assert.equal((await exports.readTileDraft('owner', 'tiles_selection', 'followup:followup-1')).header.customerName, 'Follow-up customer');
+});

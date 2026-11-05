@@ -69,6 +69,8 @@ import { TILES_FLOOR_ID } from "@/src/constants/floors";
 
 import { TilesProductPicker } from "./TilesProductPicker";
 import { TILE_IMAGE_ASPECT_RATIO } from "./tilePresentation";
+import { tileQuantityUnit } from "./tileQuantityUnit";
+import { followupLegacyReference } from "./followupReference";
 import { canPlaceOrder, nextTilesAction, normalizeTilesStatus, tilesStage } from "./tilesStage";
 import { readTileDraft, writeTileDraft, removeTileDraft, tileDraftMatchesServer, type TileDraft } from "./tileDraftStorage";
 
@@ -244,9 +246,11 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
   const router = useRouter();
   const { staff } = useAuth();
   const accountId = staff?.id || "";
-  const { id, quotationId } = useLocalSearchParams<{ id?: string; quotationId?: string }>();
+  const { id, quotationId, followupId } = useLocalSearchParams<{ id?: string; quotationId?: string; followupId?: string }>();
   const routeId = initialQuotationId || id || quotationId;
-  const documentScope = `${accountId}:${docType}:${routeId || "new"}`;
+  const sourceFollowupId = docType === "tiles_selection" && typeof followupId === "string" ? followupId : null;
+  const draftRouteId = routeId || (sourceFollowupId ? `followup:${sourceFollowupId}` : null);
+  const documentScope = `${accountId}:${docType}:${draftRouteId || "new"}`;
   const documentScopeRef = useRef(documentScope);
   const documentGenerationRef = useRef(0);
   if (documentScopeRef.current !== documentScope) documentGenerationRef.current += 1;
@@ -295,11 +299,14 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
   const persistedIdRef = useRef<string | null>(null);
   const createdDocumentRef = useRef<{ id: string; docType: TilesDocType } | null>(null);
   const seededProductRef = useRef<string | null>(null);
+  const seededFollowupRef = useRef<string | null>(null);
+  const [followupError, setFollowupError] = useState<string | null>(null);
+  const [followupAttempt, setFollowupAttempt] = useState(0);
   const deletingScopes = useRef(new Set<string>());
   const clientDraftIdRef = useRef<string | null>(null);
   if (!clientDraftIdRef.current) clientDraftIdRef.current = randomUUID();
   const localSnapshot = {
-    version: 1 as const, accountId, docType, routeId: routeId || null, at: Date.now(),
+    version: 1 as const, accountId, docType, routeId: draftRouteId, at: Date.now(),
     documentId: persistedIdRef.current || docId, number: docNumberServer, serverSavedAt: serverSavedAtRef.current,
     customerId: customerIdRef.current || customerId, customerSnapshot, header, rows, partner, legacyPartnerLabel,
     partnerEdited: partnerEditVersion > partnerSavedVersion.current, clientDraftId: clientDraftIdRef.current,
@@ -335,7 +342,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
     const controller = new AbortController();
     setLocalReady(false); setRecoveryDraft(null); setBusy(null);
     draftEpoch.current = builderDraftEpoch();
-    const local = accountId ? readTileDraft(accountId, docType, routeId || null) : Promise.resolve(null);
+    const local = accountId ? readTileDraft(accountId, docType, draftRouteId) : Promise.resolve(null);
     if (!routeId) {
       setLoading(false);
       // Reusing this route for a fresh document must not carry the previous
@@ -443,7 +450,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
       }
     })();
     return () => { alive = false; controller.abort(); };
-  }, [routeId, docType, documentScope, router, restoreAttempt, accountId, applyLocalDraft]);
+  }, [routeId, draftRouteId, docType, documentScope, router, restoreAttempt, accountId, applyLocalDraft]);
 
   const markDirty = useCallback(() => {
     dirtyRef.current = true;
@@ -479,14 +486,6 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
       // Recalculate immediately when the selling rate or box coverage changes
       // so the on-screen total never lags behind the edited offer.
       if (next.quantityUnit === "Box" && ("offerRate" in patch || "boxSqft" in patch || ("rateSqft" in patch && row.offerRateIsFallback))) {
-        const derived = derivedTileBoxRate(next);
-        if (derived !== null) next.rateBox = String(derived);
-      }
-      // The catalog provides the initial unit, but the quotation author may
-      // explicitly switch it. Re-entering Box mode restores the normal
-      // rate-per-square-foot × box-coverage calculation; Pieces continues to
-      // use the editable rate per unit without guessing a conversion.
-      if (patch.quantityUnit === "Box") {
         const derived = derivedTileBoxRate(next);
         if (derived !== null) next.rateBox = String(derived);
       }
@@ -547,7 +546,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
     };
     setRows((cur) => cur.map((row) => {
       if (row.key !== key) return row;
-      const isPerPiece = String((specs as any).price_unit || "").trim().toLowerCase() === "per piece";
+      const isPerPiece = tileQuantityUnit((specs as any).price_unit) === "Pieces";
       // Size siblings are separate catalog products. Do not carry coverage,
       // rate or box metadata across a change: the selected sibling owns it.
       const boxSqft = isPerPiece ? "" : (history?.box_sqft != null ? String(history.box_sqft) : specNum("sqft_per_box", "box_sqft"));
@@ -785,7 +784,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
       if (editRevisionRef.current === savingRevision) {
         dirtyRef.current = false;
         if (accountId) {
-          await removeTileDraft(accountId, docType, routeId || null);
+          await removeTileDraft(accountId, docType, draftRouteId);
           if (id !== routeId) await removeTileDraft(accountId, docType, id);
         }
       } else if (accountId) {
@@ -811,7 +810,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
       }
     };
     return enqueueQuotationPersist(persistQueue, run);
-  }, [header, partner, partnerEditVersion, customerId, customerSnapshot, docId, docType, buildItems, router, rows, loading, localReady, recoveryDraft, restoreError, documentScope, documentGeneration, routeId, accountId]);
+  }, [header, partner, partnerEditVersion, customerId, customerSnapshot, docId, docType, buildItems, router, rows, loading, localReady, recoveryDraft, restoreError, documentScope, documentGeneration, routeId, draftRouteId, accountId]);
   persistRef.current = () => persist({ silent: true });
 
   // Autosave: create the document on the first meaningful edit, then silently
@@ -911,7 +910,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
       if (id) await api.delete(`/quotations/${id}`, { floorId: TILES_FLOOR_ID });
       else await api.delete(`/quotations/client-draft/${targetDraftId}?doc_type=${docType}`, { floorId: TILES_FLOOR_ID });
       if (accountId) {
-        await removeTileDraft(accountId, docType, routeId || null);
+        await removeTileDraft(accountId, docType, draftRouteId);
         if (id && id !== routeId) await removeTileDraft(accountId, docType, id);
       }
       if (!current()) return true;
@@ -923,13 +922,13 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
       if (current()) toast.error(e?.detail || "Document could not be deleted");
       return false;
     } finally { deletingScopes.current.delete(documentScope); if (current()) setBusy(null); }
-  }, [docId, docType, busy, router, accountId, routeId, documentScope, documentGeneration]);
+  }, [docId, docType, busy, router, accountId, routeId, draftRouteId, documentScope, documentGeneration]);
 
   const recoverDraft = useCallback(async () => {
     if (!recoveryDraft || busy) return;
     setBusy("recover");
     try {
-      const fresh = await readTileDraft(accountId, docType, routeId || null);
+      const fresh = await readTileDraft(accountId, docType, draftRouteId);
       if (!fresh) { setRecoveryDraft(null); return; }
       if (fresh.at !== recoveryDraft.at || fresh.documentId !== recoveryDraft.documentId) {
         setRecoveryDraft(fresh);
@@ -956,7 +955,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
       }
     } catch (error: any) { toast.error(error?.detail || "Could not check the saved document. Your draft is preserved."); }
     finally { setBusy(null); }
-  }, [recoveryDraft, busy, applyLocalDraft, router, docType, routeId, accountId]);
+  }, [recoveryDraft, busy, applyLocalDraft, router, docType, routeId, draftRouteId, accountId]);
 
   const pickCustomer = useCallback((customer: Customer) => {
     setCustomerId(customer.id);
@@ -968,7 +967,52 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
     markDirty();
   }, [markDirty]);
 
+  // A follow-up gets its own local draft scope, so opening it cannot replace an
+  // unrelated unsaved selection. Never overwrite a recovered or edited draft.
+  useEffect(() => {
+    if (!sourceFollowupId || routeId || !accountId || !localReady || recoveryDraft || restoreError || dirtyRef.current || seededFollowupRef.current === `${documentScope}:${followupAttempt}`) return;
+    const token = `${documentScope}:${followupAttempt}`;
+    seededFollowupRef.current = token;
+    const revision = editRevisionRef.current;
+    const controller = new AbortController();
+    let alive = true;
+    setFollowupError(null);
+    type FollowupSource = { name?: string | null; phone?: string | null; address?: string | null; reference_source?: string | null; assigned_to_name?: string | null; referrer_id?: string | null; referrer_name?: string | null; referrer_type?: "architect" | "interior_designer" | null; referrer_company?: string | null };
+    api.post<{ customer: Customer; source: FollowupSource }>("/quotations/customer-sources/reuse", { source_kind: "followup", source_id: sourceFollowupId }, { floorId: TILES_FLOOR_ID, signal: controller.signal })
+      .then(({ customer, source }) => {
+        if (!alive || documentScopeRef.current !== documentScope) return;
+        if (editRevisionRef.current !== revision || dirtyRef.current) {
+          setFollowupError("Your edits were preserved. Select the follow-up customer using Existing customer.");
+          return;
+        }
+        const sourceHasPartner = Boolean(source?.referrer_id && source?.referrer_type);
+        const legacyReference = followupLegacyReference(source);
+        const merged = { ...customer, name: source?.name || customer.name, phone: source?.phone || customer.phone, address: source?.address || customer.address,
+          referrer_id: sourceHasPartner ? source.referrer_id : customer.referrer_id, referrer_name: sourceHasPartner ? source.referrer_name : customer.referrer_name,
+          referrer_type: sourceHasPartner ? source.referrer_type : customer.referrer_type, referrer_company: sourceHasPartner ? source.referrer_company : customer.referrer_company };
+        pickCustomer(merged);
+        if (sourceHasPartner || legacyReference) setPartnerEditVersion(version => version + 1);
+        if (legacyReference) {
+          // The source names a person but has no directory identity. Do not
+          // silently attach an unrelated reference from the customer profile.
+          setPartner(null);
+          setLegacyPartnerLabel(legacyReference);
+          setHeader(cur => ({ ...cur, reference: legacyReference }));
+        }
+        if (source?.assigned_to_name) setHeader(cur => ({ ...cur, attendedBy: source.assigned_to_name || "" }));
+        if (source?.reference_source && !merged.referrer_id && !legacyReference) {
+          setLegacyPartnerLabel(source.reference_source);
+          setHeader(cur => ({ ...cur, reference: source.reference_source || "" }));
+        }
+      })
+      .catch((error: any) => {
+        if (alive && documentScopeRef.current === documentScope && !controller.signal.aborted) setFollowupError(error?.detail || "Could not load this follow-up. Try again.");
+      });
+    return () => { alive = false; controller.abort(); if (seededFollowupRef.current === token) seededFollowupRef.current = null; };
+  }, [sourceFollowupId, routeId, accountId, localReady, recoveryDraft, restoreError, documentScope, followupAttempt, pickCustomer]);
+
   return {
+    followupError, retryFollowup: () => setFollowupAttempt(value => value + 1),
     docId, docNumberServer, loading, restoreError, retryRestore: () => setRestoreAttempt((value) => value + 1), header, setHeaderField, rows,
     hasDraft: Boolean(docId || header.customerName || header.address || header.phone || rows.some(row => row.productId)),
     updateRow, addRow, removeRow, applyProduct, selectRowSize, loadRowSizes,
@@ -976,7 +1020,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
     pickPartner: (value: ReferrerValue) => { setPartner(value); setLegacyPartnerLabel(""); setPartnerEditVersion(version => version + 1); markDirty(); },
     saveState, retrySave: () => persist({ silent: true }), busy, generatePdf, placeOrder, serverTotals, previewTotals,
     recoveryDraft, recoverDraft,
-    dismissRecovery: () => { setRecoveryDraft(null); if (accountId) void removeTileDraft(accountId, docType, routeId || null); },
+    dismissRecovery: () => { setRecoveryDraft(null); if (accountId) void removeTileDraft(accountId, docType, draftRouteId); },
     whatsappDraft, closeWhatsApp: () => setWhatsappDraft(null), prepareWhatsApp,
     customerCompleted: Boolean(!loading && completionSnapshot?.completed && completionSnapshot.id === docId && completionSnapshot.customerId === customerId),
     status, stage: tilesStage(docType, status), workflowAction, runWorkflowAction, workflowError, deleteDocument,
@@ -1741,15 +1785,7 @@ function QuotationPaper(doc: ReturnType<typeof useTilesDoc>) {
               <CellInput value={row.totalBox} onChangeText={(t) => doc.updateRow(row.key, { totalBox: t })} bold testID={`tiles-total-box-${index}`} />
             </View>
             <View style={[quoStyles.td, flex(9)]}>
-              <Dropdown
-                label={quantityUnitLabel(row.quantityUnit)}
-                variant="ghost"
-                testID={`tiles-quantity-unit-${index}`}
-                items={[
-                  { label: "Box", onPress: () => doc.updateRow(row.key, { quantityUnit: "Box" }) },
-                  { label: "Piece", onPress: () => doc.updateRow(row.key, { quantityUnit: "Pieces" }) },
-                ]}
-              />
+              <Text style={quoStyles.cellText} testID={`tiles-quantity-unit-${index}`}>{row.productId ? quantityUnitLabel(row.quantityUnit) : ""}</Text>
             </View>
             <View style={[quoStyles.td, flex(10), { borderRightWidth: 0 }]}>
               <CellInput value={lineTotalInputValue(row)} onChangeText={(t) => doc.updateRow(row.key, { total: t })} testID={`tiles-total-${index}`} />
@@ -1939,15 +1975,7 @@ function MobileRowCard({
             ) : f.key === "quantityUnit" ? (
               <>
                 <Text style={type.label}>Unit</Text>
-                <Dropdown
-                  label={quantityUnitLabel(row.quantityUnit)}
-                  variant="secondary"
-                  testID={`mobile-quantity-unit-${index}`}
-                  items={[
-                    { label: "Box", onPress: () => doc.updateRow(row.key, { quantityUnit: "Box" }) },
-                    { label: "Piece", onPress: () => doc.updateRow(row.key, { quantityUnit: "Pieces" }) },
-                  ]}
-                />
+                <Text style={type.body} testID={`mobile-quantity-unit-${index}`}>{row.productId ? quantityUnitLabel(row.quantityUnit) : "—"}</Text>
               </>
             ) : (
               <TextField
@@ -2260,6 +2288,10 @@ export function TilesDocBuilder({ docType, initialProductId, initialQuotationId 
         title={`Delete this ${isSelection ? "selection" : "quotation"}?`}
         description={doc.docId ? "Linked follow-ups and unpaid payment records will be removed. Completed payments and purchase orders are protected." : "The draft saved on this device will be removed."}
         confirmLabel="Delete" tone="danger" loading={doc.busy === "delete"} testID="confirm-delete-tiles-document" />
+      {doc.followupError ? <View style={{ padding: spacing.md, gap: spacing.sm, backgroundColor: colors.surface }}>
+        <Text style={type.body}>{doc.followupError}</Text>
+        <Button label="Retry follow-up" onPress={doc.retryFollowup} variant="secondary" testID="tiles-retry-followup" />
+      </View> : null}
       {doc.recoveryDraft ? <View style={{ padding: spacing.md, gap: spacing.sm, backgroundColor: colors.surface }}>
         <Text style={type.body}>Unsaved tile changes were recovered. Restore them to continue; newer saved changes will be protected.</Text>
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>

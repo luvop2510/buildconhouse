@@ -182,10 +182,8 @@ def build_pdf(doc: dict) -> tuple[bytes, str]:
         ("ALIGN", (2, 2), (2, -1), "RIGHT"), ("FONTNAME", (0, 1), (-1, 1), "Helvetica-Bold"),
         ("TOPPADDING", (0, 0), (-1, -1), 9), ("BOTTOMPADDING", (0, 0), (-1, -1), 9),
     ]))
-    from services.referrer_identity import referrer_label
-    reference = referrer_label(doc)
+    from services.referrer_identity import pdf_reference_label
+    reference = pdf_reference_label(doc)
     header = [paragraph(f"Architect / interior designer: {reference}")] if reference else []
-    if doc.get("referrer_company"):
-        header.append(paragraph(doc["referrer_company"]))
     page.build([*header, table])
     return out.getvalue(), f"Furniture-{doc['id']}.pdf"
