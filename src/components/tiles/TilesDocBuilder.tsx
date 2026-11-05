@@ -540,8 +540,8 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
       setRows((current) => current.map((row) => {
         if (row.key !== key || row.productId !== productId) return row;
         const corrected = !["ordered", "cancelled"].includes(String(status).toLowerCase()) && tileQuantityUnit(tileSourcePriceUnit(product.specs)) === "Pieces"
-          && row.quantityUnit !== "Pieces" && row.rateSqft.trim()
-          ? { quantityUnit: "Pieces" as const, priceBasis: "piece" as const, rateBox: row.offerRate.trim() ? row.offerRate : row.rateSqft, offerRate: row.offerRate.trim() ? row.offerRate : row.rateSqft, rateSqft: "", boxSqft: "", total: "", totalEdited: false, inferredCoverage: undefined }
+          && row.quantityUnit !== "Pieces"
+          ? { quantityUnit: "Pieces" as const, priceBasis: "piece" as const, rateBox: row.offerRate.trim() || row.rateSqft.trim() || row.rateBox, offerRate: row.offerRate.trim() || row.rateSqft.trim() || row.rateBox, rateSqft: "", boxSqft: "", total: "", totalEdited: false, inferredCoverage: undefined }
           : {};
         return { ...row, ...corrected, catalogRate: product.price ?? product.mrp ?? null, mrp: row.mrp ?? product.mrp ?? null, availableSizes, finish: product.finish || "", finishVariants };
       }));

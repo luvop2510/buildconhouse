@@ -480,6 +480,8 @@ def _tile_price_kind(product: dict) -> str:
     specs = product.get("specs") or {}
     unit = re.sub(r"[._-]+", " ", str(specs.get("price_unit") or specs.get("rate_unit") or "").strip().lower())
     unit = re.sub(r"\s+", " ", unit)
+    if not unit:
+        return "piece"
     if unit in {"piece", "pieces", "pc", "pcs", "per piece", "per pieces", "per pc", "per pcs", "tile", "per tile"}:
         return "piece"
     if unit in {"sqft", "sq ft", "per sqft", "per sq ft", "per square foot"}:

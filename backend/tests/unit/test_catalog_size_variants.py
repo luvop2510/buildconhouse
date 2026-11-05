@@ -147,3 +147,9 @@ def test_rate_unit_from_existing_imports_stays_separate_from_sqft():
     sqft = _product('sqft', 'S', '600x600', specs={'price_unit': 'sqft'})
     assert catalog_service._tile_price_kind(piece) == 'piece'
     assert catalog_service._family_card_key(piece) != catalog_service._family_card_key(sqft)
+
+
+def test_missing_tile_price_unit_defaults_to_piece_without_changing_explicit_units():
+    assert catalog_service._tile_price_kind(_product('missing', 'M', '600x600', specs={})) == 'piece'
+    assert catalog_service._tile_price_kind(_product('sqft', 'S', '600x600', specs={'price_unit': 'sqft'})) == 'sqft'
+    assert catalog_service._tile_price_kind(_product('box', 'B', '600x600', specs={'price_unit': 'box'})) == 'box'
