@@ -1526,7 +1526,7 @@ function StaffNameFields({ doc }: { doc: ReturnType<typeof useTilesDoc> }) {
   </View>;
 }
 
-function MetaGrid({ doc, isSelection = false }: { doc: ReturnType<typeof useTilesDoc>; isSelection?: boolean }) {
+function MetaGrid({ doc }: { doc: ReturnType<typeof useTilesDoc> }) {
   const row2 = [
     { label: "ADDRESS", value: doc.header.address, onChange: (t: string) => doc.setHeaderField("address", t) },
   ];
@@ -1569,7 +1569,6 @@ function MetaGrid({ doc, isSelection = false }: { doc: ReturnType<typeof useTile
           </View>
         ))}
       </View>
-      {!isSelection ? <TextField label="Reference" value={documentReferenceText(doc.header.reference)} onChangeText={(value: string) => doc.setHeaderField("reference", value)} /> : null}
       <StaffNameFields doc={doc} />
     </View>
   );
@@ -1722,7 +1721,7 @@ function SelectionPaper(doc: ReturnType<typeof useTilesDoc>) {
       <View style={paperStyles.paper}>
       <SectionHeader title="PRODUCT SELECTION" subtitle="Tiles & Sanitaryware Solutions" />
       <View style={paperStyles.ruleThick} />
-      <MetaGrid doc={doc} isSelection />
+      <MetaGrid doc={doc} />
       <Text style={paperStyles.intro}>
         Dear Sir/Madam, thank you for your interest in our products. Please find below the products shortlisted as
         per your selection, for your review and confirmation.
@@ -2220,7 +2219,6 @@ function MobileTilesEditor({
                 </View>
               </Disclosure>
               <TextField label={isSelection ? "Address" : "Address (required)"} value={doc.header.address} onChangeText={(t: string) => doc.setHeaderField("address", t)} multiline scrollEnabled={false} style={Platform.OS === "web" ? { overflow: "hidden" } : undefined} testID="mobile-address" />
-              {!isSelection ? <TextField label="Reference" value={documentReferenceText(doc.header.reference)} onChangeText={(value: string) => doc.setHeaderField("reference", value)} /> : null}
               <StaffNameFields doc={doc} />
             </Card>
 

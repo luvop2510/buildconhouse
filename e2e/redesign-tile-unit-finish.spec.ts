@@ -52,6 +52,7 @@ test('critical offer changes replace a manually entered total', async ({ page })
   const doc = { id: 'price-edit', number: 'T-2', doc_type: 'tiles_quotation', floor_id: 'ground-floor', status: 'draft', customer_name: 'Customer', updated_at: '2026-11-01T00:00:00Z', items: [{ id: 'line', product_id: matt.id, sku: matt.sku, name: matt.name, image, size: matt.size, offer_rate: 160, rate_box: 160, unit_price: 160, qty: 2, quantity_unit: 'Pieces', price_basis: 'piece' }] };
   await page.route(/\/api\/quotations\/price-edit(?:\?.*)?$/, route => route.fulfill({ json: doc }));
   await page.goto('/tiles/quotation?id=price-edit');
+  await expect(page.getByLabel('Reference', { exact: true })).toHaveCount(0);
   const total = page.locator('[data-testid="tiles-total-0"], [data-testid="mobile-total-0"]');
   const offer = page.locator('[data-testid="tiles-offer-rate-0"], [data-testid="mobile-offerRate-0"]');
   await expect(total).toHaveValue('320');
