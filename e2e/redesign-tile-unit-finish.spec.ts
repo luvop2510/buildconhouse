@@ -14,7 +14,7 @@ async function fixtures(page: any) {
   await page.route('**/api/quotations?**', (route: any) => route.fulfill({ json: [] }));
 }
 
-function rate(page: any) { return page.locator('[data-testid="tiles-rate-0"], [data-testid="mobile-offerRate-0"]'); }
+function rate(page: any) { return page.locator('[data-testid="tiles-rate-0"], [data-testid="tiles-offer-rate-0"], [data-testid="mobile-offerRate-0"]'); }
 function finish(page: any) { return page.locator('[data-testid="tiles-finish-0"], [data-testid="mobile-tiles-finish-0"]'); }
 
 test('critical imported piece price, optimistic finish and back navigation', async ({ page }) => {
@@ -22,7 +22,7 @@ test('critical imported piece price, optimistic finish and back navigation', asy
   let release: () => void = () => {};
   const waiting = new Promise<void>(resolve => { release = resolve; });
   await page.route('**/api/products/finish-glossy', async route => { await waiting; await route.fulfill({ json: glossy }); });
-  await page.goto('/tiles/selection');
+  await page.goto('/tiles/quotation');
   await page.getByRole('button', { name: 'Select a product', exact: true }).first().click();
   await page.getByTestId('tiles-picker-card-finish-matt').click();
   await expect(rate(page)).toHaveValue('160');
@@ -45,6 +45,7 @@ test('critical older selection corrects recorded piece unit without changing the
   await page.route(/\/api\/quotations\/legacy(?:\?.*)?$/, route => route.fulfill({ json: doc }));
   await page.goto('/tiles/selection?id=legacy');
   await expect(rate(page)).toHaveValue('160');
+  await expect(finish(page)).toHaveCount(0);
 });
 
 test('critical offer changes replace a manually entered total', async ({ page }) => {
@@ -76,7 +77,7 @@ test('critical staff names are selectable for document attribution', async ({ pa
 test('critical finish selection restores the previous value if loading fails', async ({ page }) => {
   await fixtures(page);
   await page.route('**/api/products/finish-glossy', route => route.fulfill({ status: 503, json: { detail: 'Finish unavailable' } }));
-  await page.goto('/tiles/selection');
+  await page.goto('/tiles/quotation');
   await page.getByRole('button', { name: 'Select a product', exact: true }).first().click();
   await page.getByTestId('tiles-picker-card-finish-matt').click();
   await expect(finish(page)).toContainText('Matt');

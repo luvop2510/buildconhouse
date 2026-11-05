@@ -1774,7 +1774,6 @@ function SelectionPaper(doc: ReturnType<typeof useTilesDoc>) {
                 onLoad={() => void doc.loadRowSizes(row.key, row.productId!)}
                 testID={`tiles-size-${index}`}
               />
-              <TileFinishField row={row} onSelect={(id) => doc.selectRowFinish(row.key, id)} testID={`tiles-finish-${index}`} />
             </View>
             <View style={[selStyles.td, flex(5), { borderRightWidth: 0 }]}>
               <CellInput value={row.offerRate} onChangeText={(t) => doc.updateRow(row.key, { offerRate: t })} red bold testID={`tiles-rate-${index}`} />
@@ -1990,7 +1989,6 @@ const MOBILE_FIELDS: Record<TilesDocType, MobileFieldDef[]> = {
   tiles_selection: [
     { key: "area", label: "Area / Room" },
     { key: "size", label: "Size" },
-    { key: "finish", label: "Finish" },
     { key: "offerRate", label: "Offer Rate", numeric: true },
   ],
   tiles_quotation: [
