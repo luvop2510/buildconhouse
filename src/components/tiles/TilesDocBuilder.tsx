@@ -1532,7 +1532,7 @@ function MetaGrid({ doc }: { doc: ReturnType<typeof useTilesDoc> }) {
   ];
   return (
     <View style={metaStyles.grid}>
-      {!doc.partner && doc.legacyPartnerLabel ? <Text style={type.caption}>Recorded reference: {doc.legacyPartnerLabel}</Text> : null}
+      {!doc.partner && doc.legacyPartnerLabel ? <Text style={type.caption}>Recorded reference: {documentReferenceText(doc.legacyPartnerLabel)}</Text> : null}
       <View style={{ marginBottom: 20 }}><ReferrerField key={doc.referenceScope} label="Architect / interior designer" floorId={TILES_FLOOR_ID} value={doc.partner} onChange={doc.pickPartner} showCode={false} /></View>
       <View style={metaStyles.row}>
         <View style={metaStyles.cell}>
@@ -2215,7 +2215,7 @@ function MobileTilesEditor({
                   <TextField label={isSelection ? "Selection no." : "Quotation no."} value={doc.header.docNumber} onChangeText={(t: string) => doc.setHeaderField("docNumber", t)} testID="mobile-doc-number" />
                 </View>
                 <View style={mobileStyles.fieldFull}>
-                  {!doc.partner && doc.legacyPartnerLabel ? <Text style={type.caption}>Recorded reference: {doc.legacyPartnerLabel}</Text> : null}
+                  {!doc.partner && doc.legacyPartnerLabel ? <Text style={type.caption}>Recorded reference: {documentReferenceText(doc.legacyPartnerLabel)}</Text> : null}
       <ReferrerField key={doc.referenceScope} label="Architect / interior designer" floorId={TILES_FLOOR_ID} value={doc.partner} onChange={doc.pickPartner} showCode={false} />
                 </View>
               </Disclosure>
