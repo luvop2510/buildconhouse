@@ -130,6 +130,8 @@ type TileRow = {
   totalBox: string;
   pcsBox: string;
   quantityUnit: "Box" | "Pieces";
+  // Existing quoted units are commercial data, even if the catalog has no unit.
+  unitRecorded?: boolean;
   priceBasis?: "box" | "sqft" | "piece";
   total: string;
   totalEdited: boolean;
@@ -436,6 +438,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
           totalBox: it.qty ? String(it.qty) : "",
           pcsBox: it.pcs_per_box || "",
           quantityUnit: restoredQuantityUnit(it.quantity_unit),
+          unitRecorded: Boolean(it.quantity_unit || it.price_basis),
           priceBasis: it.price_basis || (restoredQuantityUnit(it.quantity_unit) === "Pieces" ? "piece" : "sqft"),
           total: it.net_amount != null ? String(it.net_amount) : "",
           totalEdited: false,
@@ -539,7 +542,9 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
       const finishVariants = candidates.filter(v => v.id && v.finish && String(v.size || v.dimensions || "").replace(/\s/g, "").replace(/×/g, "x").toLowerCase() === currentSize).map(v => ({ id: v.id!, finish: v.finish! }));
       setRows((current) => current.map((row) => {
         if (row.key !== key || row.productId !== productId) return row;
-        const corrected = !["ordered", "cancelled"].includes(String(status).toLowerCase()) && tileQuantityUnit(tileSourcePriceUnit(product.specs)) === "Pieces"
+        const sourceUnit = tileSourcePriceUnit(product.specs);
+        const preserveRecordedUnit = !String(sourceUnit || "").trim() && row.unitRecorded !== false && Boolean(row.lineId);
+        const corrected = !preserveRecordedUnit && !["ordered", "cancelled"].includes(String(status).toLowerCase()) && tileQuantityUnit(sourceUnit) === "Pieces"
           && row.quantityUnit !== "Pieces"
           ? { quantityUnit: "Pieces" as const, priceBasis: "piece" as const, rateBox: row.offerRate.trim() || row.rateSqft.trim() || row.rateBox, offerRate: row.offerRate.trim() || row.rateSqft.trim() || row.rateBox, rateSqft: "", boxSqft: "", total: "", totalEdited: false, inferredCoverage: undefined }
           : {};
@@ -608,6 +613,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
         // quantity must stay blank until they enter their intended amount.
         totalBox: row.totalBox === "" ? "1" : row.totalBox,
         quantityUnit: isPerPiece ? "Pieces" : "Box",
+        unitRecorded: true,
         priceBasis: isPerPiece ? "piece" : isPerBox ? "box" : "sqft",
         totalEdited: false,
         availableSizes: validTileSizes(product.available_sizes),

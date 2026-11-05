@@ -54,6 +54,7 @@ test('critical saved quotation corrects a piece unit and preserves the offer', a
   await page.route('**/api/products/unit-missing/size-variants', route => route.fulfill({ json: { available_sizes: [product.size], product: { ...product, id: 'unit-missing', specs: {} } } }));
   const doc = { id: 'piece-quote', doc_type: 'tiles_quotation', floor_id: 'ground-floor', status: 'draft', customer_name: 'Customer', updated_at: '2026-11-01T00:00:00Z', items: [{ id: 'line', product_id: product.id, sku: product.sku, name: product.name, image, size: product.size, mrp: 220, rate_sqft: 220, offer_rate: 100, rate_box: 220, qty: 1, quantity_unit: 'Box', price_basis: 'sqft' }, { id: 'line-2', product_id: product.id, sku: product.sku, name: product.name, image, size: product.size, rate_box: 220, offer_rate: 100, qty: 1, quantity_unit: 'Box', price_basis: 'sqft' }] };
   doc.items.push({ id: 'line-3', product_id: 'unit-missing', sku: product.sku, name: product.name, image, size: product.size, rate_box: 220, offer_rate: 100, qty: 1, quantity_unit: 'Box', price_basis: 'sqft' });
+  doc.items.push({ id: 'line-4', product_id: 'unit-missing', sku: product.sku, name: product.name, image, size: product.size, rate_box: 220, offer_rate: 100, qty: 1 } as any);
   await page.route(/\/api\/quotations\/piece-quote(?:\?.*)?$/, route => route.fulfill({ json: doc }));
   await page.goto('/tiles/quotation?id=piece-quote');
   const offer = page.locator('[data-testid="tiles-offer-rate-0"], [data-testid="mobile-offerRate-0"]');
@@ -62,7 +63,9 @@ test('critical saved quotation corrects a piece unit and preserves the offer', a
   await expect(total).toHaveValue('100');
   await expect(page.locator('[data-testid="tiles-quantity-unit-0"], [data-testid="mobile-quantity-unit-0"]')).toHaveText('Piece');
   await expect(page.locator('[data-testid="tiles-quantity-unit-1"], [data-testid="mobile-quantity-unit-1"]')).toHaveText('Piece');
-  await expect(page.locator('[data-testid="tiles-quantity-unit-2"], [data-testid="mobile-quantity-unit-2"]')).toHaveText('Piece');
+  await expect(page.locator('[data-testid="tiles-quantity-unit-2"], [data-testid="mobile-quantity-unit-2"]')).toHaveText('Box');
+  await expect(page.locator('[data-testid="tiles-total-2"], [data-testid="mobile-total-2"]')).toHaveValue('220');
+  await expect(page.locator('[data-testid="tiles-quantity-unit-3"], [data-testid="mobile-quantity-unit-3"]')).toHaveText('Piece');
   await expect(page.getByTestId('mobile-rateSqft-0')).toHaveCount(0);
   if (test.info().project.name === 'phone') await expect(page.getByTestId('mobile-piece-rate-0')).toContainText('220');
 });
