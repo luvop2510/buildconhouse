@@ -164,7 +164,7 @@ def test_confirmed_customers_excludes_walkins_drafts_and_other_floor(monkeypatch
     ])
     monkeypatch.setattr(customer_routes, "db", SimpleNamespace(customers=customers, quotations=quotations, customer_orders=Store(), purchase_orders=Store()))
     result = asyncio.run(customer_routes.list_customers(Response(), skip=0, limit=500, confirmed_only=True, user=user()))
-    assert {row.id for row in result} == {"ordered", "won"}
+    assert {row.id for row in result} == {"ordered"}
     # Internal customer selection still resolves prospective identities.
     result = asyncio.run(customer_routes.list_customers(Response(), skip=0, limit=500, confirmed_only=False, user=user()))
     assert len(result) == 5

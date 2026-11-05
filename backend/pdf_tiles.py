@@ -17,6 +17,7 @@ pdf_generator so there is exactly one implementation of those in the codebase.
 """
 from __future__ import annotations
 from services.phone_format import format_phone
+from services.referrer_identity import pdf_reference_label
 
 import functools
 from datetime import datetime
@@ -29,7 +30,7 @@ from reportlab.lib.units import mm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import (
-    Flowable, HRFlowable, Image, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle,
+    CondPageBreak, Flowable, HRFlowable, Image, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle,
 )
 
 from pdf_generator import (
@@ -236,8 +237,8 @@ def _meta_grid(quotation: dict, customer: dict, styles: dict) -> Table:
         quotation.get("doc_date") or created,
         quotation.get("doc_number") or quotation.get("number") or "",
     ]
-    row2_labels = ["ADDRESS", "", "", ""]
-    row2_values = [quotation.get("address_snapshot") or "", "", "", ""]
+    row2_labels = ["REFERENCE", "ATTENDED BY", "PREPARED BY", "ADDRESS"]
+    row2_values = [pdf_reference_label(quotation), quotation.get("attended_by") or "", quotation.get("prepared_by") or "", quotation.get("address_snapshot") or customer.get("address") or ""]
     data = [
         [Paragraph(label, styles["metaLabel"]) for label in row1_labels],
         [Paragraph(_escape(value) or "&nbsp;", styles["metaValue"]) for value in row1_values],
@@ -249,7 +250,6 @@ def _meta_grid(quotation: dict, customer: dict, styles: dict) -> Table:
         # A single explicit grid avoids the disconnected, partial form rules
         # seen in printed selections. ReportLab draws continuous straight
         # horizontal and vertical strokes around every field.
-        ("SPAN", (0, 2), (-1, 2)), ("SPAN", (0, 3), (-1, 3)),
         ("BOX", (0, 0), (-1, -1), 0.7, INK),
         ("INNERGRID", (0, 0), (-1, -1), 0.7, INK),
         ("VALIGN", (0, 0), (-1, -1), "BOTTOM"),
@@ -384,8 +384,8 @@ def build_tiles_selection_pdf(quotation: dict, customer: dict, branding: dict | 
     # printable first-page frame.
     story.extend(_brand_terms_signature_block(styles, b))
 
-    # --- PRODUCT DETAILS (page 2+) — one flowing table, auto-paginates ------
-    story.append(PageBreak())
+    # Start products on the cover when a header and a product row fit.
+    story.append(CondPageBreak(60 * mm))
     story.append(_header_block("PRODUCT DETAILS", f"Items 1&ndash;{len(items)}" if items else "No items yet", styles))
     story.extend([Spacer(1, 2.5 * mm), HRFlowable(width="100%", thickness=1.1, color=INK, spaceAfter=3 * mm)])
 
@@ -407,7 +407,7 @@ def build_tiles_selection_pdf(quotation: dict, customer: dict, branding: dict | 
             Paragraph(_escape(item.get("room") or ""), styles["cell"]),
             Paragraph(_escape(item.get("name") or ""), styles["cellBold"]),
             Paragraph(_escape(item.get("size") or ""), styles["cell"]),
-            Paragraph(((_money(item.get("rate_box") or item.get("unit_price") or 0) + "<br/>per piece") if _quantity_unit(item.get("quantity_unit")) == "Pieces" else ((_money(item.get("rate_box") or item.get("unit_price") or 0) + "<br/>per box") if item.get("price_basis") == "box" else (_fmt_rate_sqft(item.get("rate_sqft")) + "<br/>per sq.ft"))), styles["cellRed"]),
+            Paragraph(_money(item.get("offer_rate") if item.get("offer_rate") is not None else (item.get("rate_sqft") if item.get("rate_sqft") is not None else item.get("unit_price") or 0)), styles["cellRed"]),
         ])
     style_cmds = [
         ("GRID", (0, 0), (-1, -1), 0.7, GRID),
@@ -437,7 +437,7 @@ def build_tiles_selection_pdf(quotation: dict, customer: dict, branding: dict | 
 # TILES QUOTATION
 # ===========================================================================
 # Preserve all original product-detail columns and their order on portrait A4.
-_QUO_COLS = [width * mm for width in (7, 32, 18, 32, 16, 13, 13, 15, 10, 10, 28)]
+_QUO_COLS = [width * mm for width in (7, 32, 18, 38, 18, 22, 16, 12, 31)]
 QUOTATION_PRODUCT_IMAGE_WIDTH_MM = 28.0
 QUOTATION_PRODUCT_IMAGE_HEIGHT_MM = QUOTATION_PRODUCT_IMAGE_WIDTH_MM / (16 / 10)
 
@@ -510,19 +510,17 @@ def build_tiles_quotation_pdf(quotation: dict, customer: dict, branding: dict | 
     head = [
         Paragraph("SR.<br/>NO.", styles["colHead"]), Paragraph("PRODUCT IMAGE", styles["colHead"]),
         Paragraph("AREA", styles["colHead"]), Paragraph("PRODUCT DETAIL", styles["colHead"]),
-        Paragraph("SIZE", styles["colHead"]), Paragraph("RATE/<br/>SQ.FT", styles["colHeadRed"]),
-        Paragraph("OFFER<br/>RATE", styles["colHead"]), Paragraph("RATE/<br/>UNIT", styles["colHead"]),
+        Paragraph("SIZE", styles["colHead"]),
+        Paragraph("OFFER<br/>RATE", styles["colHead"]),
         _SingleLineParagraph("QUANTITY", styles["colHead"]), Paragraph("UNIT", styles["colHead"]),
         _SingleLineParagraph(f"TOTAL ({_currency_symbol()})", styles["colHead"]),
     ]
     rows: list[list[object]] = [head]
     for index, item in enumerate(items, 1):
         qty = float(item.get("qty") or 0)
-        rate_box = float(item.get("rate_box") if item.get("rate_box") is not None else (item.get("unit_price") or 0))
         offer_rate = float(item.get("offer_rate") if item.get("offer_rate") is not None else (item.get("rate_sqft") if item.get("rate_sqft") is not None else item.get("unit_price") or 0))
         line_total = float(item.get("net_amount") if item.get("net_amount") is not None else qty * float(item.get("unit_price") or 0))
         quantity_unit = _quantity_unit(item.get("quantity_unit"))
-        rate_sqft_text = "" if quantity_unit == "Pieces" or item.get("price_basis") == "box" else _fmt_rate_sqft(item.get("rate_sqft"))
         rows.append([
             Paragraph(str(index), styles["cell"]),
             _img(
@@ -534,9 +532,7 @@ def build_tiles_quotation_pdf(quotation: dict, customer: dict, branding: dict | 
             Paragraph(_escape(item.get("room") or ""), styles["cell"]),
             Paragraph(_escape(item.get("name") or ""), styles["cellBold"]),
             Paragraph(_escape(item.get("size") or ""), styles["cell"]),
-            Paragraph(rate_sqft_text, styles["cellRed"]),
             _SingleLineParagraph(_money(offer_rate) if offer_rate else "", styles["cellOffer"]),
-            _SingleLineParagraph(_money(rate_box) if rate_box else "", styles["cell"]),
             # The detail table separates the count from its fulfillment unit:
             # quantity stays numeric while the adjacent column says box/piece.
             # Keep _quantity_label for the summary, where the combined unit is

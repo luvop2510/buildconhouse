@@ -758,10 +758,7 @@ def test_customer_pdf_reference_contains_only_typed_name(builder, kind, prefix):
     doc = {"customer_name": "Customer", "reference_source": "Reference", "referrer_name": "Nikita Shah",
            "referrer_type": kind, "referrer_id": "4d2a6042-78a7-453b-a7be-97d60ed4571d", "items": []}
     text = " ".join((page.extract_text() or "") for page in PdfReader(BytesIO(builder(doc, {"name": "Customer"}))).pages)
-    if builder is pdf_generator.build_quotation_pdf:
-        assert f"{prefix}-Nikita Shah" in text
-    else:
-        assert "Nikita Shah" not in text
+    assert f"{prefix}-Nikita Shah" in text
     assert "4D2A6042" not in text
     assert "Reference ·" not in text
 

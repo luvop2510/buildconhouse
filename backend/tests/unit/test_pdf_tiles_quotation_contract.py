@@ -18,7 +18,7 @@ def _pdf_text(quotation: dict) -> str:
     )
 
 
-def test_tiles_pdf_uses_rate_per_sqft_offer_rate_and_quantity_unit():
+def test_tiles_pdf_uses_offer_rate_and_quantity_unit():
     text = _pdf_text({
         "customer_name": "PDF Contract",
         "doc_date": "06-08-2026",
@@ -38,8 +38,9 @@ def test_tiles_pdf_uses_rate_per_sqft_offer_rate_and_quantity_unit():
         "grand_total": 4440,
     })
 
-    assert "RATE/ SQ.FT OFFER RATE RATE/ UNIT QUANTITY UNIT" in text
-    assert "70 ₹ 70.00" in text
+    assert "OFFER RATE QUANTITY UNIT" in text
+    assert "RATE/ SQ.FT" not in text and "RATE/ UNIT" not in text
+    assert "₹ 70.00" in text
     assert "QUANTITY UNIT" in text
     assert "PIECES/ BOX" not in text
     assert "2 box ₹ 4,340.00" in text
@@ -61,7 +62,6 @@ def test_tiles_pdf_keeps_large_amounts_and_currency_header_on_single_lines():
     detail_lines = [line.strip() for line in (pages[1].extract_text() or "").splitlines()]
     symbol = "₹" if pdf_generator.RUPEE_FONT else "Rs."
     assert f"TOTAL ({symbol})" in detail_lines
-    assert f"{symbol} 1,23,45,678.90" in detail_lines
     assert f"{symbol} 2,46,91,357.80" in detail_lines
     assert f"{symbol} 1,23,456.70" in detail_lines
 
@@ -266,12 +266,13 @@ def test_tile_customer_and_reference_cells_grow_to_fit_wrapped_values():
     assert all(height >= 7 * mm for height in (long._rowHeights[1], long._rowHeights[3]))
 
 
-def test_selection_displays_piece_price_and_omits_removed_fields():
+def test_selection_displays_piece_price_and_reference_and_staff():
     pdf = pdf_tiles.build_tiles_selection_pdf({
         "customer_name": "Selection", "reference_source": "Private Reference",
         "attended_by": "Attendant", "prepared_by": "Preparer",
         "items": [{"name": "Imported tile", "qty": 1, "quantity_unit": "Pieces", "rate_box": 160, "unit_price": 160}],
     }, {"name": "Selection"})
     text = " ".join(" ".join((page.extract_text() or "").split()) for page in PdfReader(BytesIO(pdf)).pages)
-    assert "160.00 per piece" in text
-    assert "ATTENDED BY" not in text and "PREPARED BY" not in text and "REFERENCE" not in text
+    assert "160.00" in text
+    assert all(value in text for value in ("REFERENCE", "Private Reference", "ATTENDED BY", "Attendant", "PREPARED BY", "Preparer"))
+    assert "Imported tile" in (PdfReader(BytesIO(pdf)).pages[0].extract_text() or "")

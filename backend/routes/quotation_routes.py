@@ -56,6 +56,16 @@ router = APIRouter(prefix="/quotations", tags=["quotations"])
 logger = logging.getLogger("forge.quotations")
 
 
+@router.get("/staff-names")
+async def quotation_staff_names(user: UserPublic = Depends(get_current_user)):
+    """Minimal staff directory for document attribution."""
+    require_floor_access(TILES_FLOOR_ID, user)
+    return await db.users.find(
+        {"deleted_at": {"$exists": False}},
+        {"_id": 0, "id": 1, "full_name": 1},
+    ).sort("full_name", 1).to_list(None)
+
+
 class QuotationLineMutation(BaseModel):
     """A focused product edit used by the customer/order-management UI.
 

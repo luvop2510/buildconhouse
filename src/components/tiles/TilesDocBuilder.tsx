@@ -1,10 +1,10 @@
 import { ExistingTileCustomer } from "./ExistingTileCustomer";
+import { clearsManualTileTotal, tileLineTotal, tileRateWithoutCoverage, tileUnitRate } from "./tilePriceEdits";
 import { formatPhone } from "@/src/utils/phone";
 import { useAuth } from "@/src/state/auth";
 import { useActionAccess } from "@/src/hooks/use-permissions";
 import { useInputActive } from "@/src/hooks/use-input-active";
 import { canManageDestructiveData } from "@/src/constants/roles";
-import { referrerLabel } from "@/src/utils/referrer";
 import { ReferrerField, type ReferrerValue } from "@/src/components/customer/ReferrerField";
 // TilesDocBuilder — Ground Floor → Tiles → Selection / Quotation.
 // -----------------------------------------------------------------------------
@@ -219,12 +219,7 @@ function derivedTileBoxRate(row: TileRow): number | null {
 // the quotation subtotal cannot drift apart. A typed total remains an explicit
 // override, matching the value persisted by buildItems().
 function resolvedLineTotal(row: TileRow): number {
-  const manualTotal = num(row.total);
-  if (row.totalEdited && manualTotal > 0) return manualTotal;
-
-  const quantity = num(row.totalBox);
-  const unitRate = (derivedTileBoxRate(row) ?? num(row.rateBox)) || effectiveTileRate(row);
-  return quantity * unitRate;
+  return tileLineTotal(row);
 }
 
 function lineTotalInputValue(row: TileRow): string {
@@ -406,7 +401,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
         setCustomerId(doc.customer_id || null);
         customerIdRef.current = doc.customer_id || null;
         setCustomerSnapshot({ name: doc.customer_name || "", phone: doc.phone_snapshot || "" });
-        setLegacyPartnerLabel(referrerLabel(doc));
+        setLegacyPartnerLabel(doc.referrer_name || "");
         setPartner(doc.referrer_id && doc.referrer_type ? { id: doc.referrer_id, type: doc.referrer_type, name: doc.referrer_name || "", company: doc.referrer_company } : null);
         setHeader({
           customerName: doc.customer_name || "",
@@ -500,9 +495,12 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
       if (next.quantityUnit === "Box" && ("offerRate" in patch || "boxSqft" in patch || ("rateSqft" in patch && row.offerRateIsFallback))) {
         const derived = derivedTileBoxRate(next);
         if (derived !== null) next.rateBox = String(derived);
+        else if (next.priceBasis !== "box" && "offerRate" in patch) next.rateBox = tileRateWithoutCoverage(row, next.offerRate);
       }
-      // Editable values are sent to the backend pricing engine. The
-      // presentation layer does not derive prices or line totals.
+      if (clearsManualTileTotal(patch)) {
+        next.totalEdited = false;
+        next.total = "";
+      }
       if ("total" in patch) next.totalEdited = true;
       return next;
     }));
@@ -677,8 +675,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
       .map((row, index) => {
         const qty = num(row.totalBox);
         const manualTotal = num(row.total);
-        const derivedRateBox = derivedTileBoxRate(row);
-        const baseRateBox = (derivedRateBox ?? num(row.rateBox)) || effectiveTileRate(row);
+        const baseRateBox = tileUnitRate(row);
         const rateBox = row.totalEdited && manualTotal > 0 && qty > 0
           ? Math.round(manualTotal / qty * 100) / 100
           : baseRateBox;
@@ -1020,9 +1017,9 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
     setCustomerId(customer.id);
     customerIdRef.current = customer.id;
     setCustomerSnapshot({ name: customer.name, phone: customer.phone || "" });
-    setLegacyPartnerLabel(referrerLabel(customer));
+    setLegacyPartnerLabel(customer.referrer_name || "");
     setPartner(customer.referrer_id && customer.referrer_type ? { id: customer.referrer_id, type: customer.referrer_type, name: customer.referrer_name || "", company: customer.referrer_company } : null);
-    setHeader((cur) => ({ ...cur, customerName: customer.name, phone: customer.phone || "", address: customer.address || "", reference: referrerLabel(customer) }));
+    setHeader((cur) => ({ ...cur, customerName: customer.name, phone: customer.phone || "", address: customer.address || "", reference: customer.referrer_name || "" }));
     markDirty();
   }, [markDirty]);
 
@@ -1498,6 +1495,36 @@ function SectionHeader({ title, subtitle }: { title: string; subtitle: string })
   );
 }
 
+function StaffNameFields({ doc }: { doc: ReturnType<typeof useTilesDoc> }) {
+  const [names, setNames] = useState<{ id: string; full_name: string }[]>([]);
+  const [target, setTarget] = useState<"attendedBy" | "preparedBy" | null>(null);
+  const [error, setError] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const open = (field: "attendedBy" | "preparedBy") => {
+    setTarget(field); setError(false); setLoading(true);
+    api.get<{ id: string; full_name: string }[]>("/quotations/staff-names", { floorId: TILES_FLOOR_ID })
+      .then(setNames).catch(() => setError(true)).finally(() => setLoading(false));
+  };
+  return <View style={{ gap: spacing.sm }}>
+    <Text style={type.label}>Prepared and attended by</Text>
+    {([ ["attendedBy", "Attended by"], ["preparedBy", "Prepared by"] ] as const).map(([field, label]) =>
+      <View key={field} style={{ gap: spacing.sm }}>
+        <TextField label={label} value={doc.header[field]} onChangeText={(value: string) => doc.setHeaderField(field, value)} />
+        <Button label={`Choose ${label.toLowerCase()}`} variant="secondary" onPress={() => open(field)} />
+      </View>)}
+    <Modal visible={target !== null} transparent animationType="slide" onRequestClose={() => setTarget(null)}>
+      <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" }}>
+        <View style={{ backgroundColor: "white", padding: spacing.lg, maxHeight: "75%", gap: spacing.sm }}>
+          <Text style={type.titleSm}>Choose a staff member</Text>
+          {loading ? <ActivityIndicator /> : error ? <Button label="Retry staff list" onPress={() => target && open(target)} /> :
+            <ScrollView keyboardShouldPersistTaps="handled">{names.map(person => <Pressable key={person.id} accessibilityRole="button" onPress={() => { if (target) doc.setHeaderField(target, person.full_name); setTarget(null); }} style={{ minHeight: 44, justifyContent: "center" }}><Text style={type.body}>{person.full_name}</Text></Pressable>)}</ScrollView>}
+          <Button label="Close" variant="secondary" onPress={() => setTarget(null)} />
+        </View>
+      </View>
+    </Modal>
+  </View>;
+}
+
 function MetaGrid({ doc }: { doc: ReturnType<typeof useTilesDoc> }) {
   const row2 = [
     { label: "ADDRESS", value: doc.header.address, onChange: (t: string) => doc.setHeaderField("address", t) },
@@ -1505,7 +1532,7 @@ function MetaGrid({ doc }: { doc: ReturnType<typeof useTilesDoc> }) {
   return (
     <View style={metaStyles.grid}>
       {!doc.partner && doc.legacyPartnerLabel ? <Text style={type.caption}>Recorded reference: {doc.legacyPartnerLabel}</Text> : null}
-      <View style={{ marginBottom: 20 }}><ReferrerField key={doc.referenceScope} label="Architect / interior designer" floorId={TILES_FLOOR_ID} value={doc.partner} onChange={doc.pickPartner} /></View>
+      <View style={{ marginBottom: 20 }}><ReferrerField key={doc.referenceScope} label="Architect / interior designer" floorId={TILES_FLOOR_ID} value={doc.partner} onChange={doc.pickPartner} showCode={false} /></View>
       <View style={metaStyles.row}>
         <View style={metaStyles.cell}>
           <Text style={metaStyles.label}>CUSTOMER NAME</Text>
@@ -1541,6 +1568,8 @@ function MetaGrid({ doc }: { doc: ReturnType<typeof useTilesDoc> }) {
           </View>
         ))}
       </View>
+      <TextField label="Reference" value={doc.header.reference} onChangeText={(value: string) => doc.setHeaderField("reference", value)} />
+      <StaffNameFields doc={doc} />
     </View>
   );
 }
@@ -1747,8 +1776,7 @@ function SelectionPaper(doc: ReturnType<typeof useTilesDoc>) {
               <TileFinishField row={row} onSelect={(id) => doc.selectRowFinish(row.key, id)} testID={`tiles-finish-${index}`} />
             </View>
             <View style={[selStyles.td, flex(5), { borderRightWidth: 0 }]}>
-              <CellInput value={row.quantityUnit === "Pieces" || row.priceBasis === "box" ? row.rateBox : row.rateSqft} onChangeText={(t) => doc.updateRow(row.key, row.quantityUnit === "Pieces" || row.priceBasis === "box" ? { rateBox: t, offerRate: t } : { rateSqft: t })} red bold testID={`tiles-rate-${index}`} />
-              <Text style={selStyles.th}>{row.quantityUnit === "Pieces" ? "per piece" : row.priceBasis === "box" ? "per box" : "per sq.ft"}</Text>
+              <CellInput value={row.offerRate} onChangeText={(t) => doc.updateRow(row.key, { offerRate: t })} red bold testID={`tiles-rate-${index}`} />
             </View>
             <RowSideControls
               isLast={index === doc.rows.length - 1}
@@ -1796,7 +1824,7 @@ const selStyles = StyleSheet.create({
 // SR / PRODUCT IMAGE / AREA / PRODUCT DETAIL / SIZE / RATE-SQFT / OFFER RATE /
 // RATE-UNIT / QUANTITY / UNIT / TOTAL — mirrors pdf_tiles.py's _QUO_COLS.
 // Matches backend/pdf_tiles.py's _QUO_COLS, normalized here as proportions.
-const QUO_COLS = [10, 50, 20, 46, 21, 21, 21, 21, 19, 18, 34];
+const QUO_COLS = [10, 50, 20, 46, 21, 26, 24, 18, 34];
 const QUO_COL_TOTAL = QUO_COLS.reduce((total, width) => total + width, 0);
 
 function QuotationPaper(doc: ReturnType<typeof useTilesDoc>) {
@@ -1817,7 +1845,7 @@ function QuotationPaper(doc: ReturnType<typeof useTilesDoc>) {
 
   const headLabels = [
     "SR.\nNO.", "PRODUCT IMAGE", "AREA", "PRODUCT DETAIL", "SIZE",
-    "RATE/\nSQ.FT", "OFFER\nRATE", "RATE/\nUNIT", "QUANTITY", "UNIT", "TOTAL\n(Rs.)",
+    "OFFER\nRATE", "QUANTITY", "UNIT", "TOTAL\n(Rs.)",
   ];
   return (
     <View style={{ gap: spacing.lg }}>
@@ -1877,21 +1905,15 @@ function QuotationPaper(doc: ReturnType<typeof useTilesDoc>) {
               <TileFinishField row={row} onSelect={(id) => doc.selectRowFinish(row.key, id)} testID={`tiles-finish-${index}`} />
             </View>
             <View style={[quoStyles.td, flex(5)]}>
-              {(row.quantityUnit === "Pieces" || row.priceBasis === "box") ? <Text style={quoStyles.cellText}>—</Text> : <CellInput value={row.rateSqft} onChangeText={(t) => doc.updateRow(row.key, { rateSqft: t })} red bold testID={`tiles-rate-sqft-${index}`} />}
-            </View>
-            <View style={[quoStyles.td, flex(6)]}>
               <CellInput value={row.offerRate} onChangeText={(t) => doc.updateRow(row.key, { offerRate: t })} bold testID={`tiles-offer-rate-${index}`} />
             </View>
-            <View style={[quoStyles.td, flex(7)]}>
-              <CellInput value={row.rateBox} onChangeText={(t) => doc.updateRow(row.key, { rateBox: t })} testID={`tiles-rate-box-${index}`} />
-            </View>
-            <View style={[quoStyles.td, flex(8)]}>
+            <View style={[quoStyles.td, flex(6)]}>
               <CellInput value={row.totalBox} onChangeText={(t) => doc.updateRow(row.key, { totalBox: t })} bold testID={`tiles-total-box-${index}`} />
             </View>
-            <View style={[quoStyles.td, flex(9)]}>
+            <View style={[quoStyles.td, flex(7)]}>
               <Text style={quoStyles.cellText} testID={`tiles-quantity-unit-${index}`}>{row.productId ? quantityUnitLabel(row.quantityUnit) : ""}</Text>
             </View>
-            <View style={[quoStyles.td, flex(10), { borderRightWidth: 0 }]}>
+            <View style={[quoStyles.td, flex(8), { borderRightWidth: 0 }]}>
               <CellInput value={lineTotalInputValue(row)} onChangeText={(t) => doc.updateRow(row.key, { total: t })} testID={`tiles-total-${index}`} />
             </View>
             <RowSideControls
@@ -1912,9 +1934,7 @@ function QuotationPaper(doc: ReturnType<typeof useTilesDoc>) {
           <View style={[quoStyles.td, flex(5)]} />
           <View style={[quoStyles.td, flex(6)]} />
           <View style={[quoStyles.td, flex(7)]} />
-          <View style={[quoStyles.td, flex(8)]} />
-          <View style={[quoStyles.td, flex(9)]} />
-          <View style={[quoStyles.td, flex(10), { borderRightWidth: 0 }]}>
+          <View style={[quoStyles.td, flex(8), { borderRightWidth: 0 }]}>
             <Text style={[quoStyles.cellText, { fontWeight: "700" }]}>{money(totals.subtotal)}</Text>
           </View>
         </View>
@@ -1970,15 +1990,13 @@ const MOBILE_FIELDS: Record<TilesDocType, MobileFieldDef[]> = {
     { key: "area", label: "Area / Room" },
     { key: "size", label: "Size" },
     { key: "finish", label: "Finish" },
-    { key: "rateSqft", label: "Rate / Sq.Ft", numeric: true, suffix: "per sq.ft" },
+    { key: "offerRate", label: "Offer Rate", numeric: true },
   ],
   tiles_quotation: [
     { key: "area", label: "Area / Room" },
     { key: "size", label: "Size" },
     { key: "finish", label: "Finish" },
-    { key: "rateSqft", label: "Rate / Sq.Ft", numeric: true },
     { key: "offerRate", label: "Offer Rate", numeric: true },
-    { key: "rateBox", label: "Rate / Unit", numeric: true },
     { key: "totalBox", label: "Quantity", numeric: true },
     { key: "quantityUnit", label: "Unit" },
     { key: "total", label: "Line Total (Rs.)", numeric: true },
@@ -2197,10 +2215,12 @@ function MobileTilesEditor({
                 </View>
                 <View style={mobileStyles.fieldFull}>
                   {!doc.partner && doc.legacyPartnerLabel ? <Text style={type.caption}>Recorded reference: {doc.legacyPartnerLabel}</Text> : null}
-      <ReferrerField key={doc.referenceScope} label="Architect / interior designer" floorId={TILES_FLOOR_ID} value={doc.partner} onChange={doc.pickPartner} />
+      <ReferrerField key={doc.referenceScope} label="Architect / interior designer" floorId={TILES_FLOOR_ID} value={doc.partner} onChange={doc.pickPartner} showCode={false} />
                 </View>
               </Disclosure>
               <TextField label={isSelection ? "Address" : "Address (required)"} value={doc.header.address} onChangeText={(t: string) => doc.setHeaderField("address", t)} multiline scrollEnabled={false} style={Platform.OS === "web" ? { overflow: "hidden" } : undefined} testID="mobile-address" />
+              <TextField label="Reference" value={doc.header.reference} onChangeText={(value: string) => doc.setHeaderField("reference", value)} />
+              <StaffNameFields doc={doc} />
             </Card>
 
             <View style={{ gap: spacing.sm }}>

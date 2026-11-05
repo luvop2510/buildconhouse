@@ -83,7 +83,7 @@ async def confirmed_customer_ids(database, user) -> set[str]:
     """
     quotation_ids, tile_ids, purchase_ids = await asyncio.gather(
         database.quotations.distinct(
-            "customer_id", floor_query(user, {"status": {"$in": ["ordered", "won"]}}),
+            "customer_id", floor_query(user, {"status": "ordered"}),
         ),
         database.customer_orders.distinct(
             "customer_id", floor_query(user, {"is_deleted": {"$ne": True}}),

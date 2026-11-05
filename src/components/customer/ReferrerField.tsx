@@ -12,7 +12,7 @@ import { useBp } from "@/src/design/responsive";
 type Referrer = { customers_acquired?: number | null; id: string; name: string; company?: string | null; type: "architect" | "interior_designer" };
 export type ReferrerValue = Pick<Referrer, "id" | "name" | "type" | "company"> | null;
 
-export function ReferrerField({ value, onChange, floorId, label = "Referred By", allowCreate = true, disabled = false }: { value: ReferrerValue; onChange: (value: ReferrerValue) => void; floorId?: string; label?: string; allowCreate?: boolean; disabled?: boolean }) {
+export function ReferrerField({ value, onChange, floorId, label = "Referred By", allowCreate = true, disabled = false, showCode = true }: { value: ReferrerValue; onChange: (value: ReferrerValue) => void; floorId?: string; label?: string; allowCreate?: boolean; disabled?: boolean; showCode?: boolean }) {
   const { isPhone } = useBp();
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<Referrer[]>([]);
@@ -77,7 +77,7 @@ export function ReferrerField({ value, onChange, floorId, label = "Referred By",
   return <View style={{ gap: 6 }}>
     <Text style={type.label}>{label}</Text>
     <Pressable accessibilityRole="button" accessibilityLabel={label} disabled={disabled} accessibilityState={{ expanded: open, disabled }} aria-haspopup="dialog" onPress={() => { setSearch(""); setKind("all"); setOpen(true); }} style={{ minHeight: 48, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, paddingHorizontal: spacing.md, justifyContent: "center" }}>
-      <Text style={type.body}>{value ? [value.name, value.company, referrerCode(value.id, value.type, value.name)].filter(Boolean).join(" · ") : "Select architect or interior designer"}</Text>
+      <Text style={type.body}>{value ? [value.name, value.company, showCode ? referrerCode(value.id, value.type, value.name) : null].filter(Boolean).join(" · ") : "Select architect or interior designer"}</Text>
     </Pressable>
     <Sheet visible={open} onClose={close} title="Referred By" variant="bottom" testID="customer-referrer-sheet">
       <ScrollView contentContainerStyle={{ padding: isPhone ? spacing.md : spacing.lg, gap: spacing.sm, paddingBottom: spacing.xxl }} keyboardShouldPersistTaps="handled">
@@ -89,7 +89,7 @@ export function ReferrerField({ value, onChange, floorId, label = "Referred By",
         <TextField label="Search references" placeholder="Name, studio or reference code" value={search} onChangeText={setSearch} />
         {loading ? <LoadingState label="Loading references…" /> : !error && !filtered.length ? <Text style={type.body}>{search.trim() ? "No matching references. Try another name, studio or reference code." : "No existing references in this category."}</Text> : null}
         <Pressable accessibilityRole="button" onPress={() => choose(null)} style={{ minHeight: 44, justifyContent: "center", paddingVertical: spacing.sm }}><Text style={type.body}>No referrer</Text></Pressable>
-        {filtered.slice(0, visibleCount).map((item) => <Pressable key={item.id} accessibilityRole="button" accessibilityLabel={item.name} onPress={() => choose(item)} style={{ minHeight: 44, justifyContent: "center", paddingVertical: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border }}><Text style={type.body}>{[item.name, item.company, referrerCode(item.id, item.type, item.name), item.customers_acquired == null ? null : `${item.customers_acquired} customers brought`].filter(Boolean).join(" · ")}</Text></Pressable>)}
+        {filtered.slice(0, visibleCount).map((item) => <Pressable key={item.id} accessibilityRole="button" accessibilityLabel={item.name} onPress={() => choose(item)} style={{ minHeight: 44, justifyContent: "center", paddingVertical: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border }}><Text style={type.body}>{[item.name, item.company, showCode ? referrerCode(item.id, item.type, item.name) : null, item.customers_acquired == null ? null : `${item.customers_acquired} customers brought`].filter(Boolean).join(" · ")}</Text></Pressable>)}
         {filtered.length > visibleCount ? <Button label="Show more references" variant="secondary" onPress={() => setVisibleCount(count => count + 25)} /> : null}
         {allowCreate && kind === "all" ? <Text style={type.caption}>To add a contact, choose Architect or Interior designer above.</Text> : null}
         {allowCreate && kind !== "all" ? <>

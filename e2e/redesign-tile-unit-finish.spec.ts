@@ -14,7 +14,7 @@ async function fixtures(page: any) {
   await page.route('**/api/quotations?**', (route: any) => route.fulfill({ json: [] }));
 }
 
-function rate(page: any) { return page.locator('[data-testid="tiles-rate-0"], [data-testid="mobile-rateSqft-0"]'); }
+function rate(page: any) { return page.locator('[data-testid="tiles-rate-0"], [data-testid="mobile-offerRate-0"]'); }
 function finish(page: any) { return page.locator('[data-testid="tiles-finish-0"], [data-testid="mobile-tiles-finish-0"]'); }
 
 test('critical imported piece price, optimistic finish and back navigation', async ({ page }) => {
@@ -26,7 +26,6 @@ test('critical imported piece price, optimistic finish and back navigation', asy
   await page.getByRole('button', { name: 'Select a product', exact: true }).first().click();
   await page.getByTestId('tiles-picker-card-finish-matt').click();
   await expect(rate(page)).toHaveValue('160');
-  await expect(page.getByText('per piece', { exact: true })).toBeVisible();
   await expect(finish(page)).toContainText('Matt');
   await finish(page).click();
   await page.getByRole('button', { name: 'Glossy', exact: true }).click();
@@ -46,7 +45,31 @@ test('critical older selection corrects recorded piece unit without changing the
   await page.route(/\/api\/quotations\/legacy(?:\?.*)?$/, route => route.fulfill({ json: doc }));
   await page.goto('/tiles/selection?id=legacy');
   await expect(rate(page)).toHaveValue('160');
-  await expect(page.getByText('per piece', { exact: true })).toBeVisible();
+});
+
+test('critical offer changes replace a manually entered total', async ({ page }) => {
+  await fixtures(page);
+  const doc = { id: 'price-edit', number: 'T-2', doc_type: 'tiles_quotation', floor_id: 'ground-floor', status: 'draft', customer_name: 'Customer', updated_at: '2026-11-01T00:00:00Z', items: [{ id: 'line', product_id: matt.id, sku: matt.sku, name: matt.name, image, size: matt.size, offer_rate: 160, rate_box: 160, unit_price: 160, qty: 2, quantity_unit: 'Pieces', price_basis: 'piece' }] };
+  await page.route(/\/api\/quotations\/price-edit(?:\?.*)?$/, route => route.fulfill({ json: doc }));
+  await page.goto('/tiles/quotation?id=price-edit');
+  const total = page.locator('[data-testid="tiles-total-0"], [data-testid="mobile-total-0"]');
+  const offer = page.locator('[data-testid="tiles-offer-rate-0"], [data-testid="mobile-offerRate-0"]');
+  await expect(total).toHaveValue('320');
+  await total.fill('999');
+  await offer.fill('180');
+  await expect(total).toHaveValue('360');
+});
+
+test('critical staff names are selectable for document attribution', async ({ page }) => {
+  await fixtures(page);
+  await page.route('**/api/quotations/staff-names', route => route.fulfill({ json: [{ id: 'one', full_name: 'First Staff' }, { id: 'two', full_name: 'Second Staff' }] }));
+  await page.goto('/tiles/selection');
+  await page.getByRole('button', { name: 'Choose attended by' }).click();
+  await page.getByRole('button', { name: 'Second Staff' }).click();
+  await expect(page.getByLabel('Attended by', { exact: true })).toHaveValue('Second Staff');
+  await page.getByRole('button', { name: 'Choose prepared by' }).click();
+  await page.getByRole('button', { name: 'First Staff' }).click();
+  await expect(page.getByLabel('Prepared by', { exact: true })).toHaveValue('First Staff');
 });
 
 test('critical finish selection restores the previous value if loading fails', async ({ page }) => {

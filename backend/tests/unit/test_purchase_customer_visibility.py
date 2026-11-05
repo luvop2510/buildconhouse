@@ -42,7 +42,7 @@ def test_confirmation_reads_run_in_parallel_and_keep_only_usable_identities():
         assert await customer_completion.confirmed_customer_ids(database, user()) == {"buyer", "tile", "recipient"}
         quote_query = quotations.distinct.call_args.args[1]
         tile_query = tiles.distinct.call_args.args[1]
-        assert quote_query == {"$and": [{"floor_id": {"$in": ["first-floor"]}}, {"status": {"$in": ["ordered", "won"]}}]}
+        assert quote_query == {"$and": [{"floor_id": {"$in": ["first-floor"]}}, {"status": "ordered"}]}
         assert tile_query == {"$and": [{"floor_id": {"$in": ["first-floor"]}}, {"is_deleted": {"$ne": True}}]}
     asyncio.run(run())
 
