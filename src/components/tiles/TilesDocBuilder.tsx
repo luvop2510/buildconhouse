@@ -115,6 +115,7 @@ type TileRow = {
   name: string;
   image: string | null;
   mrp: number | null;
+  catalogRate?: number | null;
   area: string;
   size: string;
   rateSqft: string;
@@ -538,11 +539,11 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
       const finishVariants = candidates.filter(v => v.id && v.finish && String(v.size || v.dimensions || "").replace(/\s/g, "").replace(/×/g, "x").toLowerCase() === currentSize).map(v => ({ id: v.id!, finish: v.finish! }));
       setRows((current) => current.map((row) => {
         if (row.key !== key || row.productId !== productId) return row;
-        const corrected = docType === "tiles_selection" && tileQuantityUnit(tileSourcePriceUnit(product.specs)) === "Pieces"
+        const corrected = !["ordered", "cancelled"].includes(String(status).toLowerCase()) && tileQuantityUnit(tileSourcePriceUnit(product.specs)) === "Pieces"
           && row.quantityUnit !== "Pieces" && row.rateSqft.trim()
-          ? { quantityUnit: "Pieces" as const, priceBasis: "piece" as const, rateBox: row.rateSqft, offerRate: row.rateSqft, rateSqft: "", boxSqft: "" }
+          ? { quantityUnit: "Pieces" as const, priceBasis: "piece" as const, rateBox: row.offerRate.trim() ? row.offerRate : row.rateSqft, offerRate: row.offerRate.trim() ? row.offerRate : row.rateSqft, rateSqft: "", boxSqft: "", total: "", totalEdited: false, inferredCoverage: undefined }
           : {};
-        return { ...row, ...corrected, availableSizes, finish: product.finish || "", finishVariants };
+        return { ...row, ...corrected, catalogRate: product.price ?? product.mrp ?? null, mrp: row.mrp ?? product.mrp ?? null, availableSizes, finish: product.finish || "", finishVariants };
       }));
     } catch {
       // A missing/legacy family endpoint means this is simply not a
@@ -550,7 +551,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
       // list is available; linked catalog sizes must not become free text.
       setRows((current) => current.map((row) => row.key === key && row.productId === productId ? { ...row, availableSizes: [] } : row));
     }
-  }, [docType]);
+  }, [status]);
 
   const applyProduct = useCallback((key: string, product: Product, history?: { size: string | null; rate_sqft: number | null; rate_box: number | null; pcs_per_box: string | null; box_sqft?: number | null }) => {
     variantRequests.current[key] = (variantRequests.current[key] || 0) + 1;
@@ -594,6 +595,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
         name: product.name,
         image,
         mrp: product.mrp ?? null,
+        catalogRate: product.price ?? product.mrp ?? null,
         size: history?.size || product.size || product.dimensions || row.size,
         rateSqft,
         boxSqft,
@@ -1783,6 +1785,7 @@ function SelectionPaper(doc: ReturnType<typeof useTilesDoc>) {
             </View>
             <View style={[selStyles.td, flex(5), { borderRightWidth: 0 }]}>
               {row.quantityUnit === "Box" && row.priceBasis !== "box" ? <><Text style={selStyles.th}>Rate / Sq.Ft</Text><CellInput value={row.rateSqft} onChangeText={(t) => doc.updateRow(row.key, { rateSqft: t })} testID={`tiles-rate-sqft-${index}`} /></> : null}
+              {row.quantityUnit === "Pieces" && row.catalogRate != null ? <Text style={selStyles.th}>Rate / Piece: {money(row.catalogRate)}</Text> : null}
               <Text style={selStyles.th}>Offer Rate</Text>
               <CellInput value={row.offerRate} onChangeText={(t) => doc.updateRow(row.key, { offerRate: t })} red bold testID={`tiles-rate-${index}`} />
             </View>
@@ -1853,7 +1856,7 @@ function QuotationPaper(doc: ReturnType<typeof useTilesDoc>) {
 
   const headLabels = [
     "SR.\nNO.", "PRODUCT IMAGE", "AREA", "PRODUCT DETAIL", "SIZE",
-    "RATE/\nSQ.FT", "OFFER\nRATE", "QUANTITY", "UNIT", "TOTAL\n(Rs.)",
+    "BASE RATE", "OFFER\nRATE", "QUANTITY", "UNIT", "TOTAL\n(Rs.)",
   ];
   return (
     <View style={{ gap: spacing.lg }}>
@@ -1913,7 +1916,7 @@ function QuotationPaper(doc: ReturnType<typeof useTilesDoc>) {
               <TileFinishField row={row} onSelect={(id) => doc.selectRowFinish(row.key, id)} testID={`tiles-finish-${index}`} />
             </View>
             <View style={[quoStyles.td, flex(5)]}>
-              {(row.quantityUnit === "Pieces" || row.priceBasis === "box") ? <Text style={quoStyles.cellText}>—</Text> : <CellInput value={row.rateSqft} onChangeText={(t) => doc.updateRow(row.key, { rateSqft: t })} red bold testID={`tiles-rate-sqft-${index}`} />}
+              {(row.quantityUnit === "Pieces" || row.priceBasis === "box") ? <Text style={quoStyles.cellText}>{row.quantityUnit === "Pieces" && row.catalogRate != null ? `${money(row.catalogRate)} / piece` : "—"}</Text> : <><Text style={quoStyles.th}>per sq.ft</Text><CellInput value={row.rateSqft} onChangeText={(t) => doc.updateRow(row.key, { rateSqft: t })} red bold testID={`tiles-rate-sqft-${index}`} /></>}
             </View>
             <View style={[quoStyles.td, flex(6)]}>
               <CellInput value={row.offerRate} onChangeText={(t) => doc.updateRow(row.key, { offerRate: t })} bold testID={`tiles-offer-rate-${index}`} />
@@ -1990,7 +1993,7 @@ const quoStyles = StyleSheet.create({
 // paper views call — one document model, one autosave path, one set of
 // backend calls.
 // ---------------------------------------------------------------------------
-type MobileFieldKey = "area" | "size" | "finish" | "rateSqft" | "offerRate" | "rateBox" | "totalBox" | "quantityUnit" | "total";
+type MobileFieldKey = "area" | "size" | "finish" | "rateSqft" | "pieceRate" | "offerRate" | "rateBox" | "totalBox" | "quantityUnit" | "total";
 type MobileFieldDef = { key: MobileFieldKey; label: string; numeric?: boolean; suffix?: string };
 
 // Mirrors SEL_COLS / QUO_COLS above — Selection intentionally carries only
@@ -2003,6 +2006,7 @@ const MOBILE_FIELDS: Record<TilesDocType, MobileFieldDef[]> = {
     { key: "size", label: "Size" },
     { key: "finish", label: "Finish" },
     { key: "rateSqft", label: "Rate / Sq.Ft", numeric: true },
+    { key: "pieceRate", label: "Rate / Piece" },
     { key: "offerRate", label: "Offer Rate", numeric: true },
   ],
   tiles_quotation: [
@@ -2010,6 +2014,7 @@ const MOBILE_FIELDS: Record<TilesDocType, MobileFieldDef[]> = {
     { key: "size", label: "Size" },
     { key: "finish", label: "Finish" },
     { key: "rateSqft", label: "Rate / Sq.Ft", numeric: true },
+    { key: "pieceRate", label: "Rate / Piece" },
     { key: "offerRate", label: "Offer Rate", numeric: true },
     { key: "totalBox", label: "Quantity", numeric: true },
     { key: "quantityUnit", label: "Unit" },
@@ -2097,7 +2102,7 @@ function MobileRowCard({
       </View>
 
       <View style={[mobileStyles.fieldStack, compact && mobileStyles.fieldGrid]}>
-        {fields.filter(f => !(f.key === "finish" && (docType === "tiles_selection" ? (row.finishVariants?.length || 0) < 2 : !row.finish)) && !(f.key === "rateSqft" && (row.quantityUnit === "Pieces" || row.priceBasis === "box"))).map((f) => (
+        {fields.filter(f => !(f.key === "finish" && (docType === "tiles_selection" ? (row.finishVariants?.length || 0) < 2 : !row.finish)) && !(f.key === "rateSqft" && (row.quantityUnit === "Pieces" || row.priceBasis === "box")) && !(f.key === "pieceRate" && (row.quantityUnit !== "Pieces" || row.catalogRate == null))).map((f) => (
           <View key={f.key} style={compact && !(isPhone && f.key === "area") ? { width: fieldColumns === 3 ? "32%" : "49%", minWidth: 0 } : mobileStyles.fieldFull}>
             {f.key === "size" ? (
               <View style={{ gap: spacing.sm }}>
@@ -2113,6 +2118,8 @@ function MobileRowCard({
               </View>
             ) : f.key === "finish" ? (
               <View style={{ gap: spacing.sm }}><TileFinishField row={row} onSelect={(id) => doc.selectRowFinish(row.key, id)} testID={`mobile-tiles-finish-${index}`} mobile /></View>
+            ) : f.key === "pieceRate" ? (
+              <><Text style={type.label}>Rate / Piece</Text><Text style={type.body} testID={`mobile-piece-rate-${index}`}>{money(row.catalogRate || 0)}</Text></>
             ) : f.key === "quantityUnit" ? (
               <>
                 <Text style={type.label}>Unit</Text>

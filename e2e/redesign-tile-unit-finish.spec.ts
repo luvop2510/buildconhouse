@@ -47,6 +47,22 @@ test('critical older selection corrects recorded piece unit without changing the
   await expect(rate(page)).toHaveValue('160');
 });
 
+test('critical saved quotation corrects a piece unit and preserves the offer', async ({ page }) => {
+  await fixtures(page);
+  const product = { ...matt, id: 'piece220', sku: 'PIECE220', name: 'Piece tile', price: 220, mrp: 220, specs: { price_unit: 'per piece' } };
+  await page.route('**/api/products/piece220/size-variants', route => route.fulfill({ json: { available_sizes: [product.size], product } }));
+  const doc = { id: 'piece-quote', doc_type: 'tiles_quotation', floor_id: 'ground-floor', status: 'draft', customer_name: 'Customer', updated_at: '2026-11-01T00:00:00Z', items: [{ id: 'line', product_id: product.id, sku: product.sku, name: product.name, image, size: product.size, mrp: 220, rate_sqft: 220, offer_rate: 100, rate_box: 220, qty: 1, quantity_unit: 'Box', price_basis: 'sqft' }] };
+  await page.route(/\/api\/quotations\/piece-quote(?:\?.*)?$/, route => route.fulfill({ json: doc }));
+  await page.goto('/tiles/quotation?id=piece-quote');
+  const offer = page.locator('[data-testid="tiles-offer-rate-0"], [data-testid="mobile-offerRate-0"]');
+  const total = page.locator('[data-testid="tiles-total-0"], [data-testid="mobile-total-0"]');
+  await expect(offer).toHaveValue('100');
+  await expect(total).toHaveValue('100');
+  await expect(page.locator('[data-testid="tiles-quantity-unit-0"], [data-testid="mobile-quantity-unit-0"]')).toHaveText('Piece');
+  await expect(page.getByTestId('mobile-rateSqft-0')).toHaveCount(0);
+  if (test.info().project.name === 'phone') await expect(page.getByTestId('mobile-piece-rate-0')).toContainText('220');
+});
+
 test('critical offer changes replace a manually entered total', async ({ page }) => {
   await fixtures(page);
   const doc = { id: 'price-edit', number: 'T-2', doc_type: 'tiles_quotation', floor_id: 'ground-floor', status: 'draft', customer_name: 'Customer', updated_at: '2026-11-01T00:00:00Z', items: [{ id: 'line', product_id: matt.id, sku: matt.sku, name: matt.name, image, size: matt.size, offer_rate: 160, rate_box: 160, unit_price: 160, qty: 2, quantity_unit: 'Pieces', price_basis: 'piece' }] };
