@@ -211,7 +211,7 @@ export default function QuotationTilesList() {
       } />
 
       <MobileFilterSection testID="tiles-filters">
-      <View style={{ paddingHorizontal: spacing.lg, paddingTop: spacing.md }}><SearchField value={search} onChangeText={setSearch} onClear={() => setSearch("")} placeholder="Search customer or document number" /></View>
+      <View style={{ paddingTop: spacing.md }}><SearchField value={search} onChangeText={setSearch} onClear={() => setSearch("")} placeholder="Search customer or document number" /></View>
       <View style={styles.filterBar}>
         <FilterBar
           value={documentType}
@@ -285,11 +285,11 @@ const styles = StyleSheet.create({
   headerActions: { flexDirection: "row", flexWrap: "wrap", gap: 8, justifyContent: "flex-end", flexShrink: 1 },
   headerActionsCompact: { flexDirection: "row", alignItems: "stretch", width: "100%" },
   compactAction: { alignSelf: "stretch", flexBasis: "45%", flexGrow: 1 },
-  filterBar: { paddingHorizontal: spacing.lg, paddingTop: spacing.md },
+  filterBar: { paddingTop: spacing.md },
   loading: { flex: 1, alignItems: "center", justifyContent: "center", gap: spacing.sm, padding: spacing.lg },
   row: {
     flexDirection: "row", alignItems: "center", gap: 10,
-    padding: spacing.md, borderRadius: radius.md,
+    paddingHorizontal: spacing.lg, paddingVertical: spacing.md, minHeight: 72, borderRadius: radius.md,
     backgroundColor: colors.surfaceSecondary, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
   },
 });

@@ -140,3 +140,10 @@ def test_tile_price_units_do_not_mix_family_variants(monkeypatch):
     assert catalog_service._family_card_key(box) != catalog_service._family_card_key(piece)
     assert asyncio.run(catalog_service.resolve_size_variant("box", "600x1200", ["ground-floor"])) is None
     assert hydrate_product(box, snapshot)["available_sizes"] == ["600x600"]
+
+
+def test_rate_unit_from_existing_imports_stays_separate_from_sqft():
+    piece = _product('piece', 'P', '600x600', specs={'rate_unit': 'pcs'})
+    sqft = _product('sqft', 'S', '600x600', specs={'price_unit': 'sqft'})
+    assert catalog_service._tile_price_kind(piece) == 'piece'
+    assert catalog_service._family_card_key(piece) != catalog_service._family_card_key(sqft)

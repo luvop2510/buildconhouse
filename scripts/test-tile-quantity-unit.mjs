@@ -17,3 +17,9 @@ test('price labels preserve the supplier unit', async () => {
   assert.equal(tilePriceUnit('per box'), 'per box');
   assert.equal(tilePriceUnit(null), '');
 });
+
+test('catalog source supports rate_unit while preserving explicit price_unit', async () => {
+  const { tileSourcePriceUnit } = await import('../src/components/tiles/tileQuantityUnit.ts');
+  assert.equal(tileQuantityUnit(tileSourcePriceUnit({ rate_unit: 'pcs' })), 'Pieces');
+  assert.equal(tileQuantityUnit(tileSourcePriceUnit({ price_unit: 'sqft', rate_unit: 'pcs' })), 'Box');
+});

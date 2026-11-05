@@ -23,7 +23,7 @@ import { isNearScrollEnd } from "@/src/utils/scrollEnd";
 
 import { TILE_IMAGE_ASPECT_RATIO, tilesPickerColumns } from "./tilePresentation";
 import { tilePickerHistory } from "./tilePickerHistory";
-import { tilePriceUnit } from "./tileQuantityUnit";
+import { tilePriceUnit, tileSourcePriceUnit } from "./tileQuantityUnit";
 
 const PAGE_SIZE = 24;
 
@@ -275,7 +275,7 @@ function TileCatalogCard({
           </View>
         ) : null}
         <View style={styles.cardFooter}>
-          <View style={{ flex: 1, minWidth: 0, gap: 3 }}><Text style={styles.price}>{product.price ? money(product.price) : "Price on request"}</Text>{tilePriceUnit(product.specs?.price_unit) ? <Text style={styles.unitBadge}>{tilePriceUnit(product.specs?.price_unit)}</Text> : null}</View>
+          <View style={{ flex: 1, minWidth: 0, gap: 3 }}><Text style={styles.price}>{product.price ? money(product.price) : "Price on request"}</Text>{tilePriceUnit(tileSourcePriceUnit(product.specs)) ? <Text style={styles.unitBadge}>{tilePriceUnit(tileSourcePriceUnit(product.specs))}</Text> : null}</View>
           <View style={styles.add}><Feather name="plus" size={16} color={colors.onBrand} /></View>
         </View>
       </View>

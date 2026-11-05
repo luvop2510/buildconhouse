@@ -1,4 +1,4 @@
-import { tilePriceUnit } from "@/src/components/tiles/tileQuantityUnit";
+import { tilePriceUnit, tileSourcePriceUnit } from "@/src/components/tiles/tileQuantityUnit";
 // Catalog — premium family-first browsing.
 // -----------------------------------------------------------------------------
 // Mobile-first layout with tablet-landscape parallel design:
@@ -813,7 +813,7 @@ function FamilyCard({ family: f, brandName, onPress }: { family: Family; brandNa
           ) : (
             <PriceTag price={f.min_price} size="md" />
           )}
-          {isTile && tilePriceUnit(representative?.specs?.price_unit) ? <Text style={{ alignSelf: "flex-start", overflow: "hidden", borderWidth: 1, borderColor: colors.border, borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2, fontSize: 11, color: colors.onSurfaceSecondary }}>{tilePriceUnit(representative?.specs?.price_unit)}</Text> : null}
+          {isTile && tilePriceUnit(tileSourcePriceUnit(representative?.specs)) ? <Text style={{ alignSelf: "flex-start", overflow: "hidden", borderWidth: 1, borderColor: colors.border, borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2, fontSize: 11, color: colors.onSurfaceSecondary }}>{tilePriceUnit(tileSourcePriceUnit(representative?.specs))}</Text> : null}
         </View>
       </View>
     </Pressable>
@@ -860,7 +860,7 @@ function ProductCard({ product: p, brandName, onPress }: { product: Product; bra
         ) : null}
         <View style={{ marginTop: 6 }}>
           {p.price_unknown ? <Text style={type.bodyMuted}>Price unavailable</Text> : <PriceTag price={p.price} mrp={p.mrp} size="md" />}
-          {p.floor_id === "ground-floor" && tilePriceUnit(p.specs?.price_unit) ? <Text style={{ alignSelf: "flex-start", overflow: "hidden", borderWidth: 1, borderColor: colors.border, borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2, fontSize: 11, color: colors.onSurfaceSecondary }}>{tilePriceUnit(p.specs?.price_unit)}</Text> : null}
+          {p.floor_id === "ground-floor" && tilePriceUnit(tileSourcePriceUnit(p.specs)) ? <Text style={{ alignSelf: "flex-start", overflow: "hidden", borderWidth: 1, borderColor: colors.border, borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2, fontSize: 11, color: colors.onSurfaceSecondary }}>{tilePriceUnit(tileSourcePriceUnit(p.specs))}</Text> : null}
         </View>
       </View>
     </Pressable>

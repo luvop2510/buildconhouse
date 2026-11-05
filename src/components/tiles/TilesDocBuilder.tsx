@@ -69,7 +69,7 @@ import { TILES_FLOOR_ID } from "@/src/constants/floors";
 
 import { TilesProductPicker } from "./TilesProductPicker";
 import { TILE_IMAGE_ASPECT_RATIO } from "./tilePresentation";
-import { tileQuantityUnit } from "./tileQuantityUnit";
+import { tileQuantityUnit, tileSourcePriceUnit } from "./tileQuantityUnit";
 import { followupLegacyReference } from "./followupReference";
 import { canPlaceOrder, nextTilesAction, normalizeTilesStatus, tilesStage } from "./tilesStage";
 import { readTileDraft, writeTileDraft, removeTileDraft, tileDraftMatchesServer, type TileDraft } from "./tileDraftStorage";
@@ -299,6 +299,9 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
   const editRevisionRef = useRef(0);
   const persistRef = useRef<() => Promise<string | null>>(async () => null);
   const persistQueue = useRef<Promise<string | null>>(Promise.resolve(null));
+  const pendingFinishes = useRef(new Set<string>());
+  const [finishRevision, setFinishRevision] = useState(0);
+  const variantRequests = useRef<Record<string, number>>({});
   const persistedIdRef = useRef<string | null>(null);
   const createdDocumentRef = useRef<{ id: string; docType: TilesDocType } | null>(null);
   const seededProductRef = useRef<string | null>(null);
@@ -319,7 +322,8 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
 
   const applyLocalDraft = useCallback((draft: TileDraft<TilesHeader, TileRow, ReferrerValue>, asCopy = false) => {
     clientDraftIdRef.current = asCopy ? randomUUID() : draft.clientDraftId;
-    setHeader(draft.header); setRows(asCopy ? draft.rows.map(row => ({ ...row, lineId: null })) : draft.rows);
+    setHeader(draft.header);
+    setRows(draft.rows.map(row => ({ ...row, ...(asCopy ? { lineId: null } : {}), availableSizes: undefined, finishVariants: undefined })));
     setCustomerId(draft.customerId); customerIdRef.current = draft.customerId;
     setCustomerSnapshot(draft.customerSnapshot); setPartner(draft.partner); setLegacyPartnerLabel(draft.legacyPartnerLabel);
     setPartnerEditVersion(draft.partnerEdited ? 1 : 0); partnerSavedVersion.current = 0;
@@ -511,6 +515,8 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
   }, [markDirty]);
 
   const removeRow = useCallback((key: string) => {
+    variantRequests.current[key] = (variantRequests.current[key] || 0) + 1;
+    if (pendingFinishes.current.delete(key)) setFinishRevision(value => value + 1);
     setRows((cur) => {
       const next = cur.filter((row) => row.key !== key);
       return next.length ? next : [emptyRow()];
@@ -526,18 +532,25 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
       const currentSize = String(product.size || product.dimensions || "").replace(/\s/g, "").replace(/×/g, "x").toLowerCase();
       const candidates = [{ id: product.id, finish: product.finish, size: product.size || product.dimensions, dimensions: product.dimensions }, ...(product.variants || [])];
       const finishVariants = candidates.filter(v => v.id && v.finish && String(v.size || v.dimensions || "").replace(/\s/g, "").replace(/×/g, "x").toLowerCase() === currentSize).map(v => ({ id: v.id!, finish: v.finish! }));
-      setRows((current) => current.map((row) => row.key === key && row.productId === productId ? { ...row, availableSizes, finish: product.finish || "", finishVariants } : row));
+      setRows((current) => current.map((row) => {
+        if (row.key !== key || row.productId !== productId) return row;
+        const corrected = docType === "tiles_selection" && tileQuantityUnit(tileSourcePriceUnit(product.specs)) === "Pieces"
+          && row.quantityUnit !== "Pieces" && row.rateSqft.trim()
+          ? { quantityUnit: "Pieces" as const, priceBasis: "piece" as const, rateBox: row.rateSqft, offerRate: row.rateSqft, rateSqft: "", boxSqft: "" }
+          : {};
+        return { ...row, ...corrected, availableSizes, finish: product.finish || "", finishVariants };
+      }));
     } catch {
       // A missing/legacy family endpoint means this is simply not a
       // size-switchable style. The row remains read-only until a real size
       // list is available; linked catalog sizes must not become free text.
       setRows((current) => current.map((row) => row.key === key && row.productId === productId ? { ...row, availableSizes: [] } : row));
     }
-  }, []);
+  }, [docType]);
 
-  const variantRequests = useRef<Record<string, number>>({});
   const applyProduct = useCallback((key: string, product: Product, history?: { size: string | null; rate_sqft: number | null; rate_box: number | null; pcs_per_box: string | null; box_sqft?: number | null }) => {
     variantRequests.current[key] = (variantRequests.current[key] || 0) + 1;
+    if (pendingFinishes.current.delete(key)) setFinishRevision(value => value + 1);
     const image = productImageList(product)[0] || null;
     if (!image) {
       toast.error("This product has no image. Add a product image before including it in a tile selection.");
@@ -560,8 +573,8 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
     };
     setRows((cur) => cur.map((row) => {
       if (row.key !== key) return row;
-      const isPerPiece = tileQuantityUnit((specs as any).price_unit) === "Pieces";
-      const isPerBox = ["box", "per box"].includes(String((specs as any).price_unit || "").trim().toLowerCase());
+      const isPerPiece = tileQuantityUnit(tileSourcePriceUnit(specs)) === "Pieces";
+      const isPerBox = ["box", "per box"].includes(String(tileSourcePriceUnit(specs) || "").trim().toLowerCase());
       // Size siblings are separate catalog products. Do not carry coverage,
       // rate or box metadata across a change: the selected sibling owns it.
       const boxSqft = isPerPiece || isPerBox ? "" : (history?.box_sqft != null ? String(history.box_sqft) : specNum("sqft_per_box", "box_sqft"));
@@ -624,6 +637,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
   const selectRowSize = useCallback(async (key: string, size: string) => {
     const row = rows.find((item) => item.key === key);
     if (!row?.productId || size === row.size) return;
+    if (pendingFinishes.current.delete(key)) setFinishRevision(value => value + 1);
     const request = variantRequests.current[key] = (variantRequests.current[key] || 0) + 1;
     try {
       // Resolve by size on the backend so the current style/finish rules are
@@ -637,11 +651,22 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
 
   const selectRowFinish = useCallback(async (key: string, productId: string) => {
     const request = variantRequests.current[key] = (variantRequests.current[key] || 0) + 1;
+    pendingFinishes.current.add(key);
+    setFinishRevision(value => value + 1);
     try {
       const product = await api.get<Product>(`/products/${encodeURIComponent(productId)}`, { floorId: TILES_FLOOR_ID });
-      if (variantRequests.current[key] === request) applyProduct(key, product);
+      if (variantRequests.current[key] !== request) return false;
+      if (!productImageList(product)[0]) {
+        toast.error("This product has no image. Add a product image before including it in a tile selection.");
+        return false;
+      }
+      applyProduct(key, product);
+      return true;
     } catch (e: any) {
       if (variantRequests.current[key] === request) toast.error(e?.detail || "Couldn't change tile finish");
+      return false;
+    } finally {
+      if (variantRequests.current[key] === request && pendingFinishes.current.delete(key)) setFinishRevision(value => value + 1);
     }
   }, [applyProduct]);
 
@@ -701,6 +726,10 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
     const savingRevision = editRevisionRef.current;
     const run = async (): Promise<string | null> => {
       const current = () => mountedRef.current && documentScopeRef.current === documentScope && documentGenerationRef.current === documentGeneration;
+      if (pendingFinishes.current.size) {
+        if (!silent) toast.show("Wait for the selected finish to finish loading.");
+        return null;
+      }
       if (loading || !localReady || restoreError || recoveryDraft || deletingScopes.current.has(documentScope) || !current() || (routeId && docId !== routeId)) return null;
       let id = persistedIdRef.current || docId;
       const name = header.customerName.trim();
@@ -851,7 +880,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
     if (customerLookupActive || loading || !localReady || recoveryDraft || restoreError || (routeId && docId !== routeId) || !dirtyRef.current || !header.customerName.trim()) return;
     const timer = setTimeout(() => { void persistRef.current(); }, 400);
     return () => clearTimeout(timer);
-  }, [header, partner, partnerEditVersion, rows, docId, loading, localReady, recoveryDraft, restoreError, routeId, customerLookupActive]);
+  }, [header, partner, partnerEditVersion, rows, docId, loading, localReady, recoveryDraft, restoreError, routeId, customerLookupActive, finishRevision]);
 
   const generatePdf = useCallback(async () => {
     if (rows.some((row) => row.productId && !row.image?.trim())) {
@@ -1151,19 +1180,55 @@ function TileSizeField({
   );
 }
 
-function TileFinishField({ row, onSelect }: { row: TileRow; onSelect: (id: string) => void }) {
+function TileFinishField({ row, onSelect, testID, mobile = false }: {
+  row: TileRow; onSelect: (id: string) => Promise<boolean>; testID: string; mobile?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [pending, setPending] = useState<{ id: string; finish: string } | null>(null);
+  const attempt = useRef(0);
+  useEffect(() => { attempt.current++; setPending(null); }, [row.productId]);
   const variants = row.finishVariants || [];
-  if (!row.productId || variants.length < 2) return row.finish ? <Text style={sizeStyles.value}>{row.finish}</Text> : null;
-  return <View style={{ gap: 4 }}><Text style={sizeStyles.value}>Finish</Text><View style={{ flexDirection: "row", flexWrap: "wrap", gap: 4 }}>{variants.map(variant =>
-    <Pressable key={variant.id} accessibilityRole="button" accessibilityState={{ selected: variant.id === row.productId }} onPress={() => onSelect(variant.id)} style={[sizeStyles.option, variant.id === row.productId && sizeStyles.optionSelected]}>
-      <Text style={[sizeStyles.optionText, variant.id === row.productId && sizeStyles.optionTextSelected]}>{variant.finish}</Text>
-    </Pressable>)}</View></View>;
+  if (!row.productId || variants.length < 2) return row.finish ? <Text style={mobile ? mobileStyles.sizeValue : sizeStyles.value}>{row.finish}</Text> : null;
+  const selectedId = pending?.id || row.productId;
+  const finish = pending?.finish || row.finish || "Choose finish";
+  return <>
+    {mobile ? <Text style={type.label}>Finish</Text> : null}
+    <Pressable onPress={() => setOpen(true)} style={mobile ? mobileStyles.sizeButton : sizeStyles.button}
+      testID={testID} accessibilityRole="button" accessibilityLabel={`Change finish. Current finish ${finish}`}>
+      <Text style={mobile ? mobileStyles.sizeButtonText : sizeStyles.buttonText} numberOfLines={1}>{finish}</Text>
+      <Feather name="chevron-down" size={mobile ? 15 : 11} color={mobile ? colors.brand : "#444"} />
+    </Pressable>
+    {pending ? <Text accessibilityLiveRegion="polite" style={sizeStyles.loading}>Updating rate…</Text> : null}
+    <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
+      <Pressable style={sizeStyles.backdrop} onPress={() => setOpen(false)}>
+        <Pressable style={sizeStyles.sheet} onPress={(event) => event.stopPropagation()} accessibilityViewIsModal>
+          <Text style={sizeStyles.sheetTitle}>Choose tile finish</Text>
+          <Text style={sizeStyles.sheetHint}>{variants.length} finishes available for this size</Text>
+          {variants.map(variant => {
+            const selected = variant.id === selectedId;
+            return <Pressable key={variant.id} accessibilityRole="button" accessibilityState={{ selected }}
+              testID={`${testID}-${variant.id}`} style={[sizeStyles.option, selected && sizeStyles.optionSelected]}
+              onPress={() => {
+                setOpen(false);
+                if (selected) return;
+                const current = ++attempt.current;
+                setPending(variant);
+                void onSelect(variant.id).then(() => { if (attempt.current === current) setPending(null); });
+              }}>
+              <Text style={[sizeStyles.optionText, selected && sizeStyles.optionTextSelected]}>{variant.finish}</Text>
+              {selected ? <Feather name="check" size={16} color={colors.onBrand} /> : null}
+            </Pressable>;
+          })}
+        </Pressable>
+      </Pressable>
+    </Modal>
+  </>;
 }
 
 const sizeStyles = StyleSheet.create({
   loading: { fontSize: 10, color: "#666", textAlign: "center" },
   value: { fontSize: 12, color: "#111", textAlign: "center" },
-  button: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 2, maxWidth: "100%", paddingVertical: 3 },
+  button: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 2, maxWidth: "100%", minHeight: 44, paddingVertical: 3 },
   buttonText: { flexShrink: 1, fontSize: 11, color: "#111", fontWeight: "700", textAlign: "center" },
   backdrop: { flex: 1, alignItems: "center", justifyContent: "center", padding: spacing.lg, backgroundColor: "rgba(0,0,0,0.4)" },
   sheet: { width: "100%", maxWidth: 360, borderRadius: radius.lg, padding: spacing.lg, gap: spacing.sm, backgroundColor: colors.surface },
@@ -1679,7 +1744,7 @@ function SelectionPaper(doc: ReturnType<typeof useTilesDoc>) {
                 onLoad={() => void doc.loadRowSizes(row.key, row.productId!)}
                 testID={`tiles-size-${index}`}
               />
-              <TileFinishField row={row} onSelect={(id) => void doc.selectRowFinish(row.key, id)} />
+              <TileFinishField row={row} onSelect={(id) => doc.selectRowFinish(row.key, id)} testID={`tiles-finish-${index}`} />
             </View>
             <View style={[selStyles.td, flex(5), { borderRightWidth: 0 }]}>
               <CellInput value={row.quantityUnit === "Pieces" || row.priceBasis === "box" ? row.rateBox : row.rateSqft} onChangeText={(t) => doc.updateRow(row.key, row.quantityUnit === "Pieces" || row.priceBasis === "box" ? { rateBox: t, offerRate: t } : { rateSqft: t })} red bold testID={`tiles-rate-${index}`} />
@@ -1809,7 +1874,7 @@ function QuotationPaper(doc: ReturnType<typeof useTilesDoc>) {
                 onLoad={() => void doc.loadRowSizes(row.key, row.productId!)}
                 testID={`tiles-size-${index}`}
               />
-              <TileFinishField row={row} onSelect={(id) => void doc.selectRowFinish(row.key, id)} />
+              <TileFinishField row={row} onSelect={(id) => doc.selectRowFinish(row.key, id)} testID={`tiles-finish-${index}`} />
             </View>
             <View style={[quoStyles.td, flex(5)]}>
               {(row.quantityUnit === "Pieces" || row.priceBasis === "box") ? <Text style={quoStyles.cellText}>—</Text> : <CellInput value={row.rateSqft} onChangeText={(t) => doc.updateRow(row.key, { rateSqft: t })} red bold testID={`tiles-rate-sqft-${index}`} />}
@@ -1893,7 +1958,7 @@ const quoStyles = StyleSheet.create({
 // paper views call — one document model, one autosave path, one set of
 // backend calls.
 // ---------------------------------------------------------------------------
-type MobileFieldKey = "area" | "size" | "rateSqft" | "offerRate" | "rateBox" | "totalBox" | "quantityUnit" | "total";
+type MobileFieldKey = "area" | "size" | "finish" | "rateSqft" | "offerRate" | "rateBox" | "totalBox" | "quantityUnit" | "total";
 type MobileFieldDef = { key: MobileFieldKey; label: string; numeric?: boolean; suffix?: string };
 
 // Mirrors SEL_COLS / QUO_COLS above — Selection intentionally carries only
@@ -1904,11 +1969,13 @@ const MOBILE_FIELDS: Record<TilesDocType, MobileFieldDef[]> = {
   tiles_selection: [
     { key: "area", label: "Area / Room" },
     { key: "size", label: "Size" },
+    { key: "finish", label: "Finish" },
     { key: "rateSqft", label: "Rate / Sq.Ft", numeric: true, suffix: "per sq.ft" },
   ],
   tiles_quotation: [
     { key: "area", label: "Area / Room" },
     { key: "size", label: "Size" },
+    { key: "finish", label: "Finish" },
     { key: "rateSqft", label: "Rate / Sq.Ft", numeric: true },
     { key: "offerRate", label: "Offer Rate", numeric: true },
     { key: "rateBox", label: "Rate / Unit", numeric: true },
@@ -1972,6 +2039,7 @@ function MobileRowCard({
                 value={row.name}
                 onChangeText={(t) => doc.updateRow(row.key, { name: t })}
                 multiline
+                scrollEnabled={false}
                 accessibilityLabel={`Product name for item ${index + 1}`}
                 style={mobileStyles.rowTitleInput}
                 testID={`mobile-name-${index}`}
@@ -1997,7 +2065,7 @@ function MobileRowCard({
       </View>
 
       <View style={[mobileStyles.fieldStack, compact && mobileStyles.fieldGrid]}>
-        {fields.filter(f => !(docType === "tiles_quotation" && f.key === "rateSqft" && (row.quantityUnit === "Pieces" || row.priceBasis === "box"))).map((f) => (
+        {fields.filter(f => !(f.key === "finish" && !row.finish) && !(docType === "tiles_quotation" && f.key === "rateSqft" && (row.quantityUnit === "Pieces" || row.priceBasis === "box"))).map((f) => (
           <View key={f.key} style={compact && !(isPhone && f.key === "area") ? { width: fieldColumns === 3 ? "32%" : "49%", minWidth: 0 } : mobileStyles.fieldFull}>
             {f.key === "size" ? (
               <View style={{ gap: spacing.sm }}>
@@ -2010,8 +2078,9 @@ function MobileRowCard({
                   testID={`mobile-${f.key}-${index}`}
                   mobile
                 />
-                <TileFinishField row={row} onSelect={(id) => void doc.selectRowFinish(row.key, id)} />
               </View>
+            ) : f.key === "finish" ? (
+              <View style={{ gap: spacing.sm }}><TileFinishField row={row} onSelect={(id) => doc.selectRowFinish(row.key, id)} testID={`mobile-tiles-finish-${index}`} mobile /></View>
             ) : f.key === "quantityUnit" ? (
               <>
                 <Text style={type.label}>Unit</Text>
@@ -2077,7 +2146,7 @@ function MobileTilesEditor({
   return (
     <SafeAreaView style={{ flex: 1, minHeight: 0, overflow: "hidden", backgroundColor: colors.surfaceSecondary }} edges={isPhone ? [] : ["top"]}>
       <View style={mobileStyles.header}>
-        <Pressable accessibilityRole="button" accessibilityLabel="Back" onPress={() => router.back()} hitSlop={10} style={shellStyles.backBtn} testID="tiles-back">
+        <Pressable accessibilityRole="button" accessibilityLabel="Back" onPress={() => router.replace("/(admin)/tiles" as any)} hitSlop={10} style={shellStyles.backBtn} testID="tiles-back">
           <Feather name="chevron-left" size={20} color={colors.onSurface} />
         </Pressable>
         <View style={{ flex: 1, minWidth: 0 }}>
@@ -2131,7 +2200,7 @@ function MobileTilesEditor({
       <ReferrerField key={doc.referenceScope} label="Architect / interior designer" floorId={TILES_FLOOR_ID} value={doc.partner} onChange={doc.pickPartner} />
                 </View>
               </Disclosure>
-              <TextField label={isSelection ? "Address" : "Address (required)"} value={doc.header.address} onChangeText={(t: string) => doc.setHeaderField("address", t)} multiline testID="mobile-address" />
+              <TextField label={isSelection ? "Address" : "Address (required)"} value={doc.header.address} onChangeText={(t: string) => doc.setHeaderField("address", t)} multiline scrollEnabled={false} style={Platform.OS === "web" ? { overflow: "hidden" } : undefined} testID="mobile-address" />
             </Card>
 
             <View style={{ gap: spacing.sm }}>
@@ -2249,7 +2318,7 @@ const mobileStyles = StyleSheet.create({
   rowIndex: { ...type.overline, color: colors.onSurfaceMuted, marginBottom: 2 },
   rowTitleInput: {
     fontSize: 16, fontFamily: type.titleMd.fontFamily, fontWeight: "600", color: colors.onSurface,
-    minHeight: 44, padding: 0, ...(Platform.OS === "web" ? { outlineStyle: "none" } as any : {}),
+    minHeight: 44, padding: 0, ...(Platform.OS === "web" ? { outlineStyle: "none", overflow: "hidden" } as any : {}),
   },
   swapRow: { minHeight: 44, flexDirection: "row", alignItems: "center", gap: 4 },
   swapLabel: { fontSize: 12, color: colors.brand, fontWeight: "600" },
@@ -2340,7 +2409,7 @@ export function TilesDocBuilder({ docType, initialProductId, initialQuotationId 
           <Text style={[type.titleMd, { textAlign: "center" }]}>Couldn&apos;t open this tile document</Text>
           <Text style={{ color: colors.onSurfaceSecondary, textAlign: "center" }}>{doc.restoreError}</Text>
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <ActionBtn label="Back" icon="chevron-left" onPress={() => router.back()} testID="tiles-restore-back" />
+            <ActionBtn label="Back" icon="chevron-left" onPress={() => router.replace("/(admin)/tiles" as any)} testID="tiles-restore-back" />
             <ActionBtn label="Retry" icon="refresh-cw" primary onPress={doc.retryRestore} testID="tiles-restore-retry" />
           </View>
         </View>
@@ -2350,7 +2419,7 @@ export function TilesDocBuilder({ docType, initialProductId, initialQuotationId 
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.surfaceSecondary }} edges={["top"]}>
       <View style={shellStyles.topbar}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flex: 1, minWidth: 0 }}>
-          <Pressable accessibilityRole="button" accessibilityLabel="Back" onPress={() => router.back()} hitSlop={10} style={shellStyles.backBtn} testID="tiles-back">
+          <Pressable accessibilityRole="button" accessibilityLabel="Back" onPress={() => router.replace("/(admin)/tiles" as any)} hitSlop={10} style={shellStyles.backBtn} testID="tiles-back">
             <Feather name="chevron-left" size={20} color={colors.onSurface} />
           </Pressable>
           <View style={{ minWidth: 0, flex: 1 }}>

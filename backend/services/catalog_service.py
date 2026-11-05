@@ -477,7 +477,8 @@ def _primary_product_image(snapshot: CatalogSnapshot, product_id: str, family_ke
 
 
 def _tile_price_kind(product: dict) -> str:
-    unit = re.sub(r"[._-]+", " ", str((product.get("specs") or {}).get("price_unit") or "").strip().lower())
+    specs = product.get("specs") or {}
+    unit = re.sub(r"[._-]+", " ", str(specs.get("price_unit") or specs.get("rate_unit") or "").strip().lower())
     unit = re.sub(r"\s+", " ", unit)
     if unit in {"piece", "pieces", "pc", "pcs", "per piece", "per pieces", "per pc", "per pcs", "tile", "per tile"}:
         return "piece"
