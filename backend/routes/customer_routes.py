@@ -56,11 +56,14 @@ async def list_customers(
     skip: int = Query(0, ge=0),
     limit: int = Query(500, ge=1, le=2000),
     confirmed_only: bool = False,
+    tile_lookup: bool = False,
     completion: str | None = Query(None, pattern="^(active|completed)$"),
     search: str | None = None,
     user: UserPublic = Depends(get_current_user),
 ):
     query = floor_query(user)
+    if tile_lookup:
+        query = {"$and": [query, {"exclude_from_tile_customer_lookup": {"$ne": True}}]}
     if search and search.strip():
         if len(search) > 200:
             raise HTTPException(status_code=422, detail="Search must be 200 characters or fewer")

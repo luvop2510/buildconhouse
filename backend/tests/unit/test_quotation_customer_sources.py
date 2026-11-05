@@ -6,6 +6,10 @@ from fastapi import HTTPException
 from routes import quotation_customer_sources as routes
 from models import UserPublic
 
+@pytest.fixture(autouse=True)
+def no_placed_orders_by_default(monkeypatch):
+    monkeypatch.setattr(routes, 'placed_customer_ids', AsyncMock(return_value=set()))
+
 def user(): return UserPublic(id="owner",email="owner@example.test",full_name="Owner",role="owner")
 def test_contact_whitelist():
     row={"id":"lead","floor_id":"first-floor","customer_name":"Person","customer_phone":"123","address":"Road","notes":"private","password_hash":"secret"}
@@ -44,7 +48,7 @@ def test_search_literal_and_bounded_contact_reads(monkeypatch):
         def limit(self,n):assert n==1001;return self
         async def to_list(self,n):return [{'id':'lead','floor_id':'first-floor','customer_name':'A.*','customer_phone':'123'}]
     def find(query,projection):calls.append(query);assert 'notes' not in projection;return Cursor()
-    monkeypatch.setattr(routes,'db',SimpleNamespace(walkins=SimpleNamespace(find=find)))
+    monkeypatch.setattr(routes,'db',SimpleNamespace(walkins=SimpleNamespace(find=find), customers=SimpleNamespace(distinct=AsyncMock(return_value=[]))))
     result=asyncio.run(routes.search_sources('A.*',0,20,user()))
     assert result['items'][0]['name']=='A.*'
     assert calls[0]['$or'][0]['customer_name']['$regex']==r'A\.\*'
@@ -100,6 +104,7 @@ def test_search_deduplicates_across_sources_and_pages(monkeypatch):
         async def to_list(self, n): return self.rows[:n]
     class Collection:
         def __init__(self, rows): self.rows = rows
+        async def distinct(self, *args): return []
         def find(self, query, projection):
             after = query.get('id', {}).get('$gt', '')
             return Cursor([row for row in self.rows if row['id'] > after])
@@ -111,8 +116,51 @@ def test_search_deduplicates_across_sources_and_pages(monkeypatch):
     assert first['has_more'] and second['has_more'] and not third['has_more']
 
 
+def test_linked_ordered_customer_wins_over_earlier_prospect(monkeypatch):
+    monkeypatch.setattr(routes, 'scopes', AsyncMock(return_value=[('customer', 'ground-floor')]))
+    monkeypatch.setattr(routes, 'placed_customer_ids', AsyncMock(return_value={'ordered'}))
+    rows = [{'id': 'a-prospect', 'floor_id': 'ground-floor', 'name': 'Tirth', 'phone': '9876543210'},
+            {'id': 'ordered', 'floor_id': 'ground-floor', 'name': 'Tirth', 'phone': '9876543210'}]
+    class Cursor:
+        def sort(self, *args): return self
+        def limit(self, n): return self
+        async def to_list(self, n): return rows
+    monkeypatch.setattr(routes, 'db', SimpleNamespace(customers=SimpleNamespace(find=lambda *args: Cursor(), distinct=AsyncMock(return_value=[]))))
+    result = asyncio.run(routes.search_sources('Tirth', 0, 20, user()))
+    assert [row['source_id'] for row in result['items']] == ['ordered']
+
+
 def test_identity_does_not_merge_namesakes_without_phone_or_link():
     assert routes.identity_keys({'source_kind': 'walkin', 'source_id': 'x', 'name': 'Raj', 'phone': ''}) == set()
+
+
+def test_shared_phone_with_conflicting_addresses_does_not_merge_namesakes():
+    phone = '9876543210'
+    def row(identity, address):
+        return {'source_kind': 'customer', 'source_id': identity, 'name': 'Tirth', 'phone': phone, 'address': address}
+    first = routes.identity_keys(row('a', 'Site A'), {phone})
+    second = routes.identity_keys(row('b', 'Site B'), {phone})
+    missing = routes.identity_keys(row('c', ''), {phone})
+    assert first.isdisjoint(second) and first.isdisjoint(missing) and second.isdisjoint(missing)
+    assert ('phone', phone) in routes.identity_keys(row('a', 'Site A'))
+
+
+def test_search_excludes_records_explicitly_removed_from_tile_lookup(monkeypatch):
+    monkeypatch.setattr(routes, 'scopes', AsyncMock(return_value=[('customer', 'ground-floor'), ('followup', 'ground-floor')]))
+    queries = []
+    class Cursor:
+        def sort(self, *args): return self
+        def limit(self, n): return self
+        async def to_list(self, n): return []
+    def find(query, projection):
+        queries.append(query)
+        return Cursor()
+    monkeypatch.setattr(routes, 'db', SimpleNamespace(customers=SimpleNamespace(find=find, distinct=AsyncMock(return_value=['hidden'])), followups=SimpleNamespace(find=find)))
+    asyncio.run(routes.search_sources('Tirth', 0, 20, user()))
+    assert len(queries) == 2
+    assert all(q['exclude_from_tile_customer_lookup'] == {'$ne': True} for q in queries)
+    assert queries[0]['id'] == {'$nin': ['hidden']}
+    assert queries[1]['customer_id'] == {'$nin': ['hidden']}
 
 
 def test_ground_followup_reuse_returns_assignee_without_overwriting_customer(monkeypatch):
@@ -144,7 +192,7 @@ def test_ground_customer_wins_and_late_bridge_joins_existing_groups(monkeypatch)
         def sort(self, *args): return self
         def limit(self, n): return self
         async def to_list(self, n): return self.rows[:n]
-    monkeypatch.setattr(routes, 'db', SimpleNamespace(**{key: SimpleNamespace(find=lambda query, projection, rows=value: Cursor(rows)) for key, value in records.items()}))
+    monkeypatch.setattr(routes, 'db', SimpleNamespace(**{key: SimpleNamespace(find=lambda query, projection, rows=value: Cursor(rows), distinct=AsyncMock(return_value=[])) for key, value in records.items()}))
     result = asyncio.run(routes.search_sources('', 0, 20, user()))
     assert [row['name'] for row in result['items']] == ['Ground']
     assert not result['has_more']
@@ -156,7 +204,7 @@ def test_search_refuses_incomplete_identity_groups(monkeypatch):
         def sort(self, *args): return self
         def limit(self, n): assert n == 1001; return self
         async def to_list(self, n): return [{'id': str(i), 'floor_id': 'ground-floor', 'name': 'Person'} for i in range(n)]
-    monkeypatch.setattr(routes, 'db', SimpleNamespace(customers=SimpleNamespace(find=lambda *args: Cursor())))
+    monkeypatch.setattr(routes, 'db', SimpleNamespace(customers=SimpleNamespace(find=lambda *args: Cursor(), distinct=AsyncMock(return_value=[]))))
     with pytest.raises(HTTPException) as error:
         asyncio.run(routes.search_sources('', 0, 20, user()))
     assert error.value.status_code == 422 and 'Refine' in error.value.detail

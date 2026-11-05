@@ -39,22 +39,44 @@ def contact(kind, row):
             **{k: row.get(k) for k in ("customer_id", "address", "referrer_id", "referrer_name", "referrer_type", "referrer_company", "reference_source")},
             "name": row.get(name) or "", "phone": row.get(phone) or ""}
 
-def identity_keys(row):
-    """Match the same person across source records without merging namesakes."""
+def _phone_digits(row):
     digits = re.sub(r"\D", "", row.get("phone") or "")
-    if len(digits) == 12 and digits.startswith("91"):
-        digits = digits[2:]
+    return digits[2:] if len(digits) == 12 and digits.startswith("91") else digits
+
+def _address_key(row):
+    return re.sub(r"\s+", " ", str(row.get("address") or "").strip().casefold())
+
+def identity_keys(row, conflicting_phone_addresses=None):
+    """Match the same person across source records without merging namesakes."""
+    digits = _phone_digits(row)
     keys = set()
     if len(digits) == 10:
-        keys.add(("phone", digits))
+        address = _address_key(row)
+        if digits in (conflicting_phone_addresses or set()):
+            if address:
+                keys.add(("phone_address", digits, address))
+        else:
+            keys.add(("phone", digits))
     linked = row["source_id"] if row["source_kind"] == "customer" else row.get("customer_id")
     if linked:
         keys.add(("customer", linked))
     return keys
 
+async def placed_customer_ids(candidates, allowed):
+    ids = list({row.get("source_id") if row["source_kind"] == "customer" else row.get("customer_id") for row in candidates} - {None, ""})
+    if not ids:
+        return set()
+    scope = {"floor_id": {"$in": list({floor for _, floor in allowed})}, "customer_id": {"$in": ids}}
+    quotes, orders = await asyncio.gather(
+        db.quotations.distinct("customer_id", {**scope, "status": "ordered"}),
+        db.customer_orders.distinct("customer_id", {**scope, "is_deleted": {"$ne": True}}),
+    )
+    return set(quotes + orders)
+
 @router.get("")
 async def search_sources(search: str = Query("", max_length=200), skip: int = Query(0, ge=0, le=10000), limit: int = Query(20, ge=1, le=50), user: UserPublic = Depends(get_current_user)):
     allowed = await scopes(user)
+    excluded = await db.customers.distinct("id", {"floor_id": {"$in": list({floor for _, floor in allowed})}, "exclude_from_tile_customer_lookup": True})
     # Read the complete bounded result set before grouping. A later follow-up
     # can bridge two earlier records by customer ID and phone, so paginating
     # before resolving those links would show the same person on multiple pages.
@@ -63,7 +85,9 @@ async def search_sources(search: str = Query("", max_length=200), skip: int = Qu
         floors = [floor for k, floor in allowed if k == kind]
         if not floors:
             return []
-        query = {"floor_id": {"$in": floors}, "is_deleted": {"$ne": True}}
+        query = {"floor_id": {"$in": floors}, "is_deleted": {"$ne": True}, "exclude_from_tile_customer_lookup": {"$ne": True}}
+        if excluded:
+            query["id" if kind == "customer" else "customer_id"] = {"$nin": excluded}
         if search.strip():
             query["$or"] = [{field: {"$regex": re.escape(search.strip()), "$options": "i"}} for field in (name, phone)]
         # A sentinel prevents silently returning incomplete identity groups.
@@ -74,10 +98,18 @@ async def search_sources(search: str = Query("", max_length=200), skip: int = Qu
 
     groups = await asyncio.gather(*(read(kind) for kind in sorted(SOURCES)))
     candidates = [row for group in groups for row in group]
+    ordered_ids = await placed_customer_ids(candidates, allowed)
+
+    phone_addresses = {}
+    for row in candidates:
+        digits, address = _phone_digits(row), _address_key(row)
+        if len(digits) == 10 and address:
+            phone_addresses.setdefault(digits, set()).add(address)
+    conflicting = {digits for digits, addresses in phone_addresses.items() if len(addresses) > 1}
 
     # Keep the most useful authorized source: Ground customer first, then
     # other customers, followed by follow-ups and walk-ins. No profile is merged.
-    candidates.sort(key=lambda row: (row["source_kind"], row["floor_id"] != "ground-floor", row["source_id"]))
+    candidates.sort(key=lambda row: (row["source_kind"] != "customer", row["floor_id"] != "ground-floor", (row["source_id"] if row["source_kind"] == "customer" else row.get("customer_id")) not in ordered_ids, row["source_kind"], row["source_id"]))
     parent = list(range(len(candidates)))
     key_owner = {}
     def root(index):
@@ -86,7 +118,7 @@ async def search_sources(search: str = Query("", max_length=200), skip: int = Qu
             index = parent[index]
         return index
     for index, row in enumerate(candidates):
-        for key in identity_keys(row):
+        for key in identity_keys(row, conflicting):
             previous = key_owner.get(key)
             if previous is not None:
                 first, second = root(index), root(previous)
@@ -107,7 +139,7 @@ async def reuse_source(body: Reuse, user: UserPublic = Depends(get_current_user)
     await authorize_staff_resource(user, method="POST", path="/api/quotations", floor_id="ground-floor")
     allowed = await scopes(user)
     collection, _, _ = SOURCES[body.source_kind]
-    source = await getattr(db, collection).find_one({"id": body.source_id, "floor_id": {"$in": [f for k, f in allowed if k == body.source_kind]}, "is_deleted": {"$ne": True}}, FIELDS)
+    source = await getattr(db, collection).find_one({"id": body.source_id, "floor_id": {"$in": [f for k, f in allowed if k == body.source_kind]}, "is_deleted": {"$ne": True}, "exclude_from_tile_customer_lookup": {"$ne": True}}, FIELDS)
     if not source: raise HTTPException(404, "Selected person is unavailable")
     source_value = contact(body.source_kind, source)
     if body.source_kind == "followup" and source.get("floor_id") == "ground-floor":

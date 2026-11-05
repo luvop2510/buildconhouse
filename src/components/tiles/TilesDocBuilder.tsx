@@ -1292,7 +1292,7 @@ function CustomerNameField({
     const controller = new AbortController();
     setSearching(true);
     const timer = setTimeout(() => {
-      void api.get<Customer[]>(`/customers?search=${encodeURIComponent(query)}&limit=20`, { floorId: TILES_FLOOR_ID, signal: controller.signal }).then(rows => {
+      void api.get<Customer[]>(`/customers?tile_lookup=true&search=${encodeURIComponent(query)}&limit=20`, { floorId: TILES_FLOOR_ID, signal: controller.signal }).then(rows => {
         if (!controller.signal.aborted && lookupRef.current === generation) setResults({ scope: generation, rows });
       }).catch(() => {
         if (!controller.signal.aborted && lookupRef.current === generation) setLookupError(true);
