@@ -64,6 +64,7 @@ test('critical staff names are selectable for document attribution', async ({ pa
   await fixtures(page);
   await page.route('**/api/quotations/staff-names', route => route.fulfill({ json: [{ id: 'one', full_name: 'First Staff' }, { id: 'two', full_name: 'Second Staff' }] }));
   await page.goto('/tiles/selection');
+  await expect(page.getByLabel('Reference', { exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Choose attended by' }).click();
   await page.getByRole('button', { name: 'Second Staff' }).click();
   await expect(page.getByLabel('Attended by', { exact: true })).toHaveValue('Second Staff');
