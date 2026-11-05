@@ -1,3 +1,4 @@
+import { tilePriceUnit } from "@/src/components/tiles/tileQuantityUnit";
 // Product Detail — premium, mobile-first, Amazon-caliber.
 // -----------------------------------------------------------------------------
 // Layout
@@ -565,6 +566,7 @@ function ProductDetailWorkspace({ floorId }: { floorId: string }) {
       {/* Price */}
       <View style={{ flexDirection: "row", alignItems: "baseline", gap: 12 }}>
         {p.price_unknown ? <Text style={type.bodyMuted}>Price unavailable</Text> : <PriceTag price={p.price} mrp={p.mrp} size="xl" />}
+        {p.floor_id === "ground-floor" && tilePriceUnit(p.specs?.price_unit) ? <Text style={{ overflow: "hidden", borderWidth: 1, borderColor: colors.border, borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2, fontSize: 12, color: colors.onSurfaceSecondary }}>{tilePriceUnit(p.specs?.price_unit)}</Text> : null}
         {savedPct > 0 ? (
           <View style={styles.savePill}>
             <Text style={styles.savePillText}>SAVE {savedPct}%</Text>

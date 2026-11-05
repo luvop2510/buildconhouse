@@ -67,9 +67,9 @@ def test_all_pdf_formats_include_only_reference_type_and_name():
     quote = {**referral, 'id': 'q', 'customer_name': 'Reference contract', 'items': [], 'subtotal': 0, 'grand_total': 0}
     furniture = {**quote, 'charges': [], 'deposits': [], 'total_payable_rmb': '0', 'total_received_rmb': '0', 'balance_rmb': '0'}
     documents = [build_quotation_pdf(quote, {'name': 'Reference contract'}), build_tiles_quotation_pdf(quote, {'name': 'Reference contract'}), build_tiles_selection_pdf(quote, {'name': 'Reference contract'}), build_pdf(furniture)[0]]
-    for data in documents:
+    for index, data in enumerate(documents):
         text = ''.join(page.extract_text() or '' for page in PdfReader(BytesIO(data)).pages).replace('\n', '')
-        assert 'ARC-NTS' in ''.join(text.split())
+        assert ('ARC-NTS' in ''.join(text.split())) == (index in (0, 3))
         assert '4D2A6042' not in text
 
 

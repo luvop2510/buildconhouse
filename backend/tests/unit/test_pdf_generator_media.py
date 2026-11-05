@@ -745,7 +745,10 @@ def test_customer_metadata_prints_at_readable_size_and_wraps_without_overlap(bui
     page.extract_text(visitor_text=lambda text, _cm, _tm, _font, size: spans.append((text, size)))
     assert any("Sample Customer" in text and size >= 11 for text, size in spans)
     assert any(pdf_generator.format_phone(doc["phone_snapshot"]) in text and size >= 11 for text, size in spans)
-    assert any("Architecture" in text and size >= 11 for text, size in spans)
+    if builder is pdf_generator.build_quotation_pdf:
+        assert any("Architecture" in text and size >= 11 for text, size in spans)
+    else:
+        assert any("Sample Site" in text and size >= 11 for text, size in spans)
     assert "CUSTOMER SIGNATURE" in (page.extract_text() or "")
 
 
@@ -755,7 +758,10 @@ def test_customer_pdf_reference_contains_only_typed_name(builder, kind, prefix):
     doc = {"customer_name": "Customer", "reference_source": "Reference", "referrer_name": "Nikita Shah",
            "referrer_type": kind, "referrer_id": "4d2a6042-78a7-453b-a7be-97d60ed4571d", "items": []}
     text = " ".join((page.extract_text() or "") for page in PdfReader(BytesIO(builder(doc, {"name": "Customer"}))).pages)
-    assert f"{prefix}-Nikita Shah" in text
+    if builder is pdf_generator.build_quotation_pdf:
+        assert f"{prefix}-Nikita Shah" in text
+    else:
+        assert "Nikita Shah" not in text
     assert "4D2A6042" not in text
     assert "Reference ·" not in text
 

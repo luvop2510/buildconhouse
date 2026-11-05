@@ -701,6 +701,7 @@ class QuotationLineItem(BaseModel):
     rate_box: Optional[float] = Field(default=None, ge=0)
     pcs_per_box: Optional[str] = None      # catalog metadata retained in the PCS/BOX column for every tile line
     box_sqft: Optional[float] = Field(default=None, ge=0)  # sqft covered by one box — effective per-sqft price x box_sqft derives unit_price (rate/box)
+    price_basis: Optional[str] = None  # Explicit source price basis for tile lines.
     offer_rate: Optional[float] = Field(default=None, ge=0)  # final selling price per SQ.FT; defaults to rate_sqft and drives totals
     quantity_unit: Literal["Box", "Pieces"] = "Box"
     # When a line is fulfilled from returned/declined material in BuildCon's

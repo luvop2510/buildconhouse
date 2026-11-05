@@ -1,3 +1,4 @@
+import { tilePriceUnit } from "@/src/components/tiles/tileQuantityUnit";
 // Catalog — premium family-first browsing.
 // -----------------------------------------------------------------------------
 // Mobile-first layout with tablet-landscape parallel design:
@@ -45,14 +46,14 @@ type Family = {
   variants: {
     id: string; sku: string; variant_label?: string | null; colour?: string | null;
     finish?: string | null; finish_code?: string | null; size?: string | null; price: number; mrp: number;
-    image?: string | null; image_quality?: string | null;
+    image?: string | null; image_quality?: string | null; specs?: Record<string, any> | null;
   }[];
 };
 type Product = {
   id: string; name: string; sku: string; brand_id: string; category_id: string;
   listing_id?: string | null; catalog_entry?: CatalogEntry | null; price_unknown?: boolean;
   subcategory?: string | null; series?: string | null;
-  price: number; mrp: number; finish?: string | null; images: string[]; stock: number;
+  price: number; mrp: number; finish?: string | null; images: string[]; stock: number; specs?: Record<string, any> | null;
   image_quality?: string | null;
   must_buy_concealed?: boolean;
   concealed_sku?: string | null;
@@ -812,6 +813,7 @@ function FamilyCard({ family: f, brandName, onPress }: { family: Family; brandNa
           ) : (
             <PriceTag price={f.min_price} size="md" />
           )}
+          {isTile && tilePriceUnit(representative?.specs?.price_unit) ? <Text style={{ alignSelf: "flex-start", overflow: "hidden", borderWidth: 1, borderColor: colors.border, borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2, fontSize: 11, color: colors.onSurfaceSecondary }}>{tilePriceUnit(representative?.specs?.price_unit)}</Text> : null}
         </View>
       </View>
     </Pressable>
@@ -858,6 +860,7 @@ function ProductCard({ product: p, brandName, onPress }: { product: Product; bra
         ) : null}
         <View style={{ marginTop: 6 }}>
           {p.price_unknown ? <Text style={type.bodyMuted}>Price unavailable</Text> : <PriceTag price={p.price} mrp={p.mrp} size="md" />}
+          {p.floor_id === "ground-floor" && tilePriceUnit(p.specs?.price_unit) ? <Text style={{ alignSelf: "flex-start", overflow: "hidden", borderWidth: 1, borderColor: colors.border, borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2, fontSize: 11, color: colors.onSurfaceSecondary }}>{tilePriceUnit(p.specs?.price_unit)}</Text> : null}
         </View>
       </View>
     </Pressable>

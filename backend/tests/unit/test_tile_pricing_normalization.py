@@ -82,3 +82,9 @@ def test_line_quantity_unit_is_an_explicit_user_choice():
 def test_line_quantity_unit_canonicalizes_legacy_piece_and_box_spellings():
     assert _line(quantity_unit="piece").quantity_unit == "Pieces"
     assert _line(quantity_unit="boxes").quantity_unit == "Box"
+
+
+def test_explicit_box_price_is_not_multiplied_by_coverage():
+    line = normalize_tile_line_item(_line(quantity_unit="Box", price_basis="box", rate_box=160, offer_rate=160, box_sqft=10))
+    assert line.unit_price == 160
+    assert line.rate_box == 160

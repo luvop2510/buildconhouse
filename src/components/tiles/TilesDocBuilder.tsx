@@ -127,11 +127,14 @@ type TileRow = {
   totalBox: string;
   pcsBox: string;
   quantityUnit: "Box" | "Pieces";
+  priceBasis?: "box" | "sqft" | "piece";
   total: string;
   totalEdited: boolean;
   // Transient catalog data for a size picker. It is deliberately not sent in
   // quotation items: the selected sibling product is the persisted truth.
   availableSizes?: string[];
+  finish?: string;
+  finishVariants?: { id: string; finish: string }[];
 };
 
 type TilesHeader = {
@@ -206,7 +209,7 @@ function effectiveTileRate(row: TileRow): number {
 }
 
 function derivedTileBoxRate(row: TileRow): number | null {
-  if (row.quantityUnit === "Pieces") return null;
+  if (row.quantityUnit === "Pieces" || row.priceBasis === "box") return null;
   const sqft = num(row.boxSqft);
   return sqft > 0 ? Math.round(effectiveTileRate(row) * sqft * 100) / 100 : null;
 }
@@ -431,6 +434,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
           totalBox: it.qty ? String(it.qty) : "",
           pcsBox: it.pcs_per_box || "",
           quantityUnit: restoredQuantityUnit(it.quantity_unit),
+          priceBasis: it.price_basis || (restoredQuantityUnit(it.quantity_unit) === "Pieces" ? "piece" : "sqft"),
           total: it.net_amount != null ? String(it.net_amount) : "",
           totalEdited: false,
         }));
@@ -483,6 +487,10 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
         next.offerRate = patch.rateSqft ?? "";
         next.offerRateIsFallback = true;
       }
+      if (next.quantityUnit === "Pieces" || next.priceBasis === "box") {
+        if ("rateBox" in patch) next.offerRate = patch.rateBox ?? "";
+        else if ("offerRate" in patch) next.rateBox = patch.offerRate ?? "";
+      }
       // Recalculate immediately when the selling rate or box coverage changes
       // so the on-screen total never lags behind the edited offer.
       if (next.quantityUnit === "Box" && ("offerRate" in patch || "boxSqft" in patch || ("rateSqft" in patch && row.offerRateIsFallback))) {
@@ -512,9 +520,13 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
 
   const loadRowSizes = useCallback(async (key: string, productId: string) => {
     try {
-      const result = await api.get<{ available_sizes?: string[] }>(`/products/${productId}/size-variants`, { floorId: TILES_FLOOR_ID });
+      const result = await api.get<{ available_sizes?: string[]; product: Product }>(`/products/${productId}/size-variants`, { floorId: TILES_FLOOR_ID });
       const availableSizes = validTileSizes(result.available_sizes);
-      setRows((current) => current.map((row) => row.key === key && row.productId === productId ? { ...row, availableSizes } : row));
+      const product = result.product;
+      const currentSize = String(product.size || product.dimensions || "").replace(/\s/g, "").replace(/×/g, "x").toLowerCase();
+      const candidates = [{ id: product.id, finish: product.finish, size: product.size || product.dimensions, dimensions: product.dimensions }, ...(product.variants || [])];
+      const finishVariants = candidates.filter(v => v.id && v.finish && String(v.size || v.dimensions || "").replace(/\s/g, "").replace(/×/g, "x").toLowerCase() === currentSize).map(v => ({ id: v.id!, finish: v.finish! }));
+      setRows((current) => current.map((row) => row.key === key && row.productId === productId ? { ...row, availableSizes, finish: product.finish || "", finishVariants } : row));
     } catch {
       // A missing/legacy family endpoint means this is simply not a
       // size-switchable style. The row remains read-only until a real size
@@ -523,7 +535,9 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
     }
   }, []);
 
+  const variantRequests = useRef<Record<string, number>>({});
   const applyProduct = useCallback((key: string, product: Product, history?: { size: string | null; rate_sqft: number | null; rate_box: number | null; pcs_per_box: string | null; box_sqft?: number | null }) => {
+    variantRequests.current[key] = (variantRequests.current[key] || 0) + 1;
     const image = productImageList(product)[0] || null;
     if (!image) {
       toast.error("This product has no image. Add a product image before including it in a tile selection.");
@@ -547,10 +561,11 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
     setRows((cur) => cur.map((row) => {
       if (row.key !== key) return row;
       const isPerPiece = tileQuantityUnit((specs as any).price_unit) === "Pieces";
+      const isPerBox = ["box", "per box"].includes(String((specs as any).price_unit || "").trim().toLowerCase());
       // Size siblings are separate catalog products. Do not carry coverage,
       // rate or box metadata across a change: the selected sibling owns it.
-      const boxSqft = isPerPiece ? "" : (history?.box_sqft != null ? String(history.box_sqft) : specNum("sqft_per_box", "box_sqft"));
-      const rateSqft = isPerPiece ? "" : (history?.rate_sqft != null ? String(history.rate_sqft) : (product.price ? String(product.price) : ""));
+      const boxSqft = isPerPiece || isPerBox ? "" : (history?.box_sqft != null ? String(history.box_sqft) : specNum("sqft_per_box", "box_sqft"));
+      const rateSqft = isPerPiece || isPerBox ? "" : (history?.rate_sqft != null ? String(history.rate_sqft) : (product.price ? String(product.price) : ""));
       const derivedRateBox = num(rateSqft) > 0 && num(boxSqft) > 0
         ? String(Math.round(num(rateSqft) * num(boxSqft) * 100) / 100)
         : "";
@@ -565,16 +580,19 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
         size: history?.size || product.size || product.dimensions || row.size,
         rateSqft,
         boxSqft,
-        rateBox: isPerPiece ? String(product.price || product.mrp || 0) : (history?.rate_box != null ? String(history.rate_box) : (specNum("rate_per_box", "rate_box", "box_rate") || derivedRateBox)),
-        offerRate: isPerPiece ? String(product.price || product.mrp || 0) : (history?.rate_sqft != null ? String(history.rate_sqft) : rateSqft),
+        rateBox: isPerPiece || isPerBox ? String(product.price || product.mrp || 0) : (history?.rate_box != null ? String(history.rate_box) : (specNum("rate_per_box", "rate_box", "box_rate") || derivedRateBox)),
+        offerRate: isPerPiece || isPerBox ? String(product.price || product.mrp || 0) : (history?.rate_sqft != null ? String(history.rate_sqft) : rateSqft),
         offerRateIsFallback: true,
         pcsBox: isPerPiece ? "" : (history?.pcs_per_box || specText("pcs_per_box", "pcs_box", "pcs")),
         // A newly selected product starts at one unit, but a user-cleared
         // quantity must stay blank until they enter their intended amount.
         totalBox: row.totalBox === "" ? "1" : row.totalBox,
         quantityUnit: isPerPiece ? "Pieces" : "Box",
+        priceBasis: isPerPiece ? "piece" : isPerBox ? "box" : "sqft",
         totalEdited: false,
         availableSizes: validTileSizes(product.available_sizes),
+        finish: product.finish || "",
+        finishVariants: undefined,
       };
       return next;
     }));
@@ -582,7 +600,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
     markDirty();
     // The full product response may already include the metadata; querying
     // this canonical endpoint also covers catalog pages that omit it.
-    if (!validTileSizes(product.available_sizes).length) void loadRowSizes(key, product.id);
+    void loadRowSizes(key, product.id);
   }, [markDirty, customerId, loadRowSizes]);
 
   // Catalog's Ground Floor CTA deep-links here with a concrete product. Seed
@@ -606,15 +624,26 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
   const selectRowSize = useCallback(async (key: string, size: string) => {
     const row = rows.find((item) => item.key === key);
     if (!row?.productId || size === row.size) return;
+    const request = variantRequests.current[key] = (variantRequests.current[key] || 0) + 1;
     try {
       // Resolve by size on the backend so the current style/finish rules are
       // applied consistently. The returned sibling is a complete product.
       const resolution = await api.get<{ product: Product }>(`/products/${row.productId}/size-variants?size=${encodeURIComponent(size)}`, { floorId: TILES_FLOOR_ID });
-      applyProduct(key, resolution.product);
+      if (variantRequests.current[key] === request) applyProduct(key, resolution.product);
     } catch (e: any) {
       toast.error(e?.detail || "Couldn't change tile size");
     }
   }, [applyProduct, rows]);
+
+  const selectRowFinish = useCallback(async (key: string, productId: string) => {
+    const request = variantRequests.current[key] = (variantRequests.current[key] || 0) + 1;
+    try {
+      const product = await api.get<Product>(`/products/${encodeURIComponent(productId)}`, { floorId: TILES_FLOOR_ID });
+      if (variantRequests.current[key] === request) applyProduct(key, product);
+    } catch (e: any) {
+      if (variantRequests.current[key] === request) toast.error(e?.detail || "Couldn't change tile finish");
+    }
+  }, [applyProduct]);
 
   // ---- Persistence -------------------------------------------------------
   const buildItems = useCallback(() => {
@@ -644,6 +673,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
           offer_rate: row.offerRate.trim() ? num(row.offerRate) : (row.rateSqft.trim() ? num(row.rateSqft) : unitPrice),
           pcs_per_box: row.pcsBox.trim() || null,
           quantity_unit: row.quantityUnit,
+          price_basis: row.priceBasis || (row.quantityUnit === "Pieces" ? "piece" : "sqft"),
           sort_order: index,
         };
         if (row.lineId) item.id = row.lineId;
@@ -1015,7 +1045,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
     followupError, retryFollowup: () => setFollowupAttempt(value => value + 1),
     docId, docNumberServer, loading, restoreError, retryRestore: () => setRestoreAttempt((value) => value + 1), header, setHeaderField, rows,
     hasDraft: Boolean(docId || header.customerName || header.address || header.phone || rows.some(row => row.productId)),
-    updateRow, addRow, removeRow, applyProduct, selectRowSize, loadRowSizes,
+    updateRow, addRow, removeRow, applyProduct, selectRowSize, selectRowFinish, loadRowSizes,
     customers, customerId, pickCustomer, setCustomerId, setCustomerLookupActive, partner, legacyPartnerLabel, referenceScope: documentScope,
     pickPartner: (value: ReferrerValue) => { setPartner(value); setLegacyPartnerLabel(""); setPartnerEditVersion(version => version + 1); markDirty(); },
     saveState, retrySave: () => persist({ silent: true }), busy, generatePdf, placeOrder, serverTotals, previewTotals,
@@ -1119,6 +1149,15 @@ function TileSizeField({
       </Modal>
     </>
   );
+}
+
+function TileFinishField({ row, onSelect }: { row: TileRow; onSelect: (id: string) => void }) {
+  const variants = row.finishVariants || [];
+  if (!row.productId || variants.length < 2) return row.finish ? <Text style={sizeStyles.value}>{row.finish}</Text> : null;
+  return <View style={{ gap: 4 }}><Text style={sizeStyles.value}>Finish</Text><View style={{ flexDirection: "row", flexWrap: "wrap", gap: 4 }}>{variants.map(variant =>
+    <Pressable key={variant.id} accessibilityRole="button" accessibilityState={{ selected: variant.id === row.productId }} onPress={() => onSelect(variant.id)} style={[sizeStyles.option, variant.id === row.productId && sizeStyles.optionSelected]}>
+      <Text style={[sizeStyles.optionText, variant.id === row.productId && sizeStyles.optionTextSelected]}>{variant.finish}</Text>
+    </Pressable>)}</View></View>;
 }
 
 const sizeStyles = StyleSheet.create({
@@ -1396,9 +1435,6 @@ function SectionHeader({ title, subtitle }: { title: string; subtitle: string })
 
 function MetaGrid({ doc }: { doc: ReturnType<typeof useTilesDoc> }) {
   const row2 = [
-    { label: "REFERENCE", value: doc.header.reference, onChange: (t: string) => doc.setHeaderField("reference", t) },
-    { label: "ATTENDED BY", value: doc.header.attendedBy, onChange: (t: string) => doc.setHeaderField("attendedBy", t) },
-    { label: "PREPARED BY", value: doc.header.preparedBy, onChange: (t: string) => doc.setHeaderField("preparedBy", t) },
     { label: "ADDRESS", value: doc.header.address, onChange: (t: string) => doc.setHeaderField("address", t) },
   ];
   return (
@@ -1610,7 +1646,7 @@ function SelectionPaper(doc: ReturnType<typeof useTilesDoc>) {
           <View style={[selStyles.td, flex(3)]}><Text style={selStyles.th}>PRODUCT DETAIL</Text></View>
           <View style={[selStyles.td, flex(4)]}><Text style={selStyles.th}>SIZE</Text></View>
           <View style={[selStyles.td, flex(5), { borderRightWidth: 0 }]}>
-            <Text style={[selStyles.th, { color: "#E00000" }]}>{"RATE/\nSQ.FT"}</Text>
+            <Text style={[selStyles.th, { color: "#E00000" }]}>{"RATE"}</Text>
           </View>
         </View>
         {doc.rows.map((row, index) => (
@@ -1643,9 +1679,11 @@ function SelectionPaper(doc: ReturnType<typeof useTilesDoc>) {
                 onLoad={() => void doc.loadRowSizes(row.key, row.productId!)}
                 testID={`tiles-size-${index}`}
               />
+              <TileFinishField row={row} onSelect={(id) => void doc.selectRowFinish(row.key, id)} />
             </View>
             <View style={[selStyles.td, flex(5), { borderRightWidth: 0 }]}>
-              <CellInput value={row.rateSqft} onChangeText={(t) => doc.updateRow(row.key, { rateSqft: t })} red bold testID={`tiles-rate-${index}`} />
+              <CellInput value={row.quantityUnit === "Pieces" || row.priceBasis === "box" ? row.rateBox : row.rateSqft} onChangeText={(t) => doc.updateRow(row.key, row.quantityUnit === "Pieces" || row.priceBasis === "box" ? { rateBox: t, offerRate: t } : { rateSqft: t })} red bold testID={`tiles-rate-${index}`} />
+              <Text style={selStyles.th}>{row.quantityUnit === "Pieces" ? "per piece" : row.priceBasis === "box" ? "per box" : "per sq.ft"}</Text>
             </View>
             <RowSideControls
               isLast={index === doc.rows.length - 1}
@@ -1771,9 +1809,10 @@ function QuotationPaper(doc: ReturnType<typeof useTilesDoc>) {
                 onLoad={() => void doc.loadRowSizes(row.key, row.productId!)}
                 testID={`tiles-size-${index}`}
               />
+              <TileFinishField row={row} onSelect={(id) => void doc.selectRowFinish(row.key, id)} />
             </View>
             <View style={[quoStyles.td, flex(5)]}>
-              <CellInput value={row.rateSqft} onChangeText={(t) => doc.updateRow(row.key, { rateSqft: t })} red bold testID={`tiles-rate-sqft-${index}`} />
+              {(row.quantityUnit === "Pieces" || row.priceBasis === "box") ? <Text style={quoStyles.cellText}>—</Text> : <CellInput value={row.rateSqft} onChangeText={(t) => doc.updateRow(row.key, { rateSqft: t })} red bold testID={`tiles-rate-sqft-${index}`} />}
             </View>
             <View style={[quoStyles.td, flex(6)]}>
               <CellInput value={row.offerRate} onChangeText={(t) => doc.updateRow(row.key, { offerRate: t })} bold testID={`tiles-offer-rate-${index}`} />
@@ -1958,7 +1997,7 @@ function MobileRowCard({
       </View>
 
       <View style={[mobileStyles.fieldStack, compact && mobileStyles.fieldGrid]}>
-        {fields.map((f) => (
+        {fields.filter(f => !(docType === "tiles_quotation" && f.key === "rateSqft" && (row.quantityUnit === "Pieces" || row.priceBasis === "box"))).map((f) => (
           <View key={f.key} style={compact && !(isPhone && f.key === "area") ? { width: fieldColumns === 3 ? "32%" : "49%", minWidth: 0 } : mobileStyles.fieldFull}>
             {f.key === "size" ? (
               <View style={{ gap: spacing.sm }}>
@@ -1971,6 +2010,7 @@ function MobileRowCard({
                   testID={`mobile-${f.key}-${index}`}
                   mobile
                 />
+                <TileFinishField row={row} onSelect={(id) => void doc.selectRowFinish(row.key, id)} />
               </View>
             ) : f.key === "quantityUnit" ? (
               <>
@@ -1979,12 +2019,12 @@ function MobileRowCard({
               </>
             ) : (
               <TextField
-                label={f.key === "rateBox" ? `Rate / ${quantityUnitLabel(row.quantityUnit)}` : f.key === "totalBox" ? "Quantity" : f.label}
-                value={f.key === "total" ? lineTotalInputValue(row) : (row as any)[f.key]}
-                onChangeText={(t: string) => doc.updateRow(row.key, { [f.key]: t } as Partial<TileRow>)}
+                label={f.key === "rateSqft" && (row.quantityUnit === "Pieces" || row.priceBasis === "box") ? `Rate / ${row.quantityUnit === "Pieces" ? "piece" : "box"}` : f.key === "rateBox" ? `Rate / ${quantityUnitLabel(row.quantityUnit)}` : f.key === "totalBox" ? "Quantity" : f.label}
+                value={f.key === "total" ? lineTotalInputValue(row) : f.key === "rateSqft" && (row.quantityUnit === "Pieces" || row.priceBasis === "box") ? row.rateBox : (row as any)[f.key]}
+                onChangeText={(t: string) => doc.updateRow(row.key, f.key === "rateSqft" && (row.quantityUnit === "Pieces" || row.priceBasis === "box") ? { rateBox: t, offerRate: t } : { [f.key]: t } as Partial<TileRow>)}
                 keyboardType={f.numeric ? "decimal-pad" : "default"}
                 testID={`mobile-${f.key}-${index}`}
-                helper={f.suffix}
+                helper={f.key === "rateSqft" && (row.quantityUnit === "Pieces" || row.priceBasis === "box") ? `per ${row.quantityUnit === "Pieces" ? "piece" : "box"}` : f.suffix}
               />
             )}
           </View>
@@ -2089,13 +2129,6 @@ function MobileTilesEditor({
                 <View style={mobileStyles.fieldFull}>
                   {!doc.partner && doc.legacyPartnerLabel ? <Text style={type.caption}>Recorded reference: {doc.legacyPartnerLabel}</Text> : null}
       <ReferrerField key={doc.referenceScope} label="Architect / interior designer" floorId={TILES_FLOOR_ID} value={doc.partner} onChange={doc.pickPartner} />
-                  <TextField label="Reference" value={doc.header.reference} onChangeText={(t: string) => doc.setHeaderField("reference", t)} testID="mobile-reference" />
-                </View>
-                <View style={mobileStyles.fieldFull}>
-                  <TextField label="Attended by" value={doc.header.attendedBy} onChangeText={(t: string) => doc.setHeaderField("attendedBy", t)} testID="mobile-attended-by" />
-                </View>
-                <View style={mobileStyles.fieldFull}>
-                  <TextField label="Prepared by" value={doc.header.preparedBy} onChangeText={(t: string) => doc.setHeaderField("preparedBy", t)} testID="mobile-prepared-by" />
                 </View>
               </Disclosure>
               <TextField label={isSelection ? "Address" : "Address (required)"} value={doc.header.address} onChangeText={(t: string) => doc.setHeaderField("address", t)} multiline testID="mobile-address" />

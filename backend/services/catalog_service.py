@@ -476,6 +476,18 @@ def _primary_product_image(snapshot: CatalogSnapshot, product_id: str, family_ke
     return next((row["public_url"] for row in rows if row.get("public_url") and row.get("role") == "seat-cover"), None)
 
 
+def _tile_price_kind(product: dict) -> str:
+    unit = re.sub(r"[._-]+", " ", str((product.get("specs") or {}).get("price_unit") or "").strip().lower())
+    unit = re.sub(r"\s+", " ", unit)
+    if unit in {"piece", "pieces", "pc", "pcs", "per piece", "per pieces", "per pc", "per pcs", "tile", "per tile"}:
+        return "piece"
+    if unit in {"sqft", "sq ft", "per sqft", "per sq ft", "per square foot"}:
+        return "sqft"
+    if unit in {"box", "per box"}:
+        return "box"
+    return ""
+
+
 def _family_siblings(snapshot: CatalogSnapshot, product: dict) -> list[dict]:
     """Return the actual family of one catalog product.
 
@@ -491,6 +503,7 @@ def _family_siblings(snapshot: CatalogSnapshot, product: dict) -> list[dict]:
         sibling for sibling in getattr(snapshot, "products_by_family", {}).get(family_key, ())
         if sibling.get("floor_id") == product.get("floor_id")
         and sibling.get("brand_id") == product.get("brand_id")
+        and (product.get("floor_id") != "ground-floor" or _tile_price_kind(product) == _tile_price_kind(sibling))
         and _is_catalog_product(sibling, snapshot)
         and (
             any(e.get("category_id") == product.get("category_id") for e in sibling.get("catalog_entries") or [])
@@ -874,7 +887,8 @@ def _matches_filters(product: dict, *, brand_id: Optional[str], category_id: Opt
 
 def _family_card_key(product: dict) -> tuple:
     return (product.get("family_key") or f"solo:{product['id']}", product.get("floor_id"),
-            product.get("brand_id"), product.get("category_id"))
+            product.get("brand_id"), product.get("category_id"),
+            _tile_price_kind(product) if product.get("floor_id") == "ground-floor" else "")
 
 
 def _one_per_family(products: list[dict]) -> list[dict]:
@@ -1198,6 +1212,7 @@ async def list_family_groups(
             "source_price_unspecified": product.get("source_price_unspecified", False),
             "price_source": product.get("price_source"),
             "family_key": product.get("family_key"),
+            "price_kind": _tile_price_kind(product) if product.get("floor_id") == "ground-floor" else "",
             "family_name": product.get("name") if product.get("catalog_entry") else product.get("family_name") or product.get("name"),
             "sample_product_id": product["id"],
             "brand_id": product.get("brand_id"),

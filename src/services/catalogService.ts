@@ -84,7 +84,7 @@ export async function fetchCatalogPage<T>(
 type CatalogIdentity = {
   id?: string; family_key?: string | null; listing_id?: string | null;
   sample_product_id?: string; floor_id?: string | null;
-  brand_id?: string | null; category_id?: string | null;
+  brand_id?: string | null; category_id?: string | null; price_kind?: string | null;
 };
 
 export function catalogItemKey(item: CatalogIdentity): string {
@@ -93,7 +93,7 @@ export function catalogItemKey(item: CatalogIdentity): string {
   // Match the backend family card contract: supplier keys are only unique
   // within a floor, brand and category. A sample product may change on refresh.
   return JSON.stringify(['family', item.floor_id || '', item.brand_id || '',
-    item.category_id || '', item.family_key ? ['key', item.family_key] : ['solo', item.sample_product_id || '']]);
+    item.category_id || '', item.price_kind || '', item.family_key ? ['key', item.family_key] : ['solo', item.sample_product_id || '']]);
 }
 
 export function mergeCatalogPage<T extends CatalogIdentity>(

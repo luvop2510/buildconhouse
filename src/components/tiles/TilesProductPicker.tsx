@@ -23,6 +23,7 @@ import { isNearScrollEnd } from "@/src/utils/scrollEnd";
 
 import { TILE_IMAGE_ASPECT_RATIO, tilesPickerColumns } from "./tilePresentation";
 import { tilePickerHistory } from "./tilePickerHistory";
+import { tilePriceUnit } from "./tileQuantityUnit";
 
 const PAGE_SIZE = 24;
 
@@ -274,7 +275,7 @@ function TileCatalogCard({
           </View>
         ) : null}
         <View style={styles.cardFooter}>
-          <Text style={styles.price}>{product.price ? money(product.price) : "Price on request"}</Text>
+          <View style={{ flex: 1, minWidth: 0, gap: 3 }}><Text style={styles.price}>{product.price ? money(product.price) : "Price on request"}</Text>{tilePriceUnit(product.specs?.price_unit) ? <Text style={styles.unitBadge}>{tilePriceUnit(product.specs?.price_unit)}</Text> : null}</View>
           <View style={styles.add}><Feather name="plus" size={16} color={colors.onBrand} /></View>
         </View>
       </View>
@@ -314,6 +315,7 @@ const styles = StyleSheet.create({
   sizeChoiceTextCurrent: { color: colors.onBrand },
   cardFooter: { minHeight: 32, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 4, marginTop: 3 },
   price: { flex: 1, minWidth: 0, fontSize: 12, fontWeight: "700", color: colors.onSurface, fontVariant: ["tabular-nums"] },
+  unitBadge: { alignSelf: "flex-start", overflow: "hidden", borderWidth: 1, borderColor: colors.border, borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2, fontSize: 11, color: colors.onSurfaceSecondary },
   add: { width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center", backgroundColor: colors.brand },
   empty: { padding: spacing.xl, color: colors.onSurfaceMuted, fontSize: 14, textAlign: "center" },
   errorNotice: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginHorizontal: spacing.lg, marginBottom: spacing.md, padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.errorBg },

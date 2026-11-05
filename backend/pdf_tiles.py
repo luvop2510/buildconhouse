@@ -17,7 +17,6 @@ pdf_generator so there is exactly one implementation of those in the codebase.
 """
 from __future__ import annotations
 from services.phone_format import format_phone
-from services.referrer_identity import pdf_reference_label
 
 import functools
 from datetime import datetime
@@ -228,9 +227,7 @@ def _header_block(main_title: str, subtitle: str, styles: dict) -> Table:
 
 
 def _meta_grid(quotation: dict, customer: dict, styles: dict) -> Table:
-    """The 4x2 CUSTOMER NAME / CONTACT NO. / SELECTION-QUOTATION DATE /
-    QUOTATION NO. + REFERENCE / ATTENDED BY / PREPARED BY / ADDRESS form
-    grid — identical on both documents' page 1."""
+    """Customer and document details shared by the two tile documents."""
     created = _parse_doc_date(quotation).strftime("%d-%b-%y")
     row1_labels = ["CUSTOMER NAME", "CONTACT NO.", "SELECTION / QUOTATION DATE", "QUOTATION NO."]
     row1_values = [
@@ -239,13 +236,8 @@ def _meta_grid(quotation: dict, customer: dict, styles: dict) -> Table:
         quotation.get("doc_date") or created,
         quotation.get("doc_number") or quotation.get("number") or "",
     ]
-    row2_labels = ["REFERENCE", "ATTENDED BY", "PREPARED BY", "ADDRESS"]
-    row2_values = [
-        pdf_reference_label(quotation),
-        quotation.get("attended_by") or "",
-        quotation.get("prepared_by") or "",
-        quotation.get("address_snapshot") or "",
-    ]
+    row2_labels = ["ADDRESS", "", "", ""]
+    row2_values = [quotation.get("address_snapshot") or "", "", "", ""]
     data = [
         [Paragraph(label, styles["metaLabel"]) for label in row1_labels],
         [Paragraph(_escape(value) or "&nbsp;", styles["metaValue"]) for value in row1_values],
@@ -257,6 +249,7 @@ def _meta_grid(quotation: dict, customer: dict, styles: dict) -> Table:
         # A single explicit grid avoids the disconnected, partial form rules
         # seen in printed selections. ReportLab draws continuous straight
         # horizontal and vertical strokes around every field.
+        ("SPAN", (0, 2), (-1, 2)), ("SPAN", (0, 3), (-1, 3)),
         ("BOX", (0, 0), (-1, -1), 0.7, INK),
         ("INNERGRID", (0, 0), (-1, -1), 0.7, INK),
         ("VALIGN", (0, 0), (-1, -1), "BOTTOM"),
@@ -399,7 +392,7 @@ def build_tiles_selection_pdf(quotation: dict, customer: dict, branding: dict | 
     head = [
         Paragraph("SR.<br/>NO.", styles["colHead"]), Paragraph("PRODUCT IMAGE", styles["colHead"]),
         Paragraph("AREA", styles["colHead"]), Paragraph("PRODUCT DETAIL", styles["colHead"]),
-        Paragraph("SIZE", styles["colHead"]), Paragraph("RATE/<br/>SQ.FT", styles["colHeadRed"]),
+        Paragraph("SIZE", styles["colHead"]), Paragraph("RATE", styles["colHeadRed"]),
     ]
     rows: list[list[object]] = [head]
     for index, item in enumerate(items, 1):
@@ -414,7 +407,7 @@ def build_tiles_selection_pdf(quotation: dict, customer: dict, branding: dict | 
             Paragraph(_escape(item.get("room") or ""), styles["cell"]),
             Paragraph(_escape(item.get("name") or ""), styles["cellBold"]),
             Paragraph(_escape(item.get("size") or ""), styles["cell"]),
-            Paragraph(_fmt_rate_sqft(item.get("rate_sqft")), styles["cellRed"]),
+            Paragraph(((_money(item.get("rate_box") or item.get("unit_price") or 0) + "<br/>per piece") if _quantity_unit(item.get("quantity_unit")) == "Pieces" else ((_money(item.get("rate_box") or item.get("unit_price") or 0) + "<br/>per box") if item.get("price_basis") == "box" else (_fmt_rate_sqft(item.get("rate_sqft")) + "<br/>per sq.ft"))), styles["cellRed"]),
         ])
     style_cmds = [
         ("GRID", (0, 0), (-1, -1), 0.7, GRID),
@@ -528,8 +521,8 @@ def build_tiles_quotation_pdf(quotation: dict, customer: dict, branding: dict | 
         rate_box = float(item.get("rate_box") if item.get("rate_box") is not None else (item.get("unit_price") or 0))
         offer_rate = float(item.get("offer_rate") if item.get("offer_rate") is not None else (item.get("rate_sqft") if item.get("rate_sqft") is not None else item.get("unit_price") or 0))
         line_total = float(item.get("net_amount") if item.get("net_amount") is not None else qty * float(item.get("unit_price") or 0))
-        rate_sqft_text = _fmt_rate_sqft(item.get("rate_sqft"))
         quantity_unit = _quantity_unit(item.get("quantity_unit"))
+        rate_sqft_text = "" if quantity_unit == "Pieces" or item.get("price_basis") == "box" else _fmt_rate_sqft(item.get("rate_sqft"))
         rows.append([
             Paragraph(str(index), styles["cell"]),
             _img(

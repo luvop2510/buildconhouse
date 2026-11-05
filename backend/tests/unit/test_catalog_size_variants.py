@@ -130,3 +130,13 @@ def test_size_resolution_route_returns_404_when_size_is_not_a_sibling(monkeypatc
         asyncio.run(catalog_routes.resolve_product_size_variant("p-600", "800x1600", user=user))
 
     assert error.value.status_code == 404
+
+
+def test_tile_price_units_do_not_mix_family_variants(monkeypatch):
+    box = _product("box", "BOX", "600x600", specs={"price_unit": "sqft"})
+    piece = _product("piece", "PIECE", "600x1200", specs={"price_unit": "pcs"})
+    snapshot = _build_snapshot([box, piece], [], [], [], [])
+    monkeypatch.setattr(catalog_service, "get_catalog_snapshot", AsyncMock(return_value=snapshot))
+    assert catalog_service._family_card_key(box) != catalog_service._family_card_key(piece)
+    assert asyncio.run(catalog_service.resolve_size_variant("box", "600x1200", ["ground-floor"])) is None
+    assert hydrate_product(box, snapshot)["available_sizes"] == ["600x600"]

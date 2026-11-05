@@ -264,3 +264,14 @@ def test_tile_customer_and_reference_cells_grow_to_fit_wrapped_values():
     assert long._rowHeights[1] > short._rowHeights[1]
     assert long._rowHeights[3] > short._rowHeights[3]
     assert all(height >= 7 * mm for height in (long._rowHeights[1], long._rowHeights[3]))
+
+
+def test_selection_displays_piece_price_and_omits_removed_fields():
+    pdf = pdf_tiles.build_tiles_selection_pdf({
+        "customer_name": "Selection", "reference_source": "Private Reference",
+        "attended_by": "Attendant", "prepared_by": "Preparer",
+        "items": [{"name": "Imported tile", "qty": 1, "quantity_unit": "Pieces", "rate_box": 160, "unit_price": 160}],
+    }, {"name": "Selection"})
+    text = " ".join(" ".join((page.extract_text() or "").split()) for page in PdfReader(BytesIO(pdf)).pages)
+    assert "160.00 per piece" in text
+    assert "ATTENDED BY" not in text and "PREPARED BY" not in text and "REFERENCE" not in text

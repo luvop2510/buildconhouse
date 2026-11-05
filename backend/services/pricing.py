@@ -34,7 +34,7 @@ def normalize_tile_line_item(item: QuotationLineItem) -> QuotationLineItem:
     # offered rate, and finally the submitted unit_price.  In particular,
     # treat 0 as an unset fallback here: the editor used to submit rate_box=0
     # alongside a valid ₹/piece offer rate, producing a zero-value order.
-    if item.quantity_unit == "Pieces":
+    if item.quantity_unit == "Pieces" or item.price_basis == "box":
         per_piece_rate = next(
             (value for value in (item.rate_box, item.offer_rate, item.unit_price) if value is not None and float(value) > 0),
             0.0,
