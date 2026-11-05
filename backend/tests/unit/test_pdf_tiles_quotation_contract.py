@@ -38,8 +38,8 @@ def test_tiles_pdf_uses_offer_rate_and_quantity_unit():
         "grand_total": 4440,
     })
 
-    assert "OFFER RATE QUANTITY UNIT" in text
-    assert "RATE/ SQ.FT" not in text and "RATE/ UNIT" not in text
+    assert "RATE/ SQ.FT OFFER RATE QUANTITY UNIT" in text
+    assert "RATE/ UNIT" not in text
     assert "₹ 70.00" in text
     assert "QUANTITY UNIT" in text
     assert "PIECES/ BOX" not in text

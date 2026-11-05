@@ -437,7 +437,7 @@ def build_tiles_selection_pdf(quotation: dict, customer: dict, branding: dict | 
 # TILES QUOTATION
 # ===========================================================================
 # Preserve all original product-detail columns and their order on portrait A4.
-_QUO_COLS = [width * mm for width in (7, 32, 18, 38, 18, 22, 16, 12, 31)]
+_QUO_COLS = [width * mm for width in (7, 32, 18, 34, 16, 15, 19, 14, 11, 28)]
 QUOTATION_PRODUCT_IMAGE_WIDTH_MM = 28.0
 QUOTATION_PRODUCT_IMAGE_HEIGHT_MM = QUOTATION_PRODUCT_IMAGE_WIDTH_MM / (16 / 10)
 
@@ -510,7 +510,7 @@ def build_tiles_quotation_pdf(quotation: dict, customer: dict, branding: dict | 
     head = [
         Paragraph("SR.<br/>NO.", styles["colHead"]), Paragraph("PRODUCT IMAGE", styles["colHead"]),
         Paragraph("AREA", styles["colHead"]), Paragraph("PRODUCT DETAIL", styles["colHead"]),
-        Paragraph("SIZE", styles["colHead"]),
+        Paragraph("SIZE", styles["colHead"]), Paragraph("RATE/<br/>SQ.FT", styles["colHeadRed"]),
         Paragraph("OFFER<br/>RATE", styles["colHead"]),
         _SingleLineParagraph("QUANTITY", styles["colHead"]), Paragraph("UNIT", styles["colHead"]),
         _SingleLineParagraph(f"TOTAL ({_currency_symbol()})", styles["colHead"]),
@@ -521,6 +521,7 @@ def build_tiles_quotation_pdf(quotation: dict, customer: dict, branding: dict | 
         offer_rate = float(item.get("offer_rate") if item.get("offer_rate") is not None else (item.get("rate_sqft") if item.get("rate_sqft") is not None else item.get("unit_price") or 0))
         line_total = float(item.get("net_amount") if item.get("net_amount") is not None else qty * float(item.get("unit_price") or 0))
         quantity_unit = _quantity_unit(item.get("quantity_unit"))
+        rate_sqft_text = "" if quantity_unit == "Pieces" or item.get("price_basis") == "box" else _fmt_rate_sqft(item.get("rate_sqft"))
         rows.append([
             Paragraph(str(index), styles["cell"]),
             _img(
@@ -532,6 +533,7 @@ def build_tiles_quotation_pdf(quotation: dict, customer: dict, branding: dict | 
             Paragraph(_escape(item.get("room") or ""), styles["cell"]),
             Paragraph(_escape(item.get("name") or ""), styles["cellBold"]),
             Paragraph(_escape(item.get("size") or ""), styles["cell"]),
+            Paragraph(rate_sqft_text, styles["cellRed"]),
             _SingleLineParagraph(_money(offer_rate) if offer_rate else "", styles["cellOffer"]),
             # The detail table separates the count from its fulfillment unit:
             # quantity stays numeric while the adjacent column says box/piece.

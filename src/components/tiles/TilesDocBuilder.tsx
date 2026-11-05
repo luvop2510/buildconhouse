@@ -1776,6 +1776,8 @@ function SelectionPaper(doc: ReturnType<typeof useTilesDoc>) {
               {(row.finishVariants?.length || 0) >= 2 ? <TileFinishField row={row} onSelect={(id) => doc.selectRowFinish(row.key, id)} testID={`tiles-finish-${index}`} /> : null}
             </View>
             <View style={[selStyles.td, flex(5), { borderRightWidth: 0 }]}>
+              {row.quantityUnit === "Box" && row.priceBasis !== "box" ? <><Text style={selStyles.th}>Rate / Sq.Ft</Text><CellInput value={row.rateSqft} onChangeText={(t) => doc.updateRow(row.key, { rateSqft: t })} testID={`tiles-rate-sqft-${index}`} /></> : null}
+              <Text style={selStyles.th}>Offer Rate</Text>
               <CellInput value={row.offerRate} onChangeText={(t) => doc.updateRow(row.key, { offerRate: t })} red bold testID={`tiles-rate-${index}`} />
             </View>
             <RowSideControls
@@ -1824,7 +1826,7 @@ const selStyles = StyleSheet.create({
 // SR / PRODUCT IMAGE / AREA / PRODUCT DETAIL / SIZE / RATE-SQFT / OFFER RATE /
 // RATE-UNIT / QUANTITY / UNIT / TOTAL — mirrors pdf_tiles.py's _QUO_COLS.
 // Matches backend/pdf_tiles.py's _QUO_COLS, normalized here as proportions.
-const QUO_COLS = [10, 50, 20, 46, 21, 26, 24, 18, 34];
+const QUO_COLS = [10, 50, 20, 46, 21, 21, 26, 24, 18, 34];
 const QUO_COL_TOTAL = QUO_COLS.reduce((total, width) => total + width, 0);
 
 function QuotationPaper(doc: ReturnType<typeof useTilesDoc>) {
@@ -1845,7 +1847,7 @@ function QuotationPaper(doc: ReturnType<typeof useTilesDoc>) {
 
   const headLabels = [
     "SR.\nNO.", "PRODUCT IMAGE", "AREA", "PRODUCT DETAIL", "SIZE",
-    "OFFER\nRATE", "QUANTITY", "UNIT", "TOTAL\n(Rs.)",
+    "RATE/\nSQ.FT", "OFFER\nRATE", "QUANTITY", "UNIT", "TOTAL\n(Rs.)",
   ];
   return (
     <View style={{ gap: spacing.lg }}>
@@ -1905,15 +1907,18 @@ function QuotationPaper(doc: ReturnType<typeof useTilesDoc>) {
               <TileFinishField row={row} onSelect={(id) => doc.selectRowFinish(row.key, id)} testID={`tiles-finish-${index}`} />
             </View>
             <View style={[quoStyles.td, flex(5)]}>
-              <CellInput value={row.offerRate} onChangeText={(t) => doc.updateRow(row.key, { offerRate: t })} bold testID={`tiles-offer-rate-${index}`} />
+              {(row.quantityUnit === "Pieces" || row.priceBasis === "box") ? <Text style={quoStyles.cellText}>—</Text> : <CellInput value={row.rateSqft} onChangeText={(t) => doc.updateRow(row.key, { rateSqft: t })} red bold testID={`tiles-rate-sqft-${index}`} />}
             </View>
             <View style={[quoStyles.td, flex(6)]}>
-              <CellInput value={row.totalBox} onChangeText={(t) => doc.updateRow(row.key, { totalBox: t })} bold testID={`tiles-total-box-${index}`} />
+              <CellInput value={row.offerRate} onChangeText={(t) => doc.updateRow(row.key, { offerRate: t })} bold testID={`tiles-offer-rate-${index}`} />
             </View>
             <View style={[quoStyles.td, flex(7)]}>
+              <CellInput value={row.totalBox} onChangeText={(t) => doc.updateRow(row.key, { totalBox: t })} bold testID={`tiles-total-box-${index}`} />
+            </View>
+            <View style={[quoStyles.td, flex(8)]}>
               <Text style={quoStyles.cellText} testID={`tiles-quantity-unit-${index}`}>{row.productId ? quantityUnitLabel(row.quantityUnit) : ""}</Text>
             </View>
-            <View style={[quoStyles.td, flex(8), { borderRightWidth: 0 }]}>
+            <View style={[quoStyles.td, flex(9), { borderRightWidth: 0 }]}>
               <CellInput value={lineTotalInputValue(row)} onChangeText={(t) => doc.updateRow(row.key, { total: t })} testID={`tiles-total-${index}`} />
             </View>
             <RowSideControls
@@ -1934,7 +1939,8 @@ function QuotationPaper(doc: ReturnType<typeof useTilesDoc>) {
           <View style={[quoStyles.td, flex(5)]} />
           <View style={[quoStyles.td, flex(6)]} />
           <View style={[quoStyles.td, flex(7)]} />
-          <View style={[quoStyles.td, flex(8), { borderRightWidth: 0 }]}>
+          <View style={[quoStyles.td, flex(8)]} />
+          <View style={[quoStyles.td, flex(9), { borderRightWidth: 0 }]}>
             <Text style={[quoStyles.cellText, { fontWeight: "700" }]}>{money(totals.subtotal)}</Text>
           </View>
         </View>
@@ -1990,12 +1996,14 @@ const MOBILE_FIELDS: Record<TilesDocType, MobileFieldDef[]> = {
     { key: "area", label: "Area / Room" },
     { key: "size", label: "Size" },
     { key: "finish", label: "Finish" },
+    { key: "rateSqft", label: "Rate / Sq.Ft", numeric: true },
     { key: "offerRate", label: "Offer Rate", numeric: true },
   ],
   tiles_quotation: [
     { key: "area", label: "Area / Room" },
     { key: "size", label: "Size" },
     { key: "finish", label: "Finish" },
+    { key: "rateSqft", label: "Rate / Sq.Ft", numeric: true },
     { key: "offerRate", label: "Offer Rate", numeric: true },
     { key: "totalBox", label: "Quantity", numeric: true },
     { key: "quantityUnit", label: "Unit" },
@@ -2083,7 +2091,7 @@ function MobileRowCard({
       </View>
 
       <View style={[mobileStyles.fieldStack, compact && mobileStyles.fieldGrid]}>
-        {fields.filter(f => !(f.key === "finish" && (docType === "tiles_selection" ? (row.finishVariants?.length || 0) < 2 : !row.finish)) && !(docType === "tiles_quotation" && f.key === "rateSqft" && (row.quantityUnit === "Pieces" || row.priceBasis === "box"))).map((f) => (
+        {fields.filter(f => !(f.key === "finish" && (docType === "tiles_selection" ? (row.finishVariants?.length || 0) < 2 : !row.finish)) && !(f.key === "rateSqft" && (row.quantityUnit === "Pieces" || row.priceBasis === "box"))).map((f) => (
           <View key={f.key} style={compact && !(isPhone && f.key === "area") ? { width: fieldColumns === 3 ? "32%" : "49%", minWidth: 0 } : mobileStyles.fieldFull}>
             {f.key === "size" ? (
               <View style={{ gap: spacing.sm }}>
