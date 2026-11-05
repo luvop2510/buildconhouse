@@ -10,6 +10,13 @@ test('price and quantity changes invalidate a manually entered total', () => {
   assert.equal(clearsManualTileTotal({ total: '100' }), false);
 });
 
+test('clearing an offer before typing retains legacy conversion', () => {
+  const original = { offerRate: '100', rateSqft: '100', rateBox: '1000', boxSqft: '', totalBox: '2', total: '', totalEdited: false, quantityUnit: 'Box', priceBasis: 'sqft', inferredCoverage: 10 };
+  const cleared = { ...original, offerRate: '', rateBox: tileRateWithoutCoverage(original, '') };
+  const typed = { ...cleared, offerRate: '120', rateBox: tileRateWithoutCoverage(cleared, '120') };
+  assert.equal(tileLineTotal(typed), 2400);
+});
+
 test('offer edits recalculate totals for boxed, box-priced and piece products', () => {
   const row = { offerRate: '100', rateSqft: '100', rateBox: '1000', boxSqft: '10', totalBox: '2', total: '9000', totalEdited: true, quantityUnit: 'Box', priceBasis: 'sqft' };
   assert.equal(tileLineTotal(row), 9000);

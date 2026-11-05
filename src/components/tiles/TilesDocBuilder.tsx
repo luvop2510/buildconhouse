@@ -119,6 +119,7 @@ type TileRow = {
   size: string;
   rateSqft: string;
   boxSqft: string;
+  inferredCoverage?: number;
   offerRate: string;
   // True when Offer Rate is merely mirroring Rate/SQ.FT rather than a
   // customer-specific offer. This lets later rate edits continue to price
@@ -496,7 +497,11 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
       if (next.quantityUnit === "Box" && ("offerRate" in patch || "boxSqft" in patch || ("rateSqft" in patch && row.offerRateIsFallback))) {
         const derived = derivedTileBoxRate(next);
         if (derived !== null) next.rateBox = String(derived);
-        else if (next.priceBasis !== "box" && "offerRate" in patch) next.rateBox = tileRateWithoutCoverage(row, next.offerRate);
+        else if (next.priceBasis !== "box" && "offerRate" in patch) {
+          const priorOffer = row.offerRate.trim() ? num(row.offerRate) : num(row.rateSqft);
+          next.inferredCoverage = row.inferredCoverage ?? (priorOffer > 0 && num(row.rateBox) > 0 ? num(row.rateBox) / priorOffer : 1);
+          next.rateBox = tileRateWithoutCoverage(next, next.offerRate);
+        }
       }
       if (clearsManualTileTotal(patch)) {
         next.totalEdited = false;
@@ -592,6 +597,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
         size: history?.size || product.size || product.dimensions || row.size,
         rateSqft,
         boxSqft,
+        inferredCoverage: undefined,
         rateBox: isPerPiece || isPerBox ? String(product.price || product.mrp || 0) : (history?.rate_box != null ? String(history.rate_box) : (specNum("rate_per_box", "rate_box", "box_rate") || derivedRateBox)),
         offerRate: isPerPiece || isPerBox ? String(product.price || product.mrp || 0) : (history?.rate_sqft != null ? String(history.rate_sqft) : rateSqft),
         offerRateIsFallback: true,

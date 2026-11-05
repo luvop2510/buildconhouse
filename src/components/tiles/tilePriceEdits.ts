@@ -6,6 +6,7 @@ export function clearsManualTileTotal(patch: Record<string, unknown>): boolean {
 export type TilePriceRow = {
   offerRate: string; rateSqft: string; rateBox: string; boxSqft: string; totalBox: string;
   total: string; totalEdited: boolean; quantityUnit: "Box" | "Pieces"; priceBasis?: "box" | "sqft" | "piece";
+  inferredCoverage?: number;
 };
 const number = (value: string) => {
   const parsed = Number.parseFloat(value.replace(/,/g, ""));
@@ -20,8 +21,9 @@ export function tileUnitRate(row: TilePriceRow): number {
 export function tileRateWithoutCoverage(previous: TilePriceRow, offer: string): string {
   const previousOffer = previous.offerRate.trim() ? number(previous.offerRate) : number(previous.rateSqft);
   const oldBoxRate = number(previous.rateBox);
-  const factor = previousOffer > 0 && oldBoxRate > 0 ? oldBoxRate / previousOffer : 1;
-  return offer.trim() ? String(Math.round(number(offer) * factor * 100) / 100) : "";
+  const factor = previous.inferredCoverage ?? (previousOffer > 0 && oldBoxRate > 0 ? oldBoxRate / previousOffer : 1);
+  const rate = offer.trim() ? number(offer) : number(previous.rateSqft);
+  return String(Math.round(rate * factor * 100) / 100);
 }
 export function tileLineTotal(row: TilePriceRow): number {
   const manual = number(row.total);
