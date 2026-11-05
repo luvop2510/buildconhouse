@@ -275,4 +275,7 @@ def test_selection_displays_piece_price_and_reference_and_staff():
     text = " ".join(" ".join((page.extract_text() or "").split()) for page in PdfReader(BytesIO(pdf)).pages)
     assert "160.00" in text
     assert all(value in text for value in ("REFERENCE", "Private Reference", "ATTENDED BY", "Attendant", "PREPARED BY", "Preparer"))
-    assert "Imported tile" in (PdfReader(BytesIO(pdf)).pages[0].extract_text() or "")
+    pages = PdfReader(BytesIO(pdf)).pages
+    assert "Imported tile" not in (pages[0].extract_text() or "")
+    assert "PRODUCT DETAILS" in (pages[1].extract_text() or "")
+    assert "Imported tile" in (pages[1].extract_text() or "")

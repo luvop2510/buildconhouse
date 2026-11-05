@@ -30,7 +30,7 @@ from reportlab.lib.units import mm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import (
-    CondPageBreak, Flowable, HRFlowable, Image, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle,
+    Flowable, HRFlowable, Image, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle,
 )
 
 from pdf_generator import (
@@ -382,10 +382,10 @@ def build_tiles_selection_pdf(quotation: dict, customer: dict, branding: dict | 
     # The selection cover has no price summary, so the standard rhythm gives
     # every group breathing room while still keeping the masthead inside the
     # printable first-page frame.
-    story.extend(_brand_terms_signature_block(styles, b))
+    story.extend(_brand_terms_signature_block(styles, b, density="airy"))
 
-    # Start products on the cover when a header and a product row fit.
-    story.append(CondPageBreak(60 * mm))
+    # Product selection is a standalone cover; details begin on the next page.
+    story.append(PageBreak())
     story.append(_header_block("PRODUCT DETAILS", f"Items 1&ndash;{len(items)}" if items else "No items yet", styles))
     story.extend([Spacer(1, 2.5 * mm), HRFlowable(width="100%", thickness=1.1, color=INK, spaceAfter=3 * mm)])
 

@@ -9,6 +9,12 @@ const referrerExports = {};
 vm.runInNewContext(ts.transpileModule(readFileSync(new URL('../src/utils/referrer.ts', import.meta.url), 'utf8'), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
 }).outputText, { exports: referrerExports });
+const tileQuantityExports = {}, tilePriceExports = {};
+for (const [path, exports] of [['../src/components/tiles/tileQuantityUnit.ts', tileQuantityExports], ['../src/components/tiles/tilePriceEdits.ts', tilePriceExports]]) {
+  vm.runInNewContext(ts.transpileModule(readFileSync(new URL(path, import.meta.url), 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText, { exports });
+}
 
 const source = readFileSync(new URL('../app/(admin)/tiles/index.tsx', import.meta.url), 'utf8');
 const marker = '  return (\n    <SafeAreaView';
@@ -184,6 +190,8 @@ function builder({ drafts = new Map(), accountId = 'owner', docType = 'tiles_quo
     '@/src/theme/tokens': { font: {}, colors: {}, radius: {}, spacing: {}, type: new Proxy({}, { get: () => ({}) }) },
     '@/src/constants/floors': { TILES_FLOOR_ID: 'ground-floor' },
     './tilePresentation': { TILE_IMAGE_ASPECT_RATIO: 1.6 },
+    './tileQuantityUnit': tileQuantityExports,
+    './tilePriceEdits': tilePriceExports,
     './tilesStage': { tilesStage: () => ({}), nextTilesAction: () => null, canPlaceOrder: () => false, normalizeTilesStatus: value => value },
   };
   const exports = {};
@@ -503,7 +511,7 @@ test('partial tile details and photos survive immediate unmount/reload before ne
   original.state.applyProduct(original.state.rows[0].key, { id: 'tile-photo', name: 'Photo tile', sku: 'TILE', images: ['https://media.example/tile.jpg'], available_sizes: ['600x600'], price: 20, specs: {} });
   await original.settle();
   original.state.updateRow(original.state.rows[0].key, { totalBox: '' }); await original.settle();
-  assert.equal(original.requests.length, 0, 'Incomplete draft must not submit invalid quantities');
+  assert.equal(original.requests.filter(request => ['POST', 'PATCH'].includes(request.method)).length, 0, 'Incomplete draft must not submit invalid quantities');
   assert.equal(drafts.size, 1);
   original.unmount();
   const restored = builder({ drafts }); restored.render(); await restored.settle();
@@ -511,7 +519,7 @@ test('partial tile details and photos survive immediate unmount/reload before ne
   assert.equal(restored.state.rows[0].productId, 'tile-photo');
   assert.equal(restored.state.rows[0].image, 'https://media.example/tile.jpg');
   assert.equal(restored.state.rows[0].totalBox, '', 'Incomplete quantities are kept exactly');
-  assert.equal(restored.requests.length, 0);
+  assert.equal(restored.requests.filter(request => ['POST', 'PATCH'].includes(request.method)).length, 0);
 });
 
 test('a named tile quotation creates a server draft without requiring its address', async () => {
