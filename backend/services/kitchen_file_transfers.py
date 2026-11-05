@@ -105,6 +105,7 @@ class KitchenFileTransfers:
     async def begin(self, user, project_id, body):
         project, policy = await self.authorized(user, project_id)
         kind = validate_file_metadata(body.content_type, body.filename, policy)
+        access.require_upload(user, project, kind)
         if body.purpose == "final_production":
             await access.require_command(self.db, user, project, "production_document")
             if project["stage"] not in {"order", "production"} or kind != "application/pdf":
@@ -142,8 +143,9 @@ class KitchenFileTransfers:
         return self.public(row)
 
     async def put_part(self, user, project_id, transfer_id, index, body):
-        _, policy = await self.authorized(user, project_id)
+        project, policy = await self.authorized(user, project_id)
         row = await self.session(user, project_id, transfer_id)
+        access.require_upload(user, project, row["content_type"])
         if row.get("purpose") == "final_production" and row["expires_at"].replace(tzinfo=timezone.utc) < now() + timedelta(hours=12):
             expiry = now() + timedelta(hours=24)
             renewed = await self.db.kitchen_file_transfers.update_one({"_id": user.id, "transfer_id": transfer_id, "state": "open"}, {"$set": {"expires_at": expiry}})
@@ -188,8 +190,9 @@ class KitchenFileTransfers:
         return {"index": index, "sha256": digest, "size_bytes": len(data)}
 
     async def finish(self, user, project_id, transfer_id, body, storage, bucket):
-        _, policy = await self.authorized(user, project_id)
+        project, policy = await self.authorized(user, project_id)
         row = await self.session(user, project_id, transfer_id)
+        access.require_upload(user, project, row["content_type"])
         if row["state"] == "completed":
             return await self.projects.get(user, project_id)
         validate_file_metadata(row["content_type"], row["filename"], policy)
@@ -319,6 +322,7 @@ class KitchenFileTransfers:
 
     async def _finish_production_pdf(self, user, project_id, transfer_id, body, storage, bucket, token, row):
         project, _ = await self.authorized(user, project_id)
+        access.require_upload(user, project, "application/pdf")
         await access.require_command(self.db, user, project, "production_document")
         if project["stage"] not in {"order", "production"}:
             raise HTTPException(422, "Final Production PDF requires Order/Production")
@@ -402,7 +406,7 @@ class KitchenFileTransfers:
 _download_cache = WeakKeyDictionary()
 
 
-async def download_part(database, user, project_id, attachment_id, index, storage):
+async def download_part(database, user, project_id, attachment_id, index, storage, purpose="download"):
     import time
     projects = KitchenProjectService(database)
     policy = await projects.policy()
@@ -411,6 +415,7 @@ async def download_part(database, user, project_id, attachment_id, index, storag
     metadata = next((row for row in project["attachments"] if row["id"] == attachment_id), None)
     if not metadata:
         raise HTTPException(404, "Kitchen attachment not found")
+    access.require_attachment(user, project, metadata, purpose)
     visible = access.visible_attachment_ids(project, user)
     if visible is not None and attachment_id not in visible:
         raise HTTPException(404, "Kitchen attachment not found")

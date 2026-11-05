@@ -44,7 +44,7 @@ export function KitchenProjectDetail({ page = "stage" }: { page?: ProjectPage })
   const path = (suffix = "") => kitchenProjectPath(state.id, suffix, returnTo);
   const canUpdate = project?.permissions?.can_update === true;
   const canEditCustomer = customerAccess || canUpdate;
-  const fullHistory = !project?.access_scoped;
+  const fullHistory = !project?.access_scoped && !project?.permissions?.restricted;
   const held = project?.lifecycle_status === "On Hold" || project?.lifecycle_status === "Cancelled" || project?.lifecycle_status === "Lost";
   const back = () => { if (router.canGoBack()) router.back(); else router.replace(returnTo as any); };
   const actionLabel = project ? currentTaskLabel(project) : "Open current task";
@@ -56,9 +56,9 @@ export function KitchenProjectDetail({ page = "stage" }: { page?: ProjectPage })
   const projectActions = project ? <Menu triggerLabel="Project actions" triggerTestID="kitchen-project-actions" items={[
       { label: "Stage history", icon: "list", onPress: () => setPanel("workflow") },
       ...(canEditCustomer ? [{ label: "Edit customer", icon: "edit-2" as const, onPress: () => router.push(`/customers/${project.customer_id}/edit` as any) }] : []),
-      { label: "Documents", icon: "paperclip", onPress: () => setPanel("documents") },
+      ...(!project.permissions?.restricted || selected === "installation" && project.stage === "installation" ? [{ label: "Documents", icon: "paperclip" as const, onPress: () => setPanel("documents") }] : []),
       ...(fullHistory ? [{ label: "History", icon: "clock" as const, onPress: () => setPanel("history") }] : []),
-      ...(selected === "order" ? [{ label: "Advance details", icon: "credit-card" as const, onPress: () => setPanel("advance") }] : []),
+      ...(selected === "order" && !project.permissions?.restricted ? [{ label: "Advance details", icon: "credit-card" as const, onPress: () => setPanel("advance") }] : []),
       ...(selected === "installation" ? [{ label: "Site visits", icon: "map-pin" as const, onPress: () => setPanel("visits") }] : []),
       { label: "Assigned to", icon: "user", onPress: () => setPanel("assignee") },
       { label: "Completion date", icon: "calendar", onPress: () => setPanel("assignments") },
@@ -105,10 +105,10 @@ export function KitchenProjectDetail({ page = "stage" }: { page?: ProjectPage })
         <CommercialStages project={project} stage={selected} disabled={disabled || Boolean(held)} command={command} />
       </View>
       <Sheet scroll visible={lostOpen} onClose={() => setLostOpen(false)} title="Mark customer as lost" testID="kitchen-lost-sheet"><View style={{ gap: spacing.md }}><Text style={type.body}>Record why this customer was lost. This closes the project for changes.</Text><TextField label="Lost reason" value={lostReason} onChangeText={setLostReason} multiline testID="kitchen-lost-reason" /><Button label="Mark customer as lost" variant="danger" disabled={!lostReason.trim() || disabled} loading={submission.busy} onPress={() => { void command("mark_lost", { reason: lostReason.trim() }).then(ok => { if (ok) setLostOpen(false); }); }} testID="kitchen-confirm-lost" /></View></Sheet>
-      <Sheet scroll visible={panel === "advance"} onClose={() => setPanel(null)} title="Advance details" testID="kitchen-advance-sheet"><CommercialStages project={project} stage={selected} disabled={disabled || submission.busy || Boolean(held)} command={command} mode="advance" /></Sheet>
+      <Sheet scroll visible={panel === "advance" && !project.permissions?.restricted} onClose={() => setPanel(null)} title="Advance details" testID="kitchen-advance-sheet"><CommercialStages project={project} stage={selected} disabled={disabled || submission.busy || Boolean(held)} command={command} mode="advance" /></Sheet>
       <Sheet scroll visible={panel === "visits"} onClose={() => setPanel(null)} title="Site visits" testID="kitchen-site-visits-sheet"><CommercialStages project={project} stage={selected} disabled={disabled || submission.busy || Boolean(held)} command={command} mode="visits" /></Sheet>
-      <Sheet scroll visible={panel === "documents"} onClose={() => setPanel(null)} title="Project documents" testID="kitchen-documents-sheet">{policyError ? <Alert tone="warning" title="Upload settings unavailable" action={<Button label="Reload" variant="secondary" onPress={reload} />} /> : null}<KitchenDocuments project={project} policy={policy} disabled={disabled || Boolean(held)} onUpdated={updateProject} onReload={reload} /></Sheet>
-      <Sheet scroll visible={panel === "history"} onClose={() => setPanel(null)} title="Project history" testID="kitchen-history-sheet"><ProjectHistory project={project} /></Sheet>
+      <Sheet scroll visible={panel === "documents" && (!project.permissions?.restricted || selected === "installation" && project.stage === "installation")} onClose={() => setPanel(null)} title="Project documents" testID="kitchen-documents-sheet">{policyError ? <Alert tone="warning" title="Upload settings unavailable" action={<Button label="Reload" variant="secondary" onPress={reload} />} /> : null}<KitchenDocuments project={project} policy={policy} disabled={disabled || Boolean(held)} onUpdated={updateProject} onReload={reload} /></Sheet>
+      <Sheet scroll visible={panel === "history" && !project.permissions?.restricted} onClose={() => setPanel(null)} title="Project history" testID="kitchen-history-sheet"><ProjectHistory project={project} /></Sheet>
       <Sheet scroll visible={panel === "assignee"} onClose={() => setPanel(null)} title="Stage assignment" testID="kitchen-assignee-sheet"><KitchenAssignment project={project} stage={selected} disabled={disabled || Boolean(held) || selected !== currentStage} /></Sheet>
       <Sheet scroll visible={panel === "assignments"} onClose={() => setPanel(null)} title="Target completion" testID="kitchen-assignment-sheet"><ProjectPlan project={project} disabled={disabled || Boolean(held)} /></Sheet>
       <Sheet scroll visible={panel === "exceptions"} onClose={() => setPanel(null)} title="Project changes" testID="kitchen-exceptions-sheet"><ProjectExceptions project={project} disabled={disabled} /></Sheet>

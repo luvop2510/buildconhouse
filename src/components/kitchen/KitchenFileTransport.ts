@@ -130,7 +130,7 @@ async function uploadFinalProductionPdf(project: KitchenProject, file: DocumentP
   return saved;
 }
 
-export async function downloadKitchenFile(projectId: string, attachment: KitchenAttachment, progress: (percent: number) => void, preview?: Window) {
+export async function downloadKitchenFile(projectId: string, attachment: KitchenAttachment, progress: (percent: number) => void, preview?: Window, purpose: "open" | "download" = "download") {
   if (!attachment.size_bytes) throw new Error("This file is empty.");
   const operation = beginIdentityOperation();
   const parts: Uint8Array<ArrayBuffer>[] = [];
@@ -153,7 +153,7 @@ export async function downloadKitchenFile(projectId: string, attachment: Kitchen
     let fullDigest = attachment.sha256;
     const wholeHash = sha256.create();
     for (let index = 0; index < count; index += 1) {
-      const response = await kitchenProjectsApi.downloadPart(projectId, attachment.id, index);
+      const response = await kitchenProjectsApi.downloadPart(projectId, attachment.id, index, purpose);
       if (!operation.isCurrent()) return false;
       const bytes = decoded(response.data_base64);
       if (response.index !== index || response.size_bytes !== attachment.size_bytes || bytes.length !== Math.min(PART_BYTES, attachment.size_bytes - index * PART_BYTES)) throw new Error("File part failed length verification.");

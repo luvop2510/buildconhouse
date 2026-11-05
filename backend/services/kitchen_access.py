@@ -11,10 +11,15 @@ RESOURCE = "kitchen_projects"
 
 
 def owner(user):
-    return user.role == "owner"
+    return getattr(user, "role", None) == "owner"
 
 
 def hydrate_stage_actions(user, grants):
+    restricted = any(grant_allows(g, user_id=user.id, resource="kitchen_restricted", action="view", floor_id=KITCHEN_FLOOR) for g in grants)
+    object.__setattr__(user, "_kitchen_restricted", restricted)
+    pdf_actions = {stage: {action: any(grant_allows(g, user_id=user.id, resource=KITCHEN_STAGE_RESOURCES[stage], action="pdf_" + action, floor_id=KITCHEN_FLOOR) for g in grants)
+                           for action in ("choose", "open", "download")} for stage in ("design", "quotation")}
+    object.__setattr__(user, "_kitchen_pdf_actions", pdf_actions)
     stage_actions = {operation: [name for name, resource in KITCHEN_STAGE_RESOURCES.items()
         if any(grant_allows(grant, user_id=user.id, resource=candidate, action=operation, floor_id=KITCHEN_FLOOR)
                for grant in grants for candidate in (RESOURCE, resource))]
@@ -59,6 +64,54 @@ def allowed_stages(user, action="view"):
     if owner(user) or not user.custom_access:
         return list(KITCHEN_STAGE_RESOURCES)
     return getattr(user, "_kitchen_stage_actions", {}).get(action, [])
+
+
+def restricted(user):
+    return not owner(user) and bool(getattr(user, "_kitchen_restricted", False))
+
+
+def pdf_allowed(user, stage, action):
+    if not restricted(user):
+        return True
+    return bool(getattr(user, "_kitchen_pdf_actions", {}).get(stage, {}).get(action))
+
+
+def is_pdf(metadata):
+    return metadata.get("content_type", "").split(";", 1)[0].strip().lower() == "application/pdf" or metadata.get("filename", "").lower().endswith(".pdf")
+
+
+def require_upload(user, project, content_type):
+    if not restricted(user):
+        return
+    stage = project.get("stage")
+    if stage not in {"design", "quotation", "order", "production", "completed"}:
+        return
+    if content_type != "application/pdf" or stage not in {"design", "quotation"} or not pdf_allowed(user, stage, "choose"):
+        raise HTTPException(403, "File upload is not permitted")
+
+
+def final_pdf_ids(project, stage):
+    if stage == "design":
+        identity = project.get("final_design_version_id")
+        row = next((v for v in project.get("design_versions", []) if v.get("id") == identity), None)
+    else:
+        rows = project.get("quotation_versions", [])
+        row = rows[-1] if rows else None
+    return {row["final_attachment_id"]} if row and row.get("final_attachment_id") else set()
+
+
+def require_attachment(user, project, metadata, purpose):
+    if not restricted(user):
+        return
+    stage = project.get("stage")
+    if stage in {"lead", "visit", "cad"}:
+        return
+    if stage == "installation" and (not is_pdf(metadata) or metadata.get("stage") == "installation"):
+        return
+    if stage not in {"design", "quotation"} or not is_pdf(metadata) or not pdf_allowed(user, stage, purpose):
+        raise HTTPException(403, "File access is not permitted")
+    if metadata["id"] not in final_pdf_ids(project, stage):
+        raise HTTPException(404, "Finalized PDF not found")
 
 
 def scope_query(user, policy):
@@ -154,7 +207,7 @@ def redact_project(result, project, user, *, attachments=True):
             quote = result["current_quotation"]
             result["current_quotation"] = {**quote, "order_bound": quote.get("id") in bound_ids}
     if not scoped(user):
-        return result
+        return redact_restricted(result, project, user)
     from models_kitchen import LeadFields, VisitFields, CadFields
     stages = semantic_stages(user)
     for stage, model in (("lead", LeadFields), ("visit", VisitFields), ("cad", CadFields)):
@@ -198,6 +251,57 @@ def redact_project(result, project, user, *, attachments=True):
     result["access_scoped"] = True
     from services.kitchen_workflow import production_has_started
     result["production_started"] = production_has_started(project)
+    return redact_restricted(result, project, user)
+
+
+def redact_restricted(result, project, user):
+    if not restricted(user):
+        return result
+    import re
+    sensitive = re.compile(r"(^|_)(amount|price|cost|budget|installments?|advance|payment|paid|balance|total|value)(_|$)")
+    def clean(value, path=()):
+        if isinstance(value, list):
+            return [clean(item, path) for item in value]
+        if isinstance(value, dict):
+            hidden_lists = {"activity", "work_history", "revision_events", "blocked_transitions"}
+            hidden_text = {"notes", "response_notes", "reason", "requirements"}
+            def hide(key):
+                if key == "notes" and path == ("installation",) and project.get("stage") == "installation":
+                    return False
+                return bool(sensitive.search(key) or key in hidden_lists or key in hidden_text)
+            return {key: ([] if isinstance(item, list) else None) if hide(key) else clean(item, (*path, key)) for key, item in value.items()}
+        return value
+    result = clean(result)
+    stage = project.get("stage")
+    permitted = set()
+    if stage in {"design", "quotation"} and (pdf_allowed(user, stage, "open") or pdf_allowed(user, stage, "download") or pdf_allowed(user, stage, "choose")):
+        permitted = final_pdf_ids(project, stage)
+        if pdf_allowed(user, stage, "choose"):
+            permitted.update(row["id"] for row in project.get("attachments", []) if row.get("stage") == stage and row.get("content_type") == "application/pdf")
+    if stage == "installation":
+        permitted.update(row["id"] for row in project.get("attachments", []) if row.get("stage") == "installation")
+    if stage in {"lead", "visit", "cad"}:
+        return result
+    result["attachments"] = [row for row in result.get("attachments", []) if row.get("id") in permitted or (stage == "installation" and not is_pdf(row))]
+    def strip_refs(value):
+        if isinstance(value, list):
+            return [strip_refs(v) for v in value]
+        if isinstance(value, dict):
+            output = {}
+            for k, v in value.items():
+                if k in {"attachment_id", "final_attachment_id", "confirmation_document_id", "document_id"} and v not in permitted:
+                    output[k] = None
+                elif k == "attachment_ids" and isinstance(v, list):
+                    output[k] = [x for x in v if x in permitted]
+                elif k == "pdf_options" and isinstance(v, list):
+                    output[k] = [strip_refs(x) for x in v if x.get("attachment_id") in permitted]
+                elif k == "url":
+                    output[k] = None
+                else:
+                    output[k] = strip_refs(v)
+            return output
+        return value
+    result = strip_refs(result)
     return result
 
 

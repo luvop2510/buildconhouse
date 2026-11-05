@@ -33,6 +33,7 @@ function AmountField({ value, onChangeText, ...props }: ComponentProps<typeof Te
 export type StageCommand = (command: KitchenCommand, payload: Record<string, unknown>, background?: boolean) => Promise<boolean>;
 type CommercialProps = { project: KitchenProject; stage: KitchenStage; disabled: boolean; command: StageCommand; mode?: "task" | "amendment" | "advance" | "visits" };
 export function CommercialStages(props: CommercialProps) {
+  if (props.project.permissions?.restricted && (props.mode === "amendment" || props.mode === "advance")) return null;
   return props.mode === "amendment" ? <OrderAmendment {...props} /> : props.mode === "advance" ? <OrderAdvance {...props} /> : props.mode === "visits" ? <SiteVisits {...props} /> : <StageForms {...props} />;
 }
 function StageForms({ project, stage, disabled, command }: CommercialProps) {
@@ -85,7 +86,7 @@ function StageForms({ project, stage, disabled, command }: CommercialProps) {
       const work = isProduction ? production : installation;
       const saved = await command(isProduction ? "production_update" : "installation_update", {
         status: work.status, start_date: work.status === "Not Started" ? null : work.start_date || kitchenToday(),
-        completion_date: work.status === "Not Started" ? null : isProduction ? kitchenProductionEnd(work.start_date || kitchenToday()) : work.status === "Completed" ? work.completion_date || kitchenToday() : null, notes: work.notes ?? null,
+        completion_date: work.status === "Not Started" ? null : isProduction ? kitchenProductionEnd(work.start_date || kitchenToday()) : work.status === "Completed" ? work.completion_date || kitchenToday() : null, ...(!project.permissions?.restricted || !isProduction ? { notes: work.notes ?? null } : {}),
       });
       if (!saved || !move || !target) return saved;
       const moved = await command("move_stage", { target_stage: target });
@@ -96,10 +97,10 @@ function StageForms({ project, stage, disabled, command }: CommercialProps) {
   return <View style={{ gap: spacing.lg, display: ["lead", "visit", "cad"].includes(stage) ? "none" : "flex" }}>
     {!active && !preview && stage !== "completed" ? <Alert tone="info" title="Stage record" description={stage === "order" ? "Review saved order terms, installments and production." : "Review the saved stage record here. Use the current stage for ongoing work; previous versions are in History."} /> : null}
     {stage === "design" ? <DesignStage project={project} disabled={disabled} command={command} /> : stage === "quotation" ? <QuotationStage project={project} disabled={disabled} command={command} /> : stage === "order" ? <>
-      {project.permissions?.can_view_production !== false ? <KitchenPanel title="Final Production PDF">
+      {!project.permissions?.restricted && project.permissions?.can_view_production !== false ? <KitchenPanel title="Final Production PDF">
         <KitchenPdfFiles finalProduction project={project} attachmentIds={project.production?.final_attachment_id ? [project.production.final_attachment_id] : []} finalId="" onAdd={id => command("production_document", { attachment_id: id })} disabled={productionLocked} testID="kitchen-final-production-pdf" draftKey={`${draftCycle}.production.finalPdf`} />
       </KitchenPanel> : null}
-      {project.permissions?.can_view_order !== false ? <><KitchenPanel>
+      {!project.permissions?.restricted && project.permissions?.can_view_order !== false ? <><KitchenPanel>
         {order ? <Text testID="kitchen-order-approved-amount" style={type.bodyStrong}>Approved final amount: {rupees(order.final_amount)}</Text> : <Text testID="kitchen-order-pending" style={type.caption}>Order not yet recorded</Text>}
         {order ? <Text style={type.caption}>{`Order quotation: Quotation ${savedContext.quotation?.number ?? "unavailable"} · Design v${savedContext.design?.number ?? "unavailable"}`}</Text> : null}
         {productionStarted ? <Text style={type.caption}>Production has started. The owner must use Return to Design to change the confirmed basis.</Text> : null}
@@ -122,7 +123,7 @@ function StageForms({ project, stage, disabled, command }: CommercialProps) {
       </> : null}
       {project.permissions?.can_view_production !== false ? <KitchenPanel title="Production">
         {(active || preview) ? <View style={{ gap: spacing.md }}>
-          <WorkForm value={production} onChange={setProduction} production disabled={productionLocked} />
+          <WorkForm value={production} onChange={setProduction} production disabled={productionLocked} hideNotes={Boolean(project.permissions?.restricted)} />
           <Text style={type.caption}>Dates are defaults until you start or complete the work.</Text>
           <Button label="Save production details" disabled={productionLocked} onPress={() => saveWork()} testID="kitchen-production-save" />
           <Button label="Save and go to Installation" variant="secondary" disabled={productionLocked} onPress={() => saveWork(true)} testID="kitchen-production-save-next" />
@@ -145,14 +146,14 @@ function StageForms({ project, stage, disabled, command }: CommercialProps) {
           { label: "Completion date", value: displayDate((stage === "production" ? project.production : project.installation)?.completion_date) },
           ...((stage === "production" ? project.production : project.installation)?.notes ? [{ label: "Notes", value: (stage === "production" ? project.production : project.installation)!.notes! }] : []),
         ]} /> : null}
-        {(active || preview) ? <View style={{ gap: spacing.md }}>        <WorkForm value={stage === "production" ? production : installation} onChange={stage === "production" ? setProduction : setInstallation} production={stage === "production"} disabled={locked} />
+        {(active || preview) ? <View style={{ gap: spacing.md }}>        <WorkForm value={stage === "production" ? production : installation} onChange={stage === "production" ? setProduction : setInstallation} production={stage === "production"} disabled={locked} hideNotes={Boolean(project.permissions?.restricted && stage === "production")} />
         <Text style={type.caption}>Dates are defaults until you start or complete the work.</Text>
         <Button label={`Save ${stage} details`} disabled={locked} onPress={() => saveWork()} testID={`kitchen-${stage}-save`} />
         <Button label={`Save and go to ${STAGE_LABELS[target!]}`} variant="secondary" disabled={locked} onPress={() => saveWork(true)} testID={`kitchen-${stage}-save-next`} /></View> : null}
       </KitchenPanel>
     </> : stage === "completed" ? <KitchenPanel><KitchenDetails testID="kitchen-completed-details" items={[
       { label: "Project completion", value: displayDate(project.completion_date) },
-      { label: "Final order amount", value: rupees(project.order_amount) },
+      ...(!project.permissions?.restricted ? [{ label: "Final order amount", value: rupees(project.order_amount) }] : []),
       { label: "Total design revisions", value: historicalCount(project.design_revision_count, project.known_design_revision_count) },
       { label: "Actual site visits", value: historicalCount(project.site_visit_count, project.known_site_visit_count) },
     ]} /><Text style={type.caption}>Review previous versions, orders and approvals in History.</Text></KitchenPanel> : null}
@@ -195,13 +196,13 @@ function Disclosure({ draftKey, label, testID, children }: { draftKey: string; l
     {expanded ? <View nativeID={contentId} style={{ gap: spacing.md }}>{children}</View> : null}
   </View>;
 }
-function WorkForm({ value, onChange, production, disabled }: { value: KitchenWork; onChange: Dispatch<SetStateAction<KitchenWork>>; production: boolean; disabled: boolean }) {
+function WorkForm({ value, onChange, production, disabled, hideNotes = false }: { value: KitchenWork; onChange: Dispatch<SetStateAction<KitchenWork>>; production: boolean; disabled: boolean; hideNotes?: boolean }) {
   return <View style={{ gap: spacing.md }}>
     <Choice label={production ? "Production status" : "Installation status"} value={value.status} values={production ? ["Not Started", "In Production", "Completed"] : ["Not Started", "In Progress", "Completed"]} onChange={status => onChange({ ...value, status })} disabled={disabled} testID={`kitchen-${production ? "production" : "installation"}-status`} />
     {production ? <Text style={type.caption}>Production time: 2 months. Completion date is calculated automatically from the start date.</Text> : null}
     <KitchenFieldRow><View style={{ flex: 1, minWidth: 180 }}><KitchenDateField label="Start date" value={value.start_date || ""} onChange={start_date => onChange(previous => ({ ...previous, start_date: start_date || null }))} disabled={disabled} testID={`kitchen-${production ? "production" : "installation"}-start`} /></View>
     <View style={{ flex: 1, minWidth: 180 }}><KitchenDateField label="Completion date" value={production ? kitchenProductionEnd(value.start_date) : value.completion_date || ""} onChange={completion_date => { if (!production) onChange(previous => ({ ...previous, completion_date: completion_date || null })); }} defaultToToday={!production} min={value.start_date || undefined} disabled={disabled || production} testID={`kitchen-${production ? "production" : "installation"}-complete`} /></View></KitchenFieldRow>
-    <TextField label="Internal notes" testID={`kitchen-${production ? "production" : "installation"}-notes`} value={value.notes || ""} onChangeText={notes => onChange({ ...value, notes })} editable={!disabled} multiline />
+    {!hideNotes ? <TextField label="Internal notes" testID={`kitchen-${production ? "production" : "installation"}-notes`} value={value.notes || ""} onChangeText={notes => onChange({ ...value, notes })} editable={!disabled} multiline /> : null}
   </View>;
 }
 

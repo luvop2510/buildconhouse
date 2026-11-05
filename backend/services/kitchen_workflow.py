@@ -572,7 +572,9 @@ def apply(project, command, payload, policy, user, now, validate):
         following = [row.get("advance", {}).get("date"), project.get("production", {}).get("start_date"), *(amendment.get("date") for amendment in row.get("amendments", []))]
         if any(value and value < body.order_date for value in following):
             reject("Order date cannot follow an approved amendment, advance or production start")
-        fields = {"order_date": body.order_date, "notes": body.notes}
+        fields = {"order_date": body.order_date}
+        if "notes" in body.model_fields_set:
+            fields["notes"] = body.notes
         if changed_quote:
             fields["quotation_version_id"] = quote_id
             row["approval_identity"] = str(uuid4())
@@ -736,7 +738,7 @@ def apply(project, command, payload, policy, user, now, validate):
             reject("Completion must follow start and have Completed status")
         if expected == "production" and body.status != "Not Started" and project.get("orders"):
             project["orders"][-1]["production_started"] = True
-        project[expected] = {**previous, **body.model_dump()}
+        project[expected] = {**previous, **body.model_dump(exclude_unset=True)}
         if body.status == "Completed":
             project[expected]["completion_identity"] = str(uuid4())
         recompute_completion(project, policy)

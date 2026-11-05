@@ -126,3 +126,23 @@ assert.equal(updated.length,beforeObsolete,'An upload response from the old proj
 assert.equal(view.control('pdf-progress'),undefined,'Obsolete upload progress cannot appear under the next project');
 assert.equal(drafts['next-project-pdf.picked'],undefined,'Obsolete completion cannot clear or initialize another project’s draft');
 console.log('Kitchen upload scope: finishing transfers show recovery guidance; obsolete upload callbacks cannot publish into another project.');
+
+// Restricted staff get independently granted controls; installation photos remain unchanged.
+state=[];drafts={};submission.busy=false;
+const restrictedProject={...current,stage:'design',attachments:[uploadedFile],permissions:{restricted:true,can_choose_pdf:false,can_open_pdf:false,can_download_pdf:false}};
+props={...props,project:restrictedProject,attachmentIds:['pdf1'],finalId:'pdf1',label:undefined,disabled:false};
+view=render();assert.equal(view.control('pdf-pick'),undefined);assert.equal(view.control('pdf-pdf1-open'),undefined);assert.equal(view.control('pdf-pdf1-download'),undefined);assert.doesNotMatch(view.text,/GI\.pdf/);
+props={...props,project:{...restrictedProject,permissions:{...restrictedProject.permissions,can_open_pdf:true}}};view=render();assert.ok(view.control('pdf-pdf1-open'));assert.equal(view.control('pdf-pdf1-download'),undefined);assert.equal(view.control('pdf-pick'),undefined);
+props={...props,project:{...restrictedProject,permissions:{...restrictedProject.permissions,can_download_pdf:true}}};view=render();assert.equal(view.control('pdf-pdf1-open'),undefined);assert.ok(view.control('pdf-pdf1-download'));
+props={...props,project:{...restrictedProject,permissions:{...restrictedProject.permissions,can_choose_pdf:true}}};view=render();assert.ok(view.control('pdf-pick'));assert.equal(view.control('pdf-pdf1-open'),undefined);assert.equal(view.control('pdf-pdf1-download'),undefined);
+props={...props,finalId:'another'};view=render();assert.equal(view.control('pdf-pdf1-open'),undefined);assert.equal(view.control('pdf-pdf1-download'),undefined);
+props={...props,finalProduction:true,finalId:'pdf1'};view=render();assert.equal(view.control('pdf-pick'),undefined,'Restricted users cannot add a production PDF');
+console.log('Kitchen restricted PDF capabilities: independent choose, open and download, finalized-only visibility, and production upload restriction passed.');
+
+const scopeExports={};
+new Function('exports',ts.transpileModule(readFileSync(new URL('../src/components/kitchen/KitchenDocumentScope.ts',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText)(scopeExports);
+const stageFiles=[{id:'design',stage:'design'},{id:'installation-pdf',stage:'installation'},{id:'installation-photo',stage:'installation'},{id:'legacy'}];
+assert.deepEqual(scopeExports.visibleKitchenDocuments({stage:'installation',permissions:{restricted:true},attachments:stageFiles}).map(file=>file.id),['installation-pdf','installation-photo']);
+assert.deepEqual(scopeExports.visibleKitchenDocuments({stage:'order',permissions:{restricted:true},attachments:stageFiles}),[]);
+assert.deepEqual(scopeExports.visibleKitchenDocuments({stage:'installation',permissions:{restricted:false},attachments:stageFiles}),stageFiles);
+console.log('Kitchen installation documents: restricted accounts see installation-stage files only; unrestricted accounts retain all files.');

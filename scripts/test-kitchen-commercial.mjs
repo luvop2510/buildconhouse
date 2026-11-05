@@ -595,3 +595,41 @@ for (const edited of [false, true]) {
   assert.equal(task.control('kitchen-installation-complete').props.value, '', 'The reopened record clears its untouched completion date');
 }
 console.log('Kitchen Installation reopening: newer local notes/dates survive a reopened saved record while untouched fields follow saved state.');
+
+const limitedPermissions = { restricted:true, can_choose_pdf:false, can_open_pdf:false, can_download_pdf:false, can_approve_exceptions:true };
+let limitedCalls=[];
+let limited=render('design',{permissions:limitedPermissions,attachments:[]},{},async (...args)=>{limitedCalls.push(args);return true;});
+assert.equal(limited.control('kitchen-design-finalize'),undefined);
+assert.ok(limited.control('kitchen-design-edit-response'),'Non-PDF design controls remain available');
+assert.equal(limited.control('kitchen-design-edit-save').props.disabled,false);
+await limited.control('kitchen-design-edit-save').props.onPress();
+assert.equal('finalize' in limitedCalls[0][1],false,'No PDF selection field is submitted without permission');
+limitedCalls=[];
+limited=render('quotation',{permissions:limitedPermissions,attachments:[],quotation_versions:[{...quotation,response:'Pending'}]},{},async (...args)=>{limitedCalls.push(args);return true;});
+assert.ok(limited.control('kitchen-version-response'),'Non-PDF quotation controls remain available');
+assert.equal(limited.control('kitchen-quotation-edit-save').props.disabled,false);
+await limited.control('kitchen-quotation-edit-save').props.onPress();
+for(const key of ['pdf_options','final_attachment_id','attachment_ids','attachment_id','url','amount'])assert.equal(key in limitedCalls[0][1],false,`${key} must not overwrite private server data`);
+limited=render('order',{permissions:{...limitedPermissions,can_view_order:true,can_view_production:true},quotation_versions:[quotation],orders:[order]});
+assert.equal(limited.control('kitchen-final-production-pdf'),undefined);
+assert.equal(limited.control('kitchen-order-approved-amount'),undefined);
+assert.equal(limited.control('kitchen-installment-amount'),undefined);
+limited=render('completed',{permissions:limitedPermissions,order_amount:'1000.00'});
+assert.doesNotMatch(limited.text,/Final order amount|1000\.00/);
+console.log('Kitchen restricted workflows: status edits omit private PDF fields, and order/completed hide money and production PDF controls.');
+
+for (const stage of ['order','production']) {
+  const calls=[];
+  const workStage=stage==='order'?'production':stage;
+  const task=render(stage,{permissions:{...limitedPermissions,can_view_production:true,can_update_production:true},[workStage]:{status:'Not Started',notes:null}},{},async (...args)=>{calls.push(args);return true;});
+  assert.equal(task.control(`kitchen-${workStage}-notes`),undefined,`${stage} hides redacted notes`);
+  await task.control(`kitchen-${workStage}-save`).props.onPress();
+  assert.equal('notes' in calls[0][1],false,`${stage} must not overwrite redacted notes`);
+}
+console.log('Kitchen restricted work saves: redacted production notes stay hidden and are omitted from updates.');
+const installationCalls=[];
+const limitedInstallation=render('installation',{permissions:limitedPermissions,installation:{status:'Not Started',notes:'Saved installation note'}},{},async (...args)=>{installationCalls.push(args);return true;});
+assert.equal(limitedInstallation.control('kitchen-installation-notes').props.value,'Saved installation note');
+limitedInstallation.control('kitchen-installation-notes').props.onChangeText('Edited installation note');
+await limitedInstallation.refresh().control('kitchen-installation-save').props.onPress();
+assert.equal(installationCalls[0][1].notes,'Edited installation note','Installation notes remain editable and saved');

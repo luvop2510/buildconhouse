@@ -48,6 +48,9 @@ for _stage, _resource in KITCHEN_STAGE_RESOURCES.items():
     RESOURCE_REGISTRY[_resource] = {"label": {"cad": "CAD File"}.get(_stage, _stage.title()),
         "floor_ids": ["second-floor"], "actions": ["view", *(["create"] if _stage == "lead" else []), "update", "export"],
         "description": f"Access only Kitchen {_stage} records and their permitted workflow actions."}
+RESOURCE_REGISTRY["kitchen_restricted"] = {"label": "Restricted Kitchen staff", "floor_ids": ["second-floor"], "actions": ["view"], "description": "Hide commercial information and require explicit PDF permissions."}
+for _resource in ("kitchen_design", "kitchen_quotation"):
+    RESOURCE_REGISTRY[_resource]["actions"] += ["pdf_choose", "pdf_open", "pdf_download"]
 RESOURCE_REGISTRY["kitchen_projects"].update(label="All Kitchen stages", description="Access every Kitchen stage. Individual stage permissions can be assigned instead.")
 for _resource in ("catalog", "purchases", "godown_stock", "payments", "orders", "walkins"):
     RESOURCE_REGISTRY[_resource]["actions"] = ["view", "create", "update", "export"]
@@ -69,17 +72,20 @@ def delegation_resource_catalog(floor_ids: list[str]) -> list[dict[str, Any]]:
         supported = [floor for floor in floor_ids
                      if not metadata.get("floor_ids") or floor in metadata["floor_ids"]]
         assignable = [] if metadata.get("retired") or metadata.get("owner_only") else [
-            floor for floor in supported if floor != "second-floor" or key == "kitchen_projects" or key in KITCHEN_STAGE_RESOURCES.values()
+            floor for floor in supported if floor != "second-floor" or key == "kitchen_projects" or key in KITCHEN_STAGE_RESOURCES.values() or key == "kitchen_restricted"
         ]
         resources.append({
             "key": key, "label": metadata["label"], "retired": metadata.get("retired", False),
-            "actions": metadata.get("actions", sorted(ACTIONS)),
+            "actions": metadata.get("actions", sorted(BASE_ACTIONS)),
             "floor_ids": supported, "assignable_floor_ids": assignable,
             "description": metadata.get("description", f"Manage {metadata['label'].lower()} records on this floor."),
         })
     return resources
 
 ACTION_DESCRIPTIONS = {
+    "pdf_choose": "Choose and upload a PDF on this page.",
+    "pdf_open": "Open the finalized PDF on this page.",
+    "pdf_download": "Download the finalized PDF on this page.",
     "view": "Open the page and read its records.",
     "create": "Add new records on this page.",
     "update": "Edit records and perform workflow actions such as moving, confirming, or completing them.",
@@ -87,7 +93,8 @@ ACTION_DESCRIPTIONS = {
     "export": "Download documents or spreadsheets and use supported document sharing actions.",
 }
 
-ACTIONS = frozenset({"view", "create", "update", "delete", "export"})
+BASE_ACTIONS = frozenset({"view", "create", "update", "delete", "export"})
+ACTIONS = BASE_ACTIONS | frozenset({"pdf_choose", "pdf_open", "pdf_download"})
 HTTP_ACTIONS = {
     "GET": "view", "HEAD": "view", "POST": "create",
     "PUT": "update", "PATCH": "update", "DELETE": "delete",
@@ -348,7 +355,7 @@ async def request_resource(database: Any, path: str, query: Any = None) -> str |
 def resource_supports(resource: str, floor_id: str, actions: list[str]) -> bool:
     metadata = RESOURCE_REGISTRY.get(resource)
     return bool(metadata and (not metadata.get("floor_ids") or floor_id in metadata["floor_ids"])
-                and set(actions).issubset(metadata.get("actions", ACTIONS)))
+                and set(actions).issubset(metadata.get("actions", BASE_ACTIONS)))
 
 
 async def build_delegation_snapshot(database: Any, *, user_id: str, floor_ids: list[str], grants: list[dict], actor_id: str, actor_name: str | None) -> list[dict]:

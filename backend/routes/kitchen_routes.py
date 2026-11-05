@@ -166,10 +166,10 @@ async def upload_attachment(project_id: str, expected_version: Annotated[int, Fo
 
 
 @router.get("/{project_id}/attachments/{attachment_id}")
-async def download_attachment(project_id: str, attachment_id: str, user: UserPublic = Depends(get_current_user)):
+async def download_attachment(project_id: str, attachment_id: str, purpose: Literal["open", "download"] = "download", user: UserPublic = Depends(get_current_user)):
     from media_storage.factory import get_media_storage
     async with _file_storage_operation():
-        data, metadata = await KitchenProjectService(db).attachment(user, project_id, attachment_id, get_media_storage())
+        data, metadata = await KitchenProjectService(db).attachment(user, project_id, attachment_id, get_media_storage(), purpose)
     return Response(data, media_type=metadata["content_type"], headers={
         "Content-Disposition": f"attachment; filename*=UTF-8''{quote(metadata['filename'])}",
         "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
@@ -206,8 +206,10 @@ async def finish_large_pdf(project_id: str, transfer_id: str, body: "TransferFin
         raise HTTPException(403, "Select the Kitchen Floor for file transfers")
     from media_storage.factory import get_media_storage, private_bucket
     service = KitchenFileTransfers(db)
-    await service.authorized(user, project_id)
+    project, _ = await service.authorized(user, project_id)
     row = await service.session(user, project_id, transfer_id)
+    from services import kitchen_access
+    kitchen_access.require_upload(user, project, row.get("content_type", ""))
     if row.get("purpose") != "final_production":
         raise HTTPException(422, "This operation is only for Final Production PDFs")
     key = (user.id, transfer_id)
@@ -230,8 +232,10 @@ async def finish_large_pdf(project_id: str, transfer_id: str, body: "TransferFin
 @router.get("/{project_id}/file-transfers/{transfer_id}/status")
 async def large_pdf_status(project_id: str, transfer_id: str, user: UserPublic = Depends(get_current_user)):
     service = KitchenFileTransfers(db)
-    await service.authorized(user, project_id)
+    project, _ = await service.authorized(user, project_id)
     row = await service.session(user, project_id, transfer_id)
+    from services import kitchen_access
+    kitchen_access.require_upload(user, project, row.get("content_type", ""))
     from services.kitchen_file_transfers import now
     lease = row.get("finish_lease_until")
     expired = lease is None or lease.replace(tzinfo=__import__("datetime").timezone.utc) <= now()
@@ -247,11 +251,11 @@ async def cancel_file_transfer(project_id: str, transfer_id: str, user: UserPubl
 
 
 @router.get("/{project_id}/attachments/{attachment_id}/parts/{index}")
-async def download_file_part(project_id: str, attachment_id: str, index: int, user: UserPublic = Depends(get_current_user)):
+async def download_file_part(project_id: str, attachment_id: str, index: int, purpose: Literal["open", "download"] = "download", user: UserPublic = Depends(get_current_user)):
     from media_storage.factory import get_media_storage
     from services.kitchen_file_transfers import download_part
     async with _file_storage_operation():
-        data = await download_part(db, user, project_id, attachment_id, index, get_media_storage())
+        data = await download_part(db, user, project_id, attachment_id, index, get_media_storage(), purpose)
     return Response(json.dumps(data),
                     media_type="application/json", headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
 
@@ -267,5 +271,9 @@ async def own_file_transfer(project_id: str, user: UserPublic = Depends(get_curr
         return {"transfer": None}
     project = await db.kitchen_projects.find_one({"id": row["project_id"], "floor_id": "second-floor"})
     if not project or not kitchen_access.project_visible(project, user, {}):
+        return {"transfer": None}
+    try:
+        kitchen_access.require_upload(user, project, row.get("content_type", ""))
+    except HTTPException:
         return {"transfer": None}
     return {"transfer": {**KitchenFileTransfers(db).public(row), "project_id": row["project_id"]}}

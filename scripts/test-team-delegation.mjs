@@ -138,3 +138,14 @@ for (const floor of floors) {
   assert.equal(staffLandingPath(null, [{ resource: 'notifications', floor_id: floor, actions: ['view'] }], floor), '/(admin)/access', 'Retired-only notification grants have a stable landing');
 }
 assert.equal(staffLandingPath(null, [{ resource: 'followups', floor_id: 'second-floor', actions: ['view'] }], 'second-floor'), '/(admin)/access', 'Kitchen follow-up grants cannot choose a retired page');
+
+const restricted = { key: 'kitchen_restricted', label: 'Restricted kitchen access', actions: ['view'], floor_ids: ['second-floor'] };
+const designPdf = { key: 'kitchen_design', label: 'Design', actions: ['view', 'update', 'pdf_choose', 'pdf_open', 'pdf_download'], floor_ids: ['second-floor'] };
+let limited = { floorIds: ['second-floor'], grants: [] };
+limited = togglePage(limited, 'second-floor', restricted, true);
+limited = togglePage(limited, 'second-floor', designPdf, true);
+assert.deepEqual(limited.grants.find(g => g.resource === 'kitchen_design').actions, ['view']);
+limited = toggleAction(limited, 'second-floor', designPdf, 'pdf_open', true);
+assert.deepEqual(limited.grants.find(g => g.resource === 'kitchen_design').actions, ['view', 'pdf_open']);
+assert.deepEqual(loadDelegation(limited.floorIds, limited.grants, [restricted, designPdf]), limited);
+assert.deepEqual(delegationPagesForFloor([restricted, designPdf], limited.grants, 'second-floor'), [designPdf]);

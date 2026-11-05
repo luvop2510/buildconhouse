@@ -12,13 +12,13 @@ export function FloorDelegationEditor({ floors, catalog, value, onChange, disabl
     <View style={{ gap: spacing.xs }}>
       <Text style={type.label}>Floors and pages</Text>
       <Text style={type.caption}>Turn on a floor to see its pages. Turn on any pages, then choose what this person can do. All changes are saved together.</Text>
-      <Text style={type.caption} testID="delegation-summary">{value.floorIds.length} floors · {value.grants.length} pages enabled</Text>
-      {value.grants.length === 0 ? <Text style={type.caption}>No page access. This person can sign in but cannot open business pages until you enable them.</Text> : null}
+      <Text style={type.caption} testID="delegation-summary">{value.floorIds.length} floors · {value.grants.filter(grant => grant.resource !== "kitchen_restricted").length} pages enabled</Text>
+      {!value.grants.some(grant => grant.resource !== "kitchen_restricted") ? <Text style={type.caption}>No page access. This person can sign in but cannot open business pages until you enable them.</Text> : null}
     </View>
     {floors.map((floor) => {
       const enabled = value.floorIds.includes(floor.id);
       const pages = delegationPagesForFloor(catalog.resources, value.grants, floor.id);
-      const count = value.grants.filter((grant) => grant.floor_id === floor.id).length;
+      const count = value.grants.filter((grant) => grant.floor_id === floor.id && grant.resource !== "kitchen_restricted").length;
       return <View key={floor.id} style={styles.floor} testID={`delegation-floor-${floor.id}`}>
         <View style={styles.row}>
           <View style={styles.copy}>
@@ -28,6 +28,15 @@ export function FloorDelegationEditor({ floors, catalog, value, onChange, disabl
           <Switch testID={`floor-toggle-${floor.id}`} accessibilityLabel={`Allow ${floor.name}`} value={enabled} disabled={disabled} onValueChange={(next) => onChange(toggleFloor(value, floor.id, next))} />
         </View>
         {enabled ? <View style={styles.pages} testID={`floor-pages-${floor.id}`}>
+          {floor.id === "second-floor" && catalog.resources.find(resource => resource.key === "kitchen_restricted") ? <View style={styles.page}>
+            <View style={styles.row}>
+              <View style={styles.copy}>
+                <Text style={type.bodyStrong}>Restrict kitchen financial and PDF access</Text>
+                <Text style={type.caption}>Hide monetary values and installments, and block production PDF uploads. Design and quotation PDF actions are off until enabled on each individual page below, even when all Kitchen stages are enabled.</Text>
+              </View>
+              <Switch testID="kitchen-restricted-toggle" accessibilityLabel="Restrict kitchen financial and PDF access" value={value.grants.some(grant => grant.floor_id === floor.id && grant.resource === "kitchen_restricted")} disabled={disabled} onValueChange={(next) => onChange(togglePage(value, floor.id, catalog.resources.find(resource => resource.key === "kitchen_restricted")!, next))} />
+            </View>
+          </View> : null}
           {pages.length === 0 ? <Text style={type.caption}>No assignable pages are available for this floor.</Text> : pages.map((resource) => {
             const grant = value.grants.find((item) => item.floor_id === floor.id && item.resource === resource.key);
             const currentPageLabels = delegationPageLabels(resource.key, floor.id, NAVIGATION);
@@ -48,10 +57,10 @@ export function FloorDelegationEditor({ floors, catalog, value, onChange, disabl
                 <Switch testID={`page-toggle-${floor.id}-${resource.key}`} accessibilityLabel={`Allow ${resource.label} on ${floor.name}`} value={!!grant} disabled={disabled || (legacy && !grant)} onValueChange={(next) => onChange(togglePage(value, floor.id, resource, next))} />
               </View>
               {grant ? <View style={styles.actions}>
-                {ACTION_ORDER.filter((action) => resource.actions.includes(action)).map((action) => <View key={action} style={styles.row}>
+                {ACTION_ORDER.filter((action) => resource.actions.includes(action) && (!action.startsWith("pdf_") || value.grants.some(item => item.floor_id === floor.id && item.resource === "kitchen_restricted"))).map((action) => <View key={action} style={styles.row}>
                   <View style={styles.copy}>
                     <Text style={type.label}>{ACTION_LABELS[action]}{action === "view" ? " · included" : ""}</Text>
-                    <Text style={type.caption}>{catalog.action_descriptions[action]}</Text>
+                    <Text style={type.caption}>{catalog.action_descriptions[action]}{action === "pdf_choose" ? " Edit must also be enabled to upload." : ""}</Text>
                   </View>
                   <Switch testID={`action-toggle-${floor.id}-${resource.key}-${action}`} accessibilityLabel={`${ACTION_LABELS[action]} ${resource.label} on ${floor.name}`} value={grant.actions.includes(action)} disabled={disabled || legacy || action === "view"} onValueChange={(next) => onChange(toggleAction(value, floor.id, resource, action, next))} />
                 </View>)}

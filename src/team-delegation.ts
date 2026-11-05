@@ -1,5 +1,5 @@
 const KITCHEN_STAGE_NAMES = ["lead", "visit", "cad", "design", "quotation", "order", "production", "installation", "completed"] as const;
-export type GrantAction = "view" | "create" | "update" | "delete" | "export";
+export type GrantAction = "view" | "create" | "update" | "delete" | "export" | "pdf_choose" | "pdf_open" | "pdf_download";
 export type DelegationFloor = { id: string; name: string };
 export type DelegationResource = {
   key: string; label: string; actions: GrantAction[]; floor_ids: string[]; description?: string; retired?: boolean; assignable_floor_ids?: string[];
@@ -13,8 +13,9 @@ export type DelegationCatalog = {
 
 export const ACTION_LABELS: Record<GrantAction, string> = {
   view: "View", create: "Create", update: "Edit", delete: "Delete", export: "Export",
+  pdf_choose: "Choose PDF", pdf_open: "Open PDF", pdf_download: "Download PDF",
 };
-export const ACTION_ORDER: GrantAction[] = ["view", "create", "update", "delete", "export"];
+export const ACTION_ORDER: GrantAction[] = ["view", "create", "update", "delete", "export", "pdf_choose", "pdf_open", "pdf_download"];
 
 /** Block saving when a partial server response could silently discard access. */
 export function isDelegationCatalog(value: unknown, floors: DelegationFloor[]): value is DelegationCatalog {
@@ -140,12 +141,12 @@ export function moduleForRoute(segments: string[]): string | null {
 
 /** Catalog visibility must never delete saved compatibility grants. */
 export function isResourceAssignable(resource: DelegationResource, floorId: string): boolean {
-  if (floorId === "second-floor" && resource.key !== "kitchen_projects" && !KITCHEN_STAGE_NAMES.some(stage => resource.key === `kitchen_${stage}`)) return false;
+  if (floorId === "second-floor" && resource.key !== "kitchen_restricted" && resource.key !== "kitchen_projects" && !KITCHEN_STAGE_NAMES.some(stage => resource.key === `kitchen_${stage}`)) return false;
   return !resource.retired && (resource.assignable_floor_ids ?? resource.floor_ids).includes(floorId);
 }
 
 export function delegationPagesForFloor(resources: DelegationResource[], grants: DelegationGrant[], floorId: string): DelegationResource[] {
-  return resources.filter((resource) => resource.floor_ids.includes(floorId) &&
+  return resources.filter((resource) => resource.key !== "kitchen_restricted" && resource.floor_ids.includes(floorId) &&
     (isResourceAssignable(resource, floorId) || grants.some((grant) => grant.floor_id === floorId && grant.resource === resource.key)));
 }
 

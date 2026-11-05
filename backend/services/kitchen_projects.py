@@ -289,6 +289,12 @@ class KitchenProjectService:
     async def public_policy(self, user):
         await access.require_capability(self.db, user, "view")
         policy = await self.policy()
+        if access.restricted(user):
+            policy = copy.deepcopy(policy)
+            policy["activity"] = []
+            if policy.get("production"):
+                policy["production"]["minimum_advance_amount"] = None
+                policy["production"]["minimum_advance_percent"] = None
         return {**policy, "unconfigured": (["decision_contract"] if policy.get("decision_contract") != DECISION_CONTRACT else []) +
                 ([] if policy.get("department_manager_user_ids") else ["department_manager_user_ids"])}
 
@@ -389,6 +395,10 @@ class KitchenProjectService:
         result["permissions"]["can_view_production"] = "production" in access.semantic_stages(user)
         result["permissions"]["can_update_order"] = "order" in semantic_updates
         result["permissions"]["can_update_production"] = "production" in semantic_updates
+        result["permissions"].update(restricted=access.restricted(user),
+            can_choose_pdf=access.pdf_allowed(user, project["stage"], "choose"),
+            can_open_pdf=access.pdf_allowed(user, project["stage"], "open"),
+            can_download_pdf=access.pdf_allowed(user, project["stage"], "download"))
         result["permissions"]["can_review_duplicate"] = access.owner(user)
         for scope in ("production", "closure"):
             result["permissions"][f"can_approve_{scope}"] = access.department_manager(user, policy) and result["permissions"]["can_update"]
@@ -456,6 +466,7 @@ class KitchenProjectService:
         project = await self.db.kitchen_projects.find_one({"id": project_id, "floor_id": access.KITCHEN_FLOOR})
         await access.require_project(self.db, user, project, policy, "update")
         content_type = canonical_type(content_type, filename)
+        access.require_upload(user, project, content_type)
         digest = prepared["sha256"] if prepared else hashlib.sha256(data).hexdigest()
         signature = fingerprint({"command": "attachment", "sha256": digest, "filename": filename, "content_type": content_type})
         def prior(row):
@@ -489,6 +500,7 @@ class KitchenProjectService:
         # Orphan bytes on a CAS loss remain private and unreferenced.
         latest_task = await self.db.kitchen_projects.find_one({"id": project_id, "floor_id": access.KITCHEN_FLOOR})
         await access.require_project(self.db, user, latest_task, policy, "update")
+        access.require_upload(user, latest_task, content_type)
         saved_upload = prior(latest_task)
         if saved_upload:
             if saved_upload["fingerprint"] != signature:
@@ -507,13 +519,14 @@ class KitchenProjectService:
             raise HTTPException(409, "Kitchen project changed; reload before uploading")
         return await self.public(updated, user, policy)
 
-    async def attachment(self, user, project_id, attachment_id, storage):
+    async def attachment(self, user, project_id, attachment_id, storage, purpose="download"):
         policy = await self.policy()
         project = await self.db.kitchen_projects.find_one({"id": project_id, "floor_id": access.KITCHEN_FLOOR})
         await access.require_project(self.db, user, project, policy)
         metadata = next((a for a in project["attachments"] if a["id"] == attachment_id), None)
         if not metadata:
             raise HTTPException(404, "Kitchen attachment not found")
+        access.require_attachment(user, project, metadata, purpose)
         visible = access.visible_attachment_ids(project, user)
         if visible is not None and attachment_id not in visible:
             raise HTTPException(404, "Kitchen attachment not found")
@@ -728,6 +741,17 @@ class KitchenProjectService:
                 return {"id": project["id"], "stage": project["stage"], "version": project["version"], "access_handoff": True, "replayed": True}
             return await self.public(project, user, policy, replayed=True)
         await access.require_command(self.db, user, project, body.command)
+        if access.restricted(user):
+            if body.command in {"order_confirm", "order_advance", "order_installment", "order_installment_edit", "order_installment_delete", "order_amend", "production_document", "order_document"}:
+                raise HTTPException(403, "This Kitchen action is not permitted")
+            if body.command == "order_update" and (body.payload.get("quotation_version_id") or body.payload.get("amount_customer_approved")):
+                raise HTTPException(403, "Commercial values are not permitted")
+            if body.command in {"design_present", "design_update", "quotation_receive", "quotation_update"}:
+                stage = "design" if body.command.startswith("design_") else "quotation"
+                if (any(key in body.payload for key in ("attachment_id", "attachment_ids", "final_attachment_id", "pdf_options", "url")) or body.payload.get("finalize")) and not access.pdf_allowed(user, stage, "choose"):
+                    raise HTTPException(403, "Choosing a PDF is not permitted")
+                if "amount" in body.payload:
+                    raise HTTPException(403, "Commercial values are not permitted")
         if project.get("lifecycle_status") == "Lost":
             raise HTTPException(422, "Lost projects cannot be changed")
         # Replays above are read-only acknowledgments of committed work. New
@@ -742,6 +766,13 @@ class KitchenProjectService:
         updated = copy.deepcopy(project)
         payload = body.payload
         command = body.command
+        if access.restricted(user) and command in {"edit_lead", "save_visit", "save_cad", "design_update", "quotation_update", "order_update", "production_update", "installation_update"}:
+            # These fields are hidden from restricted staff. A stale or empty
+            # form must never overwrite the owner's existing private notes.
+            hidden = {"notes", "response_notes", "requirements", "budget", "budget_discussion"}
+            if command == "installation_update" and project.get("stage") == "installation":
+                hidden.remove("notes")
+            payload = {key: value for key, value in payload.items() if key not in hidden}
         if command == "mark_lost":
             if project["stage"] not in {"visit", "quotation"}:
                 raise HTTPException(422, "Customers can be marked lost only from Visit or Quotation")
@@ -983,8 +1014,8 @@ class KitchenProjectService:
             return {"configured": True, "allowed_stages": access.allowed_stages(user), "active_projects": values.get("active", 0), "on_hold_projects": values.get("on_hold", 0),
                     "next_action_overdue_projects": values.get("next_action_overdue", 0),
                     "completion_overdue_projects": values.get("completion_overdue", 0),
-                    "active_order_value": amount if "order" in access.allowed_stages(user) else None, "overdue_projects": values.get("completion_overdue", 0),
-                    "confirmed_order_value": amount if "order" in access.allowed_stages(user) else None, "pending_approvals": values.get("pending_approval", 0),
+                    "active_order_value": amount if "order" in access.allowed_stages(user) and not access.restricted(user) else None, "overdue_projects": values.get("completion_overdue", 0),
+                    "confirmed_order_value": amount if "order" in access.allowed_stages(user) and not access.restricted(user) else None, "pending_approvals": values.get("pending_approval", 0),
                     "stage_counts": stages, "stage_customer_counts": customers,
                     "total_projects": values.get("projects", 0),
                     "total_customers": data["customers"][0]["count"] if data["customers"] else 0,
@@ -1005,12 +1036,14 @@ class KitchenProjectService:
                 break
             page += 1
         from services.export import rows_to_csv
+        columns = [("reference", "Project ID"), ("customer", "Customer")]
+        if not access.restricted(user):
+            columns.append(("order_amount", "Order amount INR"))
+        columns.extend([("completion_date", "Completion date"), ("design_revisions", "Design revisions"), ("site_visits", "Actual site visits")])
         return rows_to_csv([{"reference": row["reference"], "customer": row["customer"]["name"],
                              "order_amount": row.get("order_amount"), "completion_date": row.get("completion_date"),
                              "design_revisions": row["design_revision_count"] if row["design_revision_count"] is not None else "Historical count unavailable", "site_visits": row["site_visit_count"] if row["site_visit_count"] is not None else "Historical count unavailable"}
-                            for row in rows], [("reference", "Project ID"), ("customer", "Customer"),
-                            ("order_amount", "Order amount INR"), ("completion_date", "Completion date"),
-                            ("design_revisions", "Design revisions"), ("site_visits", "Actual site visits")])
+                            for row in rows], columns)
 
     async def list(self, user, *, search="", stage=None, status=None, assignee=None, date_from=None,
                    date_to=None, date_field="created_at", sort="updated_at", direction="desc", page=1, limit=50, completed=None, duplicate_review=None, attention=None):
@@ -1019,6 +1052,8 @@ class KitchenProjectService:
             if stage:
                 await access.require_capability(self.db, user, "view", stage=stage)
             policy = await self.policy()
+            if access.restricted(user) and sort == "order_amount":
+                raise HTTPException(403, "Sorting by commercial value is not permitted")
             query = access.scope_query(user, policy)
             filters = [query]
             if attention:

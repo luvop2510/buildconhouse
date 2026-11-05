@@ -10,7 +10,7 @@ FLOORS = ["ground-floor", "first-floor", "second-floor", "third-floor"]
 def test_kitchen_assignment_only_offers_the_current_workspace():
     catalog = delegation_resource_catalog(FLOORS)
     kitchen = [row for row in catalog if "second-floor" in row["assignable_floor_ids"]]
-    assert [row["key"] for row in kitchen] == ["kitchen_projects", *KITCHEN_STAGE_RESOURCES.values()]
+    assert [row["key"] for row in kitchen] == ["kitchen_projects", *KITCHEN_STAGE_RESOURCES.values(), "kitchen_restricted"]
     assert kitchen[0]["label"] == "All Kitchen stages"
     assert kitchen[0]["actions"] == ["view", "create", "update", "export"]
 

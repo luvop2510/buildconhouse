@@ -10,6 +10,7 @@ import { ErrorNotice, KitchenPanel } from "./shared";
 import { useKitchenDraft, useKitchenProject } from "./KitchenProjectState";
 import { uploadKitchenFile, downloadKitchenFile, KITCHEN_MAX_FILE_BYTES, KITCHEN_MAX_PDF_BYTES } from "./KitchenFileTransport";
 import { spacing, type } from "@/src/theme/tokens";
+import { visibleKitchenDocuments } from "./KitchenDocumentScope";
 
 export function DocumentChoice({ project, value, onChange, disabled, label = "Project document" }: { project: KitchenProject; value: string; onChange: (value: string) => void; disabled?: boolean; label?: string }) {
   const [open, setOpen] = useState(false);
@@ -29,6 +30,7 @@ export function KitchenDocuments({ project, policy, disabled, onUpdated, onReloa
   const [progress, setProgress] = useState(0);
   const [unfinished, setUnfinished] = useState<{ transfer_id: string; project_id: string } | null>(null);
   useEffect(() => { let live = true; kitchenProjectsApi.ownTransfer(project.id).then(value => { if (live) setUnfinished(value.transfer); }).catch(() => { if (live && !disabled) setTransferError("Unfinished upload status could not be checked. Reload before starting a large file."); }); return () => { live = false; }; }, [project.id, disabled, setTransferError]);
+  const visibleAttachments = visibleKitchenDocuments(project);
   const files = policy?.files;
   const canUpload = !disabled;
   const pick = async () => {
@@ -52,8 +54,8 @@ export function KitchenDocuments({ project, policy, disabled, onUpdated, onReloa
     }, value => { setPicked(null); setUnfinished(null); setProgress(0); onUpdated(value); });
   };
   return <View style={{ gap: spacing.lg }} testID="kitchen-documents-page"><KitchenPanel title="Private documents">
-    {(project.attachments || []).map(file => <View key={file.id} style={{ gap: spacing.sm }}><Text style={type.body}>{file.filename} · {Math.ceil(file.size_bytes / 1024)} KiB</Text><Button label={`Download ${file.filename}`} variant="secondary" disabled={savingFile} onPress={() => { setSavingFile(true); void (file.size_bytes > 768 * 1024 ? downloadKitchenFile(project.id, file, setProgress) : downloadApiFile(kitchenProjectsApi.attachmentPath(project.id, file.id), file.filename, "project document", KITCHEN_FLOOR_ID)).catch(error => submission.setError(error instanceof Error ? error.message : "File download failed. Retry the download.")).finally(() => { setSavingFile(false); setProgress(0); }); }} /></View>)}
-    {!project.attachments?.length ? <Text style={type.bodyMuted}>No documents uploaded.</Text> : null}
+    {visibleAttachments.map(file => <View key={file.id} style={{ gap: spacing.sm }}><Text style={type.body}>{file.filename} · {Math.ceil(file.size_bytes / 1024)} KiB</Text><Button label={`Download ${file.filename}`} variant="secondary" disabled={savingFile} onPress={() => { setSavingFile(true); void (file.size_bytes > 768 * 1024 ? downloadKitchenFile(project.id, file, setProgress) : downloadApiFile(kitchenProjectsApi.attachmentPath(project.id, file.id), file.filename, "project document", KITCHEN_FLOOR_ID)).catch(error => submission.setError(error instanceof Error ? error.message : "File download failed. Retry the download.")).finally(() => { setSavingFile(false); setProgress(0); }); }} /></View>)}
+    {!visibleAttachments.length ? <Text style={type.bodyMuted}>No documents uploaded.</Text> : null}
   </KitchenPanel><KitchenPanel title="Add a document">
     <Text style={type.bodyMuted}>Files remain private. Sharing with the customer is recorded in the relevant stage.</Text>
     {!files ? <Alert tone="info" title="Upload settings unavailable" description="Ask the owner to complete Kitchen setup." /> : <Text style={type.caption}>PDF up to 10 MB (10,000,000 bytes); JPG/JPEG, PNG, DOCX or XLSX up to 25 MB (25,000,000 bytes). Larger files transfer in private, verified parts.</Text>}

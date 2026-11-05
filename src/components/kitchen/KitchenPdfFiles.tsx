@@ -24,20 +24,24 @@ export function KitchenPdfFile({ project, file, selected, onSelect, disabled, te
     if (preview) preview.opener = null;
     try {
       if (open && Platform.OS === "web" && !preview) throw new Error(`Allow this browser to open a ${photo ? "photo" : "PDF"} preview, then try again.`);
-      await downloadKitchenFile(project.id, file, () => {}, preview || undefined);
+      await downloadKitchenFile(project.id, file, () => {}, preview || undefined, open ? "open" : "download");
     } catch (failure) {
       preview?.close();
       setError(failure instanceof Error ? failure.message : `The ${photo ? "photo" : "PDF"} could not be opened. Try again.`);
     } finally { pending.current = false; setBusy(false); }
   };
+  const restricted = !photo && project.permissions?.restricted;
+  const canOpen = !restricted || project.permissions?.can_open_pdf === true;
+  const canDownload = !restricted || project.permissions?.can_download_pdf === true;
+  if (restricted && !canOpen && !canDownload) return null;
   const uploadDate = file.upload_date || kitchenApprovalDate(file.uploaded_at) || "";
   return <View style={[{ gap: spacing.sm }, bordered && { borderWidth: 1, borderColor: colors.borderStrong, borderRadius: 6, padding: spacing.s12, backgroundColor: colors.surfaceSecondary }]} testID={testID}>
     <Text style={type.bodyStrong}>{file.filename}{selected ? " · Finalize PDF" : ""}</Text>
     <Text style={type.caption}>Uploaded: {uploadDate ? displayDate(uploadDate) : "Historical date not recorded"}</Text>
     <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
       {onSelect ? <KitchenOption label={selected ? "Finalize PDF · Selected" : "Finalize PDF"} accessibilityLabel={`Finalize PDF: ${file.filename}`} active={selected} disabled={disabled} onPress={onSelect} testID={`${testID}-final`} /> : null}
-      <Button label={photo ? "Open photo" : "Open PDF"} variant="secondary" disabled={busy} onPress={() => void download(true)} testID={`${testID}-open`} />
-      <Button label={photo ? "Download photo" : "Download PDF"} variant="secondary" disabled={busy} onPress={() => void download(false)} testID={`${testID}-download`} />
+      {canOpen ? <Button label={photo ? "Open photo" : "Open PDF"} variant="secondary" disabled={busy} onPress={() => void download(true)} testID={`${testID}-open`} /> : null}
+      {canDownload ? <Button label={photo ? "Download photo" : "Download PDF"} variant="secondary" disabled={busy} onPress={() => void download(false)} testID={`${testID}-download`} /> : null}
     </View>
     {error ? <Text accessibilityRole="alert" style={type.bodyMuted}>{error}</Text> : null}
   </View>;
@@ -49,6 +53,8 @@ type PdfTransfer = Pick<KitchenOwnFileTransfer, "project_id" | "transfer_id" | "
 export function KitchenPdfFiles({ project, attachmentIds, finalId, onAdd, onSelect, disabled, selectionDisabled = false, label, testID, draftKey, fileKind = "pdf", finalProduction = false }: { finalProduction?: boolean; fileKind?: "pdf" | "photo"; project: KitchenProject; attachmentIds: string[]; finalId: string; onAdd: (id: string) => void | boolean | Promise<void | boolean>; onSelect?: (id: string) => void; disabled: boolean; selectionDisabled?: boolean; label?: string; testID: string; draftKey: string }) {
   const { policy, documentSubmission: submission, updateProject, reload } = useKitchenProject();
   const photo = fileKind === "photo";
+  const restricted = !photo && project.permissions?.restricted;
+  const canChoose = !restricted || !finalProduction && project.permissions?.can_choose_pdf === true;
   const quotationSection = !photo && (label === "GI" || label === "SS" || label === "Mix");
   const noun = photo ? "photo" : "PDF";
   const [picked, setPicked] = useKitchenDraft<DocumentPicker.DocumentPickerAsset | null>(`${draftKey}.picked`, null);
@@ -83,7 +89,7 @@ export function KitchenPdfFiles({ project, attachmentIds, finalId, onAdd, onSele
     return () => { currentScope.live = false; controller.abort(); };
   }, [project.id, scopeKey]);
   const files = (project.attachments || []).filter(file => photo ? ["image/jpeg", "image/png"].includes(file.content_type) : file.content_type === "application/pdf");
-  const included = files.filter(file => attachmentIds.includes(file.id));
+  const included = files.filter(file => attachmentIds.includes(file.id) && (!restricted || file.id === finalId));
   const pick = async () => {
     if (pending.current || submission.busy || disabled) return;
     const currentScope = scope.current;
@@ -148,9 +154,9 @@ export function KitchenPdfFiles({ project, attachmentIds, finalId, onAdd, onSele
   const progressLabel = discarding ? `Discarding unfinished ${noun} upload…` : progress === 0 ? `Preparing ${noun}…` : progress < 95 ? `Uploading ${noun} · ${progress}%` : progress < 100 ? `Verifying and saving ${noun}…` : `Saving ${noun} entry…`;
   return <View style={[{ gap: spacing.md }, quotationSection && { borderWidth: 1, borderColor: colors.borderStrong, borderRadius: 8, padding: spacing.s16, backgroundColor: colors.surfaceSubtle }]} testID={testID}>
     {label ? <Text style={type.bodyStrong}>{label}</Text> : null}
-    {!disabled ? <Text style={type.caption}>{photo ? "JPG or PNG · Up to 25 MB per photo. Select multiple photos or add more at any time." : finalProduction ? "PDF" : "PDF · Up to 10 MB (10,000,000 bytes) per file."}</Text> : null}
+    {!disabled && canChoose ? <Text style={type.caption}>{photo ? "JPG or PNG · Up to 25 MB per photo. Select multiple photos or add more at any time." : finalProduction ? "PDF" : "PDF · Up to 10 MB (10,000,000 bytes) per file."}</Text> : null}
     {included.map(file => <KitchenPdfFile key={file.id} project={project} file={file} photo={photo} bordered={quotationSection} selected={!photo && file.id === finalId} onSelect={photo || !onSelect ? undefined : () => onSelect(file.id)} disabled={disabled || selectionDisabled || busy} testID={`${testID}-${file.id}`} />)}
-    {!disabled ? <>
+    {!disabled && canChoose ? <>
       <Button label={photo ? "Choose photo" : label ? `Choose ${label} PDF` : "Choose PDF"} variant="secondary" disabled={busy || !policy?.files} onPress={pick} testID={`${testID}-pick`} />
       {picked ? <><Text style={type.body}>{picked.name}{photo && photoQueue.length ? ` · ${photoQueue.length} more selected` : ""}</Text><Button label={uploading ? progressLabel : uploadedFile ? `Retry saving ${noun} entry` : photo ? "Upload photo" : "Upload PDF"} disabled={busy || !policy?.files} loading={uploading} onPress={upload} testID={`${testID}-upload`} /></> : null}
       {!policy?.files ? <Text style={type.bodyMuted}>{photo ? "Photo" : "PDF"} upload settings are unavailable. Reload Kitchen setup before uploading.</Text> : null}
