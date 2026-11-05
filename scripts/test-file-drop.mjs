@@ -1,0 +1,22 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import ts from 'typescript';
+
+const source = readFileSync(new URL('../src/components/kitchen/KitchenFileDrop.tsx', import.meta.url), 'utf8');
+const output = {};
+const modules = { react: { createElement: (type, props, children) => ({ type, props, children }) }, 'react-native': { Platform: { OS: 'web' } } };
+new Function('require', 'exports', ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText)(name => modules[name], output);
+const accepted = [], errors = [];
+const zone = output.KitchenFileDrop({ disabled: false, pdfOnly: true, onFile: file => accepted.push(file), onError: value => errors.push(value) });
+const file = new File(['%PDF'], 'test.pdf', { type: 'application/pdf', lastModified: 10 });
+const event = files => ({ preventDefault() {}, dataTransfer: { files } });
+zone.props.onDrop(event([file]));
+assert.equal(accepted[0].file, file);
+assert.equal(accepted[0].lastModified, 10);
+zone.props.onDrop(event([new File(['x'], 'test.png', { type: 'image/png' })]));
+zone.props.onDrop(event([file, file]));
+assert.equal(accepted.length, 1);
+assert.equal(errors.length, 2);
+output.KitchenFileDrop({ disabled: true, onFile: value => accepted.push(value), onError: value => errors.push(value) }).props.onDrop(event([file]));
+assert.equal(accepted.length, 1);
+console.log('File drop preserves original bytes and rejects disabled, non-PDF and multiple-file drops.');

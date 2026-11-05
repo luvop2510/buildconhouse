@@ -130,7 +130,7 @@ async function uploadFinalProductionPdf(project: KitchenProject, file: DocumentP
   return saved;
 }
 
-export async function downloadKitchenFile(projectId: string, attachment: KitchenAttachment, progress: (percent: number) => void, preview?: Window, purpose: "open" | "download" = "download") {
+export async function downloadKitchenFile(projectId: string, attachment: KitchenAttachment, progress: (percent: number) => void, preview?: Window, purpose: "open" | "download" = "download", prepare?: (blob: Blob) => void) {
   if (!attachment.size_bytes) throw new Error("This file is empty.");
   const operation = beginIdentityOperation();
   const parts: Uint8Array<ArrayBuffer>[] = [];
@@ -178,6 +178,7 @@ export async function downloadKitchenFile(projectId: string, attachment: Kitchen
     const resultDigest = bytesToHex(wholeHash.digest());
     if (!operation.isCurrent()) return false;
     if (resultDigest !== fullDigest) throw new Error("Downloaded file failed integrity verification.");
+    if (prepare) { prepare(blob); return true; }
     if (preview) {
       if (preview.closed) throw new Error("The PDF preview was closed. Open it again.");
       const url = URL.createObjectURL(blob);

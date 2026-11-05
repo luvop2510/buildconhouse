@@ -2,8 +2,9 @@
 // Steps: pick brand → pick file → deterministic extraction → human review → import
 import Feather from "@expo/vector-icons/Feather";
 import * as DocumentPicker from "expo-document-picker";
+import { KitchenFileDrop } from "@/src/components/kitchen/KitchenFileDrop";
 import { useRouter } from "expo-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Platform, ActivityIndicator, FlatList, Pressable, StyleSheet, View } from "react-native";
 import { Text, TextInput } from "@/src/components/AppText";
 
@@ -82,6 +83,7 @@ export default function CatalogImport() {
   const [brand, setBrand] = useState<Brand>("Hansgrohe");
   const [current, setCurrent] = useState<Job | null>(null);
   const [uploading, setUploading] = useState(false);
+  const uploadPending = useRef(false);
   const [importing, setImporting] = useState(false);
   const [urlInput, setUrlInput] = useState("");
   const [rowOperations, setRowOperations] = useState<Record<string, RowOperation>>({});
@@ -123,9 +125,11 @@ export default function CatalogImport() {
     return () => { active = false; clearInterval(timer); };
   }, [processingJobId, loadJobs]);
 
-  const pickAndUpload = async () => {
+  const pickAndUpload = async (dropped?: DocumentPicker.DocumentPickerAsset) => {
+    if (uploadPending.current) return;
+    uploadPending.current = true;
     try {
-      const res = await DocumentPicker.getDocumentAsync({
+      const res = dropped ? { canceled: false as const, assets: [dropped] } : await DocumentPicker.getDocumentAsync({
         multiple: false, copyToCacheDirectory: true,
         type: [
           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -139,7 +143,7 @@ export default function CatalogImport() {
 
       const form = new FormData();
       form.append("brand", brand);
-      const blob = await uriToBlob(asset.uri);
+      const blob = asset.file || await uriToBlob(asset.uri);
       form.append("file", blob, asset.name || "upload");
 
       const r = await fetch(`${api.base}/api/catalog/imports`, {
@@ -163,6 +167,7 @@ export default function CatalogImport() {
     } catch (e: any) {
       toast.error(e?.message || "Something went wrong");
     } finally {
+      uploadPending.current = false;
       setUploading(false);
     }
   };
@@ -468,9 +473,10 @@ export default function CatalogImport() {
         <Text style={[type.caption, { marginTop: 8 }]}>Other companies: CSV or XLSX with sku, name, category, mrp and optional dealer_price columns. Existing product IDs and images are preserved when no new image is supplied.</Text>
 
         <Text style={[type.overline, { marginTop: spacing.lg }]}>Step 2 · File</Text>
+        <KitchenFileDrop disabled={uploading} onFile={file => { void pickAndUpload(file); }} onError={message => toast.error(message)} />
         <Pressable
           testID="upload-file"
-          onPress={pickAndUpload}
+          onPress={() => void pickAndUpload()}
           style={[styles.dropzone, uploading && { opacity: 0.6 }]}
         >
           {uploading ? (

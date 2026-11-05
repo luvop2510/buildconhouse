@@ -17,6 +17,8 @@ const modules={
   '@/src/api/kitchenProjects':{kitchenProjectsApi:{ownTransfer:async()=>({transfer:transferResult}),cancelTransfer:async(...args)=>{cancelled.push(args);await cancelWork();transferResult=null;return{discarded:true};}}},
   './shared':{ErrorNotice:'error',displayDate:value=>value},
   './KitchenFilters':{KitchenOption:'option',KitchenSelect:'select'},
+  './KitchenFileDrop':{KitchenFileDrop:'drop'},
+  '@/src/api/client':{subscribeApiCacheInvalidation:()=>()=>{}},
   './KitchenPrimitives':{KitchenButton:'button',kitchenType:{}},
   './KitchenProjectState':{useKitchenProject:()=>context,useKitchenDraft:(key,initial)=>[drafts[key]??initial,next=>{drafts[key]=typeof next==='function'?next(drafts[key]??initial):next;}]},
   './KitchenFileTransport':{KITCHEN_MAX_PDF_BYTES:10_000_000,uploadKitchenFile:async(project,file,key,progress,started)=>{uploaded.push([project,file,key]);if(uploadWork)return uploadWork(project,file,key,progress,started);progress(100);return uploadResult || {...current,version:5,attachments:[uploadedFile]};},downloadKitchenFile:async()=>true},

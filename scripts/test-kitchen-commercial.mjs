@@ -29,6 +29,7 @@ const mocks = {
   './KitchenAutosave': { useKitchenAutosave: options => { autosaveOptions = options; return { status: autosaveStatus, retry: () => {} }; } },
   './KitchenDocuments': { DocumentChoice: host('document') },
   './KitchenPdfFiles': { KitchenPdfFiles: host('pdf-files'), KitchenPdfFile: host('pdf-file') },
+  './KitchenFileDrop': { KitchenFileDrop: host('drop') },
   './KitchenProjectState': { kitchenProjectPath: (id, suffix) => `/kitchen/${id}${suffix}`, useKitchenDraft: (key, initial) => [drafts[key] ?? initial, value => { drafts[key] = typeof value === 'function' ? value(drafts[key] ?? initial) : value; }], useKitchenProject: () => ({ resetDraftValue: () => {}, documentSubmission: { busy: false }, returnTo: '/kitchen/stages/lead', submission: { setError: update => { feedback = typeof update === 'function' ? update(feedback) : update; } } }) },
   '@/src/theme/tokens': { radius: {}, spacing: {} },
   './KitchenPrimitives': { KitchenButton: host('button'), KitchenTextField: host('input'), KitchenFieldRow: host('row'), kitchenColors: {}, kitchenType: {} },

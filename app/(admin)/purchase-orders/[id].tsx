@@ -11,6 +11,7 @@
 // -----------------------------------------------------------------------------
 import Feather from "@expo/vector-icons/Feather";
 import * as DocumentPicker from "expo-document-picker";
+import { KitchenFileDrop } from "@/src/components/kitchen/KitchenFileDrop";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, KeyboardAvoidingView, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
@@ -235,6 +236,7 @@ export default function PurchaseOrderDetail() {
   const { selectedFloorId } = useFloorAccess();
   const activeFloor = useRef(selectedFloorId); activeFloor.current = selectedFloorId;
   const deletingPurchase = useRef(false);
+  const attachmentPending = useRef(false);
   const { roles, loading: rolesLoading, error: rolesError, refresh: refreshRoles } = useRoles();
 
   const [po, setPo] = useState<PO | null>(null);
@@ -488,15 +490,17 @@ export default function PurchaseOrderDetail() {
     }
   };
 
-  const addAttachment = async () => {
+  const addAttachment = async (dropped?: DocumentPicker.DocumentPickerAsset) => {
+    if (attachmentPending.current) return;
+    attachmentPending.current = true;
     try {
-      const res = await DocumentPicker.getDocumentAsync({ multiple: false, type: "*/*", copyToCacheDirectory: true });
+      const res = dropped ? { canceled: false as const, assets: [dropped] } : await DocumentPicker.getDocumentAsync({ multiple: false, type: "*/*", copyToCacheDirectory: true });
       if (res.canceled || !res.assets?.[0]) return;
       const asset = res.assets[0];
       let dataUrl = "";
       if (Platform.OS === "web") {
         // On web, asset.uri is already a blob: URL or data URL. Fetch → base64.
-        const blob = await (await fetch(asset.uri)).blob();
+        const blob = asset.file || await (await fetch(asset.uri)).blob();
         dataUrl = await new Promise<string>((resolve, reject) => {
           const reader = new FileReader();
           reader.onloadend = () => resolve(reader.result as string);
@@ -522,7 +526,7 @@ export default function PurchaseOrderDetail() {
       await load();
     } catch (e: any) {
       toast.error(e?.detail || "Could not attach");
-    }
+    } finally { attachmentPending.current = false; }
   };
 
   const openAttachment = async (a: Attachment) => {
@@ -878,11 +882,12 @@ export default function PurchaseOrderDetail() {
           <Card>
             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.sm }}>
               <Text style={type.overline}>Attachments</Text>
-              <Pressable onPress={addAttachment} style={styles.attachBtn}>
+              <Pressable onPress={() => void addAttachment()} style={styles.attachBtn}>
                 <Feather name="paperclip" size={12} color={colors.onSurface} />
                 <Text style={{ fontSize: 12, fontWeight: "600" }}>Attach</Text>
               </Pressable>
             </View>
+            <KitchenFileDrop disabled={busy} onFile={file => { void addAttachment(file); }} onError={message => toast.error(message)} />
             {po.attachments.length === 0 ? (
               <Text style={type.caption}>No attachments</Text>
             ) : (

@@ -32,11 +32,14 @@ test('merged order and production saves payments, work and a large final PDF', a
   await expect(page.getByTestId('kitchen-installment-0')).toContainText('120');
   await page.getByRole('button', { name: 'Delete installment 1' }).click();
   await expect(page.getByTestId('kitchen-installment-0')).toHaveCount(0);
-  const picker = page.waitForEvent('filechooser');
-  await page.getByTestId('kitchen-final-production-pdf-pick').click();
-  const chooser = await picker;
-  const buffer = Buffer.alloc(10_000_001, 32); buffer.write('%PDF-1.4\n');
-  await chooser.setFiles({ name: 'final-production.pdf', mimeType: 'application/pdf', buffer });
+  const size = 10_000_001;
+  const drop = page.getByTestId('kitchen-final-production-pdf').getByRole('region', { name: 'Drop a PDF here' });
+  await drop.evaluate((element, bytes) => {
+    const content = new Uint8Array(bytes); content.fill(32); content.set(new TextEncoder().encode('%PDF-1.4\n'));
+    const transfer = new DataTransfer(); transfer.items.add(new File([content], 'final-production.pdf', { type: 'application/pdf' }));
+    element.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer }));
+  }, size);
+  await expect(page.getByTestId('kitchen-final-production-pdf')).toContainText('final-production.pdf');
   await page.getByTestId('kitchen-final-production-pdf-upload').click();
   await expect(page.getByTestId('kitchen-final-production-pdf').getByRole('button', { name: 'Open PDF' })).toBeVisible({ timeout: 120000 });
   const download = page.waitForEvent('download');
@@ -51,5 +54,14 @@ test('merged order and production saves payments, work and a large final PDF', a
   const latest = await context.request.get(`/api/kitchen-projects/${project.id}`, {headers});
   const saved = await latest.json();
   expect(saved.production.final_attachment_id).toBeTruthy();
-  expect(saved.attachments.find((item: any) => item.id === saved.production.final_attachment_id).size_bytes).toBe(buffer.length);
+  expect(saved.attachments.find((item: any) => item.id === saved.production.final_attachment_id).size_bytes).toBe(size);
+  await page.getByTestId(`kitchen-final-production-pdf-${saved.production.final_attachment_id}-prepare-drag`).click();
+  const drag = page.getByTestId(`kitchen-final-production-pdf-${saved.production.final_attachment_id}-drag`);
+  await expect(drag).toHaveAttribute('draggable', 'true', { timeout: 120000 });
+  const payload = await drag.evaluate(element => {
+    const transfer = new DataTransfer();
+    element.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: transfer }));
+    return { name: transfer.files[0]?.name, type: transfer.files[0]?.type, size: transfer.files[0]?.size };
+  });
+  expect(payload).toEqual({ name: 'final-production.pdf', type: 'application/pdf', size });
 });
