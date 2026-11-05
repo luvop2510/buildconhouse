@@ -497,7 +497,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
       if (next.quantityUnit === "Box" && ("offerRate" in patch || "boxSqft" in patch || ("rateSqft" in patch && row.offerRateIsFallback))) {
         const derived = derivedTileBoxRate(next);
         if (derived !== null) next.rateBox = String(derived);
-        else if (next.priceBasis !== "box" && "offerRate" in patch) {
+        else if (next.priceBasis !== "box" && ("offerRate" in patch || ("rateSqft" in patch && row.offerRateIsFallback))) {
           const priorOffer = row.offerRate.trim() ? num(row.offerRate) : num(row.rateSqft);
           next.inferredCoverage = row.inferredCoverage ?? (priorOffer > 0 && num(row.rateBox) > 0 ? num(row.rateBox) / priorOffer : 1);
           next.rateBox = tileRateWithoutCoverage(next, next.offerRate);
