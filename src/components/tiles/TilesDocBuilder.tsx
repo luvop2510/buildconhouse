@@ -1774,6 +1774,7 @@ function SelectionPaper(doc: ReturnType<typeof useTilesDoc>) {
                 onLoad={() => void doc.loadRowSizes(row.key, row.productId!)}
                 testID={`tiles-size-${index}`}
               />
+              {(row.finishVariants?.length || 0) >= 2 ? <TileFinishField row={row} onSelect={(id) => doc.selectRowFinish(row.key, id)} testID={`tiles-finish-${index}`} /> : null}
             </View>
             <View style={[selStyles.td, flex(5), { borderRightWidth: 0 }]}>
               <CellInput value={row.offerRate} onChangeText={(t) => doc.updateRow(row.key, { offerRate: t })} red bold testID={`tiles-rate-${index}`} />
@@ -1989,6 +1990,7 @@ const MOBILE_FIELDS: Record<TilesDocType, MobileFieldDef[]> = {
   tiles_selection: [
     { key: "area", label: "Area / Room" },
     { key: "size", label: "Size" },
+    { key: "finish", label: "Finish" },
     { key: "offerRate", label: "Offer Rate", numeric: true },
   ],
   tiles_quotation: [
@@ -2082,7 +2084,7 @@ function MobileRowCard({
       </View>
 
       <View style={[mobileStyles.fieldStack, compact && mobileStyles.fieldGrid]}>
-        {fields.filter(f => !(f.key === "finish" && !row.finish) && !(docType === "tiles_quotation" && f.key === "rateSqft" && (row.quantityUnit === "Pieces" || row.priceBasis === "box"))).map((f) => (
+        {fields.filter(f => !(f.key === "finish" && (docType === "tiles_selection" ? (row.finishVariants?.length || 0) < 2 : !row.finish)) && !(docType === "tiles_quotation" && f.key === "rateSqft" && (row.quantityUnit === "Pieces" || row.priceBasis === "box"))).map((f) => (
           <View key={f.key} style={compact && !(isPhone && f.key === "area") ? { width: fieldColumns === 3 ? "32%" : "49%", minWidth: 0 } : mobileStyles.fieldFull}>
             {f.key === "size" ? (
               <View style={{ gap: spacing.sm }}>
