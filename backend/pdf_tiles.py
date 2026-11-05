@@ -382,7 +382,20 @@ def build_tiles_selection_pdf(quotation: dict, customer: dict, branding: dict | 
     # The selection cover has no price summary, so the standard rhythm gives
     # every group breathing room while still keeping the masthead inside the
     # printable first-page frame.
+    cover_body_start = len(story)
     story.extend(_brand_terms_signature_block(styles, b, density="airy"))
+
+    # Fill the cover down to the footer without forcing Product Details onto it.
+    # Measure the actual wrapped customer/reference content: long values use
+    # the space themselves, while short covers get breathing room between
+    # sections. ReportLab frames reserve six points on each vertical edge.
+    content_height = sum(flowable.wrap(doc.width - 12, doc.height)[1]
+                         + flowable.getSpaceBefore() + flowable.getSpaceAfter()
+                         for flowable in story)
+    remaining = max(0, doc.height - 24 - content_height)
+    if remaining:
+        for offset in (10, 7, 3):
+            story.insert(cover_body_start + offset, Spacer(1, remaining / 3))
 
     # Product selection is a standalone cover; details begin on the next page.
     story.append(PageBreak())

@@ -4,6 +4,7 @@ from io import BytesIO
 
 from PIL import Image
 from pypdf import PdfReader
+import pytest
 
 import pdf_generator
 import pdf_tiles
@@ -279,3 +280,16 @@ def test_selection_displays_piece_price_and_reference_and_staff():
     assert "Imported tile" not in (pages[0].extract_text() or "")
     assert "PRODUCT DETAILS" in (pages[1].extract_text() or "")
     assert "Imported tile" in (pages[1].extract_text() or "")
+
+
+@pytest.mark.parametrize("address", ["Site", "Long address " * 12])
+def test_selection_cover_fills_page_without_moving_products(address):
+    pdf = pdf_tiles.build_tiles_selection_pdf({"customer_name": "Customer", "address_snapshot": address,
+                                               "items": [{"name": "Tile", "qty": 1, "unit_price": 100}]}, {})
+    pages = PdfReader(BytesIO(pdf)).pages
+    assert len(pages) == 2
+    signature_positions = []
+    pages[0].extract_text(visitor_text=lambda text, cm, tm, font, size: signature_positions.append(cm[5] + tm[5]) if "CUSTOMER SIGNATURE" in text else None)
+    assert signature_positions and 50 < signature_positions[0] < 130
+    assert "PRODUCT DETAILS" not in (pages[0].extract_text() or "")
+    assert "PRODUCT DETAILS" in (pages[1].extract_text() or "")
