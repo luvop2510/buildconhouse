@@ -198,8 +198,10 @@ for (const lifecycle_status of ['On Hold', 'Cancelled']) {
 view = render('order', { quotation_versions: [quotation] }, { 'order.confirmed': 'Yes', 'order.date': '2026-10-26', 'order.finalAmount.quotation': '1000.00', 'order.finalAmount.quotation-two': '1000.00' });
 assert.match(view.text, /Order not yet recorded/);
 assert.equal(view.control('kitchen-order-confirm').props.disabled, false, 'A pending order can be confirmed against its approved quotation');
+view.control('kitchen-order-date').props.onChange('2026-10-22');
+view = view.refresh();
 await view.control('kitchen-order-confirm').props.onPress();
-assert.equal(calls.pop()[0], 'order_confirm');
+assert.equal(calls.pop()[1].order_date, '2026-10-22', 'Historical order date is explicitly saved');
 view = render('order', { quotation_versions: [{ ...quotation, response: 'Pending' }] });
 assert.match(view.text, /Record the customer’s quotation approval/);
 assert.equal(view.control('kitchen-order-confirm').props.disabled, true);
@@ -375,6 +377,26 @@ assert.match(view.text, /Order quotation: Quotation 1 · Design v1/);
 assert.doesNotMatch(view.text, /Production entry manager approval/);
 assert.equal(view.control('kitchen-approve-production'), undefined, 'Order does not display the removed manager-approval section');
 assert.equal(calls.length, 0, 'Removing display details does not change the saved order');
+// Opening an unstarted form must not capture an old date; the first save
+// requires a separate confirmation of the status and date.
+calls.length = 0;
+view = render('order', { quotation_versions: [quotation], orders: [order], production: { status: 'Not Started' } });
+assert.equal(view.control('kitchen-production-start').props.defaultToToday, false);
+view.control('kitchen-production-status').props.onChange('In Production');
+view = view.refresh();
+assert.equal(view.control('kitchen-production-start').props.value, '2026-10-26');
+await view.control('kitchen-production-save').props.onPress();
+view = view.refresh();
+assert.equal(calls.length, 0);
+assert.match(view.text, /Confirm production start/);
+view.control('kitchen-production-confirm-start').props.onPress();
+assert.equal(calls[0][0], 'production_update');
+assert.equal(calls[0][1].start_date, '2026-10-26');
+view = render('order', { quotation_versions: [quotation], orders: [order], production: { status: 'Not Started' } }, { production: { status: 'In Production', start_date: '2026-10-20' } });
+assert.equal(view.control('kitchen-production-start').props.min, '2026-10-22');
+assert.equal(view.control('kitchen-production-save').props.disabled, true);
+assert.match(view.text, /Production cannot start before the order date/);
+
 for (const stage of ['production', 'installation']) {
   view = render(stage, { design_versions: [design, design2], quotation_versions: [quotation, quote2], orders: [order] });
   assert.match(view.text, /Quotation 1 · Design v1/, 'Downstream context follows the saved order IDs, not the latest design');
@@ -410,7 +432,10 @@ view.control('kitchen-site-save').props.onPress();
 assert.deepEqual(calls.pop(), ['site_visit', { date: '2026-10-26', actual: true, notes: null }]);
 
 view = render('order', { quotation_versions: [quotation], orders: [order] });
-assert.equal(view.control('kitchen-order-edit-date'), undefined);
+view.control('kitchen-order-edit-date').props.onChange('2026-10-21');
+view = view.refresh();
+await view.control('kitchen-order-date-save').props.onPress();
+assert.deepEqual(calls.pop(), ['order_update', { order_date: '2026-10-21' }]);
 assert.equal(view.control('kitchen-order-edit-notes'), undefined);
 assert.equal(view.control('kitchen-order-status-save'), undefined);
 assert.equal(view.control('kitchen-order-confirmation-save'), undefined);
@@ -425,7 +450,7 @@ for (const stage of ['production', 'installation']) {
   const work = { status: 'Completed', start_date: '2026-10-23', completion_date: stage === 'production' ? '2026-12-23' : '2026-10-26', notes: 'Preserve work' };
   const commands = [];
   let finishSave;
-  view = render(stage, {}, { [stage]: work }, async (...args) => {
+  view = render(stage, { [stage]: work }, { [stage]: work }, async (...args) => {
     commands.push(args);
     return commands.length === 1 ? new Promise(resolve => { finishSave = resolve; }) : true;
   });
@@ -437,12 +462,12 @@ for (const stage of ['production', 'installation']) {
   assert.equal(await first, true);
   assert.deepEqual(commands, [[`${stage}_update`, work], ['move_stage', { target_stage: stage === 'production' ? 'installation' : 'completed' }]]);
   commands.length = 0;
-  view = render(stage, {}, { [stage]: work }, async (...args) => { commands.push(args); return false; });
+  view = render(stage, { [stage]: work }, { [stage]: work }, async (...args) => { commands.push(args); return false; });
   assert.equal(await view.control(`kitchen-${stage}-save-next`).props.onPress(), false);
   assert.equal(commands.length, 1, 'Failed work saves never move stages');
   commands.length = 0;
   feedback = 'Request timed out. Please try again.';
-  view = render(stage, {}, { [stage]: work }, async (...args) => { commands.push(args); return commands.length === 1; });
+  view = render(stage, { [stage]: work }, { [stage]: work }, async (...args) => { commands.push(args); return commands.length === 1; });
   assert.equal(await view.control(`kitchen-${stage}-save-next`).props.onPress(), false);
   assert.deepEqual(commands[0], [`${stage}_update`, work], 'A failed stage move does not undo the successful work save');
   assert.match(feedback, /details were saved/);
@@ -567,6 +592,10 @@ for(const stage of ['production','installation']) {
     assert.equal(task.control(`kitchen-${stage}-complete`).props.value,stage==='production'?'2026-12-26':'2026-10-26');
     assert.equal(task.control(`kitchen-${stage}-complete`).props.disabled,stage==='production');
     await task.control(`kitchen-${stage}-save`).props.onPress();
+    if (stage === 'production' && status !== 'Not Started') {
+      task = task.refresh();
+      await task.control('kitchen-production-confirm-start').props.onPress();
+    }
     assert.deepEqual(commands,[[`${stage}_update`,{status,start_date:status==='Not Started'?null:'2026-10-26',completion_date:status==='Not Started'?null:stage==='production'?'2026-12-26':status==='Completed'?'2026-10-26':null,notes:null}]],'Proposed dates never change the selected status or violate the work API');
     task.control(`kitchen-${stage}-start`).props.onChange('');
     task.control(`kitchen-${stage}-complete`).props.onChange('');

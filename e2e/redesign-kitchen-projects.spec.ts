@@ -364,7 +364,8 @@ test('Q04 to Q09: all nine stages preserve versions, exact counters and late man
   await page.getByTestId('kitchen-production-start').fill(productionStart);
   await expect(page.getByTestId('kitchen-production-complete')).toBeDisabled();
   await expect(page.getByTestId('kitchen-production-complete')).toHaveValue(productionEnd);
-  const productionSaved = await click('kitchen-production-save', 'production_update');
+  await page.getByTestId('kitchen-production-save').click();
+  const productionSaved = await click('kitchen-production-confirm-start', 'production_update');
   expect(productionSaved.production.completion_date).toBe(productionEnd);
   await click('kitchen-advance-installation', 'advance_stage');
   await blocked('kitchen-advance-completed');

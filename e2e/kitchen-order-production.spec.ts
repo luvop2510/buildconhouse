@@ -18,9 +18,10 @@ test('merged order and production saves payments, work and a large final PDF', a
   await expect(page.getByTestId('kitchen-project-ready')).toBeAttached();
   await expect(page.getByTestId('kitchen-project-stage-production')).toHaveCount(0);
   await expect(page.getByTestId('kitchen-production-status')).toBeVisible();
-  for (const id of ['kitchen-order-status', 'kitchen-order-confirmed', 'kitchen-order-date', 'kitchen-order-notes', 'kitchen-material-arrived', 'kitchen-material-photos', 'kitchen-approve-closure']) await expect(page.getByTestId(id)).toHaveCount(0);
+  for (const id of ['kitchen-order-status', 'kitchen-order-confirmed', 'kitchen-order-notes', 'kitchen-material-arrived', 'kitchen-material-photos', 'kitchen-approve-closure']) await expect(page.getByTestId(id)).toHaveCount(0);
   await page.getByTestId('kitchen-production-status').getByText('In Production', { exact: true }).click();
   await page.getByTestId('kitchen-production-save').click();
+  await page.getByTestId('kitchen-production-confirm-start').click();
   await expect.poll(async () => (await (await context.request.get(`/api/kitchen-projects/${project.id}`, {headers})).json()).production?.status).toBe('In Production');
   await page.getByTestId('kitchen-installment-amount').fill('100');
   await page.getByTestId('kitchen-installment-save').click();

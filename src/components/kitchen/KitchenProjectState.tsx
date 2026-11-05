@@ -217,6 +217,10 @@ export function KitchenProjectProvider({ id, returnTo, children }: { id: string;
           replaceSaved("cad.value", value.cad);
           replaceSaved("cad.progress", String(value.cad.progress));
         }
+        if (name === "production_update" || name === "installation_update") {
+          const work = name === "production_update" ? "production" : "installation";
+          replaceSaved(`${cycle}.${work}`, value[work]);
+        }
         // Reopening explicitly resets saved installation work, preserving a newer local edit.
         if (name === "exception" && payload.action === "reopen") {
           replaceSaved(`commercial.cycle.${value.workflow_cycle ?? 1}.installation`, value.installation);
@@ -269,7 +273,7 @@ export function KitchenProjectProvider({ id, returnTo, children }: { id: string;
           if (["order_update", "quotation_update", "design_update"].includes(name) && key === editorKey) continue;
           if ((name === "design_present" || name === "quotation_receive") && unchanged(key)) { remove(key); continue; }
           // The saved response may normalize ordinary fields; never replace that baseline with newer typing.
-          if (!(["edit_lead", "save_visit", "save_cad"].includes(name))) baselines.current[key] = submittedDrafts[key];
+          if (!(["edit_lead", "save_visit", "save_cad"].includes(name)) && !(name === "production_update" && key === `${cycle}.production`) && !(name === "installation_update" && key === `${cycle}.installation`)) baselines.current[key] = submittedDrafts[key];
           if ((name === "exception" || name === "order_status") && key === "exception.reason") baselines.current[key] = "";
           if (name === "design_revision" && key.endsWith(".revisionReason")) baselines.current[key] = "";
           if (name === "order_installment") baselines.current[key] = key.endsWith(".amount") ? "" : kitchenToday();

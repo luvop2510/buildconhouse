@@ -272,7 +272,8 @@ test('Kitchen save and next persists production, actual site visit and installat
   await page.getByTestId('kitchen-production-start').fill('2026-10-25');
   await expect(page.getByTestId('kitchen-production-complete')).toHaveValue('2026-12-25');
   await expect(page.getByTestId('kitchen-production-complete')).toBeDisabled();
-  await clickCommand(page, 'kitchen-production-save-next', 'move_stage');
+  await page.getByTestId('kitchen-production-save-next').click();
+  await clickCommand(page, 'kitchen-production-confirm-start', 'move_stage');
   await expect(page).toHaveURL(new RegExp(`/stages/installation(?:\\?.*)?$`));
   const afterProduction = await context.request.get(`/api/kitchen-projects/${project.id}`, { headers });
   expect(await afterProduction.json()).toMatchObject({ stage: 'installation', production: { status: 'Completed', start_date: '2026-10-25', completion_date: '2026-12-25' } });
@@ -435,7 +436,8 @@ test('Kitchen records dated installments and automatic production completion', a
   await expect(page.getByTestId('kitchen-production-complete')).toBeDisabled();
   await page.getByTestId('kitchen-production-start').fill(date);
   await page.getByTestId('kitchen-production-status-in-production').click();
-  project=await clickCommand(page,'kitchen-production-save','production_update');
+  await page.getByTestId('kitchen-production-save').click();
+  project=await clickCommand(page,'kitchen-production-confirm-start','production_update');
   const expected = new Date(`${date}T00:00:00Z`);expected.setUTCMonth(expected.getUTCMonth()+2);
   expect(project.production.completion_date).toBe(expected.toISOString().slice(0,10));
   await send('move_stage',{target_stage:'installation'});await page.goto(`/kitchen/${project.id}/stages/installation`);

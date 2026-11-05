@@ -80,13 +80,17 @@ test('Every Kitchen date entry point chooses India today when blank and preserve
       await expect(page.getByTestId('kitchen-quotation-final-design')).toContainText('Finalize PDF');
       await todayDefault(page, 'kitchen-quotation-shared-date');
     } else if (target_stage === 'order') {
-      await expect(page.getByTestId('kitchen-order-date')).toHaveCount(0);
-      await todayDefault(page, 'kitchen-production-start');
+      await expect(page.getByTestId('kitchen-order-date')).toHaveValue(today);
+      await expect(page.getByTestId('kitchen-production-start')).toHaveValue('');
+      await page.getByTestId('kitchen-production-status-in-production').click();
+      await expect(page.getByTestId('kitchen-production-start')).toHaveValue(today);
       await expect(page.getByTestId('kitchen-production-complete')).toBeDisabled();
       await openProjectTool(page, 'advance');
       await todayDefault(page, 'kitchen-advance-date');
     } else if (target_stage === 'production' || target_stage === 'installation') {
-      await todayDefault(page, `kitchen-${target_stage}-start`);
+      await expect(page.getByTestId(`kitchen-${target_stage}-start`)).toHaveValue('');
+      await page.getByTestId(`kitchen-${target_stage}-status-${target_stage === 'production' ? 'in-production' : 'in-progress'}`).click();
+      await expect(page.getByTestId(`kitchen-${target_stage}-start`)).toHaveValue(today);
       if (target_stage === 'production') {
         await expect(page.getByTestId('kitchen-production-complete')).toHaveValue(kitchenProductionEnd(await page.getByTestId('kitchen-production-start').inputValue()));
         await expect(page.getByTestId('kitchen-production-complete')).toBeDisabled();
@@ -111,7 +115,7 @@ test('Every Kitchen date entry point chooses India today when blank and preserve
   await expect(page.getByTestId('kitchen-date-to')).toHaveCount(0);
 });
 
-test('Production and Installation select both dates on load without interaction and keep removed sections off the task', async ({ page, context }) => {
+test('Production and Installation default start dates when work starts and keep removed sections off the task', async ({ page, context }) => {
   const today = new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10);
   await page.addInitScript(() => {
     localStorage.setItem('forge.jwt.kind', JSON.stringify('staff'));
@@ -130,9 +134,8 @@ test('Production and Installation select both dates on load without interaction 
   for (const stage of ['production','installation']) {
     project = await command(context.request, project, 'move_stage', { target_stage: stage });
     await open(page, project.id, stage);
-    // Neither date is focused, clicked, filled or changed before these assertions.
-    await expect(page.getByTestId(`kitchen-${stage}-start`)).toHaveValue(today);
-    await expect(page.getByTestId(`kitchen-${stage}-complete`)).toHaveValue(stage === "production" ? kitchenProductionEnd(today) : today);
+    await expect(page.getByTestId(`kitchen-${stage}-start`)).toHaveValue('');
+    await expect(page.getByTestId(`kitchen-${stage}-complete`)).toHaveValue(stage === "production" ? '' : today);
     await expect(page.getByTestId('kitchen-disclose-site-visit')).toHaveCount(0);
     await expect(page.getByTestId('kitchen-site-save')).toHaveCount(0);
     await expect(page.getByTestId('kitchen-current-task-region')).not.toContainText('Installation site visits');
@@ -144,14 +147,15 @@ test('Production and Installation select both dates on load without interaction 
       await page.getByTestId(`kitchen-${stage}-status-${status}`).click();
       const response = page.waitForResponse(r => r.url().endsWith('/commands') && r.request().postDataJSON()?.command === `${stage}_update`);
       await page.getByTestId(`kitchen-${stage}-save`).click();
+      if (stage === 'production' && status !== 'not-started') await page.getByTestId('kitchen-production-confirm-start').click();
       const accepted = await response;
       expect(accepted.ok(), await accepted.text()).toBe(true);
       const record = (await accepted.json())[stage];
       expect(record.start_date).toBe(status === 'not-started' ? null : workStart);
       expect(record.completion_date).toBe(status !== 'not-started' && stage === 'production' ? kitchenProductionEnd(workStart) : null);
       await page.reload();
-      await expect(page.getByTestId(`kitchen-${stage}-start`)).toHaveValue(status === "not-started" ? today : workStart);
-      await expect(page.getByTestId(`kitchen-${stage}-complete`)).toHaveValue(stage === "production" ? kitchenProductionEnd(workStart) : today);
+      await expect(page.getByTestId(`kitchen-${stage}-start`)).toHaveValue(status === "not-started" ? '' : workStart);
+      await expect(page.getByTestId(`kitchen-${stage}-complete`)).toHaveValue(stage === "production" ? status === 'not-started' ? '' : kitchenProductionEnd(workStart) : today);
     }
     const start = stage === 'production' ? '2026-10-22' : '2026-12-24';
     const complete = stage === 'production' ? '2026-12-22' : '2026-12-25';

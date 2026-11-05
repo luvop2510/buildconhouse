@@ -96,6 +96,19 @@ async function checkOrdinary(providerSource = source) {
 await checkOrdinary();
 await assert.rejects(checkOrdinary(source.replace('if (unchanged(key)) updated[key] = savedValue;', 'updated[key] = savedValue;')), /later typing survives/, 'Negative control reproduces overwritten typing without snapshot reconciliation');
 
+{
+  const view = await harness();
+  const key = 'commercial.cycle.1.production';
+  const draft = { status: 'Not Started', start_date: '2026-10-01' };
+  view.state.setDraftValue(key, { status: 'Not Started' }, draft);
+  view.render();
+  const pending = view.state.command('production_update', { status: 'Not Started', start_date: null });
+  view.settle({ ...initial, version: 8, production: { status: 'Not Started', start_date: null } });
+  await pending;
+  assert.equal(view.render().drafts[key].start_date, null, 'Use normalized saved work rather than retaining a stale draft date');
+  assert.equal(view.state.dirty, false);
+}
+
 for (const [name, family, recordKey] of [['order_update', 'order', 'orders'], ['quotation_update', 'quotation', 'quotation_versions'], ['design_update', 'design', 'design_versions']]) {
   const saved = { id: 'selected', notes: 'Original', order_date: '2026-10-20', quotation_version_id: 'q1' };
   const original = { ...initial, stage: family, [recordKey]: [saved] };

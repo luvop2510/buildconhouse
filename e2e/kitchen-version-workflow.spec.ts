@@ -261,7 +261,8 @@ test('Simple design and quotation pages preserve PDF history, blank price and ol
   await page.getByTestId('kitchen-production-status-in-production').click();
   await expect(page.getByTestId('kitchen-production-start')).toHaveValue(new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10));
   await page.getByTestId('kitchen-production-start').fill(kitchenIndiaToday());
-  project = await clickCommand(page, 'kitchen-production-save', 'production_update');
+  await page.getByTestId('kitchen-production-save').click();
+  project = await clickCommand(page, 'kitchen-production-confirm-start', 'production_update');
   await page.reload();
   await expect(page.getByText('Quotation 1 · Design v1', { exact: true })).toBeVisible();
   await page.screenshot({ path: info.outputPath('production-saved-version.png'), fullPage: true });
