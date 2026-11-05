@@ -57,7 +57,7 @@ def test_customer_preserves_customer_legacy_name(monkeypatch):
     assert asyncio.run(customer_routes.get_customer('customer-1', user=user)).referrer_name == 'NTS'
 
 
-def test_all_pdf_formats_include_reference_name_and_stable_identity():
+def test_all_pdf_formats_include_only_reference_type_and_name():
     from io import BytesIO
     from pypdf import PdfReader
     from pdf_generator import build_quotation_pdf
@@ -69,9 +69,8 @@ def test_all_pdf_formats_include_reference_name_and_stable_identity():
     documents = [build_quotation_pdf(quote, {'name': 'Reference contract'}), build_tiles_quotation_pdf(quote, {'name': 'Reference contract'}), build_tiles_selection_pdf(quote, {'name': 'Reference contract'}), build_pdf(furniture)[0]]
     for data in documents:
         text = ''.join(page.extract_text() or '' for page in PdfReader(BytesIO(data)).pages).replace('\n', '')
-        assert 'NTS' in text
-        assert 'ARC-NTS-4D2A6042' in ''.join(text.split())
-        assert '78A7-453B-A7BE-97D60ED4571D' not in text
+        assert 'ARC-NTS' in ''.join(text.split())
+        assert '4D2A6042' not in text
 
 
 def test_addressed_reference_preserves_accessible_floor_scope_and_shared_reuse():

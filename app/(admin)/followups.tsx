@@ -291,6 +291,7 @@ function FollowupsWorkspace() {
   const routeParams = useLocalSearchParams<{ workspace?: string; showroom_followup?: string }>();
   const { staff } = useAuth();
   const canDeleteFollowups = useActionAccess("followups", "delete", !!staff && MANAGER_ROLES.includes(staff.role));
+  const canCreateTileSelection = useActionAccess("tiles", "create");
   const { selectedFloorId, floors } = useFloorAccess();
   const router = useRouter();
   const { isPhone, isDesktop } = useBp();
@@ -838,6 +839,9 @@ function FollowupsWorkspace() {
     if (n.has(b)) n.delete(b); else n.add(b);
     return n;
   });
+  const createSelection = useCallback((f: Followup) => {
+    router.push(`/(admin)/tiles/selection?followupId=${encodeURIComponent(f.id)}` as any);
+  }, [router]);
   const openRelatedDocument = useCallback((f: Followup) => {
     router.push(`/(admin)/tiles/${f.rule_type === "selection_waiting" ? "selection" : "quotation"}?id=${f.quotation_id}` as any);
   }, [router]);
@@ -1166,7 +1170,7 @@ function FollowupsWorkspace() {
       renderSectionFooter={({ section }) =>
         section.bucket === visibleSections[visibleSections.length - 1]?.bucket ? paginationFooter : null
       }
-      renderItem={({ item: f }) => <View style={{ paddingHorizontal: horizontalPadding, marginBottom: spacing.sm }}><MemoFollowupCard f={f} floorNames={floors} active={f.id === selectedId} assignees={assignees} rank={isSanitary ? undefined : rankMap.get(f.id)} checked={selectedIds.has(f.id)} onToggleSelect={toggleSelect} onPress={selectCard} onCall={contact} onWhatsApp={contact} onEmail={contact} onComplete={completeFollowup} onSnooze={snoozeFollowup} onCustomSnooze={setCustomSnoozeFor} onPushDays={pushDue} onAssign={assignFollowup} onMarkLost={(item) => { setLossActionFor(item); setCallOutcomeFor(item); }} onDismiss={dismissFollowup} canDelete={canDeleteFollowups} onDelete={setDeleteTarget} onOpenDoc={openRelatedDocument} /></View>}
+      renderItem={({ item: f }) => <View style={{ paddingHorizontal: horizontalPadding, marginBottom: spacing.sm }}><MemoFollowupCard f={f} floorNames={floors} active={f.id === selectedId} assignees={assignees} rank={isSanitary ? undefined : rankMap.get(f.id)} checked={selectedIds.has(f.id)} onToggleSelect={toggleSelect} onPress={selectCard} onCall={contact} onWhatsApp={contact} onEmail={contact} onComplete={completeFollowup} onSnooze={snoozeFollowup} onCustomSnooze={setCustomSnoozeFor} onPushDays={pushDue} onAssign={assignFollowup} onMarkLost={(item) => { setLossActionFor(item); setCallOutcomeFor(item); }} onDismiss={dismissFollowup} canDelete={canDeleteFollowups} onDelete={setDeleteTarget} onOpenDoc={openRelatedDocument} onCreateSelection={canCreateTileSelection ? createSelection : undefined} /></View>}
     />
     );
   };
@@ -1556,13 +1560,13 @@ function IconMenuButton({ icon, tone = "surface", accessibilityLabel, items, tes
 // ─────────────────────────────────────────────────────────────────────────────
 function FollowupCard({
   f, active, assignees, rank, checked, floorNames, onToggleSelect,
-  onPress, onCall, onWhatsApp, onEmail, onComplete, onSnooze, onCustomSnooze, onPushDays, onAssign, onMarkLost, onDismiss, canDelete, onDelete, onOpenDoc,
+  onPress, onCall, onWhatsApp, onEmail, onComplete, onSnooze, onCustomSnooze, onPushDays, onAssign, onMarkLost, onDismiss, canDelete, onDelete, onOpenDoc, onCreateSelection,
 }: {
   floorNames: { id: string; name: string }[]; f: Followup; active: boolean; assignees: Assignee[]; rank?: number; checked: boolean; onToggleSelect: (id: string) => void;
   onPress: (f: Followup) => void; onCall: (f: Followup, channel: Channel) => void; onWhatsApp: (f: Followup, channel: Channel) => void; onEmail: (f: Followup, channel: Channel) => void;
   onComplete: (f: Followup) => void; onSnooze: (f: Followup, preset: "15m" | "1h" | "tomorrow" | "next_week") => void;
   onCustomSnooze: (f: Followup) => void; onPushDays: (f: Followup, days: number) => void;
-  onAssign: (f: Followup, userId: string) => void; onMarkLost: (f: Followup) => void; onDismiss: (f: Followup) => void; canDelete: boolean; onDelete: (f: Followup) => void; onOpenDoc?: (f: Followup) => void;
+  onAssign: (f: Followup, userId: string) => void; onMarkLost: (f: Followup) => void; onDismiss: (f: Followup) => void; canDelete: boolean; onDelete: (f: Followup) => void; onOpenDoc?: (f: Followup) => void; onCreateSelection?: (f: Followup) => void;
 }) {
   const { isPhone } = useBp();
   const isSanitary = ["first-floor", "ground-floor", "third-floor"].includes(f.floor_id || "");
@@ -1573,6 +1577,7 @@ function FollowupCard({
   const canOpenDoc = !!onOpenDoc
     && (f.rule_type === "selection_waiting" || f.rule_type === "quotation_tiles_waiting")
     && !!f.quotation_id;
+  const canCreateSelection = !!onCreateSelection && f.floor_id === "ground-floor" && !!f.walkin_id;
   const swipeRef = useRef<Swipeable>(null);
 
   const content = (
@@ -1678,6 +1683,7 @@ function FollowupCard({
               label="More" icon="more-horizontal" variant="secondary"
               items={[
                 { label: "Open customer details", icon: "user", onPress: () => onPress(f) },
+                ...(canCreateSelection ? [{ label: "Create Selection", icon: "grid" as FeatherName, onPress: () => onCreateSelection!(f) }] : []),
                 ...(canOpenDoc ? [{ label: f.rule_type === "selection_waiting" ? "Open Selection" : "Open Quotation", icon: "external-link" as FeatherName, onPress: () => onOpenDoc!(f) }] : []),
                 { label: "Call", icon: "phone", onPress: () => onCall(f, "call") },
                 { label: "WhatsApp", icon: "message-circle", onPress: () => onWhatsApp(f, "whatsapp") },
@@ -1690,6 +1696,7 @@ function FollowupCard({
           <View style={{ flexDirection: "row", gap: spacing.sm, alignItems: "center", flexWrap: "wrap", marginTop: 2 }}>
             <IconButton icon="phone" onPress={() => onCall(f, "call")} size={34} tone="brandLight" accessibilityLabel="Call" testID={`call-${f.id}`} />
             <IconButton icon="message-circle" onPress={() => onWhatsApp(f, "whatsapp")} size={34} tone="surface" accessibilityLabel="WhatsApp" testID={`wa-${f.id}`} />
+            {canCreateSelection ? <Button label="Create Selection" icon="grid" variant="secondary" size="sm" onPress={() => onCreateSelection!(f)} testID={`create-selection-${f.id}`} /> : null}
             {canOpenDoc ? (
               <Button
                 label={f.rule_type === "selection_waiting" ? "Open Selection" : "Open Quotation"}

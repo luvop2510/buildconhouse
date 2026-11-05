@@ -749,6 +749,17 @@ def test_customer_metadata_prints_at_readable_size_and_wraps_without_overlap(bui
     assert "CUSTOMER SIGNATURE" in (page.extract_text() or "")
 
 
+@pytest.mark.parametrize("builder", [pdf_generator.build_quotation_pdf, pdf_tiles.build_tiles_selection_pdf, pdf_tiles.build_tiles_quotation_pdf])
+@pytest.mark.parametrize("kind,prefix", [("architect", "ARC"), ("interior_designer", "INT")])
+def test_customer_pdf_reference_contains_only_typed_name(builder, kind, prefix):
+    doc = {"customer_name": "Customer", "reference_source": "Reference", "referrer_name": "Nikita Shah",
+           "referrer_type": kind, "referrer_id": "4d2a6042-78a7-453b-a7be-97d60ed4571d", "items": []}
+    text = " ".join((page.extract_text() or "") for page in PdfReader(BytesIO(builder(doc, {"name": "Customer"}))).pages)
+    assert f"{prefix}-Nikita Shah" in text
+    assert "4D2A6042" not in text
+    assert "Reference ·" not in text
+
+
 def test_pdf_optional_images_share_one_prefetch_and_missing_images_are_not_refetched(monkeypatch):
     calls, batches = [], []
     def fetch(url):

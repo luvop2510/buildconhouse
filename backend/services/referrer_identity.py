@@ -13,6 +13,22 @@ def referrer_label(document):
     return ' · '.join(filter(None, [name, referrer_code(document.get('referrer_id'), document.get('referrer_type'), name)]))
 
 
+def pdf_reference_label(document):
+    """Format the reference for customer-facing quotation and selection PDFs."""
+    name = document.get("referrer_name") or legacy_referrer_name(document)
+    if not name:
+        return str(document.get("reference_source") or "").strip()
+    name = str(name).strip()
+    kind = document.get("referrer_type")
+    source = str(document.get("reference_source") or "").strip().lower()
+    if kind == "architect" or (not kind and (document.get("architect_name") or source == "architect")):
+        return f"ARC-{name}"
+    if kind == "interior_designer" or (not kind and (document.get("interior_designer_name") or source in {"interior designer", "interior_designer"})):
+        return f"INT-{name}"
+    # Legacy documents may have an untyped name; do not invent its profession.
+    return name
+
+
 def legacy_referrer_name(document):
     # These are names, not acquisition channels such as Walk-in or Instagram.
     return next((document.get(key) for key in ('architect_name', 'interior_designer_name', 'architect_interior_designer', 'architect') if document.get(key)), None)

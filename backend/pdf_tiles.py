@@ -17,7 +17,7 @@ pdf_generator so there is exactly one implementation of those in the codebase.
 """
 from __future__ import annotations
 from services.phone_format import format_phone
-from services.referrer_identity import referrer_label
+from services.referrer_identity import pdf_reference_label
 
 import functools
 from datetime import datetime
@@ -241,7 +241,7 @@ def _meta_grid(quotation: dict, customer: dict, styles: dict) -> Table:
     ]
     row2_labels = ["REFERENCE", "ATTENDED BY", "PREPARED BY", "ADDRESS"]
     row2_values = [
-        " · ".join(filter(None, [quotation.get("reference_source"), referrer_label(quotation)])),
+        pdf_reference_label(quotation),
         quotation.get("attended_by") or "",
         quotation.get("prepared_by") or "",
         quotation.get("address_snapshot") or "",

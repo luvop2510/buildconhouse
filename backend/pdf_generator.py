@@ -1,7 +1,7 @@
 """Official BuildCon House quotation PDF — faithful A4 print template."""
 from __future__ import annotations
 from services.phone_format import format_phone
-from services.referrer_identity import referrer_label
+from services.referrer_identity import pdf_reference_label
 
 from collections import defaultdict
 from datetime import datetime
@@ -867,7 +867,7 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
         [Paragraph("CUSTOMER NAME", styles["label"]), Paragraph("CONTACT NO.", styles["label"]), Paragraph("SELECTION / QUOTATION DATE", styles["label"]), Paragraph("QUOTATION NO.", styles["label"])],
         [Paragraph(_escape(customer.get("name") or quotation.get("customer_name")), styles["body"]), Paragraph(_escape(format_phone(quotation.get("phone_snapshot") or customer.get("phone") or "")), styles["body"]), Paragraph(created, styles["body"]), Paragraph(_escape(quotation.get("number")), styles["body"])],
         [Paragraph("REFERENCE", styles["label"]), Paragraph("ATTENDED BY", styles["label"]), Paragraph("PREPARED BY", styles["label"]), Paragraph("ADDRESS", styles["label"])],
-        [Paragraph(_escape(" · ".join(filter(None, [quotation.get("reference_source"), referrer_label(quotation)]))), styles["body"]), Paragraph(_escape(quotation.get("attended_by") or ""), styles["body"]), Paragraph(_escape(quotation.get("prepared_by") or b.get("footer_company_name") or "Buildcon House"), styles["body"]), Paragraph(_escape(quotation.get("address_snapshot") or customer.get("address") or ""), styles["body"])],
+        [Paragraph(_escape(pdf_reference_label(quotation)), styles["body"]), Paragraph(_escape(quotation.get("attended_by") or ""), styles["body"]), Paragraph(_escape(quotation.get("prepared_by") or b.get("footer_company_name") or "Buildcon House"), styles["body"]), Paragraph(_escape(quotation.get("address_snapshot") or customer.get("address") or ""), styles["body"])],
     ]
     meta_row_heights = [None] * 4
     meta_style = [
