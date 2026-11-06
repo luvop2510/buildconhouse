@@ -17,6 +17,21 @@ async function fixtures(page: any) {
 function rate(page: any) { return page.locator('[data-testid="tiles-rate-0"], [data-testid="tiles-offer-rate-0"], [data-testid="mobile-offerRate-0"]'); }
 function finish(page: any) { return page.locator('[data-testid="tiles-finish-0"], [data-testid="mobile-tiles-finish-0"]'); }
 
+test('critical legacy branded square-foot tile keeps its price basis in picker and quotation', async ({ page }) => {
+  await fixtures(page);
+  const product = { ...matt, id: 'legacy-square-foot', sku: 'LEGACY-SQFT', name: 'Legacy branded tile', price: 100, mrp: 100, variants: [], specs: { rate_per_sqft: 100, sqft_per_box: 4, pcs_per_box: '4' } };
+  await page.route('**/api/products?**', route => route.fulfill({ json: { items: [product], total: 1 } }));
+  await page.route('**/api/products/legacy-square-foot/size-variants', route => route.fulfill({ json: { available_sizes: [product.size], product } }));
+  await page.goto('/tiles/quotation');
+  await page.getByRole('button', { name: 'Select a product', exact: true }).first().click();
+  const card = page.getByTestId('tiles-picker-card-legacy-square-foot');
+  await expect(card).toContainText('per sq.ft');
+  await card.click();
+  await expect(rate(page)).toHaveValue('100');
+  await expect(page.locator('[data-testid="tiles-quantity-unit-0"], [data-testid="mobile-quantity-unit-0"]')).toContainText('Box');
+  await expect(page.locator('[data-testid="tiles-total-0"], [data-testid="mobile-total-0"]')).toHaveValue('400');
+});
+
 test('critical imported piece price, optimistic finish and back navigation', async ({ page }) => {
   await fixtures(page);
   let release: () => void = () => {};

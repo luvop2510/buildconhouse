@@ -378,21 +378,21 @@ assert.match(view.text, /Order quotation: Quotation 1 · Design v1/);
 assert.doesNotMatch(view.text, /Production entry manager approval/);
 assert.equal(view.control('kitchen-approve-production'), undefined, 'Order does not display the removed manager-approval section');
 assert.equal(calls.length, 0, 'Removing display details does not change the saved order');
-// Opening an unstarted form must not capture an old date; the first save
+// An unstarted form uses the customer order date; the first save still
 // requires a separate confirmation of the status and date.
 calls.length = 0;
 view = render('order', { quotation_versions: [quotation], orders: [order], production: { status: 'Not Started' } });
 assert.equal(view.control('kitchen-production-start').props.defaultToToday, false);
 view.control('kitchen-production-status').props.onChange('In Production');
 view = view.refresh();
-assert.equal(view.control('kitchen-production-start').props.value, '2026-10-26');
+assert.equal(view.control('kitchen-production-start').props.value, order.order_date);
 await view.control('kitchen-production-save').props.onPress();
 view = view.refresh();
 assert.equal(calls.length, 0);
 assert.match(view.text, /Confirm production start/);
 view.control('kitchen-production-confirm-start').props.onPress();
 assert.equal(calls[0][0], 'production_update');
-assert.equal(calls[0][1].start_date, '2026-10-26');
+assert.equal(calls[0][1].start_date, order.order_date);
 view = render('order', { quotation_versions: [quotation], orders: [order], production: { status: 'Not Started' } }, { production: { status: 'In Production', start_date: '2026-10-20' } });
 assert.equal(view.control('kitchen-production-start').props.min, '2026-10-22');
 assert.equal(view.control('kitchen-production-save').props.disabled, true);

@@ -128,7 +128,9 @@ def test_order_date_notes_are_editable_with_chronology_and_history(setup):
     assert order['corrections'][0]['before']['notes'] == 'Old note'
     assert order['final_amount'] == '100.00'
     order['amendments'] = [{'date': '2026-10-22'}]
-    for date in ('2026-10-19', '2026-10-23', '2026-10-24'):
+    kitchen_workflow.apply(project, 'order_update', {'order_date': '2024-10-19'}, {}, owner, 'now', validate)
+    assert order['order_date'] == '2024-10-19'
+    for date in ('2026-10-23', '2026-10-24'):
         with pytest.raises(HTTPException):
             kitchen_workflow.apply(project, 'order_update', {'order_date': date}, {}, owner, 'now', validate)
 

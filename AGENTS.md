@@ -1,5 +1,17 @@
 # AGENTS.md — BuildCon House ERP (forge2.0)
 
+## Kitchen historical dates and tile rate units — 2026-11-06
+
+Kitchen order dates may predate quotation sharing, including 2024 or earlier;
+retain required valid dates, commercial approvals and recorded payment/work bounds.
+Production start drafts default to the customer order date. Persist this default
+only on an explicit production start/save, preserving a previously entered start;
+order confirmation alone must not mark production started. Never force India today.
+Ground catalogue rows lacking explicit units infer square-foot pricing from legacy
+`rate_per_sqft`/`sqft_per_box` metadata. Explicit `price_unit`/`rate_unit` wins;
+missing units without that evidence remain per-piece. New supplier imports retain
+the explicit rate unit. See docs/2026-11-06-ground-tile-rate-units.md.
+
 ## Kitchen section access and save recovery — 2026-11-01
 
 Team's shared floor/page/action editor now offers nine `kitchen_<stage>`

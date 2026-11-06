@@ -499,8 +499,6 @@ def apply(project, command, payload, policy, user, now, validate):
             reject("The selected design must have company handoff recorded")
         if quote["response"] != "Approved" or not quote["shared_date"]:
             reject("The current quotation needs sharing and customer approval")
-        if body.order_date < quote["shared_date"]:
-            reject("Order date cannot precede quotation sharing")
         if body.confirmation_document_id and not any(a["id"] == body.confirmation_document_id for a in project["attachments"]):
             reject("Confirmation document must belong to this project")
         final_amount = body.final_amount if body.final_amount is not None else quote.get("amount")
@@ -567,8 +565,8 @@ def apply(project, command, payload, policy, user, now, validate):
                 reject("Select a shared, approved quotation for an approved design sent to company")
             if quote.get("amount") is not None and Decimal(quote["amount"]) != Decimal(row["final_amount"]) and not body.amount_customer_approved:
                 reject("Changing the quotation while retaining different final terms requires explicit customer approval")
-        if not quote.get("shared_date") or body.order_date < quote["shared_date"]:
-            reject("Order date cannot precede quotation sharing")
+        if not quote.get("shared_date"):
+            reject("The selected quotation must have sharing recorded")
         following = [row.get("advance", {}).get("date"), project.get("production", {}).get("start_date"), *(amendment.get("date") for amendment in row.get("amendments", []))]
         if any(value and value < body.order_date for value in following):
             reject("Order date cannot follow an approved amendment, advance or production start")
@@ -718,16 +716,18 @@ def apply(project, command, payload, policy, user, now, validate):
         previous = project.get(expected, {})
         if previous.get("status") == "Completed":
             reject("The owner must explicitly reopen or return this project to Design before changing completed work")
-        if body.status != "Not Started" and not body.start_date:
-            reject("Record the start date")
-        if body.status == "Not Started" and (body.start_date or body.completion_date):
-            reject("Not Started work cannot have actual start or completion dates")
         if expected == "production":
             if not project.get("orders") and not project.get("manual_stage_navigation"):
                 current(project, "orders")
             earliest = project["orders"][-1]["order_date"] if project.get("orders") else None
+            if body.status != "Not Started" and not body.start_date:
+                body.start_date = previous.get("start_date") or earliest
         else:
             earliest = project.get("production", {}).get("completion_date")
+        if body.status != "Not Started" and not body.start_date:
+            reject("Record the start date")
+        if body.status == "Not Started" and (body.start_date or body.completion_date):
+            reject("Not Started work cannot have actual start or completion dates")
         if body.start_date and earliest and body.start_date < earliest:
             reject("Work cannot start before the preceding stage's completion/confirmation")
         if expected == "production":
