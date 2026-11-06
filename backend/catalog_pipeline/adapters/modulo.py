@@ -268,6 +268,7 @@ class ModuloAdapter(BrandAdapter):
                     image_quality=image_quality,
                     image_page=None,
                     specs={
+                        "price_unit": "sqft",
                         "company_name": company or None,
                         "pcs_per_box": _fmt_pcs(pcs_per_box),
                         "sqft_per_box": None if sqft_per_box == MISSING else sqft_per_box,

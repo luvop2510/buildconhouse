@@ -96,6 +96,16 @@ def _media_sort_key(row: dict) -> tuple[int, int, int]:
     )
 
 
+def _normalise_tile_price_unit(product: dict) -> dict:
+    specs = product.get("specs") or {}
+    # Older square-foot adapters retained coverage/rate fields but omitted the unit.
+    if (product.get("floor_id") == _TILE_FLOOR_ID
+            and not (specs.get("price_unit") or specs.get("rate_unit"))
+            and ("rate_per_sqft" in specs or "sqft_per_box" in specs)):
+        return {**product, "specs": {**specs, "price_unit": "sqft"}}
+    return product
+
+
 def _build_snapshot(
     products: list[dict], media_rows: list[dict], brands: list[dict],
     categories: list[dict], usage_rows: list[dict],
@@ -105,7 +115,7 @@ def _build_snapshot(
     excluded_products = [row for row in products if row.get("brand_id") in excluded_brand_ids]
     excluded_ids = {row["id"] for row in excluded_products}
     excluded_families = {row.get("family_key") for row in excluded_products if row.get("family_key")}
-    products = [row for row in products if row["id"] not in excluded_ids]
+    products = [_normalise_tile_price_unit(row) for row in products if row["id"] not in excluded_ids]
     retained_families = {row.get("family_key") for row in products if row.get("family_key")}
     excluded_families -= retained_families
     media_rows = [row for row in media_rows if row.get("product_id") not in excluded_ids
@@ -477,7 +487,7 @@ def _primary_product_image(snapshot: CatalogSnapshot, product_id: str, family_ke
 
 
 def _tile_price_kind(product: dict) -> str:
-    specs = product.get("specs") or {}
+    specs = _normalise_tile_price_unit(product).get("specs") or {}
     unit = re.sub(r"[._-]+", " ", str(specs.get("price_unit") or specs.get("rate_unit") or "").strip().lower())
     unit = re.sub(r"\s+", " ", unit)
     if not unit:
@@ -587,6 +597,7 @@ def _variant_summary(product: dict, snapshot: CatalogSnapshot) -> dict:
     the representative SKU's business data after a user selects another
     finish.
     """
+    product = _normalise_tile_price_unit(product)
     colour = product.get("colour") or product.get("color")
     summary = {
         "id": product["id"], "sku": product.get("sku"), "name": product.get("name"),
@@ -759,6 +770,7 @@ def product_hero_image(product: dict, snapshot: CatalogSnapshot) -> Optional[str
 
 
 def hydrate_product(product: dict, snapshot: CatalogSnapshot) -> dict:
+    product = _normalise_tile_price_unit(product)
     out = {key: copy.deepcopy(value) for key, value in product.items() if not key.startswith("_")}
     out["price_unknown"] = product.get("price_status") == "unspecified"
     _apply_media(out, snapshot)

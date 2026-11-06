@@ -154,6 +154,7 @@ class ReniteAdapter(BrandAdapter):
                     image_meta=[image.to_dict()] if image else [],
                     image_quality=image.quality if image else "missing",
                     specs={
+                        "price_unit": "sqft",
                         "pcs_per_box": _format_pieces(cell("pcs_per_box")),
                         "sqft_per_box": self.to_number(cell("sqft_per_box")),
                         "rate_per_sqft": price,

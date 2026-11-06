@@ -1,6 +1,6 @@
-/** Supplier imports use either price_unit or rate_unit for the same field. */
+/** Older square-foot imports stored coverage/rates without an explicit unit. */
 export function tileSourcePriceUnit(specs: Record<string, unknown> | null | undefined): unknown {
-  return specs?.price_unit || specs?.rate_unit;
+  return specs?.price_unit || specs?.rate_unit || (specs && ("rate_per_sqft" in specs || "sqft_per_box" in specs) ? "sqft" : undefined);
 }
 
 /** Quantity is determined by the catalog pricing unit, not by the quotation author. */
