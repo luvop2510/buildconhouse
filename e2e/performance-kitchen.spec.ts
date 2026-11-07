@@ -216,7 +216,11 @@ test('Kitchen stage, long history and private document lists meet existing prima
       expect(await formattingWork(), 'Expansion must not eagerly format all 500 records').toBeLessThan(250);
       if (browserName === 'chromium') await (await page.context().newCDPSession(page)).send('Emulation.setCPUThrottlingRate', { rate: 1 });
     }
-    if (label === 'documents') await expect(page.getByRole('button', { name: 'Download Synthetic-drawing-119.pdf', exact: true })).toBeVisible();
+    if (label === 'documents') {
+      const lastFile = page.getByTestId('kitchen-document-private-119');
+      await expect(lastFile.getByText('Synthetic-drawing-119.pdf', { exact: true })).toBeVisible();
+      await expect(lastFile.getByRole('button', { name: 'Download PDF', exact: true })).toBeVisible();
+    }
     await runtime.assertHealthy();
   }
   expect(unexpected).toEqual([]);
