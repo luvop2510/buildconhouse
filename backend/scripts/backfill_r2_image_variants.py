@@ -34,7 +34,12 @@ async def backfill_page(db, storage, *, bucket, collection, after="", limit=100,
         for algorithm in ("sha1", "sha256"):
             if row.get(algorithm) and hashlib.new(algorithm, data).hexdigest() != row[algorithm]:
                 raise ValueError("Original image checksum differs from registered metadata")
-        variants = await asyncio.to_thread(create_image_variants, data, row["mime"])
+        try:
+            variants = await asyncio.to_thread(create_image_variants, data, row["mime"])
+        except OSError:
+            # Invalid/unsupported stored rasters keep their original bytes.
+            # Storage and checksum failures above/below still stop the run.
+            variants = {}
         report["processed"] += 1; report["source_bytes"] += len(data)
         report["display_320_bytes"] += len(variants.get(320, data))
         if not variants: report["skipped"] += 1

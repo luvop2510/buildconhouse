@@ -1,8 +1,10 @@
 import hashlib
+from io import BytesIO
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
+from PIL import Image
 
 from scripts import backfill_r2_image_variants as backfill
 
@@ -39,12 +41,68 @@ async def test_apply_writes_only_missing_derivatives_with_no_overwrite(monkeypat
 
 
 @pytest.mark.asyncio
-async def test_stale_source_checksum_cannot_publish_a_wrong_variant():
-    db = Database([{'_id': 'brand/source.png', 'mime': 'image/png', 'sha256': hashlib.sha256(b'original').hexdigest()}])
+@pytest.mark.parametrize('algorithm', ['sha1', 'sha256'])
+async def test_stale_source_checksum_cannot_publish_a_wrong_variant(monkeypatch, algorithm):
+    db = Database([{'_id': 'brand/source.png', 'mime': 'image/png', algorithm: hashlib.new(algorithm, b'original').hexdigest()}])
     storage = SimpleNamespace(download=AsyncMock(return_value=b'replacement'), upload=AsyncMock())
+    encoder = Mock(side_effect=OSError('Invalid image'))
+    monkeypatch.setattr(backfill, 'create_image_variants', encoder)
     with pytest.raises(ValueError, match='checksum'):
         await backfill.backfill_page(db, storage, bucket='public', collection='product_media', apply=True)
     storage.upload.assert_not_awaited()
+    encoder.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('apply', [False, True])
+@pytest.mark.parametrize('invalid_last', [False, True])
+async def test_undecodable_raster_is_skipped_without_blocking_resume_or_changing_originals(apply, invalid_last):
+    out = BytesIO()
+    Image.new('RGB', (160, 160), 'red').save(out, 'PNG', compress_level=0)
+    valid = out.getvalue()
+    # Keep a real PNG header/IDAT prefix so decoding, rather than MIME admission,
+    # fails with Pillow's truncated-raster OSError.
+    invalid = valid[:len(valid) // 2]
+    assert len(invalid) >= backfill.MIN_BYTES
+    sources = {'brand/a.png': valid if invalid_last else invalid,
+               'brand/b.png': invalid if invalid_last else valid}
+    before = dict(sources)
+    rows = [{'_id': key, 'mime': 'image/png', 'sha1': hashlib.sha1(data).hexdigest(),
+             'sha256': hashlib.sha256(data).hexdigest()} for key, data in sources.items()]
+    async def download(*, bucket, key):
+        assert bucket == 'public'
+        return sources[key]
+    storage = SimpleNamespace(download=AsyncMock(side_effect=download), exists=AsyncMock(return_value=False), upload=AsyncMock())
+    report = await backfill.backfill_page(Database(rows), storage, bucket='public', collection='product_media', limit=2, apply=apply)
+    assert report['processed'] == 2 and report['skipped'] == 1
+    assert report['after'] == 'brand/b.png' and report['has_more']
+    assert report['source_bytes'] == len(valid) + len(invalid)
+    assert report['display_320_bytes'] > len(invalid)
+    assert sources == before
+    if apply:
+        assert report['uploaded'] > 0
+        valid_key = 'brand/a.png' if invalid_last else 'brand/b.png'
+        assert storage.upload.await_count == report['uploaded']
+        for call in storage.upload.await_args_list:
+            assert call.kwargs['key'].startswith('_image_variants/')
+            assert call.kwargs['key'].endswith(valid_key + '.webp')
+            assert call.kwargs['content_type'] == 'image/webp'
+            assert call.kwargs['upsert'] is False
+    else:
+        storage.upload.assert_not_awaited()
+        storage.exists.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('operation', ['download', 'exists', 'upload'])
+async def test_storage_oserror_still_stops_backfill_before_later_sources(monkeypatch, operation):
+    db = Database([{'_id': 'brand/a.png', 'mime': 'image/png'}, {'_id': 'brand/b.png', 'mime': 'image/png'}])
+    storage = SimpleNamespace(download=AsyncMock(return_value=b'source'), exists=AsyncMock(return_value=False), upload=AsyncMock())
+    getattr(storage, operation).side_effect = OSError('Storage unavailable')
+    monkeypatch.setattr(backfill, 'create_image_variants', lambda *_args: {320: b'webp'})
+    with pytest.raises(OSError, match='Storage unavailable'):
+        await backfill.backfill_page(db, storage, bucket='public', collection='product_media', apply=True)
+    storage.download.assert_awaited_once_with(bucket='public', key='brand/a.png')
 
 
 @pytest.mark.asyncio

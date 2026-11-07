@@ -785,6 +785,23 @@ def test_pdf_optional_images_share_one_prefetch_and_missing_images_are_not_refet
     assert "Image unavailable" in " ".join(page.extract_text() or "" for page in PdfReader(BytesIO(pdf)).pages)
 
 
+@pytest.mark.parametrize("url", ["https://[broken", "https://cdn.example.test\uff0fimage.png"])
+def test_malformed_optional_image_urls_preserve_quotation_pdf_placeholders(monkeypatch, url):
+    from services import pdf_image_loader
+
+    monkeypatch.setattr(pdf_image_loader, "_fetch_uncached", lambda _url: pytest.fail("Malformed media must not be fetched"))
+    doc = {"customer_name": "Malformed Media", "floor_id": "first-floor", "include_dimensions": True, "items": [
+        {"sku": "BAD-MEDIA", "name": "Basin", "room": "Bath", "qty": 1, "unit_price": 100,
+         "image": url, "seat_cover_image_urls": [url + "?seat"],
+         "dimension_image_urls": [url + "?diagram"]},
+    ], "subtotal": 100, "grand_total": 100}
+
+    pdf = pdf_generator.build_quotation_pdf(doc, {"name": "Malformed Media"})
+    text = " ".join(page.extract_text() or "" for page in PdfReader(BytesIO(pdf)).pages)
+    assert "BAD-MEDIA" in text
+    assert text.count("Image unavailable") == 3
+
+
 @pytest.mark.parametrize("size", [(90, 180), (180, 90), (120, 120)])
 def test_sanitary_pdf_keeps_full_supplied_canvas_and_pixels(monkeypatch, size):
     source = PILImage.new("RGB", size, "white")

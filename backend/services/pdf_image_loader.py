@@ -299,7 +299,13 @@ def prefetch_urls(urls: Iterable[str], fetch: Callable[[str], bytes | None] = re
     for url in dict.fromkeys(urls):
         if fetch is remote_image_bytes:
             cached = _cache_get(url)
-            host = (urlparse(url).hostname or "").lower().rstrip(".")
+            try:
+                host = (urlparse(url).hostname or "").lower().rstrip(".")
+            except ValueError:
+                # Malformed optional media must retain the missing-image
+                # placeholder instead of aborting the document before dispatch.
+                results[url] = None
+                continue
             with _circuit_lock:
                 state = _host_circuits.get(host)
                 unavailable = bool(state and (state.probing or state.open_until > monotonic()))
