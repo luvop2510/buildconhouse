@@ -15,6 +15,8 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from "reac
 import { Text } from "@/src/components/AppText";
 
 import { api } from "@/src/api/client";
+import { useFloorAccess } from "@/src/hooks/use-floor-access";
+import { useAuth } from "@/src/state/auth";
 import { ProductImageManagerBody } from "@/src/components/catalog/ProductImageManager";
 import { ProductImage } from "@/src/components/ProductImage";
 import { toast } from "@/src/components/Toast";
@@ -33,6 +35,20 @@ type EditableProduct = {
   concealed_sku: string; concealed_name: string; concealed_price: number;
 };
 
+function editableProduct(prod: Record<string, any>): EditableProduct {
+  return {
+    id: prod.id, name: prod.name || "", sku: prod.sku || "",
+    brand_id: prod.brand_id || "", category_id: prod.category_id || "",
+    variant_label: prod.variant_label || "", family_name: prod.family_name || "", finish: prod.finish || "", colour: prod.colour || "",
+    description: prod.description || "", mrp: Number(prod.mrp) || 0, price: Number(prod.price) || 0,
+    dimension_image_urls: prod.dimension_image_urls || [],
+    seat_cover_image_urls: prod.seat_cover_image_urls || [],
+    concealed_sku: prod.concealed_part?.sku || prod.concealed_sku || "", concealed_name: prod.concealed_part?.name || "", concealed_price: Number(prod.concealed_part?.unit_price) || 0,
+  };
+}
+
+const PREVIEW_FIELDS = new Set(["name", "sku", "description", "finish", "colour", "variant_label", "family_name"]);
+
 const TABS = ["General", "Pricing", "Media"] as const;
 type Tab = (typeof TABS)[number];
 
@@ -42,22 +58,32 @@ export function ProductEditor({
   productId: string | null;
   visible: boolean;
   onClose: () => void;
-  /** Fired with the fresh product doc right after a successful save, so
-   * every screen that opened this editor can update its own local copy
-   * (BuilderContext.patchProduct, a plain refetch, etc.) without reloading
-   * the page — the backend already flips the shared catalog cache; this is
-   * what makes each OPEN screen behind the editor reflect it too. */
+  /** Updates the matching product's display for metadata previews, rollback,
+   * and confirmed server responses. Price/media updates require confirmation. */
   onSaved?: (updated: Record<string, unknown>) => void;
   initialTab?: Tab;
 }) {
   const { isPhone } = useBp();
+  const { selectedFloorId } = useFloorAccess();
+  const { staff } = useAuth();
+  const actorId = staff?.id;
   const lifecycle = useRef<AbortController | null>(null);
+  const renderScope = useRef({ actorId, floorId: selectedFloorId });
+  renderScope.current = { actorId, floorId: selectedFloorId };
+  const pendingSave = useRef<{ rollback: () => void } | null>(null);
   useEffect(() => {
     const controller = new AbortController();
     lifecycle.current = controller;
     setUploadingKind(null);
-    return () => controller.abort();
-  }, [visible, productId]);
+    setSaving(false);
+    return () => {
+      controller.abort();
+      if (renderScope.current.actorId === actorId && renderScope.current.floorId === selectedFloorId) {
+        pendingSave.current?.rollback();
+      }
+      pendingSave.current = null;
+    };
+  }, [visible, productId, selectedFloorId, actorId]);
   const [tab, setTab] = useState<Tab>(initialTab);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -71,36 +97,29 @@ export function ProductEditor({
 
   useEffect(() => {
     if (!visible || !productId) { setForm(null); setOriginal(null); return; }
-    let cancelled = false;
+    const controller = lifecycle.current!;
+    setForm(null);
+    setOriginal(null);
     setLoading(true);
     (async () => {
       try {
         const [prod, b, c] = await Promise.all([
-          api.get<Record<string, any>>(`/products/${productId}`),
-          api.get<LookupItem[]>("/brands"),
-          api.get<LookupItem[]>("/categories"),
+          api.get<Record<string, any>>(`/products/${productId}`, { signal: controller.signal, floorId: selectedFloorId }),
+          api.get<LookupItem[]>("/brands", { signal: controller.signal, floorId: selectedFloorId }),
+          api.get<LookupItem[]>("/categories", { signal: controller.signal, floorId: selectedFloorId }),
         ]);
-        if (cancelled) return;
-        const editable: EditableProduct = {
-          id: prod.id, name: prod.name || "", sku: prod.sku || "",
-          brand_id: prod.brand_id || "", category_id: prod.category_id || "",
-          variant_label: prod.variant_label || "", family_name: prod.family_name || "", finish: prod.finish || "", colour: prod.colour || "",
-          description: prod.description || "", mrp: Number(prod.mrp) || 0, price: Number(prod.price) || 0,
-          dimension_image_urls: prod.dimension_image_urls || [],
-          seat_cover_image_urls: prod.seat_cover_image_urls || [],
-          concealed_sku: prod.concealed_part?.sku || prod.concealed_sku || "", concealed_name: prod.concealed_part?.name || "", concealed_price: Number(prod.concealed_part?.unit_price) || 0,
-        };
+        if (controller.signal.aborted) return;
+        const editable = editableProduct(prod);
         setOriginal(editable);
         setForm(editable);
         setBrands(b || []); setCategories(c || []);
       } catch (e: any) {
-        toast.error(e?.message || "Couldn't load product");
+        if (!controller.signal.aborted) toast.error(e?.message || "Couldn't load product");
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!controller.signal.aborted) setLoading(false);
       }
     })();
-    return () => { cancelled = true; };
-  }, [visible, productId]);
+  }, [visible, productId, selectedFloorId, actorId]);
 
   const dirty = useMemo(() => {
     if (!original || !form) return {} as Record<string, unknown>;
@@ -120,17 +139,47 @@ export function ProductEditor({
   const hasChanges = Object.keys(dirty).length > 0;
 
   const save = async () => {
-    if (!productId || !hasChanges) return;
+    if (!visible || !productId || !form || !original || form.id !== productId
+        || !hasChanges || pendingSave.current || uploadingKind) return;
+    const controller = lifecycle.current!;
+    const submitted = form;
+    const before = original;
+    const preview = Object.fromEntries(Object.entries(dirty).filter(([key]) => PREVIEW_FIELDS.has(key)));
+    const rollback = Object.fromEntries(Object.keys(preview).map(key => [key, before[key as keyof EditableProduct]]));
+    const pending = { rollback: () => {
+      if (Object.keys(preview).length) onSaved?.({ id: productId, ...rollback });
+    } };
+    pendingSave.current = pending;
     setSaving(true);
+    setOriginal(submitted);
+    if (Object.keys(preview).length) onSaved?.({ id: productId, ...preview });
     try {
-      const updated = await api.patch<Record<string, unknown>>(`/products/${productId}`, dirty);
-      toast.success("Product updated everywhere it's shown");
-      setOriginal((cur) => (cur ? { ...cur, ...dirty } : cur));
+      const updated = await api.patch<Record<string, unknown>>(`/products/${productId}`, dirty, { floorId: selectedFloorId });
+      if (controller.signal.aborted || pendingSave.current !== pending) return;
+      const accepted = editableProduct(updated);
+      setOriginal(accepted);
+      setForm(current => {
+        if (!current) return current;
+        const reconciled = { ...current };
+        for (const key of Object.keys(accepted) as (keyof EditableProduct)[]) {
+          if (JSON.stringify(current[key]) === JSON.stringify(submitted[key])) {
+            Object.assign(reconciled, { [key]: accepted[key] });
+          }
+        }
+        return reconciled;
+      });
       onSaved?.(updated);
+      toast.success("Product updated everywhere it's shown");
     } catch (e: any) {
-      toast.error(e?.message || "Couldn't save changes");
+      if (controller.signal.aborted || pendingSave.current !== pending) return;
+      pending.rollback();
+      setOriginal(before);
+      toast.error(`${e?.message || "Couldn't save changes"}. Product details restored. Your edits are still here.`);
     } finally {
-      setSaving(false);
+      if (pendingSave.current === pending) {
+        pendingSave.current = null;
+        setSaving(false);
+      }
     }
   };
 
@@ -140,7 +189,7 @@ export function ProductEditor({
   const brandName = brands.find((b) => b.id === form?.brand_id)?.name || "Select brand";
   const categoryName = categories.find((c) => c.id === form?.category_id)?.name || "Select category";
   const addDiagramPhoto = async (kind: "dimension" | "seat_cover") => {
-    if (!productId || !form) return;
+    if (!productId || !form || pendingSave.current) return;
     const controller = lifecycle.current;
     // Image-only selection uses the system picker without broad library access.
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 1, allowsEditing: false });
@@ -150,6 +199,7 @@ export function ProductEditor({
     try {
       const formData = new FormData();
       await appendImageUpload(formData, asset);
+      if (controller?.signal.aborted) return;
       const updated = await api.upload<Record<string, any>>(`/products/${productId}/diagram-media?kind=${kind}`, formData, { signal: controller?.signal });
       if (controller?.signal.aborted) return;
       const fields = {
@@ -179,8 +229,8 @@ export function ProductEditor({
           <Button label="Cancel" variant="secondary" onPress={onClose} size="md" testID="product-editor-cancel" />
           <View style={{ flex: 1 }} />
           <Button
-            label={hasChanges ? "Save changes" : "Saved"} onPress={save} loading={saving}
-            disabled={!hasChanges} size="md" testID="product-editor-save"
+            label={saving ? "Saving changes…" : hasChanges ? "Save changes" : "Saved"} onPress={save} loading={saving}
+            disabled={!hasChanges || saving || !!uploadingKind} size="md" testID="product-editor-save"
           />
         </>
       ) : undefined}

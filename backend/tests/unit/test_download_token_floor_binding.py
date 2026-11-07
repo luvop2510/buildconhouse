@@ -101,15 +101,21 @@ def test_recorded_floor_is_replayed_when_no_header_is_present(monkeypatch):
     assert user.active_floor_id == "ground-floor"
 
 
-def test_an_explicit_header_still_wins(monkeypatch):
-    """A fetch()-based download can send the header; it should be authoritative."""
+def test_matching_header_can_redeem_a_download_token(monkeypatch):
     user = _consume(
         monkeypatch,
         record={"user_id": "u1", "session_id": "s1", "floor_id": "ground-floor"},
         user_doc=dict(OWNER),
-        header_floor="first-floor",
+        header_floor="ground-floor",
     )
-    assert user.active_floor_id == "first-floor"
+    assert user.active_floor_id == "ground-floor"
+
+
+def test_header_cannot_redirect_a_download_to_another_accessible_floor(monkeypatch):
+    with pytest.raises(HTTPException) as exc:
+        _consume(monkeypatch, record={"user_id": "u1", "session_id": "s1", "floor_id": "ground-floor"},
+                 user_doc=dict(OWNER), header_floor="first-floor")
+    assert exc.value.status_code == 403
 
 
 def test_a_floor_the_caller_cannot_access_is_refused(monkeypatch):
@@ -162,3 +168,24 @@ def test_staff_token_cannot_authenticate_customer_pdf(monkeypatch):
             request=_request("/api/quotations/q1/portal-pdf?dl=tok"), authorization=None, dl="tok",
         ))
     assert exc.value.status_code == 401
+
+def test_redeemed_query_preserves_filter_boundaries_and_supports_encoded_text(monkeypatch):
+    tokens = _FakeTokens()
+    monkeypatch.setattr(download_tokens, "db", _Db(tokens))
+    path = "/api/followups/export"
+    asyncio.run(download_tokens.create_download_token(
+        "u1", "s1", "ground-floor", path + "?format=csv&assigned_to=a%20b&priority=high",
+    ))
+    correct = _request(path + "?format=csv&assigned_to=a+b&priority=high&dl=tok")
+    combined = _request(path + "?format=csv%26assigned_to%3Da+b%26priority%3Dhigh&dl=tok")
+    assert auth._download_request_target(correct) == tokens.stored["target"]
+    assert auth._download_request_target(combined) != tokens.stored["target"]
+
+def test_encoded_delimiter_cannot_remove_a_download_filter(monkeypatch):
+    tokens = _FakeTokens()
+    monkeypatch.setattr(download_tokens, "db", _Db(tokens))
+    target = "/api/followups/export?extra=1&assigned_to=staff-1"
+    asyncio.run(download_tokens.create_download_token("u1", "s1", "ground-floor", target))
+    assert auth._download_request_target(_request(target + "&dl=tok")) == tokens.stored["target"]
+    forged = _request("/api/followups/export?extra=1%26assigned_to%3Dstaff-1&dl=tok")
+    assert auth._download_request_target(forged) != tokens.stored["target"]

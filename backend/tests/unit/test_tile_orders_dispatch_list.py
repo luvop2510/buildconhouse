@@ -1,6 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import re
+from unittest.mock import Mock
+
+import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from auth import get_current_user
 
 from models import UserPublic
 from routes import tile_orders as router_module
@@ -124,3 +132,24 @@ def test_item_history_merges_ready_and_dispatch_events(monkeypatch):
 
     kinds = [e["kind"] for e in result["events"]]
     assert kinds == ["dispatch", "ready_batch"]  # newest first
+
+def test_dispatch_number_is_bounded_literal_search(monkeypatch):
+    fake_db = _FakeDb()
+    aggregate = Mock(return_value=_FakeFind([]))
+    fake_db.dispatches.aggregate = aggregate
+    monkeypatch.setattr(router_module, "db", fake_db)
+    term = "[.*](a+)+$" * 10
+    asyncio.run(router_module.list_dispatches(dispatch_number=term, user=_user()))
+    pipeline = aggregate.call_args.args[0]
+    assert pipeline[0]["$match"]["$and"][1]["dispatch_number"] == {
+        "$regex": re.escape(term[:80]), "$options": "i",
+    }
+
+
+@pytest.mark.parametrize("query", ["page=0", "page_size=0", "page_size=201", "page=100000000000000000000"])
+def test_invalid_paging_never_reaches_dispatch_query(query, monkeypatch):
+    app = FastAPI()
+    app.include_router(router_module.router)
+    app.dependency_overrides[get_current_user] = _user
+    monkeypatch.setattr(router_module, "db", object())
+    assert TestClient(app).get(f"/tile-orders/dispatches?{query}").status_code == 422

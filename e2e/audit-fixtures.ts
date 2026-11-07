@@ -32,6 +32,7 @@ export async function mockSession(page: Page, path: string, failures = true, opt
     else if(!failures && p==='/api/auth/sessions') body=[];
     else if(!failures && p==='/api/notifications') body=[];
     else if(!failures && p==='/api/portal/quotations') body=[];
+    else if(!failures && p==='/api/portal/quotations/page') body={items:[],total:0,has_more:false};
     else return route.fulfill({status:503,json:{detail:'Service temporarily unavailable. Please retry.'}});
     return route.fulfill({json:body});
   });

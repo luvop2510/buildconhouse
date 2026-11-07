@@ -1,7 +1,7 @@
 // BuildCon House · Settings
 import Feather from "@expo/vector-icons/Feather";
 import { useRouter } from "expo-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Platform, Pressable, StyleSheet, View } from "react-native";
 import { Text } from "@/src/components/AppText";
 
@@ -19,6 +19,11 @@ type SessionInfo = {
 };
 
 export default function Settings() {
+  const { staff } = useAuth();
+  return <SettingsWorkspace key={staff?.id || ""} />;
+}
+
+function SettingsWorkspace() {
   const { staff, logout } = useAuth();
   const { isPhone } = useBp();
   const router = useRouter();
@@ -27,29 +32,42 @@ export default function Settings() {
   const [revoking, setRevoking] = useState(false);
   const [sessionsError, setSessionsError] = useState(false);
   const [revokingSession, setRevokingSession] = useState<string | null>(null);
+  const mounted = useRef(true);
+  const pendingRevocation = useRef(false);
+  const sessionRequest = useRef(0);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
 
   const loadSessions = useCallback(async () => {
+    const version = ++sessionRequest.current;
     setSessionsLoading(true);
     setSessionsError(false);
     try {
-      const list = await api.get<SessionInfo[]>("/auth/sessions");
-      setSessions(list);
+      const list = await api.get<SessionInfo[]>("/auth/sessions", { cacheMs: 0 });
+      if (mounted.current && version === sessionRequest.current) setSessions(list);
     } catch {
-      setSessionsError(true);
+      if (mounted.current && version === sessionRequest.current) setSessionsError(true);
     } finally {
-      setSessionsLoading(false);
+      if (mounted.current && version === sessionRequest.current) setSessionsLoading(false);
     }
   }, []);
 
   useEffect(() => { loadSessions(); }, [loadSessions]);
 
   const doLogoutAll = async () => {
+    if (!mounted.current || pendingRevocation.current) return;
+    pendingRevocation.current = true;
     setRevoking(true);
     try {
       await api.post("/auth/sessions/logout-all");
+      if (!mounted.current) return;
       await logout();
-      router.replace("/(auth)/login");
+      if (mounted.current) router.replace("/(auth)/login");
     } catch {
+      if (!mounted.current) return;
+      pendingRevocation.current = false;
       setRevoking(false);
       toast.error("Could not sign out of all devices. Try again.");
     }
@@ -67,13 +85,21 @@ export default function Settings() {
   };
 
   const revokeOne = async (id: string) => {
-    if (revokingSession) return;
+    if (!mounted.current || pendingRevocation.current) return;
+    pendingRevocation.current = true;
+    // Invalidate an older session read before it can restore a revoked row.
+    sessionRequest.current += 1;
+    setSessionsLoading(false);
     setRevokingSession(id);
     try {
-      await api.delete(`/auth/sessions/${id}`);
-      setSessions((cur) => cur.filter((s) => s.id !== id));
-    } catch { toast.error("Could not revoke this session. Try again."); }
-    finally { setRevokingSession(null); }
+      await api.delete(`/auth/sessions/${encodeURIComponent(id)}`);
+      if (mounted.current) setSessions((cur) => cur.filter((s) => s.id !== id));
+    } catch {
+      if (mounted.current) toast.error("Could not confirm sign out. The device is still listed; refresh to check or try again.");
+    } finally {
+      pendingRevocation.current = false;
+      if (mounted.current) setRevokingSession(null);
+    }
   };
 
   const timeAgo = (iso: string) => {
@@ -225,10 +251,11 @@ export default function Settings() {
               <Text style={type.caption}>
                 {s.login_method === "google" ? "Google" : "Password"} · Active {timeAgo(s.last_seen_at)}
               </Text>
+              {revokingSession === s.id ? <Text accessibilityLiveRegion="polite" style={type.caption}>Signing out…</Text> : null}
             </View>
             {!s.current ? (
               <Pressable testID={`revoke-session-${s.id}`} accessibilityRole="button" accessibilityLabel={`Sign out ${s.device_label || "device"}`} accessibilityState={{ disabled: !!revokingSession, busy: revokingSession === s.id }} disabled={!!revokingSession} style={{ minWidth: 44, minHeight: 44, alignItems: "center", justifyContent: "center" }} onPress={() => revokeOne(s.id)}>
-                <Feather name="x-circle" size={16} color={colors.onSurfaceMuted} />
+                {revokingSession === s.id ? <ActivityIndicator size="small" color={colors.onSurfaceMuted} /> : <Feather name="x-circle" size={16} color={colors.onSurfaceMuted} />}
               </Pressable>
             ) : null}
           </View>
@@ -237,7 +264,7 @@ export default function Settings() {
           testID="logout-all-devices"
           accessibilityRole="button"
           onPress={confirmLogoutAll}
-          disabled={revoking}
+          disabled={revoking || !!revokingSession}
           style={({ pressed }) => [styles.logoutAllRow, { opacity: pressed || revoking ? 0.7 : 1 }]}
         >
           <Feather name="shield-off" size={14} color={colors.error} />
@@ -248,7 +275,7 @@ export default function Settings() {
       <Pressable
         testID="settings-logout"
         accessibilityRole="button"
-        onPress={async () => { await logout(); router.replace("/(auth)/login"); }}
+        onPress={async () => { await logout(); if (mounted.current) router.replace("/(auth)/login"); }}
         style={({ pressed }) => [styles.logout, { opacity: pressed ? 0.88 : 1 }]}
       >
         <Feather name="log-out" size={16} color={colors.error} />

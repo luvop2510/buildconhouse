@@ -318,16 +318,7 @@ def prefetch_product_images(items: Iterable[dict], *, workers: int = 6, timeout:
         str(item.get("image")) for item in items
         if str(item.get("image") or "").startswith(("https://", "http://"))
     ))
-    fetched: dict[str, bytes | None] = {}
-
-    def fetch(url: str) -> bytes | None:
-        data = _remote_image_bytes(url)
-        fetched[url] = data
-        return data
-
-    prefetch_urls(urls, fetch, workers=workers, timeout=timeout)
-    # Late optional images may warm the cache, but never block this document.
-    return dict(fetched)
+    return prefetch_urls(urls, _remote_image_bytes, workers=workers, timeout=timeout)
 
 
 def _media_urls(item: dict, field: str) -> list[str]:

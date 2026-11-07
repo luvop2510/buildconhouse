@@ -12,6 +12,8 @@ from __future__ import annotations
 
 from typing import Optional
 
+from pymongo import UpdateOne
+
 from db import db
 from models import AutomationRule, now_iso
 
@@ -29,22 +31,29 @@ DEFAULT_RULES: dict[str, dict] = {
 
 async def ensure_seeded() -> None:
     """Idempotent — safe to call on every server startup."""
+    existing_by_category = {}
+    async for row in db.automation_rules.find(
+        {"category": {"$in": list(DEFAULT_RULES)}},
+        {"_id": 0, "category": 1, "reminder_offsets_days": 1},
+    ):
+        existing_by_category.setdefault(row["category"], row)
+    operations = []
     for category, cfg in DEFAULT_RULES.items():
-        existing = await db.automation_rules.find_one(
-            {"category": category}, {"_id": 0, "id": 1, "reminder_offsets_days": 1},
-        )
+        existing = existing_by_category.get(category)
         if existing:
             # Upgrade only the legacy default. Staff-edited cadences are never
             # overwritten, but a Selection must always begin its follow-up at
             # creation so the Walk-in → Selection handoff has no dead period.
             if category == "selection" and existing.get("reminder_offsets_days") == [2, 4, 7, 10]:
-                await db.automation_rules.update_one(
-                    {"category": category},
+                operations.append(UpdateOne(
+                    {"category": category, "reminder_offsets_days": [2, 4, 7, 10]},
                     {"$set": {"reminder_offsets_days": cfg["reminder_offsets_days"], "updated_at": now_iso()}},
-                )
+                ))
             continue
         rule = AutomationRule(category=category, label=cfg["label"], reminder_offsets_days=cfg["reminder_offsets_days"])
-        await db.automation_rules.insert_one(rule.dict())
+        operations.append(UpdateOne({"category": category}, {"$setOnInsert": rule.model_dump()}, upsert=True))
+    if operations:
+        await db.automation_rules.bulk_write(operations, ordered=True)
 
 
 async def list_rules() -> list[dict]:

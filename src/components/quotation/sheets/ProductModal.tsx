@@ -15,7 +15,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { clearCatalogCache } from "@/src/services/catalogService";
 import { api } from "@/src/api/client";
 import { ProductImage } from "@/src/components/ProductImage";
-import { ProductEditor } from "@/src/components/catalog/ProductEditor";
+import { LazyProductEditor as ProductEditor } from "@/src/components/catalog/LazyProductEditor";
 import { toast } from "@/src/components/Toast";
 import { useAuth } from "@/src/state/auth";
 import { useFloorAccess } from "@/src/hooks/use-floor-access";
@@ -89,6 +89,15 @@ export function ProductModal() {
   const [variantName, setVariantName] = useState("");
   const [variantNameEditing, setVariantNameEditing] = useState(false);
   const [variantNameBusy, setVariantNameBusy] = useState(false);
+  const pendingVariantSave = useRef<object | null>(null);
+  const variantWorkspace = useMemo(() => ({ actorId: staff?.id, floorId: activeFloorId }), [staff?.id, activeFloorId]);
+  const currentVariantWorkspace = useRef(variantWorkspace);
+  currentVariantWorkspace.current = variantWorkspace;
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
 
   const [chosenVariant, setSelectedVariant] = useState<ProductVariant | null>(null);
   const selectedVariant = chosenVariant ? product?.variants?.find((variant) => variant.id === chosenVariant.id && variant.sku === chosenVariant.sku) ?? chosenVariant : null;
@@ -161,26 +170,46 @@ export function ProductModal() {
 
   useEffect(() => {
     setVariantNameEditing(false);
+  }, [selectedProduct?.id, variantWorkspace]);
+
+  useEffect(() => {
+    if (variantNameEditing || pendingVariantSave.current) return;
     setVariantName(selectedProduct?.variant_label || selectedProduct?.colour || selectedProduct?.finish || "");
-  }, [selectedProduct?.id, selectedProduct?.variant_label, selectedProduct?.colour, selectedProduct?.finish]);
+  }, [selectedProduct?.id, selectedProduct?.variant_label, selectedProduct?.colour, selectedProduct?.finish, variantNameEditing, variantWorkspace]);
 
   const saveVariantName = async () => {
-    if (!selectedProduct || !canEditProduct || variantNameBusy) return;
+    if (!mounted.current || !selectedProduct || !canEditProduct || pendingVariantSave.current) return;
     const label = variantName.trim();
     if (!label || label.length > 80) { toast.error("Enter a color variant name of 1–80 characters"); return; }
     const identity = activeSelectionRef.current;
     const id = selectedProduct.id;
+    const previousLabel = selectedProduct.variant_label ?? null;
+    const pending = {};
+    pendingVariantSave.current = pending;
     setVariantNameBusy(true);
+    b.patchProduct(id, { variant_label: label });
+    setVariantNameEditing(false);
     try {
-      await api.patch(`/products/${encodeURIComponent(id)}`, { variant_label: label }, { floorId: activeFloorId });
+      const updated = await api.patch<Product>(`/products/${encodeURIComponent(id)}`, { variant_label: label }, { floorId: activeFloorId });
       clearCatalogCache();
+      if (!mounted.current || currentVariantWorkspace.current !== variantWorkspace) return;
+      b.patchProduct(id, { variant_label: updated.variant_label ?? label });
       if (activeSelectionRef.current !== identity) return;
-      b.patchProduct(id, { variant_label: label });
-      setVariantNameEditing(false);
       toast.success("Color variant name saved");
     } catch (error: any) {
-      if (activeSelectionRef.current === identity) toast.error(error?.detail || "Could not save color variant name");
-    } finally { setVariantNameBusy(false); }
+      if (!mounted.current || currentVariantWorkspace.current !== variantWorkspace) return;
+      b.patchProduct(id, { variant_label: previousLabel });
+      if (activeSelectionRef.current === identity) {
+        setVariantName(label);
+        setVariantNameEditing(true);
+        toast.error(`${error?.detail || "Could not save color variant name"}. Previous name restored. Try again.`);
+      }
+    } finally {
+      if (pendingVariantSave.current === pending) {
+        pendingVariantSave.current = null;
+        if (mounted.current) setVariantNameBusy(false);
+      }
+    }
   };
 
   const selectionKey = `${staff?.id || ""}:${activeFloorId}:${product?.id || ""}:${selectedProduct?.id || ""}`;
@@ -427,7 +456,21 @@ export function ProductModal() {
                         <TextInput accessibilityLabel="Color variant name" testID="pm-color-variant-name" value={variantName} onChangeText={setVariantName} maxLength={80} style={{ flex: 1, minWidth: 140, minHeight: 44, borderWidth: 1, borderColor: colors.border, borderRadius: 8, paddingHorizontal: 10, color: colors.onSurface }} />
                         <Pressable accessibilityRole="button" accessibilityLabel="Save color variant name" disabled={variantNameBusy} onPress={saveVariantName} style={{ padding: 12 }} testID="pm-save-color-variant-name"><Text>{variantNameBusy ? "Saving…" : "Save"}</Text></Pressable>
                         <Pressable accessibilityRole="button" accessibilityLabel="Cancel color variant rename" onPress={() => setVariantNameEditing(false)} style={{ padding: 12 }}><Text>Cancel</Text></Pressable>
-                      </> : <Pressable accessibilityRole="button" accessibilityLabel="Edit selected color variant name" onPress={() => setVariantNameEditing(true)} style={{ paddingVertical: 10 }} testID="pm-edit-color-variant-name"><Text style={{ color: colors.brand }}>Edit selected color name</Text></Pressable>}
+                      </> : (
+                        <Pressable
+                          accessibilityRole="button"
+                          accessibilityLabel={variantNameBusy ? "Saving color variant name" : "Edit selected color variant name"}
+                          accessibilityState={{ disabled: variantNameBusy, busy: variantNameBusy }}
+                          disabled={variantNameBusy}
+                          onPress={() => setVariantNameEditing(true)}
+                          style={{ paddingVertical: 10 }}
+                          testID="pm-edit-color-variant-name"
+                        >
+                          <Text accessibilityLiveRegion="polite" style={{ color: colors.brand }}>
+                            {variantNameBusy ? "Saving color name…" : "Edit selected color name"}
+                          </Text>
+                        </Pressable>
+                      )}
                     </View> : null}
                     <View style={styles.variantRow}>
                       {selectableVariants.map((v) => {
@@ -736,7 +779,7 @@ export function ProductModal() {
       visible={editorOpen}
       initialTab={editorTab}
       onClose={() => setEditorOpen(false)}
-      onSaved={(updated) => b.patchProduct(selectedProduct.id, updated)}
+      onSaved={(updated) => { if (updated.id === selectedProduct.id) b.patchProduct(selectedProduct.id, updated); }}
     />
 
     </>

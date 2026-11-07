@@ -101,6 +101,35 @@ test('critical grouped builder selects second SKU and persists its color name wi
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
 });
 
+test('critical color rename previews immediately and restores the previous label after rejection', async ({ page }) => {
+  await familyCatalog(page, '/quotations/new');
+  let releaseWrite: () => void = () => {};
+  const acknowledgement = new Promise<void>(resolve => { releaseWrite = resolve; });
+  await page.route('**/api/products/family-black', async route => {
+    if (route.request().method() !== 'PATCH') return route.fallback();
+    await acknowledgement;
+    return route.fulfill({ status: 503, json: { detail: 'Fixture declined' } });
+  });
+  await page.goto('/quotations/new');
+  const browse = page.getByTestId('empty-browse-catalog');
+  if (await browse.isVisible()) await browse.click();
+  await page.getByRole('button', { name: 'View Family Basin', exact: true }).click();
+  await page.getByTestId('pm-variant-BLACK-SKU').click();
+  await page.getByTestId('pm-edit-color-variant-name').click();
+  await page.getByTestId('pm-color-variant-name').fill('Midnight Black');
+  await page.getByTestId('pm-save-color-variant-name').click();
+  try {
+    await expect(page.getByTestId('pm-variant-BLACK-SKU')).toHaveAccessibleName('Midnight Black · 30 cm, selected');
+    await expect(page.getByTestId('pm-color-variant-name')).toHaveCount(0);
+    await expect(page.getByTestId('pm-edit-color-variant-name')).toHaveText('Saving color name…');
+  } finally {
+    releaseWrite();
+  }
+  await expect(page.getByTestId('pm-variant-BLACK-SKU')).toHaveAccessibleName(/^Black/);
+  await expect(page.getByTestId('pm-color-variant-name')).toHaveValue('Midnight Black');
+  await expect(page.getByText('Fixture declined. Previous name restored. Try again.', { exact: true })).toBeVisible();
+});
+
 // Supplier family text is not globally unique. This deliberately puts each
 // namespace across server pages, so client deduplication cannot drop a card.
 test('critical sanitary family pagination preserves reused supplier keys across brands and categories', async ({ page }) => {

@@ -34,7 +34,8 @@ function screen(kind, width = 'desktop') {
   const [file, marker, observation] = specs[kind];
   const source = readFileSync(new URL(file, import.meta.url), 'utf8');
   assert.ok(source.includes(marker), `Observation point exists in ${file}`);
-  const compiled = ts.transpileModule(source.replace(marker, `  return { ${observation} };\n${marker}`), {
+  const workspaceSource = kind === 'walkin' ? source.replace('function WalkInWorkspace()', 'export function WalkInWorkspace()') : source;
+  const compiled = ts.transpileModule(workspaceSource.replace(marker, `  return { ${observation} };\n${marker}`), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
   }).outputText;
   const hooks = [], effects = [], requests = [], timers = new Map();
@@ -113,7 +114,8 @@ function screen(kind, width = 'desktop') {
   });
   const render = (flushEffects = true) => {
     cursor = 0; dirty = false;
-    state = kind === 'tiles' ? exports.TilesProductPicker({ open, onClose() {}, onPick() {} }) : exports.default();
+    state = kind === 'tiles' ? exports.TilesProductPicker({ open, onClose() {}, onPick() {} })
+      : kind === 'walkin' ? exports.WalkInWorkspace() : exports.default();
     while (flushEffects && effects.length) effects.shift()();
     return state;
   };

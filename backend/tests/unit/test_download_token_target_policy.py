@@ -57,6 +57,7 @@ def test_customer_download_token_targets_are_limited_to_portal_pdfs(target):
     "/api/payments/orders",
     "/api/auth/users",
     "/api/purchases/export.xlsx?dl=attacker-token",
+    "/api/purchases/export.xlsx?%64l=attacker-token",
     "https://attacker.example/api/purchases/export.xlsx",
     "/api/tile-orders/chalans/chalan-1/pdf#fragment",
 ])

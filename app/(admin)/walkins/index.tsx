@@ -56,6 +56,7 @@ export default function WalkInsScreen({
     ? hasGrantAccess(staff.access_grants, record.floor_id, "walkins", "delete")
     : ["owner", "admin", "manager"].includes(staff.role));
   const deleting = useRef(new Set<string>());
+  const [pendingDeletes, setPendingDeletes] = useState(new Map<string, object>());
   const [summaryError, setSummaryError] = useState(false);
   const [summaryRevision, setSummaryRevision] = useState(0);
   const [savingSelections, setSavingSelections] = useState<string[]>([]);
@@ -63,7 +64,7 @@ export default function WalkInsScreen({
   const refreshList = useRef<((signal?: AbortSignal, background?: boolean) => Promise<void>) | null>(null);
   const mounted = useRef(true);
   const [dashboard, setDashboard] = useState<WalkInsDashboard | null>(null);
-  const [items, setItems] = useState<WalkIn[]>([]);
+  const [confirmedItems, setItems] = useState<WalkIn[]>([]);
   const [status, setStatus] = useState("");
   const [summaryView, setSummaryView] = useState<WalkinSummary | null>(null);
   const [sources, setSources] = useState<string[]>([]);
@@ -87,14 +88,17 @@ export default function WalkInsScreen({
   const scopeRef = useRef({ key: scopeKey });
   if (scopeRef.current.key !== scopeKey) scopeRef.current = { key: scopeKey };
   const activeScope = scopeRef.current;
+  const items = confirmedItems.filter(item => pendingDeletes.get(item.id) !== activeScope);
   const queryKey = JSON.stringify([scopeKey, quotationFollowup, status, summaryView, sourceFilter, searchQuery]);
   const queryRef = useRef({ key: queryKey });
   if (queryRef.current.key !== queryKey) queryRef.current = { key: queryKey };
   const activeQuery = queryRef.current;
 
   const deleteWalkin = async (record: WalkIn) => {
-    if (!canDelete(record) || deleting.current.has(record.id)) return;
+    if (!mounted.current || scopeRef.current !== activeScope || !canDelete(record)
+        || deleting.current.has(record.id) || selectionWrites.current.has(record.id)) return;
     deleting.current.add(record.id);
+    setPendingDeletes(previous => new Map(previous).set(record.id, activeScope));
     try {
       await walkinsApi.remove(record.id, record.floor_id);
       if (mounted.current && scopeRef.current === activeScope) {
@@ -103,8 +107,11 @@ export default function WalkInsScreen({
         setSummaryRevision(value => value + 1);
       }
     } catch (error: any) {
-      if (mounted.current && scopeRef.current === activeScope) toast.error(error?.detail || "Could not delete walk-in");
-    } finally { deleting.current.delete(record.id); }
+      if (mounted.current && scopeRef.current === activeScope) toast.error(`${error?.detail || "Could not confirm deletion"}. The walk-in has been restored; refresh to check or try again.`);
+    } finally {
+      deleting.current.delete(record.id);
+      if (mounted.current) setPendingDeletes(previous => { const next = new Map(previous); next.delete(record.id); return next; });
+    }
   };
 
   useEffect(() => {
@@ -199,7 +206,7 @@ export default function WalkInsScreen({
     }
   };
   const scheduleSelection = async (w: WalkIn) => {
-    if (w.floor_id !== "ground-floor" || !mounted.current || scopeRef.current !== activeScope || selectionWrites.current.has(w.id)) return;
+    if (w.floor_id !== "ground-floor" || !mounted.current || scopeRef.current !== activeScope || selectionWrites.current.has(w.id) || deleting.current.has(w.id)) return;
     const pending = { scope: activeScope, previousStatus: w.status };
     selectionWrites.current.set(w.id, pending);
     setSavingSelections(current => [...current, w.id]);

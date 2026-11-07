@@ -20,19 +20,31 @@ test('critical Follow-ups Done is note-free and retains the task after a failed 
   await page.route('**/api/followups/page?**', r => r.fulfill({ json: { items: [row], page: 1, page_size: 100, has_more: false } }));
   const writes: any[] = [];
   let fail = true;
-  await page.route('**/api/followups/note-required/complete', r => {
+  let releaseFailure: () => void = () => {};
+  const pendingFailure = new Promise<void>(resolve => { releaseFailure = resolve; });
+  await page.route('**/api/followups/note-required/complete', async r => {
     writes.push(r.request().postDataJSON());
-    return fail ? r.fulfill({ status: 503, json: { detail: 'Could not save the follow-up' } })
-      : r.fulfill({ json: { ...row, status: 'done', bucket: 'completed' } });
+    if (fail) {
+      await pendingFailure;
+      return r.fulfill({ status: 503, json: { detail: 'Could not save the follow-up' } });
+    }
+    return r.fulfill({ json: { ...row, status: 'done', bucket: 'completed' } });
   });
   await page.goto('/followups');
   await page.getByTestId('complete-note-required').click();
-  await expect(page.getByText('Could not save the follow-up', { exact: true })).toBeVisible();
+  try {
+    await expect.poll(() => writes.length).toBe(1);
+    await expect(page.getByTestId('complete-note-required')).toHaveCount(0);
+  } finally {
+    releaseFailure();
+  }
+  await expect(page.getByText(/The previous view has been restored/)).toBeVisible();
   await expect(page.getByTestId('complete-note-required')).toBeVisible();
   await expect(page.getByTestId('followup-change-note')).toHaveCount(0);
   fail = false;
   await page.getByTestId('complete-note-required').click();
   await expect(page.getByTestId('complete-note-required')).toHaveCount(0);
+  await expect(page.getByText('Marked complete', { exact: true })).toBeVisible();
   expect(writes).toEqual([{}, {}]);
 });
 

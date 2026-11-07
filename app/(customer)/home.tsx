@@ -2,11 +2,10 @@
 // document portal: customer identity, latest quotation, and support only.
 import Feather from "@expo/vector-icons/Feather";
 import { useRouter } from "expo-router";
-import { useCallback, useEffect, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import { Text } from "@/src/components/AppText";
 
-import { api } from "@/src/api/client";
+import { usePortalQuotations } from "@/src/hooks/use-portal-quotations";
 import { Button, Card, StatusBadge } from "@/src/components/ui";
 import {
   CustomerEmpty,
@@ -22,52 +21,13 @@ import { useAuth } from "@/src/state/auth";
 import { colors, spacing, type, money } from "@/src/theme/tokens";
 import { useBp } from "@/src/design/responsive";
 
-type Quote = {
-  id: string;
-  number: string;
-  status: string;
-  grand_total: number;
-  created_at: string;
-  items?: unknown[];
-};
-
 export default function CustomerDashboard() {
   const { isPhone } = useBp();
   const { customer, logout } = useAuth();
   const router = useRouter();
-  const [quotes, setQuotes] = useState<Quote[] | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
-
-  const load = useCallback(async (signal?: AbortSignal, preserveData = false) => {
-    setError(false);
-    if (!preserveData) {
-      setLoading(true);
-      setQuotes(null);
-    }
-
-    try {
-      const result = await api.get<Quote[]>("/portal/quotations", { signal });
-      if (signal?.aborted) return;
-      setQuotes(Array.isArray(result) ? result : []);
-      setLoading(false);
-    } catch {
-      if (signal?.aborted) return;
-      setError(true);
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    void load(controller.signal);
-    return () => controller.abort();
-  }, [load]);
-
-  const retry = () => {
-    const controller = new AbortController();
-    void load(controller.signal);
-  };
+  const { data, loading, error, reload } = usePortalQuotations(1);
+  const quotes = data?.items ?? null;
+  const retry = () => { void reload(); };
   const latest = quotes?.[0] ?? null;
   const displayEmail = customer?.email;
 
@@ -99,6 +59,8 @@ export default function CustomerDashboard() {
 
       <CustomerSectionHeading title="Latest quotation" />
 
+      {error && quotes ? <CustomerError onRetry={retry} /> : null}
+
       {loading && !quotes ? (
         <CustomerSkeletonCard />
       ) : error && !quotes ? (
@@ -113,7 +75,7 @@ export default function CustomerDashboard() {
             <View style={styles.quoteCopy}>
               <Text style={[type.mono, { color: colors.onSurfaceMuted }]} numberOfLines={2}>{latest.number}</Text>
               <Text style={[type.titleMd, styles.quoteMeta]} numberOfLines={2}>
-                {(latest.items?.length ?? 0)} item{(latest.items?.length ?? 0) === 1 ? "" : "s"} · {formatCustomerDate(latest.created_at)}
+                {(latest.item_count ?? 0)} item{(latest.item_count ?? 0) === 1 ? "" : "s"} · {formatCustomerDate(latest.created_at)}
               </Text>
             </View>
             <StatusBadge status={latest.status} />
@@ -139,7 +101,7 @@ export default function CustomerDashboard() {
 
       <Button
         testID="view-all-quotations-btn"
-        label={quotes ? `View all quotations (${quotes.length})` : "View all quotations"}
+        label={quotes ? `View all quotations (${data?.total ?? 0})` : "View all quotations"}
         icon="list"
         variant="secondary"
         fullWidth

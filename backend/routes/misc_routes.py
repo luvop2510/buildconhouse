@@ -73,7 +73,7 @@ def _download_target_path(target: str, *, customer: bool = False) -> str:
     parsed = urlsplit(target)
     if (
         parsed.scheme or parsed.netloc or parsed.fragment
-        or any(pair.split("=", 1)[0].lower() == "dl" for pair in parsed.query.split("&") if pair)
+        or any(key.lower() == "dl" for key in parse_qs(parsed.query, keep_blank_values=True))
         or not any(fullmatch(pattern, parsed.path) for pattern in (
             _CUSTOMER_DOWNLOAD_TARGET_PATTERNS if customer else _DOWNLOAD_TARGET_PATTERNS
         ))

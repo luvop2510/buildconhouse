@@ -348,3 +348,18 @@ def test_write_during_warm_signature_scan_cannot_refresh_stale_state(clean_catal
         assert refreshed.product_by_id["p1"]["name"] == "Write during comparison"
         assert sources.started == sources.closed
     asyncio.run(run())
+
+
+def test_edit_during_cold_load_invalidates_the_unpublished_snapshot(clean_catalog, monkeypatch):
+    async def run():
+        sources = Sources()
+        monkeypatch.setattr(catalog, "db", sources)
+        request = asyncio.create_task(catalog.get_catalog_snapshot())
+        await asyncio.wait_for(sources.all_started.wait(), 1)
+        sources.product["name"] = "After"
+        catalog.patch_product_in_snapshot("p1", {"name": "After"})
+        sources.release.set()
+        snapshot = await request
+        assert snapshot.product_by_id["p1"]["name"] == "After"
+        assert sources.started == sources.closed == 10
+    asyncio.run(run())

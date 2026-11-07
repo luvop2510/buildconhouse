@@ -10,7 +10,7 @@ Function('exports', fixtureModule)(fixtures);
 const floors = [{id:'first-floor',name:'The Sanitary Bathroom',slug:'first-floor'},{id:'ground-floor',name:'Tiles',slug:'ground-floor'},{id:'second-floor',name:'Kitchen',slug:'second-floor'},{id:'third-floor',name:'Furniture',slug:'third-floor'}];
 const refs = [{id:'r-architect',name:'Nisha Shah',type:'architect',company:'Studio Line',phone:'9900000011',shared_across_floors:true,updated_at:'v1'},{id:'r-interior',name:'Mehul Desai',type:'interior_designer',company:'Forma Interiors',phone:'9900000022',shared_across_floors:true,updated_at:'v1'}];
 const root = resolve(process.env.AUDIT_ROOT || 'dist/client');
-const types={'.html':'text/html','.js':'text/javascript','.css':'text/css','.json':'application/json','.png':'image/png','.svg':'image/svg+xml','.ttf':'font/ttf','.woff2':'font/woff2'};
+const types={'.html':'text/html','.js':'text/javascript','.css':'text/css','.json':'application/json','.webp':'image/webp','.png':'image/png','.svg':'image/svg+xml','.ttf':'font/ttf','.woff2':'font/woff2'};
 createServer(async(req,res)=>{
  try{
   const url=new URL(req.url,'http://localhost');

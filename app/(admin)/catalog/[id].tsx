@@ -30,7 +30,7 @@ import { Button, Card, IconButton, PriceTag } from "@/src/components/ui";
 import { SupplierSourceDetails } from "@/src/components/catalog/SupplierSourceDetails";
 import type { CatalogEntry } from "@/src/services/catalogService";
 import { catalogProductDetailPath } from "@/src/components/quotation/helpers/catalogSource";
-import { ProductEditor } from "@/src/components/catalog/ProductEditor";
+import { LazyProductEditor as ProductEditor } from "@/src/components/catalog/LazyProductEditor";
 import { toast } from "@/src/components/Toast";
 import { api } from "@/src/api/client";
 import { useFloorAccess } from "@/src/hooks/use-floor-access";
@@ -907,7 +907,7 @@ function ProductDetailWorkspace({ floorId }: { floorId: string }) {
           visible={showImageManager}
           initialTab={editorTab}
           onClose={() => setShowImageManager(false)}
-          onSaved={(updated) => { setP((cur) => (cur ? ({ ...cur, ...updated } as Product) : cur)); }}
+          onSaved={(updated) => { setP((cur) => (cur?.id === updated.id ? ({ ...cur, ...updated } as Product) : cur)); }}
         />
       ) : null}
     </View>

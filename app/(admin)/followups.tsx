@@ -279,7 +279,8 @@ export default function FollowupsScreen() {
   const { selectedFloorId } = useFloorAccess();
   // Switching workspaces discards the entire previous inbox, including sheets,
   // search, saved views and pending actions, before the new floor can render.
-  return <FollowupsWorkspace key={selectedFloorId} />;
+  const { staff } = useAuth();
+  return <FollowupsWorkspace key={`${staff?.id || ""}:${selectedFloorId}`} />;
 }
 
 function FollowupsWorkspace() {
@@ -302,7 +303,13 @@ function FollowupsWorkspace() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
-  const [rawItems, setRawItems] = useState<Followup[]>([]);
+  const [confirmedItems, setRawItems] = useState<Followup[]>([]);
+  const pendingFollowupActions = useRef(new Map<string, Partial<Followup>>());
+  const [pendingPatches, setPendingPatches] = useState(new Map<string, Partial<Followup>>());
+  const [pendingDeleteIds, setPendingDeleteIds] = useState(new Set<string>());
+  const mutationVersion = useRef(0);
+  const rawItems = useMemo(() => confirmedItems.filter(item => !pendingDeleteIds.has(item.id)).map(item => pendingPatches.has(item.id)
+    ? { ...item, ...pendingPatches.get(item.id) } : item), [confirmedItems, pendingPatches, pendingDeleteIds]);
   const [listPage, setListPage] = useState(1);
   const [hasMorePages, setHasMorePages] = useState(false);
   const [loadingPage, setLoadingPage] = useState(false);
@@ -332,8 +339,13 @@ function FollowupsWorkspace() {
   const [collapsed, setCollapsed] = useState<Set<Bucket>>(new Set(["completed", "snoozed"]));
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selectedIdRef = useRef(selectedId);
+  selectedIdRef.current = selectedId;
   const [bulkDockHeight, setBulkDockHeight] = useState(0);
-  const [detail, setDetail] = useState<Detail | null>(null);
+  const [confirmedDetail, setDetail] = useState<Detail | null>(null);
+  const detail = useMemo(() => confirmedDetail && pendingPatches.has(confirmedDetail.followup.id)
+    ? { ...confirmedDetail, followup: { ...confirmedDetail.followup, ...pendingPatches.get(confirmedDetail.followup.id) } }
+    : confirmedDetail, [confirmedDetail, pendingPatches]);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const lastListLoadFailed = useRef(false);
   const listRequestVersion = useRef(0);
@@ -361,6 +373,10 @@ function FollowupsWorkspace() {
   const bulkBusy = useRef(false);
   const [bulkSaving, setBulkSaving] = useState(false);
   const [savedViews, setSavedViews] = useState<SavedView[]>([]);
+  const savedViewsVersion = useRef(0);
+  const pendingViewDeletes = useRef(new Set<string>());
+  const [hiddenViewIds, setHiddenViewIds] = useState<Set<string>>(new Set());
+  const visibleSavedViews = savedViews.filter(view => !hiddenViewIds.has(view.id));
   const [savedViewsSheet, setSavedViewsSheet] = useState(false);
   const [shortcutHelp, setShortcutHelp] = useState(false);
   // Follow-ups 2.0 — dedicated workspaces (Tile Selections / Tile Quotations)
@@ -402,6 +418,7 @@ function FollowupsWorkspace() {
       setListError(null);
     }
     const requestVersion = ++listRequestVersion.current;
+    const mutation = mutationVersion.current;
     try {
       const params = new URLSearchParams({ page: String(nextPage), page_size: String(FOLLOWUP_PAGE_SIZE), view: followupView });
       if (searchQuery) params.set("q", searchQuery);
@@ -444,7 +461,7 @@ function FollowupsWorkspace() {
           throw error;
         }
       }
-      if (!mounted.current || requestVersion !== listRequestVersion.current) return [];
+      if (!mounted.current || requestVersion !== listRequestVersion.current || mutation !== mutationVersion.current) return [];
       lastListLoadFailed.current = false;
       setRawItems(result.items);
       setListPage(result.page);
@@ -452,7 +469,7 @@ function FollowupsWorkspace() {
       setListError(null);
       return result.items;
     } catch (e: any) {
-      if (!mounted.current || requestVersion !== listRequestVersion.current) return [];
+      if (!mounted.current || requestVersion !== listRequestVersion.current || mutation !== mutationVersion.current) return [];
       const message = e?.detail || "Could not load follow-ups";
       lastListLoadFailed.current = true;
       if (!pageNavigation) setListError(message);
@@ -481,6 +498,7 @@ function FollowupsWorkspace() {
   const bootstrap = useCallback(async () => {
     if (!selectedFloorId || !mounted.current) return [];
     const floorId = selectedFloorId;
+    const viewsVersion = savedViewsVersion.current;
     // Keep entering the work queue cheap. The previous dashboard eagerly ran
     // three full-dataset summary queries alongside the inbox query; on a busy
     // floor those competing reads were the source of the client timeout. The
@@ -495,7 +513,7 @@ function FollowupsWorkspace() {
       if (!mounted.current || bootstrappedFloorRef.current !== floorId) return;
       if (assigneesResult.status === "fulfilled") setAssignees(assigneesResult.value);
       if (customersResult.status === "fulfilled") setCustomers(customersResult.value);
-      if (savedViewsResult.status === "fulfilled") setSavedViews(savedViewsResult.value);
+      if (savedViewsResult.status === "fulfilled" && viewsVersion === savedViewsVersion.current) setSavedViews(savedViewsResult.value);
     });
     return loadList();
   }, [loadList, selectedFloorId]);
@@ -556,15 +574,16 @@ function FollowupsWorkspace() {
 
   const loadDetail = useCallback(async (id: string) => {
     const version = ++detailRequestVersion.current;
+    const mutation = mutationVersion.current;
     detailAbortController.current?.abort();
     const controller = new AbortController();
     detailAbortController.current = controller;
     setLoadingDetail(true);
     try {
       const loadedDetail = await api.get<Detail>(`/followups/${id}`, { signal: controller.signal, floorId: selectedFloorId });
-      if (mounted.current && version === detailRequestVersion.current) setDetail(loadedDetail);
+      if (mounted.current && version === detailRequestVersion.current && mutation === mutationVersion.current) setDetail(loadedDetail);
     } catch (e: any) {
-      if (!mounted.current || version !== detailRequestVersion.current || e?.name === "AbortError") return;
+      if (!mounted.current || version !== detailRequestVersion.current || mutation !== mutationVersion.current || e?.name === "AbortError") return;
       if (e?.status === 404) {
         // The card was completed, moved, or removed in another session. Put
         // the queue back in control instead of displaying a stale "not found"
@@ -599,6 +618,7 @@ function FollowupsWorkspace() {
 
   // Keep the queue and the open customer detail in sync after saved changes.
   const patchLocal = useCallback((id: string, patch: Partial<Followup>) => {
+    mutationVersion.current += 1;
     setRawItems((prev) => prev.map((f) => (f.id === id ? { ...f, ...patch } : f)));
     setDetail((prev) => prev?.followup.id === id ? { ...prev, followup: { ...prev.followup, ...patch } } : prev);
   }, []);
@@ -631,78 +651,84 @@ function FollowupsWorkspace() {
     });
   }, [patchLocal, runAction, selectedFloorId]);
 
-  const completeFollowup = useCallback((f: Followup) => {
-    runAction(async () => {
-      const updated = await api.post<Followup>(`/followups/${f.id}/complete`, {}, { floorId: selectedFloorId });
+  const optimisticAction = useCallback(async (
+    followup: Followup, patch: Partial<Followup>, execute: () => Promise<Followup>, message: string,
+  ) => {
+    if (!mounted.current || pendingFollowupActions.current.has(followup.id)) return;
+    pendingFollowupActions.current.set(followup.id, patch);
+    setPendingPatches(new Map(pendingFollowupActions.current));
+    try {
+      const updated = await execute();
       if (!mounted.current) return;
-      patchLocal(f.id, { ...updated, bucket: "completed" });
-      toast.success("Marked complete");
+      patchLocal(followup.id, { ...updated, bucket: patch.bucket });
+      toast.success(message);
       void refreshStatsQuiet();
-    });
-  }, [patchLocal, refreshStatsQuiet, runAction, selectedFloorId]);
+    } catch {
+      if (mounted.current) toast.error("Could not confirm the follow-up change. The previous view has been restored; refresh to check or try again.");
+    } finally {
+      pendingFollowupActions.current.delete(followup.id);
+      if (mounted.current) setPendingPatches(new Map(pendingFollowupActions.current));
+    }
+  }, [patchLocal, refreshStatsQuiet]);
 
-  const snoozeFollowup = useCallback((f: Followup, preset: "15m" | "1h" | "tomorrow" | "next_week") => {
-    runAction(async () => {
-      const updated = await api.post<Followup>(`/followups/${f.id}/snooze`, { preset }, { floorId: selectedFloorId });
-      if (!mounted.current) return;
-      patchLocal(f.id, { ...updated, bucket: "snoozed" });
-      toast.success("Snoozed");
-      void refreshStatsQuiet();
-    });
-  }, [patchLocal, refreshStatsQuiet, runAction, selectedFloorId]);
+  const completeFollowup = useCallback((f: Followup) => optimisticAction(f,
+    { status: "done", bucket: "completed", completed_at: new Date().toISOString() },
+    () => api.post<Followup>(`/followups/${f.id}/complete`, {}, { floorId: selectedFloorId }), "Marked complete",
+  ), [optimisticAction, selectedFloorId]);
+
+  const snoozeFollowup = useCallback((f: Followup, preset: "15m" | "1h" | "tomorrow" | "next_week") => optimisticAction(f,
+    { status: "snoozed", bucket: "snoozed" },
+    () => api.post<Followup>(`/followups/${f.id}/snooze`, { preset }, { floorId: selectedFloorId }), "Snoozed",
+  ), [optimisticAction, selectedFloorId]);
 
   const customSnooze = useCallback((f: Followup, untilIso: string) => {
     setCustomSnoozeFor(null);
-    runAction(async () => {
-      const updated = await api.post<Followup>(`/followups/${f.id}/snooze`, { until: untilIso }, { floorId: selectedFloorId });
-      if (!mounted.current) return;
-      patchLocal(f.id, { ...updated, bucket: "snoozed" });
-      toast.success("Snoozed");
-      void refreshStatsQuiet();
-    });
-  }, [patchLocal, refreshStatsQuiet, runAction, selectedFloorId]);
+    return optimisticAction(f, { status: "snoozed", bucket: "snoozed", snoozed_until: untilIso },
+      () => api.post<Followup>(`/followups/${f.id}/snooze`, { until: untilIso }, { floorId: selectedFloorId }), "Snoozed");
+  }, [optimisticAction, selectedFloorId]);
 
   const pushDue = useCallback((f: Followup, days: number) => {
-    const dueDate = new Date(Date.now() + days * 86400000);
-    const dueIso = dueDate.toISOString();
-    const newBucket: Bucket = days === 1 ? "tomorrow" : days <= 7 ? "this_week" : "later";
-    runAction(async () => {
-      const updated = await api.patch<Followup>(`/followups/${f.id}`, { due_at: dueIso }, { floorId: selectedFloorId });
-      if (!mounted.current) return;
-      patchLocal(f.id, { ...updated, bucket: newBucket });
-      toast.success(`Pushed ${days} day${days === 1 ? "" : "s"}`);
-      void refreshStatsQuiet();
-    });
-  }, [patchLocal, refreshStatsQuiet, runAction, selectedFloorId]);
+    const dueIso = new Date(Date.now() + days * 86400000).toISOString();
+    const bucket: Bucket = days === 1 ? "tomorrow" : days <= 7 ? "this_week" : "later";
+    return optimisticAction(f, { due_at: dueIso, bucket },
+      () => api.patch<Followup>(`/followups/${f.id}`, { due_at: dueIso }, { floorId: selectedFloorId }),
+      `Pushed ${days} day${days === 1 ? "" : "s"}`);
+  }, [optimisticAction, selectedFloorId]);
 
   const assignFollowup = useCallback((f: Followup, _userId?: string) => { setScopeLeadIds([]); setScopeLead(f); }, []);
 
-  const dismissFollowup = useCallback((f: Followup) => {
-    runAction(async () => {
-      const updated = await api.patch<Followup>(`/followups/${f.id}`, { status: "dismissed" }, { floorId: selectedFloorId });
-      if (!mounted.current) return;
-      patchLocal(f.id, { ...updated, bucket: "completed" });
-      toast.success("Dismissed");
-      void refreshStatsQuiet();
-    });
-  }, [patchLocal, refreshStatsQuiet, runAction, selectedFloorId]);
+  const dismissFollowup = useCallback((f: Followup) => optimisticAction(f,
+    { status: "dismissed", bucket: "completed" },
+    () => api.patch<Followup>(`/followups/${f.id}`, { status: "dismissed" }, { floorId: selectedFloorId }), "Dismissed",
+  ), [optimisticAction, selectedFloorId]);
 
   const deleteFollowup = useCallback(() => {
-    if (!deleteTarget) return;
+    if (!mounted.current || !deleteTarget || pendingFollowupActions.current.has(deleteTarget.id)) return;
     const target = deleteTarget;
     setDeleteTarget(null);
-    runAction(async () => {
-      setDeleting(true);
+    pendingFollowupActions.current.set(target.id, {});
+    setPendingDeleteIds(previous => new Set(previous).add(target.id));
+    setDeleting(true);
+    return (async () => {
       try {
-        await api.delete(`/followups/${target.id}`, { floorId: selectedFloorId });
+        await api.delete(`/followups/${encodeURIComponent(target.id)}`, { floorId: selectedFloorId });
         if (!mounted.current) return;
+        mutationVersion.current += 1;
         setRawItems((prev) => prev.filter((item) => item.id !== target.id));
-        if (selectedId === target.id) clearSelectedDetail();
+        if (selectedIdRef.current === target.id) clearSelectedDetail();
         toast.success("Follow-up deleted");
         void refreshStatsQuiet();
-      } finally { setDeleting(false); }
-    });
-  }, [clearSelectedDetail, deleteTarget, refreshStatsQuiet, selectedId, runAction, selectedFloorId]);
+      } catch {
+        if (mounted.current) toast.error("Could not confirm deletion. The follow-up has been restored; refresh to check or try again.");
+      } finally {
+        pendingFollowupActions.current.delete(target.id);
+        if (mounted.current) {
+          setPendingDeleteIds(previous => { const next = new Set(previous); next.delete(target.id); return next; });
+          setDeleting(false);
+        }
+      }
+    })();
+  }, [clearSelectedDetail, deleteTarget, refreshStatsQuiet, selectedFloorId]);
 
   const logCallOutcome = useCallback(async (f: Followup, outcome: string, notes?: string, nextFollowupAt?: string, response?: string, interestedFloorIds?: string[], assignments?: LeadScope["assignments"]) => {
     if ((outcome === "lost" || outcome === "rejected") && !notes?.trim()) { toast.error("A lost reason is required"); return; }
@@ -859,7 +885,9 @@ function FollowupsWorkspace() {
   const clearSelection = useCallback(() => setSelectedIds(new Set()), []);
 
   const runBulk = useCallback(async (request: BulkRequest, ids = Array.from(selectedIds)) => {
-    if (!ids.length || bulkBusy.current) return;
+    if (!mounted.current || !ids.length || bulkBusy.current || ids.some(id => pendingFollowupActions.current.has(id))) return;
+    for (const id of ids) pendingFollowupActions.current.set(id, request.successPatch);
+    setPendingPatches(new Map(pendingFollowupActions.current));
     bulkBusy.current = true;
     setBulkSaving(true);
     setBulkResult(null);
@@ -870,11 +898,22 @@ function FollowupsWorkspace() {
     const succeeded = new Set(ids.filter((_, index) => results[index]?.status === "fulfilled"));
     const failedIds = ids.filter((_, index) => results[index]?.status === "rejected");
     if (succeeded.size) {
-      setRawItems((prev) => prev.map((f) => succeeded.has(f.id) ? { ...f, ...request.successPatch } : f));
-      setDetail((prev) => prev && succeeded.has(prev.followup.id) ? { ...prev, followup: { ...prev.followup, ...request.successPatch } } : prev);
+      mutationVersion.current += 1;
+      const confirmed = new Map<string, Partial<Followup>>();
+      results.forEach((result, index) => {
+        if (result.status === "fulfilled") {
+          const response = result.value && typeof result.value === "object" ? result.value as Partial<Followup> : {};
+          confirmed.set(ids[index], { ...request.successPatch, ...response, bucket: request.successPatch.bucket });
+        }
+      });
+      setRawItems(previous => previous.map(item => confirmed.has(item.id) ? { ...item, ...confirmed.get(item.id) } : item));
+      setDetail(previous => previous && confirmed.has(previous.followup.id)
+        ? { ...previous, followup: { ...previous.followup, ...confirmed.get(previous.followup.id) } } : previous);
       void refreshStatsQuiet();
       toast.success(`${request.label} ${succeeded.size} follow-up${succeeded.size === 1 ? "" : "s"}`);
     }
+    for (const id of ids) pendingFollowupActions.current.delete(id);
+    setPendingPatches(new Map(pendingFollowupActions.current));
     setSelectedIds(new Set(failedIds));
     if (failedIds.length) {
       setBulkResult({ request, successCount: succeeded.size, failedIds });
@@ -927,15 +966,30 @@ function FollowupsWorkspace() {
     try {
       const v = await api.post<SavedView>("/followups/saved-views", { name, filters }, { floorId: selectedFloorId });
       if (!mounted.current) return;
+      savedViewsVersion.current += 1;
       setSavedViews((prev) => [v, ...prev]);
       toast.success("View saved");
     } catch (e: any) { toast.error(e?.detail || "Could not save view"); }
   }, [q, kpiFilter, followupView, priorityFilter, categoryFilter, tierFilter, ownerFilter, selectedFloorId]);
 
   const deleteSavedView = useCallback(async (id: string) => {
-    if (!mounted.current) return;
-    setSavedViews((prev) => prev.filter((v) => v.id !== id));
-    try { await api.delete(`/followups/saved-views/${id}`, { floorId: selectedFloorId }); } catch { /* best-effort */ }
+    if (!mounted.current || pendingViewDeletes.current.has(id)) return;
+    pendingViewDeletes.current.add(id);
+    setHiddenViewIds(new Set(pendingViewDeletes.current));
+    try {
+      await api.delete(`/followups/saved-views/${encodeURIComponent(id)}`, { floorId: selectedFloorId });
+      if (mounted.current) {
+        savedViewsVersion.current += 1;
+        setSavedViews(previous => previous.filter(view => view.id !== id));
+      }
+    } catch {
+      if (mounted.current) toast.error("Could not delete the saved view. It has been restored; try again.");
+    } finally {
+      pendingViewDeletes.current.delete(id);
+      // The pending overlay keeps the original order and concurrent additions
+      // available for rollback without replacing the full list snapshot.
+      if (mounted.current) setHiddenViewIds(new Set(pendingViewDeletes.current));
+    }
   }, [selectedFloorId]);
 
   // ── Export ───────────────────────────────────────────────────────────────
@@ -1170,7 +1224,7 @@ function FollowupsWorkspace() {
       renderSectionFooter={({ section }) =>
         section.bucket === visibleSections[visibleSections.length - 1]?.bucket ? paginationFooter : null
       }
-      renderItem={({ item: f }) => <View style={{ paddingHorizontal: horizontalPadding, marginBottom: spacing.sm }}><MemoFollowupCard f={f} floorNames={floors} active={f.id === selectedId} assignees={assignees} rank={isSanitary ? undefined : rankMap.get(f.id)} checked={selectedIds.has(f.id)} onToggleSelect={toggleSelect} onPress={selectCard} onCall={contact} onWhatsApp={contact} onEmail={contact} onComplete={completeFollowup} onSnooze={snoozeFollowup} onCustomSnooze={setCustomSnoozeFor} onPushDays={pushDue} onAssign={assignFollowup} onMarkLost={(item) => { setLossActionFor(item); setCallOutcomeFor(item); }} onDismiss={dismissFollowup} canDelete={canDeleteFollowups} onDelete={setDeleteTarget} onOpenDoc={openRelatedDocument} onCreateSelection={canCreateTileSelection ? createSelection : undefined} /></View>}
+      renderItem={({ item: f }) => <View pointerEvents={pendingPatches.has(f.id) ? "none" : "auto"} accessibilityState={{ busy: pendingPatches.has(f.id) }} style={{ paddingHorizontal: horizontalPadding, marginBottom: spacing.sm }}><MemoFollowupCard f={f} floorNames={floors} active={f.id === selectedId} assignees={assignees} rank={isSanitary ? undefined : rankMap.get(f.id)} checked={selectedIds.has(f.id)} onToggleSelect={toggleSelect} onPress={selectCard} onCall={contact} onWhatsApp={contact} onEmail={contact} onComplete={completeFollowup} onSnooze={snoozeFollowup} onCustomSnooze={setCustomSnoozeFor} onPushDays={pushDue} onAssign={assignFollowup} onMarkLost={(item) => { setLossActionFor(item); setCallOutcomeFor(item); }} onDismiss={dismissFollowup} canDelete={canDeleteFollowups} onDelete={setDeleteTarget} onOpenDoc={openRelatedDocument} onCreateSelection={canCreateTileSelection ? createSelection : undefined} /></View>}
     />
     );
   };
@@ -1209,6 +1263,9 @@ function FollowupsWorkspace() {
         }
       /> : null}
 
+      {pendingPatches.size ? <Text testID="followup-pending-count" accessibilityLiveRegion="polite" style={[type.caption, { paddingHorizontal: pagePad, paddingVertical: spacing.sm }]}>
+        Saving {pendingPatches.size} follow-up{pendingPatches.size === 1 ? "" : "s"}…
+      </Text> : null}
       {bulkResult ? (
         <View style={{ paddingHorizontal: pagePad, paddingTop: spacing.sm }}>
           <Card>
@@ -1320,7 +1377,7 @@ function FollowupsWorkspace() {
         testID="confirm-delete-followup"
       />
       <SavedViewsSheet
-        visible={savedViewsSheet} onClose={() => setSavedViewsSheet(false)} views={savedViews}
+        visible={savedViewsSheet} onClose={() => setSavedViewsSheet(false)} views={visibleSavedViews}
         onApply={applySavedView} onSave={saveCurrentView} onDelete={deleteSavedView}
       />
       <ShortcutHelpSheet visible={shortcutHelp} onClose={() => setShortcutHelp(false)} />

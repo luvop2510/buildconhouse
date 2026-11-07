@@ -14,10 +14,17 @@ from __future__ import annotations
 
 import secrets
 from datetime import datetime, timedelta, timezone
+from urllib.parse import parse_qsl, quote, unquote, urlencode, urlsplit
 
 from db import db
 
 _TTL_SECONDS = 60
+
+
+def canonical_download_target(path: str, query: list[tuple[str, str]]) -> str:
+    """Encode decoded URL components without merging query keys or values."""
+    encoded_query = urlencode(query)
+    return quote(path, safe="/") + ("?" + encoded_query if encoded_query else "")
 
 
 async def ensure_download_token_indexes() -> None:
@@ -32,6 +39,9 @@ async def create_download_token(
     target: str | None = None, *, kind: str = "staff",
 ) -> str:
     token = secrets.token_urlsafe(32)
+    if target:
+        parsed = urlsplit(target)
+        target = canonical_download_target(unquote(parsed.path), parse_qsl(parsed.query, keep_blank_values=True))
     now = datetime.now(timezone.utc)
     await db.download_tokens.insert_one({
         "token": token,

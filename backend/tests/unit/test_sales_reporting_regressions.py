@@ -46,6 +46,16 @@ class Collection:
         self.queries.append(query)
         return Cursor([doc for doc in self.docs if matches(doc, query)])
 
+    def aggregate(self, pipeline):
+        query = pipeline[0]["$match"]
+        self.queries.append(query)
+        totals = {}
+        for doc in self.docs:
+            if matches(doc, query):
+                month = doc["ordered_at"][:7]
+                totals[month] = totals.get(month, 0) + float(doc.get("grand_total") or 0)
+        return Cursor([{"_id": month, "total": total} for month, total in totals.items()])
+
 
 def order(month, total=100, **overrides):
     return {
@@ -81,6 +91,23 @@ def test_forecast_excludes_current_month_other_staff_and_floors(monkeypatch):
     ))
     assert result["monthly_history"] == [600, 700, 800]
     assert result["forecast"] == 700
+
+
+def test_forecast_resolves_brand_once_and_keeps_zero_revenue_months(monkeypatch):
+    database = SimpleNamespace(
+        products=Collection([{"id": "p1", "brand_id": "b1", "floor_id": "ground-floor"}]),
+        quotations=Collection([order(month, 0) for month in (6, 7, 8)] +
+                              [order(8, 9999, items=[{"product_id": "p2"}])]),
+    )
+    monkeypatch.setattr(workspaces, "db", database)
+    result = asyncio.run(workspaces._forecast(
+        AnalyticsFilter(floor_id="ground-floor", brand_id="b1"), ["ground-floor"],
+        datetime(2026, 9, 5, tzinfo=timezone.utc),
+    ))
+    assert result["monthly_history"] == [0, 0, 0]
+    assert result["months_used"] == 3
+    assert result["forecast"] == 0
+    assert len(database.products.queries) == len(database.quotations.queries) == 1
 
 
 def test_breakdown_and_order_filters_include_the_same_orders():

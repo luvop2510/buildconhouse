@@ -337,9 +337,9 @@ async def create_session(
 
 def _download_request_target(request: Request) -> str:
     """Canonical path+query used to bind a browser download token."""
+    from services.download_tokens import canonical_download_target
     pairs = [(key, value) for key, value in request.query_params.multi_items() if key != "dl"]
-    query = "&".join(f"{key}={value}" for key, value in pairs)
-    return f"{request.url.path}{'?' + query if query else ''}"
+    return canonical_download_target(request.scope["path"], pairs)
 
 
 async def get_current_user(
@@ -373,10 +373,12 @@ async def get_current_user(
         )
         _enforce_password_change(doc, request, kind="staff")
         user = apply_effective_floor_ids(UserPublic(**apply_staff_password_policy(doc)))
-        # The header wins when present (it can be, for a fetch()-based
-        # download); otherwise replay the floor recorded at mint time so the
-        # download stays scoped to the unit the user was actually in.
-        effective_floor = x_floor_id or record.get("floor_id")
+        # The download is a capability for the minting floor. Possession of
+        # its opaque token must not grant exports from the actor's other floors.
+        recorded_floor = record.get("floor_id")
+        if recorded_floor and x_floor_id and x_floor_id != recorded_floor:
+            raise HTTPException(status_code=403, detail="Download link belongs to a different floor")
+        effective_floor = recorded_floor or x_floor_id
         if effective_floor:
             allowed = accessible_floor_ids(user)
             if allowed is not None and effective_floor not in allowed:

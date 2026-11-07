@@ -74,16 +74,27 @@ async def _forecast(f: AnalyticsFilter, floors, now: datetime | None = None) -> 
     """
     now = now or datetime.now(timezone.utc)
     end_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    monthly: list[float] = []
-    months_with_orders = 0
-    for i in range(3, 0, -1):
+    boundaries = []
+    for i in range(3, -1, -1):
         month_index = end_month.month - 1 - i
         start = end_month.replace(year=end_month.year + month_index // 12, month=month_index % 12 + 1)
-        end = start.replace(month=start.month % 12 + 1, year=start.year + (start.month == 12))
-        match = await _ordered_match(db, f, floors, (start.isoformat(), end.isoformat()))
-        rows = await db.quotations.find(match, {"_id": 0, "grand_total": 1}).to_list(None)
-        months_with_orders += bool(rows)
-        monthly.append(sum(float(row.get("grand_total") or 0) for row in rows))
+        boundaries.append(start.isoformat())
+    match = await _ordered_match(db, f, floors, (boundaries[0], boundaries[-1]))
+    # Fold the complete period in Mongo. Only three totals cross the network,
+    # and a brand filter is resolved once for the whole reporting window.
+    totals = await db.quotations.aggregate([
+        {"$match": match},
+        {"$group": {
+            "_id": {"$substrBytes": ["$ordered_at", 0, 7]},
+            "total": {"$sum": {"$convert": {
+                "input": {"$cond": [{"$eq": ["$grand_total", ""]}, 0, "$grand_total"]},
+                "to": "double", "onNull": 0,
+            }}},
+        }},
+    ]).to_list(3)
+    by_month = {row["_id"]: row["total"] for row in totals}
+    monthly = [by_month.get(start[:7], 0) for start in boundaries[:-1]]
+    months_with_orders = len(by_month)
     available = months_with_orders == 3
     return {
         "months_used": months_with_orders,

@@ -507,6 +507,30 @@ async def portal_quotations(cust: CustomerPublic = Depends(get_current_customer)
     return docs
 
 
+@router.get("/portal/quotations/page")
+async def portal_quotations_page(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=50),
+    q: str = Query("", max_length=120),
+    cust: CustomerPublic = Depends(get_current_customer),
+):
+    query = {"customer_id": cust.id}
+    if q.strip():
+        literal = re.escape(q.strip())
+        query["$or"] = [{field: {"$regex": literal, "$options": "i"}} for field in ("number", "status")]
+    projection = {
+        "_id": 0,
+        **dict.fromkeys(("id", "number", "status", "grand_total", "created_at", "valid_until"), 1),
+        "item_count": {"$size": {"$ifNull": ["$items", []]}},
+        "revision_count": {"$size": {"$ifNull": ["$revisions", []]}},
+    }
+    items, total = await asyncio.gather(
+        db.quotations.find(query, projection).sort([("created_at", -1), ("id", -1)]).skip(skip).limit(limit).to_list(limit),
+        db.quotations.count_documents(query),
+    )
+    return {"items": items, "total": total, "has_more": skip + len(items) < total}
+
+
 @router.get("/portal/quotations/{quotation_id}")
 async def portal_quotation_detail(quotation_id: str, cust: CustomerPublic = Depends(get_current_customer)):
     """Read-only detail view for the customer portal — full line items plus a

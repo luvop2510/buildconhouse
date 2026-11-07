@@ -12,7 +12,7 @@ from fastapi import APIRouter, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.middleware.cors import CORSMiddleware
-from starlette.middleware.gzip import GZipMiddleware
+from starlette.middleware.gzip import DEFAULT_EXCLUDED_CONTENT_TYPES, GZipMiddleware
 
 from middleware import SecurityHeadersMiddleware
 from services.request_limits import RequestBodyLimitMiddleware
@@ -475,7 +475,15 @@ app.add_middleware(RequestBodyLimitMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 # Mobile clients and the hosted web app receive several JSON-heavy responses.
 # Compress them at the API boundary; images already use their native formats.
-app.add_middleware(GZipMiddleware, minimum_size=500, compresslevel=6)
+app.add_middleware(
+    GZipMiddleware, minimum_size=500, compresslevel=6,
+    exclude_content_types=(
+        *DEFAULT_EXCLUDED_CONTENT_TYPES,
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ),
+)
 
 # The API receives bearer credentials. Production browser cookies terminate
 # at the same-origin proxies, which enforce Origin/CSRF and translate them to

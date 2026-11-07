@@ -8,6 +8,7 @@
 // brand rail (and anywhere else a brand badge is rendered) — Grohe, Hansgrohe,
 // Vitra and Geberit ship real logos; unlisted brands use an initials badge.
 import { Image, ImageStyle, StyleProp } from "react-native";
+import { buildconLogoSource } from "./brand-logo-source";
 
 // Native aspect ratio of the source lockup (1414×412) — always size by height
 // and let width follow, so the wordmark never looks stretched.
@@ -24,7 +25,7 @@ export function BuildConLogo({
 }) {
   return (
     <Image
-      source={require("@/assets/brands/buildcon-logo.png")}
+      source={buildconLogoSource}
       resizeMode="contain"
       accessibilityLabel="BuildCon House — Let you live better"
       style={[{ height, width: height * BUILDCON_LOGO_RATIO, borderRadius: radius }, style]}

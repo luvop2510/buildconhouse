@@ -7,7 +7,7 @@ import { createWorker } from './web-worker.mjs';
 const root = resolve('dist/client');
 const port = Number(process.env.LOCAL_PORT || 8090);
 const worker = createWorker(process.env.BACKEND_URL || 'http://127.0.0.1:8010');
-const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml', '.ttf': 'font/ttf', '.woff2': 'font/woff2' };
+const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.webp': 'image/webp', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml', '.ttf': 'font/ttf', '.woff2': 'font/woff2' };
 const env = { ASSETS: { async fetch(request) {
   const pathname = decodeURIComponent(new URL(request.url).pathname);
   const target = resolve(root, `.${pathname}`);

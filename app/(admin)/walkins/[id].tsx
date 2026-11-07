@@ -11,7 +11,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { LeadScopeSheet } from "@/src/components/leads/LeadScopeSheet";
 import { walkinsApi, type WalkIn } from "@/src/api/walkins";
-import { setSelectedFloorId } from "@/src/hooks/use-floor-access";
+import { setSelectedFloorId, useFloorAccess } from "@/src/hooks/use-floor-access";
 import { toast } from "@/src/components/Toast";
 import { useAuth } from "@/src/state/auth";
 import { hasGrantAccess } from "@/src/team-delegation";
@@ -37,6 +37,13 @@ const NEXT_STATUS: Record<string, { value: string; label: string }[]> = {
 
 export default function WalkInDetail() {
   const { id, floor_id } = useLocalSearchParams<{ id: string; floor_id?: string }>();
+  const { staff } = useAuth();
+  const { selectedFloorId } = useFloorAccess();
+  return <WalkInWorkspace key={`${staff?.id || ""}:${floor_id || selectedFloorId}:${id}`} />;
+}
+
+function WalkInWorkspace() {
+  const { id, floor_id } = useLocalSearchParams<{ id: string; floor_id?: string }>();
   const requestOptions = floor_id ? { floorId: floor_id } : undefined;
   const router = useRouter();
   const { isPhone } = useBp();
@@ -44,8 +51,16 @@ export default function WalkInDetail() {
   const { staff } = useAuth();
   const requestId = useRef(0);
   const deleting = useRef(false);
+  const pendingCommand = useRef(false);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [w, setW] = useState<WalkIn | null>(null);
+  const [confirmedWalkin, setW] = useState<WalkIn | null>(null);
+  const [pendingPatch, setPendingPatch] = useState<Partial<WalkIn> | null>(null);
+  const w = confirmedWalkin && pendingPatch ? { ...confirmedWalkin, ...pendingPatch } : confirmedWalkin;
   const [timeline, setTimeline] = useState<Record<string, any>[]>([]);
   const [timelineLoading, setTimelineLoading] = useState(false);
   const [timelineError, setTimelineError] = useState(false);
@@ -85,34 +100,48 @@ export default function WalkInDetail() {
   }, [floor_id]);
 
   const updateStatus = async (status: string) => {
+    if (!mounted.current || !w || !canUpdate || pendingCommand.current) return;
     if (status === "lost" && !notes.trim()) {
       toast.error("Add a note before marking this client as lost");
       return;
     }
+    pendingCommand.current = true;
+    requestId.current += 1;
+    setPendingPatch({ status: status as WalkIn["status"], ...(status === "lost" ? { notes: notes.trim() } : {}) });
     setBusy(true);
     try {
-      await walkinsApi.update(id, { status: status as any, ...(status === "lost" ? { notes: notes.trim() } : {}) }, requestOptions);
+      const updated = await walkinsApi.update(id, { status: status as WalkIn["status"], ...(status === "lost" ? { notes: notes.trim() } : {}) }, requestOptions);
+      if (!mounted.current) return;
+      requestId.current += 1;
+      setW(updated);
       setLostOpen(false);
       toast.success("Walk-in updated");
-      load();
+      void load();
     } catch (e: any) {
-      toast.error(e?.detail || "Could not update Walk-in");
+      if (mounted.current) {
+        toast.error(`${e?.detail || "Could not confirm the update"}. The previous walk-in status has been restored.`);
+        void load();
+      }
     } finally {
-      setBusy(false);
+      pendingCommand.current = false;
+      if (mounted.current) { setPendingPatch(null); setBusy(false); }
     }
   };
 
   const visitShowroom = async () => {
+    if (!mounted.current || pendingCommand.current) return;
+    pendingCommand.current = true;
     setBusy(true);
     try {
       const targetFloor = w?.floor_id || floor_id;
       const transfer = await walkinsApi.visitShowroom(id, targetFloor ? { floorId: targetFloor } : requestOptions);
+      if (!mounted.current) return;
       toast.success("Transferred to Visit Showroom follow-ups");
       if (!hasModuleAccess("followups")) { void load(); return; }
       if (targetFloor) void setSelectedFloorId(targetFloor).catch(() => {});
       router.push(`/(admin)/followups?workspace=visit_showroom&showroom_followup=${encodeURIComponent(transfer.followup_id)}` as any);
-    } catch (e: any) { toast.error(e?.detail || "Could not transfer to follow-ups"); }
-    finally { setBusy(false); }
+    } catch (e: any) { if (mounted.current) toast.error(e?.detail || "Could not transfer to follow-ups"); }
+    finally { pendingCommand.current = false; if (mounted.current) setBusy(false); }
   };
 
   const whatsApp = async () => {
@@ -125,16 +154,28 @@ export default function WalkInDetail() {
   };
 
   const reassign = async (salespersonId: string) => {
+    if (!mounted.current || !w || !canUpdate || pendingCommand.current) return;
+    pendingCommand.current = true;
+    requestId.current += 1;
+    const assignee = assignees.find(person => person.id === salespersonId);
+    setPendingPatch({ salesperson_id: salespersonId, salesperson_name: assignee?.full_name || w.salesperson_name });
     setBusy(true);
     try {
-      await walkinsApi.reassign(id, salespersonId, requestOptions);
+      const updated = await walkinsApi.reassign(id, salespersonId, requestOptions);
+      if (!mounted.current) return;
+      requestId.current += 1;
+      setW(updated);
       toast.success("Salesperson reassigned");
       setReassignOpen(false); setSpSearch("");
-      load();
+      void load();
     } catch (e: any) {
-      toast.error(e?.detail || "Could not reassign");
+      if (mounted.current) {
+        toast.error(`${e?.detail || "Could not confirm reassignment"}. The previous salesperson has been restored.`);
+        void load();
+      }
     } finally {
-      setBusy(false);
+      pendingCommand.current = false;
+      if (mounted.current) { setPendingPatch(null); setBusy(false); }
     }
   };
 
@@ -143,16 +184,16 @@ export default function WalkInDetail() {
     ? hasGrantAccess(staff.access_grants, w.floor_id, "walkins", "delete")
     : ["owner", "admin", "manager"].includes(staff.role));
   const deleteWalkin = async () => {
-    if (!w || !canDelete || busy || deleting.current) return;
+    if (!w || !canDelete || busy || deleting.current || pendingCommand.current) return;
     deleting.current = true;
-    const request = requestId.current;
+    pendingCommand.current = true;
     setBusy(true);
     try {
       await walkinsApi.remove(w.id, w.floor_id);
-      if (request === requestId.current) router.replace("/(admin)/walkins" as any);
+      if (mounted.current) router.replace("/(admin)/walkins" as any);
     } catch (error: any) {
-      if (request === requestId.current) toast.error(error?.detail || "Could not delete walk-in");
-    } finally { deleting.current = false; if (request === requestId.current) setBusy(false); }
+      if (mounted.current) toast.error(error?.detail || "Could not delete walk-in");
+    } finally { deleting.current = false; pendingCommand.current = false; if (mounted.current) setBusy(false); }
   };
 
   const filteredAssignees = assignees.filter((a) => a.full_name.toLowerCase().includes(spSearch.trim().toLowerCase()));
@@ -181,7 +222,7 @@ export default function WalkInDetail() {
               {[w.reference_contact && `Ref: ${w.reference_contact}`, w.architect && `Architect: ${w.architect}`, w.builder && `Builder: ${w.builder}`].filter(Boolean).join(" · ")}
             </Text>
           ) : null}
-          <Text style={[type.captionStrong, { color: colors.brandHover, marginTop: 4 }]}>Status: {w.status.replace(/_/g, " ")}</Text>
+          <Text style={[type.captionStrong, { color: colors.brandHover, marginTop: 4 }]}>Status: {w.status.replace(/_/g, " ")}{pendingPatch ? " · Saving…" : ""}</Text>
         </Card>
 
         <ListRow

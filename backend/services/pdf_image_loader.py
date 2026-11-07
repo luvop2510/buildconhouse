@@ -8,12 +8,12 @@ network workers for each PDF.
 from __future__ import annotations
 
 from collections import OrderedDict
-from concurrent.futures import ThreadPoolExecutor, wait
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from dataclasses import dataclass
 import ipaddress
 import os
 import socket
-from threading import BoundedSemaphore, Lock
+from threading import BoundedSemaphore, Event, Lock
 from time import monotonic
 from typing import Callable, Iterable
 from urllib.parse import urljoin, urlparse
@@ -97,6 +97,7 @@ _cache_bytes = 0
 _cache_lock = Lock()
 _fetch_slots = BoundedSemaphore(MAX_CONCURRENT_FETCHES)
 _executor = ThreadPoolExecutor(max_workers=MAX_CONCURRENT_FETCHES, thread_name_prefix="pdf-image")
+_prefetch_slots = BoundedSemaphore(MAX_CONCURRENT_FETCHES * 2)
 _client = httpx.Client(timeout=httpx.Timeout(connect=2.0, read=5.0, write=5.0, pool=2.0), follow_redirects=False)
 _metrics = {"requests": 0, "cache_hits": 0, "failures": 0, "image_bytes": 0, "queue_ms": 0.0, "duration_ms": 0.0, "circuit_rejections": 0, "capacity_rejections": 0}
 _metrics_lock = Lock()
@@ -291,21 +292,71 @@ def remote_image_bytes(url: str) -> bytes | None:
     return data
 
 
-def prefetch_urls(urls: Iterable[str], fetch: Callable[[str], bytes | None] = remote_image_bytes, *, workers: int = MAX_CONCURRENT_FETCHES, timeout: float = 8.0) -> None:
-    """Use the global worker pool, with a per-PDF concurrency budget."""
-    unique = list(dict.fromkeys(urls))
-    if not unique:
-        return
-    budget = BoundedSemaphore(max(1, min(workers, MAX_CONCURRENT_FETCHES)))
+def prefetch_urls(urls: Iterable[str], fetch: Callable[[str], bytes | None] = remote_image_bytes, *, workers: int = MAX_CONCURRENT_FETCHES, timeout: float = 8.0) -> dict[str, bytes | None]:
+    """Capture available images with bounded queues and a per-document deadline."""
+    results: dict[str, bytes | None] = {}
+    remaining = []
+    for url in dict.fromkeys(urls):
+        if fetch is remote_image_bytes:
+            cached = _cache_get(url)
+            host = (urlparse(url).hostname or "").lower().rstrip(".")
+            with _circuit_lock:
+                state = _host_circuits.get(host)
+                unavailable = bool(state and (state.probing or state.open_until > monotonic()))
+            if cached is not None or unavailable:
+                # These outcomes need no worker. A separate stalled dependency
+                # must not hide cached photos or delay an already-open circuit.
+                results[url] = cached
+                with _metrics_lock:
+                    _metrics["requests"] += 1
+                    _metrics["cache_hits" if cached is not None else "circuit_rejections"] += 1
+                continue
+        remaining.append(url)
+    deadline = monotonic() + max(0.1, timeout)
+    pending = set()
+    iterator = iter(remaining)
+    exhausted = False
+    closed = Event()
 
-    def run(url: str) -> bytes | None:
-        with budget:
-            return fetch(url)
+    def run(url: str) -> None:
+        if not closed.is_set() and monotonic() < deadline:
+            results[url] = fetch(url)
 
-    futures = [_executor.submit(run, url) for url in unique]
-    _, pending = wait(futures, timeout=max(0.1, timeout))
-    for future in pending:
-        future.cancel()
+    try:
+        while not exhausted or pending:
+            # Submit only runnable work. A semaphore inside an executor worker
+            # parks threads that another document could use for healthy images.
+            while not exhausted and len(pending) < max(1, min(workers, MAX_CONCURRENT_FETCHES)):
+                url = next(iterator, None)
+                if url is None or monotonic() >= deadline:
+                    exhausted = True
+                    break
+                if not _prefetch_slots.acquire(blocking=False):
+                    with _metrics_lock:
+                        _metrics["capacity_rejections"] += 1
+                    exhausted = True
+                    break
+                try:
+                    future = _executor.submit(run, url)
+                except Exception:
+                    _prefetch_slots.release()
+                    raise
+                future.add_done_callback(lambda _future: _prefetch_slots.release())
+                pending.add(future)
+            if not pending:
+                break
+            done, pending = wait(pending, timeout=max(0, deadline - monotonic()), return_when=FIRST_COMPLETED)
+            if not done:
+                break
+    finally:
+        # Canceled Futures remain in ThreadPoolExecutor's queue until a worker
+        # dequeues them. Retain admission until each queued wrapper actually
+        # finishes, and skip expired work there, so repeated timeouts cannot
+        # accumulate canceled work items behind stalled network calls.
+        closed.set()
+    # Running fetches may warm the global cache later. This document receives
+    # a stable snapshot and never waits for them after its deadline.
+    return dict(results)
 
 
 def image_loader_metrics() -> dict[str, float | int]:

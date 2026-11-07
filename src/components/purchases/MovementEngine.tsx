@@ -70,12 +70,10 @@ const STAGE_ICON: Record<string, keyof typeof Feather.glyphMap> = {
   transfer_out: "log-out", split_in: "git-branch", split_out: "git-commit",
 };
 
-let _stagesCache: StageMeta[] | null = null;
 export async function fetchStages(force = false): Promise<StageMeta[]> {
-  if (_stagesCache && !force) return _stagesCache;
-  const s = await api.get<StageMeta[]>("/purchases/stages");
-  _stagesCache = s;
-  return s;
+  // Counts belong to the current account/floor and change after movements.
+  // Reuse the API cache so mutations, logout and floor changes invalidate them.
+  return api.get<StageMeta[]>("/purchases/stages", { cacheMs: force ? 0 : 2000 });
 }
 
 export function fmtDateTime(iso?: string | null): string {

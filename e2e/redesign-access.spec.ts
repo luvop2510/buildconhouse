@@ -161,10 +161,15 @@ test('critical analytics drilldown preserves period and removes an error after r
 
 test('critical customer can find a shared document without changing its data', async ({ page }) => {
   await mockSession(page, '/quotes');
-  await page.route('**/api/portal/quotations', route => route.fulfill({ json: [
-    { id: 'one', number: 'Q-101', status: 'draft', grand_total: 100, created_at: '2026-09-01T00:00:00Z' },
-    { id: 'two', number: 'Q-102', status: 'confirmed', grand_total: 200, created_at: '2026-09-02T00:00:00Z' },
-  ] }));
+  const quotations = [
+    { id: 'one', number: 'Q-101', status: 'draft', grand_total: 100, created_at: '2026-09-01T00:00:00Z', item_count: 3, revision_count: 0 },
+    { id: 'two', number: 'Q-102', status: 'confirmed', grand_total: 200, created_at: '2026-09-02T00:00:00Z', item_count: 2, revision_count: 1 },
+  ];
+  await page.route('**/api/portal/quotations/page?**', route => {
+    const params = new URL(route.request().url()).searchParams;
+    const matches = quotations.filter(row => `${row.number} ${row.status}`.toLowerCase().includes((params.get('q') || '').toLowerCase()));
+    return route.fulfill({ json: { items: matches, total: matches.length, has_more: false } });
+  });
   await page.goto('/quotes');
   await page.getByTestId('portal-quote-search').fill('Q-102');
   await expect(page.getByTestId('quote-row-two')).toBeVisible();
@@ -240,4 +245,36 @@ test('critical expired sessions return to sign-in without rendering protected da
   await page.goto('/customers');
   await expect(page).toHaveURL(/login/);
   await expect(page.getByRole('form', { name: 'Staff sign-in' })).toBeVisible();
+});
+
+
+test('critical customer quotation pages render twenty summaries and recover a failed page', async ({ page }) => {
+  await mockSession(page, '/quotes');
+  const rows = Array.from({ length: 45 }, (_, index) => ({ id: `page-${index}`, number: `Q-${index}`, status: 'draft', grand_total: index,
+    created_at: '2026-11-01T00:00:00Z', item_count: 10, revision_count: 2 }));
+  let failPage = true;
+  const requests: URLSearchParams[] = [];
+  await page.route('**/api/portal/quotations/page?**', route => {
+    const params = new URL(route.request().url()).searchParams;
+    requests.push(params);
+    const skip = Number(params.get('skip')), limit = Number(params.get('limit'));
+    if (skip === 20 && failPage) return route.fulfill({ status: 503, json: { detail: 'Fixture temporary outage' } });
+    return route.fulfill({ json: { items: rows.slice(skip, skip + limit), total: rows.length, has_more: skip + limit < rows.length } });
+  });
+  await page.goto('/quotes');
+  await expect(page.getByTestId('quote-row-page-0')).toBeVisible();
+  await expect(page.locator('[data-testid^="quote-row-"]')).toHaveCount(20);
+  await page.getByRole('button', { name: 'Next', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Try again', exact: true })).toBeVisible();
+  failPage = false;
+  await page.getByRole('button', { name: 'Try again', exact: true }).click();
+  await expect(page.getByTestId('quote-row-page-20')).toBeVisible();
+  await expect(page.locator('[data-testid^="quote-row-"]')).toHaveCount(20);
+  await page.getByRole('button', { name: 'Next', exact: true }).click();
+  await expect(page.getByTestId('quote-row-page-40')).toBeVisible();
+  await expect(page.locator('[data-testid^="quote-row-"]')).toHaveCount(5);
+  await expect(page.getByRole('button', { name: 'Next', exact: true })).toBeDisabled();
+  await page.getByRole('button', { name: 'Previous', exact: true }).click();
+  await expect(page.getByTestId('quote-row-page-20')).toBeVisible();
+  expect(requests.every(params => params.get('limit') === '20')).toBe(true);
 });

@@ -770,9 +770,7 @@ def test_pdf_optional_images_share_one_prefetch_and_missing_images_are_not_refet
         return _png_bytes(60, 120) if "healthy" in url else None
     def prefetch(urls, fetch, **kwargs):
         batches.append(list(urls))
-        for url in urls:
-            if "late" not in url:
-                fetch(url)
+        return {url: fetch(url) for url in urls if "late" not in url}
     monkeypatch.setattr(pdf_generator, "_remote_image_bytes", fetch)
     monkeypatch.setattr(pdf_generator, "prefetch_urls", prefetch)
     doc = {"customer_name": "Images", "include_dimensions": True, "items": [

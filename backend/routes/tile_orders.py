@@ -1533,7 +1533,7 @@ async def list_dispatches(
     customer_id: Optional[str] = None, brand_id: Optional[str] = None, product: Optional[str] = None,
     dispatch_number: Optional[str] = None, chalan_number: Optional[str] = None, status: Optional[str] = None,
     date_from: Optional[str] = None, date_to: Optional[str] = None, search: Optional[str] = None,
-    page: int = 1, page_size: int = 50, sort: str = "date_desc",
+    page: int = Query(1, ge=1, le=2**31 - 1), page_size: int = Query(50, ge=1, le=200), sort: str = "date_desc",
     user: UserPublic = Depends(require_min_role("sales")),
 ):
     """Dispatch List — operational, dispatch-only view (Tile Orders workflow
@@ -1541,11 +1541,13 @@ async def list_dispatches(
     Release or Move-to-Godown event (those only ever appear on the
     Material Movement Register, see list_material_movements above). Built
     from TileDispatch + its 1:1 TileChalan, one row per Chalan line item."""
+    # Internal callers use the same defaults as FastAPI's HTTP validation.
+    page, page_size = getattr(page, "default", page), getattr(page_size, "default", page_size)
     filters: dict = {"is_deleted": False}
     if customer_id:
         filters["customer_id"] = filter_condition(customer_id)
     if dispatch_number:
-        filters["dispatch_number"] = {"$regex": dispatch_number, "$options": "i"}
+        filters["dispatch_number"] = {"$regex": re.escape(dispatch_number[:80]), "$options": "i"}
     if date_from or date_to:
         date_filter: dict = {}
         if date_from:

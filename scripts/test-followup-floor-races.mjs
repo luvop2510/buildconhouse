@@ -4,16 +4,18 @@ import test from 'node:test';
 import vm from 'node:vm';
 import ts from 'typescript';
 
-const source = readFileSync(new URL('../app/(admin)/followups.tsx', import.meta.url), 'utf8');
-assert.match(source, /<FollowupsWorkspace key=\{selectedFloorId\}/);
+const source = readFileSync(process.argv[2] || new URL('../app/(admin)/followups.tsx', import.meta.url), 'utf8');
+assert.match(source, /<FollowupsWorkspace key=\{`\$\{staff\?\.id/);
 const marker = '  // ── Filtering (100% client-side';
-const instrumented = source.replace('function FollowupsWorkspace()', 'export function FollowupsWorkspace()')
-  .replace(marker, '  return { loadList, loadDetail, refreshStatsQuiet, contact, rawItems, detail, stats, workspace, setWorkspace, q, setQ, followupView, setFollowupView, priorityFilter, setPriorityFilter, ownerFilter, setOwnerFilter };\n' + marker);
+const deleteAction = source.slice(source.indexOf('  const deleteSavedView ='), source.indexOf('  // ── Export'));
+const bulkActions = source.slice(source.indexOf('  const runBulk ='), source.indexOf('  // ── Saved Views'));
+const instrumented = source.replace(deleteAction, '').replace(bulkActions, '').replace('function FollowupsWorkspace()', 'export function FollowupsWorkspace()')
+  .replace(marker, deleteAction + bulkActions + '  return { deleteFollowup, setDeleteTarget, pendingDeleteIds, setSelectedId, runBulk, bulkComplete, bulkSnooze, setSelectedIds, selectedIds, bulkResult, completeFollowup, snoozeFollowup, customSnooze, pushDue, dismissFollowup, pendingPatches, confirmedItems, patchLocal, deleteSavedView, savedViews, setSavedViews, visibleSavedViews: typeof visibleSavedViews === \'undefined\' ? savedViews : visibleSavedViews, loadList, loadDetail, refreshStatsQuiet, contact, rawItems, detail, stats, workspace, setWorkspace, q, setQ, followupView, setFollowupView, priorityFilter, setPriorityFilter, ownerFilter, setOwnerFilter };\n' + marker);
 assert.notEqual(instrumented, source);
 const compiled = ts.transpileModule(instrumented, { compilerOptions: {
   module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX,
 } }).outputText;
-const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
+const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
 const filters = {};
 vm.runInNewContext(ts.transpileModule(readFileSync(new URL('../src/utils/filters.ts', import.meta.url), 'utf8'), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
@@ -44,7 +46,7 @@ function fixture(floor = 'first-floor') {
     '@/src/state/auth': { useAuth: () => ({ staff: { role: 'owner', id: 'owner' } }) },
     './followup-assignments': { MANAGER_ROLES: ['owner'] },
     '@/src/theme/tokens': { colors: {}, spacing: {}, type: new Proxy({}, { get: () => ({}) }), radius: {}, elevation: {} },
-    '@/src/api/client': { api: { get: request, post: request } },
+    '@/src/api/client': { api: { get: request, post: request, patch: request, delete: request } },
     '@/src/utils/filters': filters,
     '@/src/components/Toast': { toast: { success: text => notices.push(text), error: text => notices.push(text) } },
   };
@@ -186,4 +188,151 @@ test('opening call outcome initializes before the first choice and Lost reason',
   const actual = h.render();
   assert.equal(actual.outcome, 'lost', 'delayed initialization cannot erase the first selected outcome');
   assert.equal(actual.notes, 'Client chose another vendor', 'delayed initialization cannot erase the first Lost reason');
+});
+
+const view = id => ({ id, name: `View ${id}`, filters: {} });
+test('saved view deletion is immediate, coalesces duplicate taps and rolls back visibly on failure', async () => {
+  const h = fixture();
+  h.state.setSavedViews([view('one'), view('two')]); await h.settle();
+  const action = h.state.deleteSavedView;
+  const pending = action('one'); const duplicate = action('one');
+  await h.settle();
+  assert.deepEqual(Array.from(h.state.visibleSavedViews, row => row.id), ['two'], 'optimistic removal before response');
+  const writes = h.requests.filter(row => row.path === '/followups/saved-views/one');
+  assert.equal(writes.length, 1, 'same-frame duplicate taps issue one delete');
+  h.state.setSavedViews(rows => [view('new'), ...rows]); await h.settle();
+  writes[0].reject({ detail: 'Fixture unavailable' }); await Promise.all([pending, duplicate]); await h.settle();
+  assert.deepEqual(Array.from(h.state.visibleSavedViews, row => row.id), ['new', 'one', 'two'], 'rollback preserves newer rows and original order');
+  assert.match(h.notices.at(-1), /restored/i);
+  const retry = h.state.deleteSavedView('one');
+  h.requests.at(-1).resolve({ ok: true }); await retry; await h.settle();
+  assert.deepEqual(Array.from(h.state.visibleSavedViews, row => row.id), ['new', 'two']);
+  h.unmount();
+});
+test('saved view responses cannot restore data or notices in an abandoned workspace', async () => {
+  const h = fixture(); h.state.setSavedViews([view('one')]); await h.settle();
+  const pending = h.state.deleteSavedView('one');
+  const request = h.requests.at(-1); h.unmount();
+  request.reject(new Error('old request')); await pending; await h.settle();
+  assert.equal(h.notices.length, 0);
+  assert.equal(h.state.savedViews.length, 1, 'unmounted action does not mutate confirmed source');
+});
+
+
+const followup = (id = 'one') => ({ id, status: 'open', bucket: 'today', customer_name: 'Fixture', customer: { name: 'Fixture' }, due_at: '2026-11-01T00:00:00Z', next_action: 'Call' });
+async function loadedInbox() {
+  const h = fixture();
+  h.requests.find(row => row.path.includes('/page?')).resolve({ items: [followup()], page: 1, has_more: false });
+  await h.settle(); return h;
+}
+for (const [action, args, status, bucket] of [
+  ['completeFollowup', [], 'done', 'completed'],
+  ['snoozeFollowup', ['1h'], 'snoozed', 'snoozed'],
+  ['customSnooze', ['2026-11-08T10:00:00Z'], 'snoozed', 'snoozed'],
+  ['pushDue', [7], 'open', 'this_week'],
+  ['dismissFollowup', [], 'dismissed', 'completed'],
+]) test(`${action} paints immediately, coalesces competing actions and restores on failure`, async () => {
+  const h = await loadedInbox();
+  const pending = h.state[action](h.state.rawItems[0], ...args);
+  const beforeDuplicate = h.requests.length;
+  const duplicate = h.state.completeFollowup(followup());
+  await h.settle();
+  assert.equal(h.requests.length, beforeDuplicate, 'one write per entity');
+  assert.equal(h.state.rawItems[0].status, status);
+  assert.equal(h.state.rawItems[0].bucket, bucket);
+  assert.equal(h.state.confirmedItems[0].status, 'open', 'pending patch never replaces confirmed record');
+  h.requests.at(-1).reject({ detail: 'unavailable' });
+  await Promise.all([pending, duplicate]); await h.settle();
+  assert.equal(h.state.rawItems[0].status, 'open');
+  assert.equal(h.state.rawItems[0].bucket, 'today');
+  assert.equal(h.state.pendingPatches.size, 0);
+  assert.match(h.notices.at(-1), /restored/);
+  h.unmount();
+});
+
+test('an old list or detail response cannot undo a confirmed optimistic change', async () => {
+  const h = await loadedInbox();
+  const refresh = h.state.loadList();
+  const staleList = h.requests.at(-1);
+  const details = h.state.loadDetail('one');
+  const staleDetail = h.requests.at(-1);
+  const saving = h.state.completeFollowup(followup());
+  h.requests.at(-1).resolve({ ...followup(), status: 'done', completed_at: '2026-11-07T10:00:00Z' });
+  await saving; await h.settle();
+  staleList.resolve({ items: [followup()], page: 1, has_more: false });
+  staleDetail.resolve({ followup: followup() });
+  await Promise.all([refresh, details]); await h.settle();
+  assert.equal(h.state.rawItems[0].status, 'done');
+  assert.equal(h.state.detail, null);
+  assert.equal(h.state.pendingPatches.size, 0);
+  h.unmount();
+});
+
+test('pending follow-up overlays survive concurrent refresh and discard work after unmount', async () => {
+  const h = await loadedInbox();
+  const saving = h.state.snoozeFollowup(followup(), '1h');
+  const write = h.requests.at(-1);
+  const refresh = h.state.loadList();
+  h.requests.at(-1).resolve({ items: [{ ...followup(), next_action: 'New description' }], page: 1, has_more: false });
+  await refresh; await h.settle();
+  assert.equal(h.state.rawItems[0].status, 'snoozed');
+  assert.equal(h.state.rawItems[0].next_action, 'New description');
+  h.unmount(); write.reject(new Error('old write')); await saving; await h.settle();
+  assert.equal(h.notices.length, 0);
+});
+
+
+test('bulk optimistic completion reconciles successes and restores only failed rows', async () => {
+  const h = fixture();
+  const first = followup('one'), second = followup('two');
+  h.requests.find(row => row.path.includes('/page?')).resolve({ items: [first, second], page: 1, has_more: false });
+  await h.settle(); h.state.setSelectedIds(new Set(['one', 'two'])); await h.settle();
+  h.state.bulkComplete(); await h.settle();
+  assert.equal(h.state.pendingPatches.size, 2);
+  assert.ok(h.state.rawItems.every(row => row.status === 'done'));
+  const writes = h.requests.filter(row => row.path.endsWith('/complete'));
+  await h.state.snoozeFollowup(first, '1h');
+  assert.equal(h.requests.filter(row => row.path.endsWith('/snooze')).length, 0, 'bulk commands also lock each entity');
+  writes[0].resolve({ ...first, status: 'done', completed_at: 'server-time' });
+  writes[1].reject(new Error('temporary outage')); await h.settle();
+  assert.equal(h.state.rawItems[0].status, 'done');
+  assert.equal(h.state.rawItems[0].completed_at, 'server-time');
+  assert.equal(h.state.rawItems[1].status, 'open');
+  assert.equal(h.state.pendingPatches.size, 0);
+  assert.deepEqual(Array.from(h.state.selectedIds), ['two']);
+  assert.deepEqual(Array.from(h.state.bulkResult.failedIds), ['two']);
+  h.unmount();
+});
+
+test('follow-up deletion hides immediately, admits one write and restores a failed deletion', async () => {
+  const h = await loadedInbox();
+  h.state.setDeleteTarget(followup()); await h.settle();
+  const remove = h.state.deleteFollowup;
+  const pending = remove(); const duplicate = remove(); await h.settle();
+  assert.equal(h.state.rawItems.length, 0);
+  assert.equal(h.state.confirmedItems.length, 1, 'confirmed list survives until acknowledgement');
+  const writes = h.requests.filter(row => row.path === '/followups/one');
+  assert.equal(writes.length, 1);
+  writes[0].reject(new Error('unavailable')); await Promise.all([pending, duplicate]); await h.settle();
+  assert.equal(h.state.rawItems[0].id, 'one');
+  assert.match(h.notices.at(-1), /restored/);
+  assert.equal(h.state.pendingDeleteIds.size, 0);
+  h.unmount();
+});
+
+test('confirmed follow-up deletion ignores stale refreshes and preserves another open detail', async () => {
+  const h = await loadedInbox();
+  h.state.setDeleteTarget(followup()); await h.settle();
+  const refresh = h.state.loadList(), stale = h.requests.at(-1);
+  const pending = h.state.deleteFollowup();
+  const write = h.requests.at(-1);
+  h.state.setSelectedId('two');
+  const detail = h.state.loadDetail('two');
+  h.requests.at(-1).resolve({ followup: followup('two') }); await detail; await h.settle();
+  write.resolve({ ok: true }); await pending; await h.settle();
+  stale.resolve({ items: [followup()], page: 1, has_more: false }); await refresh; await h.settle();
+  assert.equal(h.state.rawItems.length, 0);
+  assert.equal(h.state.detail.followup.id, 'two');
+  assert.equal(h.state.pendingDeleteIds.size, 0);
+  h.unmount();
 });

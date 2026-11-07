@@ -7,7 +7,7 @@ import ts from 'typescript';
 const source = readFileSync(new URL('../app/(admin)/walkins/index.tsx', import.meta.url), 'utf8');
 const marker = '  const pageHeader =';
 assert.ok(source.includes(marker));
-const compiled = ts.transpileModule(source.replace(marker, '  return { items, dashboard, loading, loadError, summaryError, search, searchQuery, savingSelections, activeScope, load, setSearch, setStatus, setSourceFilter, setSummaryView, scheduleSelection };\n' + marker), {
+const compiled = ts.transpileModule(source.replace(marker, '  return { items, confirmedItems, deleteWalkin, dashboard, loading, loadError, summaryError, search, searchQuery, savingSelections, activeScope, load, setSearch, setStatus, setSourceFilter, setSummaryView, scheduleSelection };\n' + marker), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
 }).outputText;
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
@@ -46,7 +46,7 @@ function fixture() {
     '@/src/utils/walkinSummary': { walkinSummaryFilters: view => view ? { summary: view } : {} },
     '@/src/theme/tokens': { colors: {}, spacing: {}, type: {} },
     '@/src/components/Toast': { toast: { success: message => notices.push({ success: message }), error: message => notices.push({ error: message }) } },
-    '@/src/api/walkins': { walkinsApi: { list: request('list'), dashboard: request('dashboard'), update: request('update'), listSources: async () => ({ sources: [] }) } },
+    '@/src/api/walkins': { walkinsApi: { remove: request('remove'), list: request('list'), dashboard: request('dashboard'), update: request('update'), listSources: async () => ({ sources: [] }) } },
   };
   const exports = {};
   vm.runInNewContext(compiled, { exports, require: name => modules[name] || {}, AbortController,
@@ -199,4 +199,35 @@ test('A to B to A and unmount cannot revive the first scope or publish notices',
   const list = f.calls('list').at(-1); f.unmount(); list.resolve([row('after-unmount')]); await f.settle();
   await f.state.scheduleSelection(row('after-unmount-write'));
   assert.equal(f.calls('update').length, 1); assert.equal(f.notices.length, 0);
+});
+
+test('walk-in deletion is immediate, coalesced and visibly restored on failure', async () => {
+  const f = fixture(); await f.ready(); const record = f.state.items[0];
+  const remove = f.state.deleteWalkin;
+  const pending = remove(record), duplicate = remove(record); await f.settle();
+  assert.equal(f.calls('remove').length, 1);
+  assert.equal(f.state.items.length, 0);
+  assert.equal(f.state.confirmedItems.length, 1);
+  await f.state.scheduleSelection(record); assert.equal(f.calls('update').length, 0);
+  f.calls('remove')[0].reject({ detail: 'Fixture unavailable' });
+  await Promise.all([pending, duplicate]); await f.settle();
+  assert.equal(f.state.items[0].id, record.id);
+  assert.match(f.notices.at(-1).error, /restored/);
+  f.unmount();
+});
+
+test('walk-in deletion fences a stale refresh after confirmation and isolates later floors', async () => {
+  const f = fixture(); await f.ready(); const record = f.state.items[0];
+  const refresh = f.state.load(), oldRead = f.calls('list').at(-1);
+  const pending = f.state.deleteWalkin(record);
+  f.calls('remove')[0].resolve({ ok: true }); await pending; await f.settle();
+  oldRead.resolve([record]); await refresh; await f.settle();
+  assert.equal(f.state.items.length, 0);
+  const second = f.state.deleteWalkin(record);
+  assert.equal(f.calls('remove').length, 2);
+  const inOtherFloor = f.calls('remove').at(-1);
+  f.changeFloor('first-floor'); await f.settle();
+  inOtherFloor.reject({ detail: 'Old floor write' }); await second; await f.settle();
+  assert.ok(!f.notices.some(notice => notice.error?.includes('Old floor')));
+  f.unmount();
 });

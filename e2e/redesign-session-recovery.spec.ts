@@ -49,3 +49,39 @@ test('critical revoked sessions still clear local identity and require sign in',
   await expect(page.getByTestId('session-recovery')).toHaveCount(0);
   await health.assertHealthy();
 });
+
+test('critical session sign out responds immediately and retains the device after failure', async ({ page }) => {
+  const health = captureRuntimeHealth(page);
+  await mockSession(page, '/settings', false);
+  const stamp = new Date().toISOString();
+  await page.route('**/api/auth/sessions', route => route.fulfill({ json: [
+    { id: 'current', current: true, device_label: 'This browser', login_method: 'password', created_at: stamp, last_seen_at: stamp },
+    { id: 'other', current: false, device_label: 'Other browser', login_method: 'password', created_at: stamp, last_seen_at: stamp },
+  ] }));
+  let release: (() => void) | undefined;
+  let fail = true;
+  let writes = 0;
+  await page.route('**/api/auth/sessions/other', async route => {
+    writes++;
+    await new Promise<void>(resolve => { release = resolve; });
+    await route.fulfill(fail ? { status: 503, json: { detail: 'Fixture failure' } } : { json: { ok: true } });
+  });
+  await page.goto('/settings');
+  const revoke = page.getByTestId('revoke-session-other');
+  await revoke.click();
+  await expect(page.getByText('Signing out…', { exact: true })).toBeVisible();
+  await expect(revoke).toBeDisabled();
+  await expect(page.getByTestId('logout-all-devices')).toBeDisabled();
+  await expect.poll(() => writes).toBe(1);
+  release!();
+  await expect(page.getByText(/Could not confirm sign out/)).toBeVisible();
+  await expect(revoke).toBeEnabled();
+  await expect(page.getByText('Other browser', { exact: true })).toBeVisible();
+  fail = false;
+  await revoke.click();
+  await expect.poll(() => writes).toBe(2);
+  release!();
+  await expect(revoke).toHaveCount(0);
+  await expect(page.getByText(/This browser/)).toBeVisible();
+  await health.assertHealthy();
+});

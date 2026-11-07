@@ -369,7 +369,11 @@ def patch_product_in_snapshot(product_id: str, updates: dict) -> None:
     in-memory snapshot was ever rebuilt from a source that doesn't share
     object identity (e.g. a cold reload mid-request).
     """
+    global _refresh_generation
     if _snapshot is None:
+        # A cold refresh may already have read the old product. Fence that
+        # unpublished build even though there is no live row to patch yet.
+        _refresh_generation += 1
         return
     row = _snapshot.product_by_id.get(product_id)
     if row is not None:
@@ -802,14 +806,14 @@ def _product_listing(product: dict, entry: dict) -> dict:
     return row
 
 
-def _listing_products(snapshot: CatalogSnapshot) -> list[dict]:
+def _listing_products(snapshot: CatalogSnapshot, products: tuple[dict, ...] | None = None) -> list[dict]:
     """Project workbook rows without changing canonical IDs or stored data.
 
     One SKU can occur in several sheets/sections. Filtering must happen after
     expansion, otherwise its later category placements silently disappear.
     """
     rows = []
-    for product in snapshot.products:
+    for product in snapshot.products if products is None else products:
         if not _is_catalog_product(product, snapshot):
             continue
         if product.get("_catalog_database_listing"):
@@ -1091,7 +1095,7 @@ async def product_by_id(product_id: str, floor_ids: Optional[list[str]] = None,
     if product and floor_ids is not None and product.get("floor_id") not in floor_ids:
         product = None
     if product and catalog_entry_id:
-        product = next((row for row in _listing_products(snapshot)
+        product = next((row for row in _listing_products(snapshot, (product,))
                         if row["id"] == product_id and row.get("listing_id") == catalog_entry_id), None)
     return hydrate_product(product, snapshot) if product else None
 
@@ -1423,7 +1427,8 @@ async def search_catalog(
         family["product_count"] += 1
         family["min_price"] = min(family["min_price"], product.get("price") or family["min_price"])
         family["max_price"] = max(family["max_price"], product.get("price") or family["max_price"])
-        family["variants"].append(_variant_summary(product, snapshot))
+        # Retain matching rows while counting; hydrate only the visible page.
+        family["variants"].append(product)
 
     grouped = [groups[key] for key in order][:limit]
     for family in grouped:
@@ -1431,7 +1436,7 @@ async def search_catalog(
         if sample and family.get("catalog_entry"):
             sample = _product_listing(sample, family["catalog_entry"])
         family_products = _family_listing_siblings(snapshot, sample) if sample else []
-        family["variants"] = [_variant_summary(p, snapshot) for p in family_products] or family["variants"]
+        family["variants"] = [_variant_summary(p, snapshot) for p in (family_products or family["variants"])]
         family["product_count"] = len(family["variants"])
         family.update(_size_metadata_for_products(family_products))
         media = snapshot.media_rows_by_product.get(family["sample_product_id"], ())

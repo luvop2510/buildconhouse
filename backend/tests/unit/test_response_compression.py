@@ -59,7 +59,10 @@ def test_small_json_is_not_compressed_and_http_client_parses_large_json():
     asyncio.run(run())
 
 
-@pytest.mark.parametrize("content_type", ["image/webp", "image/avif", "image/jpeg", "application/zip", "text/event-stream"])
+@pytest.mark.parametrize("content_type", ["image/webp", "image/avif", "image/jpeg", "application/zip", "text/event-stream",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"])
 def test_precompressed_formats_and_event_streams_are_not_recompressed(content_type):
     body = b"synthetic opaque payload" * 100
     headers, transmitted = wire_response(configured_compressor(body, content_type), "gzip")

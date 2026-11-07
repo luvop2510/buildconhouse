@@ -192,3 +192,89 @@ def test_drip_feed_cannot_keep_worker_past_stream_budget(monkeypatch, isolated):
         monkeypatch.setattr(loader, "_client", client)
         assert loader.remote_image_bytes("https://slow.example.test/drip") is None
     assert isolated[0] == 100 + loader.FETCH_STREAM_BUDGET_SECONDS
+
+
+@pytest.mark.parametrize("cached", [False, True])
+def test_cached_or_open_host_images_bypass_saturated_prefetch_pool(monkeypatch, isolated, cached):
+    from concurrent.futures import ThreadPoolExecutor
+    import pdf_generator
+
+    entered = threading.Barrier(loader.MAX_CONCURRENT_FETCHES + 1)
+    release = threading.Event()
+    url = "https://slow.example.test/available-without-network"
+    if cached:
+        loader._cache_put(url, b"cached image")
+    else:
+        state = loader._HostCircuit(failures=3, open_until=isolated[0] + 30)
+        loader._host_circuits["slow.example.test"] = state
+    monkeypatch.setattr(loader, "_fetch_uncached", lambda _url: pytest.fail("network was unnecessary"))
+    executor = ThreadPoolExecutor(max_workers=loader.MAX_CONCURRENT_FETCHES)
+    monkeypatch.setattr(loader, "_executor", executor)
+
+    def block():
+        entered.wait(timeout=2)
+        release.wait(2)
+
+    blockers = [executor.submit(block) for _ in range(loader.MAX_CONCURRENT_FETCHES)]
+    try:
+        entered.wait(timeout=2)
+        snapshot = pdf_generator.prefetch_product_images([{"image": url}], timeout=0.1)
+        assert snapshot == {url: b"cached image" if cached else None}
+        # The fast path must avoid even a canceled work item in the busy pool.
+        assert executor._work_queue.qsize() == 0
+    finally:
+        release.set()
+        executor.shutdown(wait=True)
+        assert all(future.done() for future in blockers)
+
+
+def test_small_prefetch_does_not_park_idle_workers_behind_its_budget(monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+
+    entered, release = threading.Event(), threading.Event()
+    healthy = []
+    executor = ThreadPoolExecutor(max_workers=loader.MAX_CONCURRENT_FETCHES)
+    monkeypatch.setattr(loader, "_executor", executor)
+
+    def slow(_url):
+        entered.set()
+        assert release.wait(2)
+        return None
+
+    thread = threading.Thread(target=loader.prefetch_urls, args=([f"slow-{i}" for i in range(10)], slow),
+                              kwargs={"workers": 1, "timeout": 0.5})
+    thread.start()
+    try:
+        assert entered.wait(2)
+        loader.prefetch_urls(["healthy"], lambda url: healthy.append(url), timeout=0.1)
+        assert healthy == ["healthy"]
+    finally:
+        release.set()
+        thread.join(timeout=2)
+        executor.shutdown(wait=True)
+        assert not thread.is_alive()
+
+def test_repeated_timeouts_keep_prefetch_queue_bounded_and_skip_expired_fetches(monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+
+    release, entered = threading.Event(), threading.Event()
+    executor = ThreadPoolExecutor(max_workers=1)
+    slots = threading.BoundedSemaphore(2)
+    monkeypatch.setattr(loader, "_executor", executor)
+    monkeypatch.setattr(loader, "_prefetch_slots", slots)
+    called = []
+    def block():
+        entered.set()
+        release.wait(2)
+    executor.submit(block)
+    try:
+        assert entered.wait(2)
+        for index in range(5):
+            assert loader.prefetch_urls([str(index)], lambda url: called.append(url), timeout=0.1) == {}
+        assert executor._work_queue.qsize() == 2
+    finally:
+        release.set()
+        executor.shutdown(wait=True)
+    assert called == []
+    assert slots.acquire(blocking=False)
+    assert slots.acquire(blocking=False)
