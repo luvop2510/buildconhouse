@@ -114,9 +114,9 @@ existing Starlette test-client deprecation warning. Three real local MongoDB
 integration cases pass in 1.37 seconds. The subsequent compression, download
 capability and image dependency regression run passes 84 cases, covering the
 additional Office archive compression exclusions. The complete suite after those
-exclusions passes 4,219 tests. Logs remain in `.cache/review/`, including
-`backend-accepted-source.log`, `backend-mongo-verified.log` and
-`backend-final-compression-security.log`.
+exclusions and the final seed concurrency change passes 4,219 tests. Logs remain
+in `.cache/review/`, including `backend-final-commit.log`,
+`concurrent-seed-final.log` and `backend-final-compression-security.log`.
 
 ## Client delivery and cache behavior
 
@@ -124,6 +124,8 @@ The canonical application is the repository-root Expo app. The historical
 `frontend/` tree is retained. Work lives on
 `codex/app-performance-security-review-2026-11-06` in the isolated `app-review`
 worktree based on verified upstream main. The dirty sibling checkout was preserved.
+Vercel's production alias resolved to deployment `dpl_8Hc33Rv7xUdBLKy1dFskFqyFbPde`
+with `main` at the baseline SHA above. This review is committed locally.
 
 The Tile Place Order alias now imports its shared screen asynchronously. The
 product editor loads when opened through one shared lazy boundary. Separate
@@ -229,8 +231,9 @@ integration checks join the existing isolated CI job, and new client checks join
 existing CI test commands.
 
 The combined source passes 83 affected checks, including TypeScript and the full
-backend suite. Zero-warning lint and the 205-page bundle gate pass. Focused
-browser checks pass 21 cases on desktop Chrome, mobile Chrome and WebKit. They
+backend suite. Zero-warning lint, the 205-page web bundle gate and unsigned iOS
+and Android Metro exports pass. Focused browser checks pass 21 cases on desktop
+Chrome, mobile Chrome and WebKit. They
 exercise immediate changes, rollback, session revocation, product editor upload,
 portal search and bounded paging with retry.
 
@@ -238,14 +241,21 @@ The first complete stability run on the final application build records 1,108
 passing cases and four failures in the same follow-up scenario. The test expected
 the older error copy. Its updated fixture holds the write, verifies immediate
 removal before failure, and requires rollback and successful retry. Focused
-browser checks pass the updated scenario. The full rerun and separate performance
-timing results are pending. The first timing pass records 56 passing cases and
-four Kitchen fixture failures caused by the old filename-specific button label.
-The corrected test finds the last document by its exact row, checks its filename,
-and verifies the current Download PDF action. All timing thresholds are preserved.
-A supplemental timing run overlapped the stability suite and exceeded the Kitchen
-2.5-second budget on three profiles. An isolated full timing rerun is scheduled
-after stability. Earlier logs are retained under `.cache/review/`.
+browser checks pass the updated scenario. The full rerun passes 1,112 cases
+covering all 100 discovered routes on Android Chrome, iPhone Safari, iPad Safari
+and desktop Chrome, with zero skips, retries or flakes.
+
+The first timing pass records 56 passing cases and four Kitchen fixture failures
+caused by the old filename-specific button label. The corrected test finds the
+last document by its exact row, checks its filename and verifies the current
+Download PDF action. A supplemental timing run overlapped the stability suite
+and exceeded the Kitchen 2.5-second budget on three profiles. The isolated full
+rerun passes all 60 timing cases with zero skips, retries or flakes. Cold catalog
+readiness measured 1.40–1.65 seconds on a 200 ms API fixture, with one 50-family
+first page. Thresholds are unchanged. Final summaries are in
+`output/playwright/stability-summary.json` and
+`output/playwright/performance-summary.json`. Earlier logs remain under
+`.cache/review/`.
 
 The dependency scan reports zero Python advisories. npm reports 19 moderate and
 one low advisory, with zero high or critical findings. A dry-run remediation kept
