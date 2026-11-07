@@ -9,12 +9,12 @@ import { ExcelExportButton } from "@/src/components/ExcelExportButton";
 // Dedicated workspace: KPI dashboard + filterable list, matching the same
 // premium design language as Follow-ups / Tile Orders (Card/Chip/StatTile).
 import { useRouter } from "expo-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Linking, Platform, ScrollView, View } from "react-native";
 import { Text } from "@/src/components/AppText";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { walkinsApi, type WalkIn, type WalkInsDashboard } from "@/src/api/walkins";
+import { walkinsApi, type WalkIn, type WalkInCursor, type WalkInsDashboard } from "@/src/api/walkins";
 import { toast } from "@/src/components/Toast";
 import { Button, Chip, EmptyState, ErrorState, LoadingState, PageHeader, SearchField, StatTile } from "@/src/components/ui";
 import { WalkInCard } from "@/src/components/walkins/WalkInCard";
@@ -30,7 +30,7 @@ const STATUS_FILTERS: { value: string; label: string }[] = [
   { value: "selection_scheduled", label: "Selection Scheduled" }, { value: "converted", label: "Converted" },
   { value: "lost", label: "Lost" },
 ];
-const WALKIN_RENDER_BATCH = 40;
+const WALKIN_EXPORT_LIMIT = 2000;
 
 async function openUrl(url: string) {
   if (Platform.OS === "web") {
@@ -61,7 +61,8 @@ export default function WalkInsScreen({
   const [summaryRevision, setSummaryRevision] = useState(0);
   const [savingSelections, setSavingSelections] = useState<string[]>([]);
   const selectionWrites = useRef(new Map<string, { scope: object; previousStatus: WalkIn["status"] }>());
-  const refreshList = useRef<((signal?: AbortSignal, background?: boolean) => Promise<void>) | null>(null);
+  const refreshList = useRef<((background?: boolean) => Promise<void>) | null>(null);
+  const activeRead = useRef<{ query: object; controller: AbortController; append: boolean } | null>(null);
   const mounted = useRef(true);
   const [dashboard, setDashboard] = useState<WalkInsDashboard | null>(null);
   const [confirmedItems, setItems] = useState<WalkIn[]>([]);
@@ -71,11 +72,12 @@ export default function WalkInsScreen({
   const [sourceFilter, setSourceFilter] = useState("");
   const [search, setSearch] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
-  const [visibleCount, setVisibleCount] = useState(WALKIN_RENDER_BATCH);
+  const [page, setPage] = useState<{ query: object; cursor: WalkInCursor | null } | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [pageError, setPageError] = useState<string | null>(null);
   const [floorId, setFloorId] = useState(fixedFloorId || selectedFloorId);
   const [floorFilterReady, setFloorFilterReady] = useState(Boolean(fixedFloorId || selectedFloorId));
   const [loadError, setLoadError] = useState<string | null>(null);
-  const requestId = useRef(0);
   const previousActiveFloor = useRef(selectedFloorId);
   const [loading, setLoading] = useState(true);
 
@@ -93,6 +95,27 @@ export default function WalkInsScreen({
   const queryRef = useRef({ key: queryKey });
   if (queryRef.current.key !== queryKey) queryRef.current = { key: queryKey };
   const activeQuery = queryRef.current;
+  const currentPage = page?.query === activeQuery;
+  const nextCursor = currentPage ? page.cursor : null;
+  const listFilters = useMemo(() => ({
+    status: summaryView ? undefined : quotationFollowup ? "converted" : status || undefined,
+    ...walkinSummaryFilters(summaryView), floor_ids: filterFloorIds,
+    source: sourceFilter || undefined, search: searchQuery || undefined,
+  }), [summaryView, quotationFollowup, status, filterFloorIds, sourceFilter, searchQuery]);
+
+  // The cursor is based on server ordering, so removing a confirmed row can
+  // keep previously loaded pages and continue from the same boundary.
+  const reconcileListRead = () => {
+    const read = activeRead.current;
+    if (!read) return;
+    if (!read.append) {
+      void refreshList.current?.(true);
+      return;
+    }
+    read.controller.abort();
+    activeRead.current = null;
+    setLoadingMore(false);
+  };
 
   const deleteWalkin = async (record: WalkIn) => {
     if (!mounted.current || scopeRef.current !== activeScope || !canDelete(record)
@@ -102,7 +125,7 @@ export default function WalkInsScreen({
     try {
       await walkinsApi.remove(record.id, record.floor_id);
       if (mounted.current && scopeRef.current === activeScope) {
-        requestId.current += 1;
+        reconcileListRead();
         setItems(current => current.filter(item => item.id !== record.id));
         setSummaryRevision(value => value + 1);
       }
@@ -116,7 +139,7 @@ export default function WalkInsScreen({
 
   useEffect(() => {
     mounted.current = true;
-    return () => { mounted.current = false; requestId.current += 1; };
+    return () => { mounted.current = false; activeRead.current?.controller.abort(); };
   }, []);
 
   useEffect(() => {
@@ -155,35 +178,61 @@ export default function WalkInsScreen({
     return () => controller.abort();
   }, [loadSummary, summaryRevision]);
 
-  const load = useCallback(async (signal?: AbortSignal, background = false) => {
+  const load = useCallback(async (background = false, cursor?: WalkInCursor) => {
     if (!filterFloorIds || !mounted.current || queryRef.current !== activeQuery) return;
-    const request = ++requestId.current;
+    if (cursor && activeRead.current?.query === activeQuery) return;
+    activeRead.current?.controller.abort();
+    const read = { query: activeQuery, controller: new AbortController(), append: Boolean(cursor) };
+    activeRead.current = read;
+    const signal = read.controller.signal;
+    const isCurrent = () => !signal.aborted && mounted.current && queryRef.current === activeQuery && activeRead.current === read;
     setLoadError(null);
+    setPageError(null);
+    setLoadingMore(read.append);
     if (!background) setLoading(true);
     try {
-      const list = await walkinsApi.list({ status: summaryView ? undefined : quotationFollowup ? "converted" : status || undefined, ...walkinSummaryFilters(summaryView), floor_ids: filterFloorIds, source: sourceFilter || undefined, search: searchQuery || undefined }, { floorId: fixedFloorId || undefined, signal });
-      if (signal?.aborted || !mounted.current || queryRef.current !== activeQuery || request !== requestId.current) return;
-      setItems(list.map(item => {
+      const result = await walkinsApi.page(listFilters, cursor, { floorId: fixedFloorId || undefined, signal });
+      if (!isCurrent()) return;
+      const received = result.items.map(item => {
         const pending = selectionWrites.current.get(item.id);
         if (pending?.scope !== activeScope) return item;
         pending.previousStatus = item.status;
         return { ...item, status: "selection_scheduled" as const };
-      }));
+      });
+      if (cursor) {
+        setItems(current => {
+          const loaded = new Set(current.map(item => item.id));
+          return [...current, ...received.filter(item => !loaded.has(item.id))];
+        });
+      } else {
+        setItems(received);
+      }
+      // Advance by the raw server page even if a row was already displayed.
+      setPage({ query: activeQuery, cursor: result.next_cursor });
     } catch (e: any) {
-      if (!signal?.aborted && mounted.current && queryRef.current === activeQuery && request === requestId.current) setLoadError(e?.detail || "Could not load walk-ins");
+      if (!isCurrent()) return;
+      const message = e?.detail || "Could not load walk-ins";
+      if (cursor) setPageError(message);
+      else setLoadError(message);
     } finally {
-      if (!signal?.aborted && mounted.current && queryRef.current === activeQuery && request === requestId.current) setLoading(false);
+      if (isCurrent()) {
+        activeRead.current = null;
+        setLoading(false);
+        setLoadingMore(false);
+      }
     }
-  }, [fixedFloorId, quotationFollowup, status, summaryView, filterFloorIds, sourceFilter, searchQuery, activeQuery, activeScope]);
+  }, [fixedFloorId, filterFloorIds, listFilters, activeQuery, activeScope]);
   refreshList.current = load;
+
+  const loadMore = () => { if (nextCursor) void load(true, nextCursor); };
 
   useEffect(() => { walkinsApi.listSources().then(result => setSources(result.sources)).catch(() => {}); }, []);
   useEffect(() => {
-    const controller = new AbortController();
-    void load(controller.signal);
-    return () => { requestId.current += 1; controller.abort(); };
-  }, [load]);
-  useEffect(() => { setVisibleCount(WALKIN_RENDER_BATCH); }, [status, summaryView, search, floorId, sourceFilter, quotationFollowup]);
+    void load();
+    return () => {
+      if (activeRead.current?.query === activeQuery) activeRead.current.controller.abort();
+    };
+  }, [load, activeQuery]);
 
   const openSummary = (view: WalkinSummary) => {
     setSummaryView(view);
@@ -217,7 +266,7 @@ export default function WalkInsScreen({
       if (!mounted.current || scopeRef.current !== activeScope) return;
       setItems(current => current.map(item => item.id === w.id ? saved : item));
       // Supersede pre-write reads; the new response applies current server filters.
-      void refreshList.current?.(undefined, true);
+      void refreshList.current?.(true);
       setSummaryRevision(current => current + 1);
       toast.success("Marked as Selection Scheduled");
     } catch (e: any) {
@@ -232,6 +281,8 @@ export default function WalkInsScreen({
   const visitShowroom = async (w: WalkIn) => {
     try {
       const transfer = await walkinsApi.visitShowroom(w.id, { floorId: w.floor_id });
+      if (!mounted.current || scopeRef.current !== activeScope) return;
+      reconcileListRead();
       setItems(current => current.filter(item => item.id !== w.id));
       toast.success("Transferred to Visit Showroom follow-ups");
       // Navigate before the new floor selection triggers the shell's floor
@@ -245,6 +296,8 @@ export default function WalkInsScreen({
   const saveQuotationPrice = async (w: WalkIn, quotationPrice: number | null) => {
     try {
       await walkinsApi.update(w.id, { quotation_price: quotationPrice }, { floorId: w.floor_id });
+      if (!mounted.current || scopeRef.current !== activeScope) return;
+      reconcileListRead();
       setItems((current) => current.map((item) => item.id === w.id ? { ...item, quotation_price: quotationPrice } : item));
       toast.success("Price saved");
     } catch (e: any) {
@@ -255,23 +308,28 @@ export default function WalkInsScreen({
   const transferToQuotationFollowup = async (w: WalkIn) => {
     try {
       await walkinsApi.update(w.id, { status: "converted" }, { floorId: w.floor_id });
+      if (!mounted.current || scopeRef.current !== activeScope) return;
+      reconcileListRead();
       setItems((current) => current.filter((item) => item.id !== w.id));
       toast.success("Transferred to Quotation Follow-up");
     } catch (e: any) {
       toast.error(e?.detail || "Could not transfer customer");
     }
   };
+  const exportRows = async (signal: AbortSignal) => {
+    const rows = await walkinsApi.list(listFilters, { floorId: fixedFloorId || undefined, signal, cacheMs: 0 });
+    if (rows.length >= WALKIN_EXPORT_LIMIT) throw new Error("This list reached the 2,000-walk-in limit. Narrow the filters before exporting.");
+    return [
+      ["Customer", "Phone", "Walk-in", "Visited", "Status", "Salesperson", "Floor", "Source", "Interested products", "Next follow-up"],
+      ...rows.map(item => [item.customer_name, formatPhone(item.customer_phone), item.number, item.visited_at, item.status.replace(/_/g, " "), item.salesperson_name || "Unassigned", item.floor_id, item.source, item.interested_products.join(", "), item.next_followup_at]),
+    ];
+  };
   const pageHeader = <PageHeader
     title={title} overline={quotationFollowup ? "QUOTATION FOLLOW-UP" : "CRM"}
     subtitle="Every customer journey starts here"
     actions={<View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
       {canCreate ? <Button label="Log Walk-in" size="sm" icon="user-plus" onPress={() => router.push((fixedFloorId ? `/(admin)/walkins/new?floor_id=${fixedFloorId}` : "/(admin)/walkins/new") as any)} testID="walkin-new-btn" /> : null}
-      <ExcelExportButton resource="walkins" page={title} section="Filtered walk-ins" filename="walk-ins.xlsx" floorId={filterFloorIds} scopeKey={queryKey} disabled={loading || Boolean(loadError) || !items.length} testID="walkins-export-excel" loadRows={async () => {
-        if (items.length >= 2000) throw new Error("This list reached the 2,000-walk-in limit. Narrow the filters before exporting.");
-        return [
-        ["Customer", "Phone", "Walk-in", "Visited", "Status", "Salesperson", "Floor", "Source", "Interested products", "Next follow-up"],
-        ...items.map(item => [item.customer_name, formatPhone(item.customer_phone), item.number, item.visited_at, item.status.replace(/_/g, " "), item.salesperson_name || "Unassigned", item.floor_id, item.source, item.interested_products.join(", "), item.next_followup_at]),
-      ]; }} />
+      <ExcelExportButton resource="walkins" page={title} section="Filtered walk-ins" filename="walk-ins.xlsx" floorId={filterFloorIds} scopeKey={queryKey} disabled={!currentPage || loading || Boolean(loadError) || !items.length} testID="walkins-export-excel" loadRows={exportRows} />
     </View>}
     embedded={isPhone}
   />;
@@ -326,11 +384,10 @@ export default function WalkInsScreen({
         </MobileFilterSection>
 
         {savingSelections.some(id => selectionWrites.current.get(id)?.scope === activeScope) ? <Text role="status" style={type.bodyMuted}>Saving selection schedule…</Text> : null}
-        {loadError ? <ErrorState title="Could not load walk-ins" subtitle={loadError} onRetry={() => void load()} /> : loading ? <LoadingState label="Loading walk-ins…" /> : items.length === 0 ? (
-          <EmptyState icon="user-plus" title="No walk-ins yet" subtitle="Log your first walk-in to start the pipeline." />
-        ) : (
+        {loadError ? <ErrorState title="Could not load walk-ins" subtitle={loadError} onRetry={() => void load()} /> : loading || !currentPage ? <LoadingState label="Loading walk-ins…" /> : (
           <>
-          {items.slice(0, visibleCount).map((w) => (
+          {items.length === 0 && !nextCursor ? <EmptyState icon="user-plus" title="No walk-ins yet" subtitle="Log your first walk-in to start the pipeline." /> : null}
+          {items.map((w) => (
             <WalkInCard
               key={w.id} w={w}
               onPress={() => router.push(`/(admin)/walkins/${w.id}?floor_id=${w.floor_id}` as any)}
@@ -344,13 +401,8 @@ export default function WalkInsScreen({
               onTransferToQuotation={enableQuotationTransfer ? () => { void transferToQuotationFollowup(w); } : undefined}
             />
           ))}
-          {items.length > visibleCount ? (
-            <Button
-              label={`Show more (${items.length - visibleCount} remaining)`}
-              variant="secondary"
-              onPress={() => setVisibleCount((count) => count + WALKIN_RENDER_BATCH)}
-              testID="walkins-show-more"
-            />
+          {pageError ? <ErrorState title="Could not load more walk-ins" subtitle={pageError} onRetry={loadMore} /> : nextCursor ? (
+            <Button label="Show more" variant="secondary" loading={loadingMore} onPress={loadMore} testID="walkins-show-more" />
           ) : null}
           </>
         )}

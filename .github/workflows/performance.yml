@@ -42,7 +42,7 @@ jobs:
           node --experimental-strip-types --no-warnings scripts/test-release-stability.mjs
       - name: Build current export and run all backend, budget and loading contracts
         env:
-          BACKEND_URL: https://forge20-production-a8b0.up.railway.app
+          BACKEND_URL: https://buildconhouse-production.up.railway.app
         run: node scripts/run-performance-audit.mjs --ci-phase=prepare
       - name: Preserve immutable current-run export
         id: export

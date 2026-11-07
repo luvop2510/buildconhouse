@@ -33,7 +33,7 @@ for (const [slug, floorId] of [['kitchen', 'second-floor'], ['furniture', 'third
       let reads = 0;
       await page.route('**/api/followups/notebook/**', route => { reads++; return route.fulfill({ json: { rows: [] } }); });
       await page.route('**/api/followups/page?**', route => { reads++; return route.fulfill({ json: { items: [] } }); });
-      await page.route(/\/api\/walkins(?:\?|$)/, route => { reads++; return route.fulfill({ json: [] }); });
+      await page.route(/\/api\/walkins(?:\/page)?(?:\?|$)/, route => { reads++; return route.fulfill({ json: [] }); });
       await page.goto(path);
       await expect(page).toHaveURL(/\/access$/);
       await expect(page.getByTestId('no-page-access')).toContainText('No pages enabled on this floor');

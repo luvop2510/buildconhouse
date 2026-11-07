@@ -611,7 +611,7 @@ test('critical team contacts: malformed legacy responses cannot crash display or
   await expect(page.getByTestId('edit-staff-sheet')).toHaveCount(0);
   expect(writes).toEqual([{ path: '/api/team/test-worker', method: 'PATCH', body: { phone: '+91 99099 06652' } }]);
   await page.reload();
-  await expect(page.getByTestId('team-phone-test-worker')).toContainText('+91 99099 06652');
+  await expect(page.getByTestId('team-phone-test-worker')).toContainText('+91 990-990-66-52');
   expect(errors).toEqual([]);
 });
 
@@ -680,16 +680,20 @@ test('critical team contacts: legacy mobile-only number stays usable through the
   const { state, writes } = await teamFixture(page);
   state.members[0] = { ...state.members[0], phone: null, mobile: '9876543210' };
   await page.reload();
-  await expect(page.getByTestId('team-phone-test-worker')).toHaveText('Phone: 9876543210');
+  await expect(page.getByTestId('team-phone-test-worker')).toHaveText('Phone: 987-654-32-10');
   await page.getByTestId('team-row-test-worker').click();
-  await expect(page.getByTestId('edit-staff-phone')).toHaveValue('9876543210');
+  await expect(page.getByTestId('edit-staff-phone')).toHaveValue('987-654-32-10');
   await expect(page.getByTestId('edit-staff-mobile')).toHaveCount(0);
   await page.getByTestId('edit-staff-email').fill('updated@example.test');
   await page.getByTestId('edit-staff-save').click();
   await expect(page.getByTestId('edit-staff-sheet')).toHaveCount(0);
   expect(writes[0].body).toEqual({ email: 'updated@example.test' });
+  await expect(page.getByTestId('team-email-test-worker')).toHaveText('updated@example.test');
   await page.getByTestId('team-row-test-worker').click();
+  await page.getByTestId('edit-staff-phone').focus();
+  await expect(page.getByTestId('edit-staff-phone')).toHaveValue('9876543210');
   await page.getByTestId('edit-staff-phone').fill('');
+  await expect(page.getByTestId('edit-staff-phone')).toHaveValue('');
   await page.getByTestId('edit-staff-save').click();
   await expect(page.getByTestId('edit-staff-sheet')).toHaveCount(0);
   expect(writes[1].body).toEqual({ phone: null, mobile: null });
@@ -736,7 +740,7 @@ test('critical team contacts: structured validation failure remains readable and
   await page.getByTestId('edit-staff-phone').fill('9876543210');
   await page.getByTestId('edit-staff-save').click();
   await expect(page.getByRole('alert')).toHaveText('phone: Enter a valid phone number');
-  await expect(page.getByTestId('edit-staff-phone')).toHaveValue('9876543210');
+  await expect(page.getByTestId('edit-staff-phone')).toHaveValue('987-654-32-10');
   fail = false;
   await page.getByTestId('edit-staff-save').click();
   await expect(page.getByTestId('edit-staff-sheet')).toHaveCount(0);
@@ -761,7 +765,7 @@ test('critical team contacts: a failed refresh keeps the team usable and retry r
   await expect(page.getByTestId('team-add-btn')).toBeVisible();
   fail = false;
   await page.getByRole('button', { name: 'Try again', exact: true }).click();
-  await expect(page.getByTestId('team-phone-test-worker')).toContainText('9876543210');
+  await expect(page.getByTestId('team-phone-test-worker')).toContainText('987-654-32-10');
   await expect(page.getByText('Could not load team', { exact: true })).toHaveCount(0);
 });
 

@@ -7,7 +7,7 @@ import ts from 'typescript';
 const source = readFileSync(new URL('../app/(admin)/walkins/index.tsx', import.meta.url), 'utf8');
 const marker = '  const pageHeader =';
 assert.ok(source.includes(marker));
-const compiled = ts.transpileModule(source.replace(marker, '  return { items, confirmedItems, deleteWalkin, dashboard, loading, loadError, summaryError, search, searchQuery, savingSelections, activeScope, load, setSearch, setStatus, setSourceFilter, setSummaryView, scheduleSelection };\n' + marker), {
+const compiled = ts.transpileModule(source.replace(marker, '  return { items, confirmedItems, deleteWalkin, dashboard, loading, loadError, summaryError, search, searchQuery, savingSelections, activeScope, currentPage, nextCursor, loadingMore, pageError, load, loadMore, exportRows, setSearch, setStatus, setSourceFilter, setSummaryView, scheduleSelection };\n' + marker), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
 }).outputText;
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
@@ -29,6 +29,7 @@ function fixture() {
     },
     useRef(initial) { return hooks[cursor++] ||= { current: initial }; },
     useCallback(callback, deps) { const slot = cursor++; if (!same(hooks[slot]?.deps, deps)) hooks[slot] = { value: callback, deps }; return hooks[slot].value; },
+    useMemo(callback, deps) { const slot = cursor++; if (!same(hooks[slot]?.deps, deps)) hooks[slot] = { value: callback(), deps }; return hooks[slot].value; },
     useEffect(callback, deps) {
       const slot = cursor++;
       if (!same(hooks[slot]?.deps, deps)) { const cleanup = hooks[slot]?.cleanup; hooks[slot] = { deps }; effects.push(() => { cleanup?.(); hooks[slot].cleanup = callback(); }); }
@@ -45,8 +46,9 @@ function fixture() {
     '@/src/hooks/use-permissions': { useModuleAccess: () => () => true },
     '@/src/utils/walkinSummary': { walkinSummaryFilters: view => view ? { summary: view } : {} },
     '@/src/theme/tokens': { colors: {}, spacing: {}, type: {} },
+    '@/src/utils/phone': { formatPhone: value => value },
     '@/src/components/Toast': { toast: { success: message => notices.push({ success: message }), error: message => notices.push({ error: message }) } },
-    '@/src/api/walkins': { walkinsApi: { remove: request('remove'), list: request('list'), dashboard: request('dashboard'), update: request('update'), listSources: async () => ({ sources: [] }) } },
+    '@/src/api/walkins': { walkinsApi: { remove: request('remove'), list: request('export'), page: (params, cursor, options) => request('list')(params, options, cursor).then(result => Array.isArray(result) ? { items: result, next_cursor: null } : result), dashboard: request('dashboard'), update: request('update'), listSources: async () => ({ sources: [] }) } },
   };
   const exports = {};
   vm.runInNewContext(compiled, { exports, require: name => modules[name] || {}, AbortController,
@@ -230,4 +232,93 @@ test('walk-in deletion fences a stale refresh after confirmation and isolates la
   inOtherFloor.reject({ detail: 'Old floor write' }); await second; await f.settle();
   assert.ok(!f.notices.some(notice => notice.error?.includes('Old floor')));
   f.unmount();
+});
+
+test('pages append once, advance by the raw cursor, and coalesce repeated taps', async () => {
+  const f = fixture();
+  const cursor = { visited_at: '2026-11-01', id: 'row-39' };
+  f.calls('list')[0].resolve({ items: Array.from({ length: 40 }, (_, i) => row(`row-${i}`)), next_cursor: cursor });
+  await f.settle();
+  assert.equal(f.state.items.length, 40);
+  f.state.loadMore(); f.state.loadMore(); await f.settle();
+  assert.equal(f.calls('list').length, 2);
+  assert.deepEqual(f.calls('list')[1].args[2], cursor);
+  assert.equal(f.state.items.length, 40);
+  assert.equal(f.state.loadingMore, true);
+  const next = { visited_at: '2026-10-31', id: 'row-77' };
+  f.calls('list')[1].resolve({ items: [row('row-39'), row('row-40')], next_cursor: next }); await f.settle();
+  assert.equal(f.state.items.length, 41);
+  assert.equal(f.state.items.filter(item => item.id === 'row-39').length, 1);
+  assert.deepEqual(f.state.nextCursor, next);
+  f.state.loadMore();
+  f.calls('list')[2].resolve({ items: [row('last')], next_cursor: null }); await f.settle();
+  assert.equal(f.state.items.length, 42); assert.equal(f.state.nextCursor, null);
+  f.state.loadMore(); assert.equal(f.calls('list').length, 3);
+});
+
+test('a failed next page preserves rows and retries the same boundary', async () => {
+  const f = fixture(); const cursor = { visited_at: 'legacy visit value', id: 'first' };
+  f.calls('list')[0].resolve({ items: [row('first')], next_cursor: cursor }); await f.settle();
+  f.state.loadMore(); f.calls('list')[1].reject({ detail: 'Page unavailable' }); await f.settle();
+  assert.equal(f.state.items[0].id, 'first'); assert.equal(f.state.loadError, null);
+  assert.equal(f.state.pageError, 'Page unavailable'); assert.deepEqual(f.state.nextCursor, cursor);
+  f.state.loadMore(); assert.deepEqual(f.calls('list')[2].args[2], cursor);
+  f.calls('list')[2].resolve({ items: [row('second')], next_cursor: null }); await f.settle();
+  assert.equal(f.state.items.length, 2); assert.equal(f.state.pageError, null);
+});
+
+test('filter changes hide the previous window and abort late pages before they can append', async () => {
+  const f = fixture();
+  f.calls('list')[0].resolve({ items: [row('first')], next_cursor: { visited_at: '2026', id: 'first' } }); await f.settle();
+  const oldMore = f.state.loadMore;
+  oldMore(); const held = f.calls('list')[1];
+  f.state.setSourceFilter('Reference'); await f.settle();
+  assert.equal(f.state.currentPage, false); assert.equal(held.args[1].signal.aborted, true);
+  assert.equal(f.calls('list')[2].args[2], undefined);
+  oldMore(); assert.equal(f.calls('list').length, 3);
+  f.calls('list')[2].resolve({ items: [row('filtered')], next_cursor: null }); await f.settle();
+  held.resolve({ items: [row('obsolete')], next_cursor: null }); await f.settle();
+  assert.equal(f.state.items.length, 1); assert.equal(f.state.items[0].id, 'filtered');
+});
+
+test('confirmed deletion cancels an older append and preserves its resumable cursor', async () => {
+  const f = fixture(); const cursor = { visited_at: '2026', id: 'first' };
+  f.calls('list')[0].resolve({ items: [row('first')], next_cursor: cursor }); await f.settle();
+  f.state.loadMore(); const held = f.calls('list')[1];
+  const deleting = f.state.deleteWalkin(f.state.items[0]);
+  f.calls('remove')[0].resolve({ ok: true }); await deleting; await f.settle();
+  assert.equal(held.args[1].signal.aborted, true);
+  held.resolve({ items: [row('first'), row('stale')], next_cursor: null }); await f.settle();
+  assert.equal(f.state.items.length, 0); assert.deepEqual(f.state.nextCursor, cursor);
+  f.state.loadMore(); f.calls('list')[2].resolve({ items: [row('second')], next_cursor: null }); await f.settle();
+  assert.equal(f.state.items[0].id, 'second');
+});
+
+test('export fetches every filtered row independently of the visible page and rejects the legacy ceiling', async () => {
+  const f = fixture(); await f.ready();
+  f.state.setStatus('contacted'); f.state.setSourceFilter('Reference'); await f.settle();
+  const signal = new AbortController().signal;
+  const exportRead = f.state.exportRows(signal), request = f.calls('export')[0];
+  assert.equal(request.args[0].status, 'contacted'); assert.equal(request.args[0].source, 'Reference');
+  assert.equal(request.args[0].floor_ids, 'ground-floor');
+  assert.equal(request.args[1].signal, signal); assert.equal(request.args[1].cacheMs, 0);
+  request.resolve(Array.from({ length: 95 }, (_, i) => ({ ...row(`export-${i}`), interested_products: [] })));
+  assert.equal((await exportRead).length, 96);
+  const capped = f.state.exportRows(signal);
+  f.calls('export')[1].resolve(Array.from({ length: 2000 }, () => row()));
+  await assert.rejects(capped, /2,000-walk-in limit/);
+});
+
+test('the page client preserves empty and unusual legacy cursor strings exactly', () => {
+  const apiSource = readFileSync(new URL('../src/api/walkins.ts', import.meta.url), 'utf8');
+  const code = ts.transpileModule(apiSource, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText;
+  const exports = {}, paths = [];
+  vm.runInNewContext(code, { exports, require: () => ({ api: { get: path => paths.push(path) } }) });
+  const legacy = { visited_at: '', id: 'legacy/?&+# x' };
+  exports.walkinsApi.page({ floor_ids: 'first-floor,ground-floor' }, legacy);
+  const query = new URL(paths[0], 'https://fixture.test').searchParams;
+  assert.equal(query.get('before_visited_at'), '');
+  assert.equal(query.get('before_id'), legacy.id);
+  assert.equal(query.get('limit'), '40');
+  assert.equal(query.get('floor_ids'), 'first-floor,ground-floor');
 });

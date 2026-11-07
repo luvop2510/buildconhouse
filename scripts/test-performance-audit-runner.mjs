@@ -38,7 +38,7 @@ function run(command, args, options) {
   if (args.includes('scripts/test-release-network-routing.mjs')) { calls.push('network'); return { status: 0 }; }
   const stage = command === 'npm' ? args[1] : args.includes('scripts/summarize-performance.mjs') ? 'summary' : args.includes('scripts/verify-release-stability.mjs') ? 'verify-stability' : 'backend';
   calls.push(stage);
-  if (stage !== 'backend') { assert.equal(options.env.EXPO_NO_DOTENV, '1'); assert.match(options.env.BACKEND_URL, /^https:\/\/forge20-production-a8b0\.up\.railway\.app$/); }
+  if (stage !== 'backend') { assert.equal(options.env.EXPO_NO_DOTENV, '1'); assert.match(options.env.BACKEND_URL, /^https:\/\/buildconhouse-production\.up\.railway\.app$/); }
   else { assert.equal(options.env.DB_NAME, 'forge_ci_unit_tests'); assert.equal(options.env.PYTHON_DOTENV_DISABLED, '1'); }
   if (stage === failAt) return { status: 42 };
   if (stage === 'build') { write('dist/client/index.html', '<html>fresh export</html>'); write('dist/client/chunk.js', 'current source'); }

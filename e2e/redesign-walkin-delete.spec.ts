@@ -9,7 +9,7 @@ for (const floor of ['first-floor', 'ground-floor', 'second-floor', 'third-floor
       visited_at:'2026-10-11T10:00:00Z', created_at:'2026-10-11T10:00:00Z', updated_at:'2026-10-11T10:00:00Z' };
     await page.route('**/api/walkins/config/sources', route => route.fulfill({ json: { sources: ['Walk-in'] } }));
     await page.route('**/api/walkins/dashboard**', route => route.fulfill({ json: { total:1, today_walkins:1, this_week:1, pending_followups:0, selections_scheduled:0, converted:0, lost:0, conversion_rate:0, avg_conversion_days:0 } }));
-    await page.route(/\/api\/walkins(?:\?.*)?$/, route => route.fulfill({ json:[row] }));
+    await page.route(/\/api\/walkins\/page(?:\?.*)?$/, route => route.fulfill({ json:{items:[row],next_cursor:null} }));
     let deletes = 0;
     await page.route('**/api/walkins/walkin-one', route => {
       expect(route.request().method()).toBe('DELETE');

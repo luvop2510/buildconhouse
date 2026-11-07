@@ -16,7 +16,7 @@ test('critical walk-in register retries a failed request into a populated custom
   await page.route('**/api/walkins/dashboard', route => route.fulfill({ json: {
     today_walkins: 1, this_week: 1, pending_followups: 1, selections_scheduled: 0, converted: 0, lost: 0, conversion_rate: 0, avg_conversion_days: 0, total: 1,
   } }));
-  await page.route(/\/api\/walkins(?:\?|$)/, route => fail ? route.fulfill({ status: 503, json: { detail: 'Register temporarily unavailable' } }) : route.fulfill({ json: [walkin] }));
+  await page.route(/\/api\/walkins\/page(?:\?|$)/, route => fail ? route.fulfill({ status: 503, json: { detail: 'Register temporarily unavailable' } }) : route.fulfill({ json: { items: [walkin], next_cursor: null } }));
   await page.goto('/walkins');
   await expect(page.getByText('Could not load walk-ins', { exact: true })).toBeVisible({ timeout: 15_000 });
   await expect(page.getByText('No walk-ins yet', { exact: true })).toHaveCount(0);

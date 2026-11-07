@@ -48,12 +48,20 @@ export type WalkInsAnalytics = {
   salesperson_performance: { salesperson: string; walkins: number; converted: number; lost: number }[];
 };
 
+type WalkInFilters = {
+  status?: string; priority?: string; salesperson_id?: string; source?: string; floor_id?: string; floor_ids?: string;
+  date_from?: string; date_to?: string; search?: string;
+};
+export type WalkInCursor = Pick<WalkIn, "visited_at" | "id">;
+type WalkInPage = { items: WalkIn[]; next_cursor: WalkInCursor | null };
+type ListOptions = { floorId?: string; signal?: AbortSignal; cacheMs?: number };
+
 export const walkinsApi = {
   remove: (id: string, floorId: string) => api.delete<{ ok: boolean }>(`/walkins/${encodeURIComponent(id)}`, { floorId }),
-  list: (params?: {
-    status?: string; priority?: string; salesperson_id?: string; source?: string; floor_id?: string; floor_ids?: string;
-    date_from?: string; date_to?: string; search?: string;
-  }, options?: { floorId?: string; signal?: AbortSignal }) => api.get<WalkIn[]>(`/walkins${toQuery(params)}`, options),
+  list: (params?: WalkInFilters, options?: ListOptions) => api.get<WalkIn[]>(`/walkins${toQuery(params)}`, options),
+
+  page: (params: WalkInFilters, cursor: WalkInCursor | undefined, options?: ListOptions) =>
+    api.get<WalkInPage>(`/walkins/page${toQuery({ ...params, limit: 40 })}${cursor ? `&before_visited_at=${encodeURIComponent(cursor.visited_at)}&before_id=${encodeURIComponent(cursor.id)}` : ""}`, options),
 
   get: (id: string, options?: { floorId?: string }) => api.get<WalkIn>(`/walkins/${id}`, options),
 

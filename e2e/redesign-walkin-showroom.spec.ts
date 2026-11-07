@@ -48,9 +48,9 @@ test('critical walk-ins combines multiple floors and lead sources in the same ba
   await mockSession(page, '/walkins');
   await walkinReads(page);
   const filters: URLSearchParams[] = [];
-  await page.route('**/api/walkins?**', route => {
+  await page.route('**/api/walkins/page?**', route => {
     filters.push(new URL(route.request().url()).searchParams);
-    return route.fulfill({ json: [walkin] });
+    return route.fulfill({ json: { items: [walkin], next_cursor: null } });
   });
   await page.goto('/walkins');
   await expect(page.getByTestId('floor-switcher')).toBeVisible();
@@ -70,7 +70,7 @@ test('critical Visit Showroom retries a failed transfer and opens only showroom-
   await mockSession(page, '/walkins');
   await walkinReads(page);
   let transferred = false;
-  await page.route('**/api/walkins?**', route => route.fulfill({ json: transferred ? [] : [{ ...walkin, floor_id: 'ground-floor' }] }));
+  await page.route('**/api/walkins/page?**', route => route.fulfill({ json: { items: transferred ? [] : [{ ...walkin, floor_id: 'ground-floor' }], next_cursor: null } }));
   let attempts = 0;
   await page.route('**/api/walkins/walkin-showroom/visit-showroom', route => {
     expect(route.request().headers()['x-floor-id']).toBe('ground-floor');
@@ -109,7 +109,7 @@ test('critical Visit Showroom retries a failed transfer and opens only showroom-
 test('critical sanitary walk-in cards never offer Ground Floor selection scheduling', async ({ page }) => {
   await mockSession(page, '/walkins');
   await walkinReads(page);
-  await page.route('**/api/walkins?**', route => route.fulfill({ json: [walkin] }));
+  await page.route('**/api/walkins/page?**', route => route.fulfill({ json: { items: [walkin], next_cursor: null } }));
   await page.goto('/walkins');
   await expect(page.getByTestId('walkin-card-walkin-showroom')).toBeVisible();
   await expect(page.getByTestId('walkin-schedule-walkin-showroom')).toHaveCount(0);
@@ -120,7 +120,7 @@ test('critical multi-floor walk-in actions use the selected records floor', asyn
   await mockSession(page, '/walkins');
   await walkinReads(page);
   const crossFloor = { ...walkin, floor_id: 'ground-floor' };
-  await page.route('**/api/walkins?**', route => route.fulfill({ json: [crossFloor] }));
+  await page.route('**/api/walkins/page?**', route => route.fulfill({ json: { items: [crossFloor], next_cursor: null } }));
   let requestedFloor: string | undefined;
   await page.route('**/api/walkins/walkin-showroom', route => {
     requestedFloor = route.request().headers()['x-floor-id'];

@@ -41,6 +41,8 @@ from services.walkin_service import find_or_create_customer
 router = APIRouter(prefix="/walkins", tags=["walkins"])
 
 LEAD_SOURCES_KEY = "lead_sources"
+WALKIN_EXPORT_LIMIT = 2000
+WALKIN_PAGE_SORT = [("visited_at", -1), ("id", -1)]
 
 
 async def _next_walkin_number() -> str:
@@ -303,13 +305,7 @@ async def create_walkin(body: WalkInCreate, user: UserPublic = Depends(require_m
 
 
 # ---------- List ----------
-@router.get("", response_model=list[WalkIn])
-async def list_walkins(
-    status: Optional[str] = None, priority: Optional[str] = None, salesperson_id: Optional[str] = None,
-    source: Optional[str] = None, floor_id: Optional[str] = None, floor_ids: Optional[str] = None,
-    date_from: Optional[str] = None, date_to: Optional[str] = None, search: Optional[str] = None,
-    user: UserPublic = Depends(get_current_user),
-):
+def _walkin_filters(status, salesperson_id, source, date_from, date_to, search, priority=None) -> dict:
     filters: dict = {"is_deleted": False, "showroom_followup_id": None, "showroom_transferred_at": None}
     if status:
         filters["status"] = predicate(status)
@@ -333,10 +329,60 @@ async def list_walkins(
             {"source": {"$regex": re.escape(search), "$options": "i"}},
             {"notes": {"$regex": re.escape(search), "$options": "i"}},
         ]
-    docs = await db.walkins.find(scoped_query(user, filters, floor_ids or floor_id), {"_id": 0}).sort("visited_at", -1).to_list(2000)
     if priority:
-        docs = [d for d in docs if (d.get("manual_priority_override") or "medium") in values(priority)]
+        selected = values(priority)
+        # Missing legacy overrides have always displayed as medium priority.
+        filters["manual_priority_override"] = {"$in": [*selected, None, ""] if "medium" in selected else selected}
+    return filters
+
+
+@router.get("", response_model=list[WalkIn])
+async def list_walkins(
+    status: Optional[str] = None, priority: Optional[str] = None, salesperson_id: Optional[str] = None,
+    source: Optional[str] = None, floor_id: Optional[str] = None, floor_ids: Optional[str] = None,
+    date_from: Optional[str] = None, date_to: Optional[str] = None, search: Optional[str] = None,
+    user: UserPublic = Depends(get_current_user),
+):
+    """Legacy full-list response, also used for explicit Excel export."""
+    filters = _walkin_filters(status, salesperson_id, source, date_from, date_to, search, priority)
+    docs = await db.walkins.find(scoped_query(user, filters, floor_ids or floor_id), {"_id": 0}).sort(WALKIN_PAGE_SORT).to_list(WALKIN_EXPORT_LIMIT)
     return [WalkIn(**d) for d in await _walkin_attributions(docs)]
+
+
+class WalkInCursor(BaseModel):
+    visited_at: str
+    id: str
+
+
+class WalkInPage(BaseModel):
+    items: list[WalkIn]
+    next_cursor: WalkInCursor | None
+
+
+@router.get("/page", response_model=WalkInPage)
+async def list_walkin_page(
+    status: Optional[str] = None, priority: Optional[str] = None, salesperson_id: Optional[str] = None,
+    source: Optional[str] = None, floor_id: Optional[str] = None, floor_ids: Optional[str] = None,
+    date_from: Optional[str] = None, date_to: Optional[str] = None, search: Optional[str] = None,
+    limit: int = Query(40, ge=1, le=50), before_visited_at: Optional[str] = Query(None),
+    before_id: Optional[str] = Query(None), user: UserPublic = Depends(get_current_user),
+):
+    if (before_visited_at is None) != (before_id is None):
+        raise HTTPException(422, "Both cursor fields are required")
+    filters = _walkin_filters(status, salesperson_id, source, date_from, date_to, search, priority)
+    query = scoped_query(user, filters, floor_ids or floor_id)
+    if before_id is not None:
+        query = {"$and": [query, {"$or": [
+            {"visited_at": {"$lt": before_visited_at}},
+            {"visited_at": before_visited_at, "id": {"$lt": before_id}},
+        ]}]}
+    docs = await db.walkins.find(query, {"_id": 0}).sort(WALKIN_PAGE_SORT).limit(limit + 1).to_list(limit + 1)
+    visible = docs[:limit]
+    last = visible[-1] if len(docs) > limit else None
+    return WalkInPage(
+        items=[WalkIn(**doc) for doc in await _walkin_attributions(visible)],
+        next_cursor=WalkInCursor(visited_at=last["visited_at"], id=last["id"]) if last is not None else None,
+    )
 
 
 # ---------- Dashboard KPIs ----------

@@ -40,7 +40,7 @@ for (const floor of floors.filter(floor => floor.id !== 'second-floor')) {
         expect(request.postDataJSON()).toMatchObject({ floor_id: floor.id, salesperson_id: staff.id });
         return route.fulfill({ json: walkin });
       }
-      if (path === '/api/walkins') return route.fulfill({ json: [walkin] });
+      if (path === '/api/walkins/page') return route.fulfill({ json: { items: [walkin], next_cursor: null } });
       return route.fulfill({ json: walkin });
     });
     await page.route('**/api/followups/assignees?**', r => r.fulfill({ json: [{ ...staff, floor_ids: [floor.id] }] }));

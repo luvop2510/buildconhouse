@@ -49,8 +49,8 @@ function fixture() {
   render();
   return {
     requests, updates, notices, get state() { return state; },
-    navigate(id = product?.id, nextFloor = floor, nextActor = actor) {
-      product = { ...product, id }; floor = nextFloor; actor = nextActor; render();
+    navigate(id = product?.id, nextFloor = floor, nextActor = actor, fields = {}) {
+      product = { ...product, id, ...fields }; floor = nextFloor; actor = nextActor; render();
     },
     unmount() { hooks.forEach(hook => hook.cleanup?.()); },
     async settle() { for (let pass = 0; pass < 12; pass++) { await Promise.resolve(); if (dirty) render(); } },
@@ -104,12 +104,29 @@ test('failure after selecting a sibling restores only the renamed variant withou
   const view = fixture(); await view.settle();
   view.state.setVariantName('Matt Black'); await view.settle();
   const pending = view.state.saveVariantName();
-  view.navigate('p2'); await view.settle();
+  view.navigate('p2', 'first-floor', 'actor-a', { variant_label: 'Polished Chrome' }); await view.settle();
   view.requests[0].reject(new Error('Fixture failure'));
   await pending; await view.settle();
   assert.equal(view.updates.at(-1).id, 'p1');
   assert.equal(view.updates.at(-1).variant_label, 'Chrome');
   assert.equal(view.state.variantNameEditing, false);
+  assert.equal(view.state.variantName, 'Polished Chrome');
+  assert.deepEqual(view.notices, []);
+  view.unmount();
+});
+
+test('a sibling selected during a rename keeps its own edit draft after the acknowledgement', async () => {
+  const view = fixture(); await view.settle();
+  view.state.setVariantName('Matt Black'); await view.settle();
+  const pending = view.state.saveVariantName();
+  view.navigate('p2', 'first-floor', 'actor-a', { variant_label: 'Polished Chrome' }); await view.settle();
+  view.requests[0].resolve({ variant_label: 'Matte Black' });
+  await pending; await view.settle();
+  assert.equal(view.state.variantNameBusy, false);
+  assert.equal(view.state.variantName, 'Polished Chrome');
+  assert.equal(view.state.variantNameEditing, false);
+  assert.equal(view.updates.at(-1).id, 'p1');
+  assert.equal(view.updates.at(-1).variant_label, 'Matte Black');
   assert.deepEqual(view.notices, []);
   view.unmount();
 });

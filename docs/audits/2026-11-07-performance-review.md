@@ -144,6 +144,25 @@ Expo Router, React Navigation and React Native Web runtime in an entry chunk of
 approximately 283 KiB gzip. Existing framework-sensitive transform experiments
 were left out of this change. The existing 576 KiB regression ceiling is retained.
 
+A follow-up experiment rebuilt the `c0f0bbda` source in an isolated temporary
+tree with the same dependencies and build command. Changing SDK 55 Metro's
+shared-dependency threshold from two routes to eight reduced login from 462 to
+398 KiB gzip and the largest route from 488 to 433 KiB. It also increased total
+uncompressed exported JavaScript from 3,200,600 to 3,838,608 bytes by duplicating
+module definitions. The framework entry stayed 283 KiB. This experimental patch
+to the serializer was discarded. A separate web-only Babel transform narrowing
+Expo Router's CommonJS React Native namespaces to referenced React Native Web
+exports produced the same entry hash and the same 488 KiB largest-route result,
+so it was also discarded. Receipts are under
+`.cache/review/bundle-followup-{baseline,shared-threshold,rnw-imports}.*`.
+
+The current framework entry exceeds the requested total initial-JavaScript
+budget on its own. Achieving 200 KB requires a further runtime or framework
+migration with navigation, hydration, recovery and native verification. Expo's
+documented granular chunking mode starts experimentally in SDK 58. The present
+SDK 55 build remains the verified release path.
+[Expo async routes](https://docs.expo.dev/router/web/async-routes/).
+
 The browser wordmark uses a lossless WebP derivative, 65,178 to 28,988 bytes
 (55.52% smaller), with decoded RGBA pixel equality. Native builds resolve the
 existing PNG through a platform module. Preview servers serve the WebP MIME.
@@ -267,6 +286,77 @@ Deployment, production migration 0043, product-media backfill, authenticated
 production compression/latency measurements, field Web Vitals and physical-device
 acceptance remain outstanding. The 200 KB target and any claim of being the
 fastest available application are unverified. This report records local source
-improvements and their measured limits. The legacy walk-in API still returns up
-to 2,000 filtered records, with the browser mounting 40 at a time. Server paging
-there remains separate from the verified portal summary rollout.
+improvements and their measured limits. Walk-in server paging is implemented
+below; its fresh browser and final release verification remain part of the
+combined source gate.
+
+## Walk-in bounded reads and stable paging
+
+The mounted Walk-ins register now requests 40 rows from `GET /walkins/page`,
+with a 41st-row sentinel and a `visited_at desc, id desc` cursor. Show more
+loads the next window; failures keep existing rows and retry the same boundary.
+Query/floor generations reject obsolete callbacks, repeated taps coalesce,
+pending selection statuses overlay arriving pages, and confirmed deletion fences
+older reads while keeping the cursor usable. List readiness remains independent
+of the optional dashboard. Existing floor/access, literal search, status/source,
+date and legacy medium-priority filters stay on the server. Filters are applied
+before the read limit and attribution only hydrates the visible page.
+
+Explicit Excel export requests the full matching legacy response independently
+of loaded pages. It still fails at the explicit 2,000-row ceiling rather than
+silently exporting a partial window. Legacy empty or long visit strings remain
+valid cursor values; no date normalization or record rewrite was introduced.
+
+Migration `0044_walkin_stable_list_page` adds one nonunique
+`is_deleted, visited_at desc, id desc, floor_id` index. A disposable 20,000-row
+fixture compared 20 warm reads per scope. Single-floor median query time fell
+from 8.942 ms to 0.429 ms (5,000 documents/keys examined to 45 documents/178
+keys). Four-floor median fell from 28.380 ms to 0.309 ms (20,000 documents/keys
+and a blocking sort to 45 documents/45 keys with no blocking sort). The index
+occupied 536,576 bytes. The synthetic initial JSON fell from 1,116,999 bytes for
+2,000 rows to 22,430 bytes for 40 rows plus cursor, a 97.99% reduction before
+compression. These are local synthetic query/payload measurements, not field
+latency claims. Raw evidence is `.cache/review/walkin-index.json`.
+
+Eighteen client/hook regressions and 63 backend checks pass. The two new
+real-Mongo checks traverse 2,301 records exactly once, exercise multi-floor
+permissions, literal/date/source/priority filters, insertion/deletion between
+pages, unusual legacy cursors and attribution, and prove the repeated migration
+preserves documents. They join the explicit isolated CI integration targets.
+TypeScript passes; scoped browser fixtures now use the actual page envelope,
+including a new populated paging/failure/retry/search-reset case. Apply 0044
+through the controlled migration runner before backend rollout and retain the
+index on application rollback.
+
+## Final dependency and Kitchen CI verification
+
+The final dependency scan supersedes the earlier baseline counts: npm now reports
+zero moderate, high or critical findings and eight low dependency entries, all
+propagated from the single unpatched deepmerge advisory. Scoped overrides move
+Expo's glob 13 requests to 14.0.4 and minimatch 10 requests to 11.0.5, resolving
+[GHSA-3g3m-2fjr-6pw4](https://github.com/advisories/GHSA-3g3m-2fjr-6pw4) and
+[GHSA-g3hv-75wg-m249](https://github.com/advisories/GHSA-g3hv-75wg-m249).
+Legacy React Native glob 7 and ESLint minimatch 3 remain unchanged. No Expo or
+React Native framework upgrade, audit suppression or forced remediation was used.
+[Deepmerge GHSA-gcqx-w48m-w2h4](https://github.com/advisories/GHSA-gcqx-w48m-w2h4)
+has no patched published release; downgrading it would change merge semantics and
+is not included.
+
+An isolated install with npm 11.17.0 and the exact final manifest/lockfile passed
+clean `npm ci`, dependency preparation, the audit gate, Expo schema checks,
+native permission/release configuration checks, zero-warning lint, TypeScript,
+the 205-page web export and budget/cache checks, plus unsigned iOS and Android
+Metro exports. These exports establish compilation compatibility rather than
+physical-device acceptance. Receipts are under `.cache/review/dependency-*.log`
+and `.cache/review/npm-after-overrides.json`.
+
+Two baseline Kitchen CI fixtures now match the existing contracts. The timeout
+fixture retains its 25 ms synthetic read deadline, uses an async auth override,
+and gives the HTTP harness a separate five-second deadlock watchdog. Recovery
+retries restore normal deadlines. The stage-access fixture expects the merged
+Order/Production workspace and Order dashboard bucket while explicitly checking
+separate section permissions and forbidden commands. Production deadlines and
+authorization code are unchanged. All seven response-read unit cases and all
+80 cases in the six-file Kitchen integration CI suite pass against a run-owned
+loopback Mongo; the database process was stopped afterward. Logs are
+`.cache/review/kitchen-ci-unit.log` and `.cache/review/kitchen-ci-suite.log`.

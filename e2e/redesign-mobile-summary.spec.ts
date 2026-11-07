@@ -18,11 +18,11 @@ test('critical Walk-in summary opens every matching metric and hidden filters re
   await page.route('**/api/walkins/dashboard**', route => route.fulfill({ json: {
     today_walkins: 7, this_week: 7, pending_followups: 3, selections_scheduled: 1, converted: 3, lost: 1, conversion_rate: 75, avg_conversion_days: 2, total: 7,
   } }));
-  await page.route('**/api/walkins?**', route => {
+  await page.route('**/api/walkins/page?**', route => {
     const params = new URL(route.request().url()).searchParams;
     queries.push(params);
     const statuses = params.get('status')?.split(',');
-    return route.fulfill({ json: rows.filter(row => !statuses || statuses.includes(row.status)) });
+    return route.fulfill({ json: { items: rows.filter(row => !statuses || statuses.includes(row.status)), next_cursor: null } });
   });
   await page.goto('/walkins');
   await expect(page.getByTestId('walkin-card-summary-new')).toBeVisible();
@@ -69,9 +69,9 @@ test('critical Walk-in register renders without waiting for the optional summary
     await held;
     await route.fulfill({ status: 503, json: { detail: 'Summary temporarily unavailable' } });
   });
-  await page.route('**/api/walkins?**', route => route.fulfill({ json: [
+  await page.route('**/api/walkins/page?**', route => route.fulfill({ json: { items: [
     { ...baseWalkin, id: 'primary-register', status: 'new', customer_name: 'Available walk-in' },
-  ] }));
+  ], next_cursor: null } }));
   await page.goto('/walkins');
   try {
     await expect(page.getByTestId('walkin-card-primary-register')).toBeVisible();
@@ -81,6 +81,44 @@ test('critical Walk-in register renders without waiting for the optional summary
     await expect(page.getByText('Summary unavailable. Your walk-in register is still available below.', { exact: true })).toBeVisible();
     await expect(page.getByTestId('walkin-card-primary-register')).toBeVisible();
   } finally { releaseSummary(); }
+});
+
+test('critical Walk-in pages keep rows on failure, retry their boundary and reset after search', async ({ page }) => {
+  await mockSession(page, '/walkins');
+  const rows = Array.from({ length: 90 }, (_, index) => ({ ...baseWalkin, id: `paged-${index}`, status: 'new', customer_name: `Paged visitor ${index}` }));
+  const requests: URLSearchParams[] = [];
+  let failMore = true, legacyReads = 0;
+  await page.route(/\/api\/walkins(?:\?|$)/, route => { legacyReads++; return route.fulfill({ json: rows }); });
+  await page.route('**/api/walkins/page?**', route => {
+    const params = new URL(route.request().url()).searchParams;
+    requests.push(params);
+    expect(params.get('limit')).toBe('40');
+    expect(params.get('floor_ids')).toBe('first-floor');
+    if (params.get('search')) return route.fulfill({ json: { items: [rows[89]], next_cursor: null } });
+    const boundary = params.get('before_id');
+    if (boundary && failMore) return route.fulfill({ status: 503, json: { detail: 'Next page temporarily unavailable' } });
+    const start = boundary ? Number(boundary.slice('paged-'.length)) + 1 : 0;
+    const items = rows.slice(start, start + 40);
+    const last = items.at(-1)!;
+    return route.fulfill({ json: { items, next_cursor: start + 40 < rows.length ? { visited_at: last.visited_at, id: last.id } : null } });
+  });
+  await page.goto('/walkins');
+  await expect(page.locator('[data-testid^="walkin-card-paged-"]')).toHaveCount(40);
+  await page.getByTestId('walkins-show-more').click();
+  await expect(page.getByText('Could not load more walk-ins', { exact: true })).toBeVisible();
+  await expect(page.locator('[data-testid^="walkin-card-paged-"]')).toHaveCount(40);
+  expect(requests.at(-1)?.get('before_id')).toBe('paged-39');
+  failMore = false;
+  await page.getByRole('button', { name: 'Try again', exact: true }).filter({ visible: true }).last().click();
+  await expect(page.locator('[data-testid^="walkin-card-paged-"]')).toHaveCount(80);
+  expect(requests.at(-1)?.get('before_id')).toBe('paged-39');
+  await page.getByTestId('walkins-show-more').click();
+  await expect(page.locator('[data-testid^="walkin-card-paged-"]')).toHaveCount(90);
+  await expect(page.getByTestId('walkins-show-more')).toHaveCount(0);
+  await page.getByTestId('walkins-search').fill('Paged visitor 89');
+  await expect(page.locator('[data-testid^="walkin-card-paged-"]')).toHaveCount(1);
+  expect(requests.at(-1)?.get('before_id')).toBe(null);
+  expect(legacyReads).toBe(0);
 });
 
 test('critical Furniture follow-ups keep search and salesperson filters without summary controls', async ({ page }) => {

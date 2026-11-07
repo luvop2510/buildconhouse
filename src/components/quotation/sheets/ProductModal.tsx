@@ -175,7 +175,7 @@ export function ProductModal() {
   useEffect(() => {
     if (variantNameEditing || pendingVariantSave.current) return;
     setVariantName(selectedProduct?.variant_label || selectedProduct?.colour || selectedProduct?.finish || "");
-  }, [selectedProduct?.id, selectedProduct?.variant_label, selectedProduct?.colour, selectedProduct?.finish, variantNameEditing, variantWorkspace]);
+  }, [selectedProduct?.id, selectedProduct?.variant_label, selectedProduct?.colour, selectedProduct?.finish, variantNameEditing, variantNameBusy, variantWorkspace]);
 
   const saveVariantName = async () => {
     if (!mounted.current || !selectedProduct || !canEditProduct || pendingVariantSave.current) return;

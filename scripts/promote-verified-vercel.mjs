@@ -12,7 +12,7 @@ const project = 'prj_RuZWSvov1AkP2UDmWaea6925wWlU';
 // qualification uses a read-only observation inside the running deployment.
 export const KITCHEN_BINDING_PATH = '/api/health/kitchen-release-binding';
 export const EXISTING_SITE_DOMAIN = 'buildconhouse.in';
-export const RAILWAY_TARGET = Object.freeze({ project_id: '4d4a8d55-2e5e-43dc-b3a2-298e4455f210', environment_id: '3ee5a85e-c436-4010-8103-8e8a49186dd1', service_id: '9683fa61-7c70-4fce-ba6d-210b0cff5267' });
+export const RAILWAY_TARGET = Object.freeze({ project_id: '38e20cdb-1f8e-4350-91e5-2b0395c7f8f1', environment_id: '8c00931d-3098-49f5-a98f-fa240b8d8d0c', service_id: 'c504f1dd-13f4-4c71-8f74-a3886794b2bc' });
 export const KITCHEN_RELEASE_AUTHORITY = Object.freeze({
   thread_id: '01a15b3b-d46b-7d00-8f07-0eb1100c142c',
   exception_turn_id: '01a15dff-7167-73b0-a171-d76fbd4933bd',

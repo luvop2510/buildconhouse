@@ -32,16 +32,30 @@ def test_each_stage_scopes_lists_dashboard_detail_and_private_history():
             for stage in KITCHEN_STAGE_RESOURCES:
                 await assign(env, [stage])
                 actor = headers(env, "worker")
+                # Order and production share a workspace while retaining
+                # separate visibility and authority for each section's fields.
+                visible_stages = {"order", "production"} if stage in {"order", "production"} else {stage}
                 listing = await env["api"].get("/api/kitchen-projects", headers=actor)
                 assert listing.status_code == 200, listing.text
-                assert listing.json()["total"] == 1 and listing.json()["rows"][0]["id"] == ids[stage]
+                assert listing.json()["total"] == len(visible_stages)
+                assert {row["id"] for row in listing.json()["rows"]} == {ids[name] for name in visible_stages}
                 dashboard = await env["api"].get("/api/kitchen-projects/dashboard", headers=actor)
-                assert dashboard.status_code == 200 and dashboard.json()["total_projects"] == 1
-                assert {name for name, count in dashboard.json()["stage_counts"].items() if count} == {stage}
+                assert dashboard.status_code == 200 and dashboard.json()["total_projects"] == len(visible_stages)
+                dashboard_stage = "order" if stage == "production" else stage
+                assert {name: count for name, count in dashboard.json()["stage_counts"].items() if count} == {dashboard_stage: len(visible_stages)}
                 detail = await env["api"].get(f"/api/kitchen-projects/{ids[stage]}", headers=actor)
                 assert detail.status_code == 200, detail.text
-                assert detail.json()["access_scoped"] and detail.json()["permissions"]["visible_stages"] == [stage]
+                assert detail.json()["access_scoped"] and set(detail.json()["permissions"]["visible_stages"]) == visible_stages
                 assert detail.json()["activity"] == []
+                for section in ("order", "production"):
+                    assert detail.json()["permissions"][f"can_view_{section}"] == (stage == section)
+                    assert detail.json()["permissions"][f"can_update_{section}"] == (stage == section)
+                if len(visible_stages) == 2:
+                    other_section = next(name for name in visible_stages if name != stage)
+                    shared_detail = await env["api"].get(f"/api/kitchen-projects/{ids[other_section]}", headers=actor)
+                    assert shared_detail.status_code == 200, shared_detail.text
+                    forbidden_command = await command(env, detail.json(), f"{other_section}_update", {}, actor="worker")
+                    assert forbidden_command.status_code == 403
                 sibling = "visit" if stage == "lead" else "lead"
                 denied = await env["api"].get(f"/api/kitchen-projects/{ids[sibling]}", headers=actor)
                 assert denied.status_code in {403, 404}

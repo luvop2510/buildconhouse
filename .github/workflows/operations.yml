@@ -41,7 +41,7 @@ jobs:
         env:
           LATENCY_THRESHOLD: ${{ inputs.latency_threshold_ms }}
         run: |
-          node scripts/check-service-health.mjs https://forge20-production-a8b0.up.railway.app output/operations/railway.json github-hosted-unverified-region "$LATENCY_THRESHOLD"
+          node scripts/check-service-health.mjs https://buildconhouse-production.up.railway.app output/operations/railway.json github-hosted-unverified-region "$LATENCY_THRESHOLD"
       - name: Publish technical results in the job summary
         if: always()
         run: node scripts/summarize-health-evidence.mjs output/operations/vercel.json output/operations/railway.json

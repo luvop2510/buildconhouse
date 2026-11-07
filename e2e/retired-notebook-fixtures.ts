@@ -28,9 +28,9 @@ export async function retiredNotebookRedirect(page: Page, path: string, destinat
     interested_products: [], visited_at: new Date().toISOString(),
     created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
   };
-  await page.route(destination === 'followups' ? '**/api/followups/page?**' : /\/api\/walkins(?:\?|$)/, route => {
+  await page.route(destination === 'followups' ? '**/api/followups/page?**' : /\/api\/walkins\/page(?:\?|$)/, route => {
     expect(route.request().headers()['x-floor-id']).toBe(floorId);
-    return route.fulfill({ json: destination === 'followups' ? { items: [row], page: 1, page_size: 100, has_more: false } : [{ ...row, status: 'new' }] });
+    return route.fulfill({ json: destination === 'followups' ? { items: [row], page: 1, page_size: 100, has_more: false } : { items: [{ ...row, status: 'new' }], next_cursor: null } });
   });
   if (floorId === 'second-floor') await page.route('**/api/kitchen-projects**', route => {
     expect(route.request().headers()['x-floor-id']).toBe(floorId);

@@ -1,5 +1,11 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { floors, mockSession } from './audit-fixtures';
+
+async function showStaffIdentity(page: Page) {
+  await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible();
+  const more = page.getByRole('button', { name: 'More', exact: true });
+  if (await more.isVisible()) await more.click();
+}
 
 test('critical static sign-in waits for hydration before accepting credentials', async ({ page }) => {
   await mockSession(page, '/login', false, { signedIn: false });
@@ -34,7 +40,9 @@ test('critical static sign-in waits for hydration before accepting credentials',
     await expect(page.getByTestId('login-submit')).toBeEnabled();
     await page.getByTestId('login-submit').click();
     await expect(page).toHaveURL(/\/dashboard$/);
-    await expect(page.getByRole('heading', { name: /^Good (morning|afternoon|evening), Hydrated\.$/ })).toBeVisible();
+    await expect(page.getByText('Today', { exact: true }).first()).toBeVisible();
+    await showStaffIdentity(page);
+    await expect(page.getByText('Hydrated Owner', { exact: true }).first()).toBeVisible();
   } finally {
     release();
   }
@@ -74,8 +82,9 @@ for (const kind of ['staff', 'customer'] as const) {
       await finished;
       await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
       if (kind === 'staff') {
-        await expect(page.getByRole('heading', { name: /^Good (morning|afternoon|evening), New\.$/ })).toBeVisible();
-        await expect(page.getByRole('heading', { name: /^Good (morning|afternoon|evening), Old\.$/ })).toHaveCount(0);
+        await showStaffIdentity(page);
+        await expect(page.getByText('New Owner', { exact: true }).first()).toBeVisible();
+        await expect(page.getByText('Old Owner', { exact: true })).toHaveCount(0);
       } else {
         await expect(page.getByText('New Customer', { exact: true }).first()).toBeVisible();
       }

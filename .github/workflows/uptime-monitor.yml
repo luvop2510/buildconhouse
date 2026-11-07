@@ -33,7 +33,7 @@ jobs:
         run: node scripts/check-uptime-monitor.mjs https://buildconhouse.in output/uptime-monitor/vercel.json github-hosted-unverified-region
       - name: Check Railway readiness and unauthenticated access boundary
         if: always()
-        run: node scripts/check-uptime-monitor.mjs https://forge20-production-a8b0.up.railway.app output/uptime-monitor/railway.json github-hosted-unverified-region
+        run: node scripts/check-uptime-monitor.mjs https://buildconhouse-production.up.railway.app output/uptime-monitor/railway.json github-hosted-unverified-region
       - name: Publish technical results in the job summary
         if: always()
         run: node scripts/summarize-health-evidence.mjs output/uptime-monitor/vercel.json output/uptime-monitor/railway.json

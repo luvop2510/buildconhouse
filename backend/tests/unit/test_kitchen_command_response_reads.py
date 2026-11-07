@@ -58,7 +58,6 @@ async def test_next_response_hydration_times_out_before_commit_and_releases_admi
     original_customers = kitchen_projects.KitchenProjectService._current_customers
 
     original_timeout = asyncio.timeout
-    monkeypatch.setattr(kitchen_projects.asyncio, "timeout", lambda _seconds: original_timeout(0.025))
 
     async def stalled_customers(self, _ids):
         await asyncio.Event().wait()
@@ -67,12 +66,18 @@ async def test_next_response_hydration_times_out_before_commit_and_releases_admi
     monkeypatch.setattr(kitchen_routes, "db", database)
     app = FastAPI()
     app.include_router(kitchen_routes.router)
-    app.dependency_overrides[get_current_user] = lambda: owner
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
-        response = await asyncio.wait_for(client.post(f"/kitchen-projects/{project['id']}/commands", json={
-            "expected_version": project["version"], "idempotency_key": "next-read-command",
-            "command": "move_stage", "payload": {"target_stage": target},
-        }), timeout=0.3)
+    async def current_user():
+        return owner
+    app.dependency_overrides[get_current_user] = current_user
+    with monkeypatch.context() as timeout_patch:
+        timeout_patch.setattr(kitchen_projects.asyncio, "timeout", lambda _seconds: original_timeout(0.025))
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+            # This watchdog includes HTTP harness scheduling on busy CI workers;
+            # the read itself still has the shortened 25 ms deadline above.
+            response = await asyncio.wait_for(client.post(f"/kitchen-projects/{project['id']}/commands", json={
+                "expected_version": project["version"], "idempotency_key": "next-read-command",
+                "command": "move_stage", "payload": {"target_stage": target},
+            }), timeout=5)
     assert response.status_code == 503
     assert database.kitchen_projects.rows[0]["stage"] == stage
     assert database.kitchen_projects.rows[0]["version"] == project["version"]

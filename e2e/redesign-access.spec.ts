@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { floors, mockSession } from './audit-fixtures';
+import { analyticsDashboard } from './sales-analytics-fixtures';
 import { readFileSync } from 'node:fs';
 
 for (const [path, destination] of [['/reports', '/dashboard'], ['/purchase-orders', '/purchases'], ['/notebook/kitchen/followups', '/walkins'], ['/notebook/furniture/quotation', '/followups']]) {
@@ -143,19 +144,21 @@ test('critical analytics drilldown preserves period and removes an error after r
   await mockSession(page, '/sales-data/brands/audit-brand');
   const requests: string[] = [];
   let fail = true;
-  await page.route('**/api/executive-analytics/brands/audit-brand?**', route => {
+  await page.route('**/api/sales-analytics/entities/companies/audit-brand?**', route => {
     requests.push(route.request().url());
     return fail ? route.fulfill({ status: 503, json: { detail: 'Brand temporarily unavailable' } }) : route.fulfill({ json: {
-      brand: { name: 'Audit Brand' }, kpis: { revenue: 1200, orders: 1, aov: 1200 }, trend: [], products: [], customers: [], salespeople: [], referrals: [],
+      ...analyticsDashboard('ground-floor', 'confirmation'),
+      identity: { id: 'audit-brand', name: 'Audit Brand', kind: 'companies', status: 'Active', floor_ids: ['ground-floor'], attributes: [] }, tables: {},
     } });
   });
   await page.goto('/sales-data/brands/audit-brand?preset=year&floorId=ground-floor');
   await expect(page.getByRole('button', { name: 'Try again', exact: true })).toBeVisible();
   fail = false;
   await page.getByRole('button', { name: 'Try again', exact: true }).click();
-  await expect(page.getByTestId('brand-detail-revenue')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Audit Brand', exact: true })).toBeVisible();
+  await expect(page.getByTestId('analytics-sales-hero')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Try again', exact: true })).toHaveCount(0);
-  expect(new URL(requests.at(-1)!).searchParams.get('preset')).toBe('year');
+  expect(new URL(requests.at(-1)!).searchParams.get('preset')).toBe('this_year');
   expect(new URL(requests.at(-1)!).searchParams.get('floor_id')).toBe('ground-floor');
 });
 
