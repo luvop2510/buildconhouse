@@ -67,6 +67,13 @@ def test_cadence_bulk_initialization_preserves_saved_settings_and_identity(mongo
             assert len(first) == 3
             assert (await database.automation_rules.find_one({"category": "selection"}))["reminder_offsets_days"] == [0, 2, 4, 7, 10]
             assert (await database.automation_rules.find_one({"category": "quotation_tiles"}))["reminder_offsets_days"] == [3, 9]
+            await database.automation_rules.delete_many({})
+            await asyncio.gather(*(rules.ensure_seeded() for _ in range(25)))
+            seeded = await database.automation_rules.find({}, {"_id": 1, "category": 1}).to_list(None)
+            assert {row["category"]: row["_id"] for row in seeded} == {
+                category: f"automation-default:{category}" for category in rules.DEFAULT_RULES
+            }
+            assert len(seeded) == len(rules.DEFAULT_RULES)
         finally:
             await client.drop_database(database.name)
             client.close()

@@ -28,11 +28,14 @@ class RuleCollection:
         self.before_write()
         self.writes.append(operations)
         for operation in operations:
-            category = operation._filter["category"]
-            existing = self.documents.get(category)
             if "$setOnInsert" in operation._doc:
-                self.documents.setdefault(category, copy.deepcopy(operation._doc["$setOnInsert"]))
-            elif existing and existing["reminder_offsets_days"] == operation._filter["reminder_offsets_days"]:
+                document = operation._doc["$setOnInsert"]
+                category = document["category"]
+                assert operation._filter == {"_id": f"automation-default:{category}"}
+                self.documents.setdefault(category, copy.deepcopy(document))
+                continue
+            existing = self.documents.get(operation._filter["category"])
+            if existing and existing["reminder_offsets_days"] == operation._filter["reminder_offsets_days"]:
                 existing.update(operation._doc["$set"])
 
 

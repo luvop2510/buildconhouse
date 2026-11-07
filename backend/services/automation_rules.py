@@ -51,7 +51,9 @@ async def ensure_seeded() -> None:
                 ))
             continue
         rule = AutomationRule(category=category, label=cfg["label"], reminder_offsets_days=cfg["reminder_offsets_days"])
-        operations.append(UpdateOne({"category": category}, {"$setOnInsert": rule.model_dump()}, upsert=True))
+        # Concurrent cold starts can both miss the category read. Mongo's
+        # unique _id makes their upserts converge on the same new default.
+        operations.append(UpdateOne({"_id": f"automation-default:{category}"}, {"$setOnInsert": rule.model_dump()}, upsert=True))
     if operations:
         await db.automation_rules.bulk_write(operations, ordered=True)
 

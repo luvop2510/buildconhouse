@@ -57,8 +57,10 @@ bulk command for its three independent rules. A warm invocation performs one
 read. The baseline used three reads plus three inserts when cold and three
 reads when warm. Each rule's upsert is atomic. The legacy Selection upgrade
 uses a conditional match so a concurrent customized cadence survives. Existing
-custom rules and IDs are preserved. Five stress trials of 25 concurrent cold
-initializations each retained exactly three defaults on disposable MongoDB.
+custom rules and IDs are preserved. Newly seeded defaults share a deterministic
+Mongo `_id` per category so simultaneous cold starts converge even without a
+category-unique index. A real-Mongo regression launches 25 concurrent cold
+initializations and verifies exactly one row per default category.
 
 ## Portal index and summaries
 
@@ -237,8 +239,13 @@ passing cases and four failures in the same follow-up scenario. The test expecte
 the older error copy. Its updated fixture holds the write, verifies immediate
 removal before failure, and requires rollback and successful retry. Focused
 browser checks pass the updated scenario. The full rerun and separate performance
-timing results are pending. Earlier interrupted logs are retained under
-`.cache/review/`.
+timing results are pending. The first timing pass records 56 passing cases and
+four Kitchen fixture failures caused by the old filename-specific button label.
+The corrected test finds the last document by its exact row, checks its filename,
+and verifies the current Download PDF action. All timing thresholds are preserved.
+A supplemental timing run overlapped the stability suite and exceeded the Kitchen
+2.5-second budget on three profiles. An isolated full timing rerun is scheduled
+after stability. Earlier logs are retained under `.cache/review/`.
 
 The dependency scan reports zero Python advisories. npm reports 19 moderate and
 one low advisory, with zero high or critical findings. A dry-run remediation kept
@@ -250,4 +257,6 @@ Deployment, production migration 0043, product-media backfill, authenticated
 production compression/latency measurements, field Web Vitals and physical-device
 acceptance remain outstanding. The 200 KB target and any claim of being the
 fastest available application are unverified. This report records local source
-improvements and their measured limits.
+improvements and their measured limits. The legacy walk-in API still returns up
+to 2,000 filtered records, with the browser mounting 40 at a time. Server paging
+there remains separate from the verified portal summary rollout.
