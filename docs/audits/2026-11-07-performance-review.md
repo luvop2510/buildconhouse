@@ -282,13 +282,11 @@ those counts and proposed incompatible framework changes. It was not applied.
 The low deepmerge advisory has no newer published release in the current registry.
 The separate security gate remains enabled.
 
-Deployment, production migration 0043, product-media backfill, authenticated
-production compression/latency measurements, field Web Vitals and physical-device
-acceptance remain outstanding. The 200 KB target and any claim of being the
-fastest available application are unverified. This report records local source
-improvements and their measured limits. Walk-in server paging is implemented
-below; its fresh browser and final release verification remain part of the
-combined source gate.
+Deployment, product-media backfill, authenticated production compression/latency
+measurements, field Web Vitals and physical-device acceptance require separate
+rollout evidence. The 200 KB target and any claim of being the fastest available
+application are unverified. This report records measured improvements and their
+limits. The final Walk-ins paging and migration follow-up appears below.
 
 ## Walk-in bounded reads and stable paging
 
@@ -360,3 +358,43 @@ authorization code are unchanged. All seven response-read unit cases and all
 80 cases in the six-file Kitchen integration CI suite pass against a run-owned
 loopback Mongo; the database process was stopped afterward. Logs are
 `.cache/review/kitchen-ci-unit.log` and `.cache/review/kitchen-ci-suite.log`.
+
+## Active Railway target and final review
+
+The current connected Railway account has project `vigilant-charm`
+(`38e20cdb-1f8e-4350-91e5-2b0395c7f8f1`), production environment
+`8c00931d-3098-49f5-a98f-fa240b8d8d0c`, and `buildconhouse` service
+`c504f1dd-13f4-4c71-8f74-a3886794b2bc`. Its existing main deployment
+`4b109d5c-2064-4ae9-bf23-846f5f53fe24` reports SUCCESS and serves
+`https://buildconhouse-production.up.railway.app`. Both its readiness and the
+canonical Vercel API readiness return 200. The older CLI account's trial expired;
+that account is not the active deployment target. Native release configuration,
+CI health probes and promotion-target identity now use the active service.
+
+An authenticated read from the active backend recognized a newly created session
+in the production database reached through the existing operator environment,
+confirming the data binding. That run-owned session was revoked immediately. The
+controlled runner then applied only pending migrations 0043 and 0044 successfully;
+original records are unchanged and additive indexes remain on rollback.
+
+Independent review found and fixed a variant-name race: selecting a sibling
+while a rename was pending could leave the previous variant's draft in the new
+editor. Completion now resynchronizes the selected variant; failures still retain
+the original variant's editable draft. Success/failure sibling tests join the
+11 passing editor/variant hook cases. The complete quotation-media checks and 68
+compression/download-token regression cases pass.
+
+A fresh export with updated dependencies and Walk-ins paging passed 200 focused
+desktop/phone browser cases covering access, sign-in races, team contacts, Walk-ins
+paging/retry/deletion/showroom and summary filters. Baseline fixtures now assert
+the existing analytics entity route and normalized year period, operational Today
+screen and displayed phone formatting. Raw contact-write assertions remain
+unchanged; clear-phone focuses the input before clearing its raw value. Full
+backend unit coverage passes 4,219 tests. TypeScript and full zero-warning lint
+pass. The final push retains the existing complete performance/stability gate,
+with generated receipts under `output/playwright/`.
+
+Public R2 image copies are being generated in resumable 20-source pages without
+rewriting Mongo rows or original bytes. Worker deployment is still blocked by
+the available R2 token's missing Workers permission and expired Wrangler OAuth.
+The additive copies do not establish that optimized images are served publicly.
