@@ -343,3 +343,24 @@ The tile builder derives its read-only quantity unit from catalog pricing and ca
 Changed files: `app/(admin)/followups.tsx`, `src/components/tiles/TilesDocBuilder.tsx`, `src/components/tiles/tileQuantityUnit.ts`, `backend/routes/quotation_customer_sources.py`, `backend/services/referrer_identity.py`, `backend/pdf_generator.py`, `backend/pdf_tiles.py`, and their focused tests.
 
 Last scanned: 2026-11-05.
+
+## Optional-media recovery delta — 7 November 2026
+
+Native fallback delta scan covers the final PDF image-loader and public-image
+backfill correction plus their focused regressions. Malformed optional URL
+syntax now produces the existing PDF placeholder before network admission. The
+additive backfill skips undecodable rasters while preserving originals and
+retaining fail-closed checksum/storage errors. Both remain inside the existing
+FastAPI service/script and R2 media architecture; no framework, architectural
+directory, authentication pattern or dependency swap is introduced. AGENTS.md
+requires no architectural update. Coverage percentage was not measured. The
+complete performance review, pagination/index changes, scoped cache behavior,
+optimistic recovery and active deployment target are documented in
+`docs/audits/2026-11-07-performance-review.md`.
+
+Changed files re-scanned: `backend/services/pdf_image_loader.py`,
+`backend/scripts/backfill_r2_image_variants.py`,
+`backend/tests/unit/test_pdf_generator_media.py`, and
+`backend/tests/unit/test_r2_image_backfill.py`.
+
+Last scanned: 2026-11-07.
