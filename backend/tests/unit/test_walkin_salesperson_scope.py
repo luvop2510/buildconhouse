@@ -51,6 +51,7 @@ def test_delegated_worker_can_own_walkins_only_with_writable_floor_grant(monkeyp
     async def grants(*_args):
         return [{"user_id": "worker", "resource": "walkins", "floor_id": floor, "actions": actions}]
     monkeypatch.setattr(walkin_routes, "grants_for_user", grants)
+    monkeypatch.setattr(walkin_routes.walkin_interests, "grants_for_user", grants)
     if allowed:
         assert asyncio.run(walkin_routes._salesperson_for_floor("worker", floor)) == staff
     else:
@@ -121,6 +122,7 @@ def test_delegated_worker_intake_creates_regular_walkin_with_chosen_floor_and_at
     monkeypatch.setattr(walkin_routes, "grants_for_user", grants)
     monkeypatch.setattr(duplicate_detection, "find_customer_matches", matches)
     monkeypatch.setattr(walkin_routes, "find_or_create_customer", customer)
+    monkeypatch.setattr(walkin_routes.walkin_interests, "grants_for_user", grants)
     monkeypatch.setattr(walkin_routes, "_next_walkin_number", next_number)
     monkeypatch.setattr(walkin_routes, "log_event", log)
     monkeypatch.setattr(walkin_routes, "reconcile_followups", reconcile)
@@ -178,6 +180,8 @@ def test_scope_edit_synchronizes_stored_salesperson_with_assigned_worker(monkeyp
     async def update(*_args, **_kwargs): return row
     monkeypatch.setattr(walkin_routes, "db", SimpleNamespace(followups=Followups(), walkins=Walkins()))
     monkeypatch.setattr(walkin_routes.lead_scope, "update_interests", update)
+    async def plan(*_args): return ["first-floor"], ["first-floor"]
+    monkeypatch.setattr(walkin_routes.walkin_interests, "plan", plan)
     asyncio.run(walkin_routes._walkin_scope(doc, object(), floors=["first-floor"], assignments=row["assignments"]))
     assert patches[0]["salesperson_id"] == "worker"
     assert patches[0]["salesperson_name"] == "Worker"

@@ -6,7 +6,7 @@ for (const floorId of ['first-floor', 'ground-floor', 'third-floor']) test(`crit
   const worker = { id: 'sales-worker', full_name: 'Assigned Worker', role: 'worker', floor_ids: [floorId] };
   await page.route('**/api/walkins/config/sources', r => r.fulfill({ json: { sources: ['Walk-in'] } }));
   await page.route('**/api/walkins/config/assignees', r => r.fulfill({ json: [worker] }));
-  await page.route('**/api/followups/assignees?**', r => r.fulfill({ json: [worker] }));
+  await page.route('**/api/walkins/config/interest-assignees?**', r => r.fulfill({ json: [worker] }));
   await page.route('**/api/walkins/check-duplicate?**', r => r.fulfill({ json: { high: [], medium: [], low: [] } }));
   const writes: any[] = [];
   await page.route('**/api/walkins', r => {

@@ -30,7 +30,7 @@ async def test_each_stage_grant_is_independent_and_only_lead_supports_creation(s
     sibling = "visit" if stage == "lead" else "lead"
     assert not await access.capability(database, user, "view", stage=sibling)
     expected = [stage, "production" if stage == "order" else "order"] if stage in {"order", "production"} else [stage]
-    assert access.scope_query(user, {}) == {"floor_id": "second-floor", "stage": {"$in": expected}}
+    assert access.scope_query(user, {}) == {"floor_id": "second-floor", "deleted_at": {"$exists": False}, "stage": {"$in": expected}}
     assert not await access.capability(database, user, "create")
     assert resource_supports(grant["resource"], "second-floor", ["view", "create"]) is (stage == "lead")
     assert not resource_supports(grant["resource"], "first-floor", ["view"])
@@ -57,7 +57,7 @@ async def test_legacy_workspace_grant_still_authorizes_every_stage(setup):
     database.users.rows[0]["delegation_grants"] = [grant]
     assert await access.capability(database, user, "create")
     assert access.allowed_stages(user) == list(KITCHEN_STAGE_RESOURCES)
-    assert access.scope_query(user, {}) == {"floor_id": "second-floor"}
+    assert access.scope_query(user, {}) == {"floor_id": "second-floor", "deleted_at": {"$exists": False}}
     assert not access.scoped(user)
 
 

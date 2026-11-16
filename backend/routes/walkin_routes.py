@@ -20,19 +20,19 @@ import asyncio
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
 from pymongo.errors import DuplicateKeyError
 from pymongo.read_concern import ReadConcern
 from pymongo.write_concern import WriteConcern
 
-from auth import floor_for_write, floor_query, floor_scope_ids, get_current_user, profile_floor_ids, require_floor_access, require_min_role
+from auth import authorize_staff_resource, floor_for_write, floor_query, floor_scope_ids, get_current_user, profile_floor_ids, require_floor_access, require_min_role
 from db import db
-from models import Followup, UserPublic, now_iso
+from models import Followup, FollowupAssignment, UserPublic, now_iso
 from models_walkins import WalkIn, WalkInCreate, WalkInUpdate, ReassignWalkInBody, WALKIN_OPEN_STATUSES
 from services.access_grants import grants_for_user, grant_allows
 from services.activity_log import log_event, timeline_for
-from services import lead_scope
+from services import lead_scope, walkin_interests
 from services.followup_engine import parse_iso, reconcile_followups
 from services.multi_filters import predicate, scoped_query, values
 from services.sequence import next_number as _next_number_seq
@@ -119,6 +119,39 @@ async def walkin_assignees(user: UserPublic = Depends(get_current_user)):
     return result
 
 
+@router.get("/config/interested-floors")
+async def interested_floor_options(response: Response, walkin_id: Optional[str] = Query(None, max_length=128), user: UserPublic = Depends(require_min_role("sales"))):
+    """Names for intake choices; this does not expand the caller's floor grants."""
+    await _require_interest_editor(user, walkin_id)
+    response.headers["Cache-Control"] = "no-store"
+    return await walkin_interests.floor_options(db)
+
+
+async def _require_interest_editor(user, walkin_id):
+    floor = floor_for_write(user)
+    if not walkin_id:
+        await walkin_interests.require_intake(db, user, floor)
+        return floor, None
+    await authorize_staff_resource(user, method="PATCH", path=f"/api/walkins/{walkin_id}", floor_id=floor)
+    row = await db.walkins.find_one({**_visible_walkin_query(walkin_id), "floor_id": floor}, {"_id": 0, "customer_phone": 1})
+    if not row:
+        raise HTTPException(404, "Walk-in not found")
+    return floor, row
+
+
+@router.get("/config/interest-assignees")
+async def interest_assignees(response: Response, floor_ids: str = Query(max_length=2048),
+                             walkin_id: Optional[str] = Query(None, max_length=128),
+                             customer_phone: Optional[str] = Query(None, max_length=40),
+                             user: UserPublic = Depends(require_min_role("sales"))):
+    floor, row = await _require_interest_editor(user, walkin_id)
+    _, routed = await walkin_interests.plan(db, user, values(floor_ids) or [floor], floor)
+    stages = await lead_scope.notebook_stages(db, {"floor_id": floor, "customer_phone": row.get("customer_phone") if row else customer_phone}, routed)
+    response.headers["Cache-Control"] = "no-store"
+    return [{"id": worker["id"], "full_name": worker["full_name"], "role": worker["role"], "floor_ids": worker["eligible_floor_ids"]}
+            for worker in await lead_scope.eligible_staff(db, routed, notebook_converted=stages) if worker["eligible_floor_ids"]]
+
+
 class LeadSourcesSettingsBody(BaseModel):
     sources: list[str]
 
@@ -168,6 +201,7 @@ async def check_duplicate(
 
 
 async def _walkin_scope(doc, user, *, floors, assignments=None, metadata=None, dry_run=False):
+    interests, floors = await walkin_interests.plan(db, user, floors, doc['floor_id'], assignments)
     identity = {"id": doc.get("scope_followup_id") or f"walkin-lead:{doc['id']}", "floor_id": doc['floor_id']}
     source = await db.followups.find_one(identity, {"_id": 0})
     if not source:
@@ -183,8 +217,8 @@ async def _walkin_scope(doc, user, *, floors, assignments=None, metadata=None, d
     row = await lead_scope.update_interests(db, user=user, source=source, floor_ids=floors, assignments=assignments, metadata=metadata)
     attribution = _walkin_attribution({**doc, 'assignments': row['assignments']})
     salesperson = {key: attribution.get(key) for key in ('salesperson_id', 'salesperson_name')} if doc['floor_id'] in {'first-floor', 'ground-floor', 'third-floor'} else {}
-    await db.walkins.update_one({'id': doc['id'], 'floor_id': doc['floor_id']}, {'$set': {'scope_followup_id': row['id'], 'lead_group_id': row['lead_group_id'], 'interested_floor_ids': row['interested_floor_ids'], 'assignments': row['assignments'], **salesperson, **(metadata or {})}})
-    return row
+    await db.walkins.update_one({'id': doc['id'], 'floor_id': doc['floor_id']}, {'$set': {'scope_followup_id': row['id'], 'lead_group_id': row['lead_group_id'], 'interested_floor_ids': interests, 'assignments': row['assignments'], **salesperson, **(metadata or {})}})
+    return {**row, 'interested_floor_ids': interests}
 
 
 # ---------- Create ----------
@@ -202,12 +236,15 @@ async def create_walkin(body: WalkInCreate, user: UserPublic = Depends(require_m
     # or — worse — trigger the 409 duplicate-match response below and read
     # the other unit's customer PII back in the response body.
     require_floor_access(body.floor_id, user)
+    await walkin_interests.require_intake(db, user, body.floor_id)
 
+    routed_floors = [body.floor_id]
     if body.interested_floor_ids or body.assignments is not None:
-        await lead_scope.validate_scope(db, user, body.interested_floor_ids or [body.floor_id], [], source_floor=body.floor_id)
+        _, routed_floors = await walkin_interests.plan(db, user, body.interested_floor_ids or [body.floor_id], body.floor_id, body.assignments)
+        await lead_scope.validate_scope(db, user, routed_floors, [], source_floor=body.floor_id)
     referrer = await lead_scope.referrer_fields(db, body.referrer_id, body.floor_id, user) if body.referrer_id else {}
     if body.floor_id in {"first-floor", "ground-floor", "third-floor"} and body.assignments is not None:
-        normalized = await lead_scope.validate_assignments(db, body.interested_floor_ids or [body.floor_id], body.assignments)
+        normalized = await lead_scope.validate_assignments(db, routed_floors, body.assignments)
         local = [a for a in normalized if a["floor_id"] == body.floor_id]
         if not local:
             raise HTTPException(status_code=422, detail="Select a salesperson for the walk-in floor")
@@ -294,7 +331,7 @@ async def create_walkin(body: WalkInCreate, user: UserPublic = Depends(require_m
         scoped = await _walkin_scope(walkin.model_dump(), user, floors=body.interested_floor_ids or [body.floor_id], assignments=body.assignments, metadata={'reference_source': body.reference_source or body.source, **referrer})
         walkin.scope_followup_id = scoped['id']
         walkin.interested_floor_ids = scoped['interested_floor_ids']
-        walkin.assignments = scoped['assignments']
+        walkin.assignments = [FollowupAssignment.model_validate(item) for item in scoped['assignments']]
     await log_event(
         event_type="walkin.created", entity_type="walkin", entity_id=walkin.id,
         customer_id=customer["id"], actor=user,

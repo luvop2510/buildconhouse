@@ -141,7 +141,7 @@ export function moduleForRoute(segments: string[]): string | null {
 
 /** Catalog visibility must never delete saved compatibility grants. */
 export function isResourceAssignable(resource: DelegationResource, floorId: string): boolean {
-  if (floorId === "second-floor" && resource.key !== "kitchen_restricted" && resource.key !== "kitchen_projects" && !KITCHEN_STAGE_NAMES.some(stage => resource.key === `kitchen_${stage}`)) return false;
+  if (floorId === "second-floor" && resource.key !== "kitchen_restricted" && resource.key !== "kitchen_projects" && resource.key !== "kitchen_customer_delete" && !KITCHEN_STAGE_NAMES.some(stage => resource.key === `kitchen_${stage}`)) return false;
   return !resource.retired && (resource.assignable_floor_ids ?? resource.floor_ids).includes(floorId);
 }
 

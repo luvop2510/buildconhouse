@@ -117,11 +117,11 @@ def require_attachment(user, project, metadata, purpose):
 def scope_query(user, policy):
     # Kitchen capabilities grant the workspace; historical staff assignments do not.
     stages = allowed_stages(user)
-    return {"floor_id": KITCHEN_FLOOR, **({"stage": {"$in": stages}} if len(stages) < len(KITCHEN_STAGE_RESOURCES) else {})}
+    return {"floor_id": KITCHEN_FLOOR, "deleted_at": {"$exists": False}, **({"stage": {"$in": stages}} if len(stages) < len(KITCHEN_STAGE_RESOURCES) else {})}
 
 
 def project_visible(project, user, policy):
-    return project.get("floor_id") == KITCHEN_FLOOR and project.get("stage") in allowed_stages(user)
+    return not project.get("deleted_at") and project.get("floor_id") == KITCHEN_FLOOR and project.get("stage") in allowed_stages(user)
 
 
 def department_manager(user, policy):
@@ -150,6 +150,8 @@ async def require_command(database, user, project, command):
 
 
 async def require_customer(database, user, customer, action="view"):
+    if customer.get("deleted_at"):
+        raise HTTPException(404, "Customer not found")
     if customer.get("floor_id") != KITCHEN_FLOOR or not user.custom_access:
         return
     grants = await grants_for_user(database, user.id)

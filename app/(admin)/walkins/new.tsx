@@ -28,9 +28,12 @@ export default function NewWalkIn() {
   const { floor_id: routeFloorId } = useLocalSearchParams<{ floor_id?: string }>();
   const { staff } = useAuth();
   const { floors: assignedFloors, selectedFloorId } = useFloorAccess();
-  const floors = staff?.custom_access ? assignedFloors.filter(floor => hasGrantAccess(staff.access_grants, floor.id, "walkins", "create")) : assignedFloors;
+  const floors = useMemo(() => staff?.custom_access ? assignedFloors.filter(floor => hasGrantAccess(staff.access_grants, floor.id, "walkins", "create")) : assignedFloors, [assignedFloors, staff]);
+  const sourceFloor = floors.find(floor => floor.id === routeFloorId)?.id || floors.find(floor => floor.id === selectedFloorId)?.id || floors[0]?.id || "";
   const [optionsError, setOptionsError] = useState(false);
   const [optionsRetry, setOptionsRetry] = useState(0);
+  const [interestFloors, setInterestFloors] = useState<{ id: string; name: string }[]>([]);
+  const [interestFloorError, setInterestFloorError] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const [name, setName] = useState("");
@@ -39,8 +42,11 @@ export default function NewWalkIn() {
 
   const [source, setSource] = useState("Walk-in");
   const [sources, setSources] = useState<string[]>(["Walk-in", "Reference", "Architect", "Builder", "Social Media", "Existing Customer", "Other"]);
-  const [floorId, setFloorId] = useState(routeFloorId || selectedFloorId || floors[0]?.id || "");
-  const [scope, setScope] = useState<LeadScope>({ interested_floor_ids: [routeFloorId || selectedFloorId || floors[0]?.id || ""].filter(Boolean), assignments: [] });
+  const [floorId, setFloorId] = useState(sourceFloor);
+  const [scope, setScope] = useState<LeadScope>({ interested_floor_ids: [sourceFloor].filter(Boolean), assignments: [] });
+  const assignmentFloorIds = useMemo(() => assignedFloors.filter(floor => !staff?.custom_access || floor.id === floorId ||
+    ["followups", floor.id === "second-floor" || floor.id === "third-floor" ? "notebook_walkins" : "followups"].some(resource =>
+      hasGrantAccess(staff.access_grants, floor.id, resource, "view") && hasGrantAccess(staff.access_grants, floor.id, resource, "update"))).map(floor => floor.id), [assignedFloors, staff, floorId]);
   const [error, setError] = useState<string | null>(null);
 
   // Catalog floors use the selected floor team as their assignment source.
@@ -63,6 +69,16 @@ export default function NewWalkIn() {
   }, [optionsRetry]);
 
   useEffect(() => {
+    if (!floorId || !floors.some(floor => floor.id === floorId)) return;
+    const controller = new AbortController();
+    setInterestFloors([]); setInterestFloorError(false);
+    walkinsApi.interestedFloors(floorId, controller.signal).then(rows => {
+      if (!controller.signal.aborted) setInterestFloors(rows);
+    }).catch(() => { if (!controller.signal.aborted) setInterestFloorError(true); });
+    return () => controller.abort();
+  }, [floorId, optionsRetry, floors]);
+
+  useEffect(() => {
     if (!floorId) return;
     let active = true;
     setAssignees([]);
@@ -81,8 +97,8 @@ export default function NewWalkIn() {
   }, [staff, salespersonId, assignees, floorId]);
 
   useEffect(() => {
-    if (routeFloorId) { setFloorId(routeFloorId); return; }
-    if (!floorId && (selectedFloorId || floors[0]?.id)) setFloorId(selectedFloorId || floors[0]?.id);
+    if (routeFloorId && floors.some(floor => floor.id === routeFloorId)) { setFloorId(routeFloorId); return; }
+    if (!floors.some(floor => floor.id === floorId) && (selectedFloorId || floors[0]?.id)) setFloorId(floors.some(floor => floor.id === selectedFloorId) ? selectedFloorId : floors[0]?.id || "");
   }, [routeFloorId, selectedFloorId, floors, floorId]);
   useEffect(() => {
     if (!floorId || !floors.some(floor => floor.id === floorId)) return;
@@ -219,7 +235,8 @@ export default function NewWalkIn() {
             testID="walkin-salesperson-row"
           /></> : null}
 
-          <LeadScopeFields assignmentsRequired={["first-floor", "ground-floor", "third-floor"].includes(floorId)} customerPhone={phone} sourceFloorId={floorId} value={scope} onChange={value => { setScope(value); if (value.interested_floor_ids.length && !value.interested_floor_ids.includes(floorId)) setFloorId(value.interested_floor_ids[0]); }} reference={false} />
+          {interestFloorError ? <Alert tone="error" title="Interested floors unavailable" description="Your entries are retained. Retry to load all active floor choices." action={<Button label="Retry floors" variant="secondary" onPress={() => setOptionsRetry(value => value + 1)} />} /> : null}
+          <LeadScopeFields assignmentsRequired={["first-floor", "ground-floor", "third-floor"].includes(floorId)} customerPhone={phone} sourceFloorId={floorId} interestFloors={interestFloors.length ? interestFloors : floors} assignmentFloorIds={assignmentFloorIds} value={scope} onChange={setScope} reference={false} />
 
           <Disclosure title="Lead source" summary={source}>
           <View style={{ flexDirection: "row", gap: spacing.sm, flexWrap: "wrap" }}>

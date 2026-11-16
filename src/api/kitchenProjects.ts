@@ -74,6 +74,7 @@ export type KitchenProject = {
   activity?: KitchenActivity[]; created_at?: string; updated_at?: string;
 };
 export type KitchenPage<T> = { rows: T[]; total: number; page: number; limit: number };
+export type KitchenStageFollowup = { id: string; project_id: string; customer_id: string; floor_id: string; stage: KitchenStage; number: number; date: string; notes: string | null; interaction_type: "Visit" | "Call"; actor_id: string; actor_name: string; created_at: string };
 export type KitchenQuery = {
   attention?: "active" | "on_hold" | "pending_approval" | "completion_overdue" | "active_order";
   search?: string; stage?: string; status?: string; assignee?: string; date_from?: string; date_to?: string;
@@ -92,6 +93,8 @@ export function kitchenRequestKey() {
   return `kitchen:${globalThis.crypto?.randomUUID?.() || `${Date.now()}:${Math.random().toString(36).slice(2)}:${Math.random().toString(36).slice(2)}`}`;
 }
 export const kitchenProjectsApi = {
+  followups: (id: string, stage?: KitchenStage, page = 1, signal?: AbortSignal) => api.get<KitchenPage<KitchenStageFollowup>>(`/kitchen-projects/${encodeURIComponent(id)}/follow-ups${query({ stage, page, limit: 30 })}`, { ...options, signal }),
+  addFollowup: (id: string, body: { stage: KitchenStage; date: string; notes: string; interaction_type: "Visit" | "Call"; idempotency_key: string }) => api.post<KitchenStageFollowup>(`/kitchen-projects/${encodeURIComponent(id)}/follow-ups`, body, options),
   configuration: (signal?: AbortSignal) => api.get<KitchenPolicy>("/kitchen-projects/configuration", { ...options, signal }),
   configure: (body: { decision_contract: typeof KITCHEN_DECISION_CONTRACT; department_manager_user_ids: string[]; expected_version: number }) => api.put<KitchenPolicy>("/kitchen-projects/configuration", body, options),
   dashboard: (signal?: AbortSignal) => api.get<KitchenDashboard>("/kitchen-projects/dashboard", { ...options, signal }),

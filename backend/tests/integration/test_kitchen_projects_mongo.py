@@ -68,7 +68,7 @@ async def environment():
     url = local_mongo_url()
     import auth
     import db as connection
-    from routes import customer_routes, kitchen_routes, referrer_routes, sales_data_routes
+    from routes import customer_routes, customer_search_routes, kitchen_customer_deletion_routes, kitchen_routes, referrer_routes, sales_data_routes
     from services.access_grants import build_grant
     from services import activity_log
 
@@ -76,6 +76,8 @@ async def environment():
     database = client[f"forge_kitchen_acceptance_{uuid4().hex}"]
     patches = [(auth, "db", auth.db), (connection, "db", connection.db),
                (kitchen_routes, "db", kitchen_routes.db), (customer_routes, "db", customer_routes.db),
+               (customer_search_routes, "db", customer_search_routes.db),
+               (kitchen_customer_deletion_routes, "db", kitchen_customer_deletion_routes.db),
                (activity_log, "db", activity_log.db), (referrer_routes, "db", referrer_routes.db),
                (sales_data_routes, "db", sales_data_routes.db)]
     for module, name, _ in patches:
@@ -90,6 +92,9 @@ async def environment():
         transfers = importlib.import_module("migrations.0037_kitchen_file_transfers")
         await transfers.up(database)
         await transfers.up(database)
+        stage_followups = importlib.import_module("migrations.0045_kitchen_stage_followups")
+        await stage_followups.up(database)
+        await stage_followups.up(database)
         await database.floors.insert_many([
             {"id": floor, "name": label, "slug": floor, "active": True}
             for floor, label in (("second-floor", "Kitchen"), ("first-floor", "Sanitary"))
@@ -124,6 +129,8 @@ async def environment():
 
         app.include_router(kitchen_routes.router, prefix="/api")
         app.include_router(customer_routes.router, prefix="/api")
+        app.include_router(customer_search_routes.router, prefix="/api")
+        app.include_router(kitchen_customer_deletion_routes.router, prefix="/api")
         app.include_router(referrer_routes.router, prefix="/api")
         app.include_router(sales_data_routes.router, prefix="/api")
 

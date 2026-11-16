@@ -121,6 +121,23 @@ assert.equal(staffLandingPath(null, [{ resource: 'notebook_walkins', actions: ['
 assert.equal(staffLandingPath(null, [{ resource: 'purchases', actions: ['view'], floor_id: 'ground-floor' }], 'ground-floor'), '/(admin)/access');
 
 const currentKitchen = { key: 'kitchen_projects', label: 'Kitchen workspace', actions: ['view', 'create', 'update', 'export'], floor_ids: ['second-floor'], assignable_floor_ids: ['second-floor'] };
+const kitchenDelete = { key: 'kitchen_customer_delete', label: 'Delete Kitchen customers', actions: ['view', 'delete'], floor_ids: ['second-floor'], assignable_floor_ids: ['second-floor'] };
+assert.equal(isResourceAssignable(kitchenDelete, 'second-floor'), true, 'the owner must be able to assign the separate delete capability');
+assert.equal(isResourceAssignable(kitchenDelete, 'first-floor'), false, 'Kitchen deletion never broadens to another floor');
+assert.deepEqual(delegationPagesForFloor([currentKitchen, kitchenDelete], [], 'second-floor'), [currentKitchen, kitchenDelete]);
+let deleteState = togglePage({ floorIds: ['second-floor'], grants: [] }, 'second-floor', currentKitchen, true);
+deleteState = toggleAction(deleteState, 'second-floor', currentKitchen, 'update', true);
+assert.equal(hasGrantAccess(deleteState.grants, 'second-floor', 'kitchen_customer_delete', 'delete'), false, 'ordinary stage edit cannot confer deletion');
+deleteState = togglePage(deleteState, 'second-floor', kitchenDelete, true);
+assert.equal(hasGrantAccess(deleteState.grants, 'second-floor', 'kitchen_customer_delete', 'delete'), false, 'enabling the permission row starts with view only');
+deleteState = toggleAction(deleteState, 'second-floor', kitchenDelete, 'delete', true);
+assert.equal(hasGrantAccess(deleteState.grants, 'second-floor', 'kitchen_customer_delete', 'delete'), true, 'the owner must explicitly select Delete');
+assert.deepEqual(loadDelegation(deleteState.floorIds, deleteState.grants, [currentKitchen, kitchenDelete]), deleteState, 'selected deletion permission survives editing/reopening');
+deleteState = toggleAction(deleteState, 'second-floor', kitchenDelete, 'delete', false);
+assert.equal(hasGrantAccess(deleteState.grants, 'second-floor', 'kitchen_customer_delete', 'delete'), false, 'revoking Delete retains unrelated stage edit');
+assert.equal(hasGrantAccess(deleteState.grants, 'second-floor', 'kitchen_projects', 'update'), true);
+deleteState = togglePage(deleteState, 'second-floor', kitchenDelete, false);
+assert.equal(deleteState.grants.some(grant => grant.resource === 'kitchen_customer_delete'), false, 'the separate permission can be removed completely');
 const compatibilityPayments = { ...payments, assignable_floor_ids: ['ground-floor', 'first-floor', 'third-floor'] };
 assert.deepEqual(delegationPagesForFloor([compatibilityPayments, currentKitchen], [], 'second-floor'), [currentKitchen]);
 const historicGrant = { resource: 'payments', actions: ['view', 'update'], floor_id: 'second-floor' };

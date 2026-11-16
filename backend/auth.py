@@ -170,7 +170,7 @@ async def _read_active_principal(subject: str, session_id: str, kind: str, colle
         {"$set": {"last_seen_at": datetime.now(timezone.utc).isoformat()}},
     ))
 
-    if not principal or not principal.get("active", True):
+    if not principal or principal.get("deleted_at") or principal.get("is_deleted") or not principal.get("active", True):
         raise HTTPException(status_code=401, detail=(
             "User not found or inactive" if kind == "staff" else "Customer not found"
         ))
@@ -237,7 +237,7 @@ async def authorize_staff_request(user: UserPublic, request: Request | None) -> 
     # custom page grant must not authorize its direct API or export URLs.
     if resource_for_api_path(path) == "sales_data" or path == "/api/dashboard/stats":
         raise HTTPException(status_code=403, detail="Sales Data is available only to the owner")
-    if request.method == "GET" and path in {"/api/dashboard/today", "/api/dashboard/today/overview"}:
+    if request.method == "GET" and path in {"/api/dashboard/today", "/api/dashboard/today/overview", "/api/customer-search", "/api/customer-search/profile"}:
         # The DTO applies current department grants before any business read.
         # It is also the safe landing page for narrowly scoped profiles.
         return user
@@ -753,7 +753,7 @@ async def get_floor_scoped_or_404(
     is inaccessible rather than defaulting to Sanitary (first-floor) — the
     exact mistake migration 0014's design rejects."""
     doc = await collection.find_one({id_field: doc_id}, projection, session=session)
-    if not doc:
+    if not doc or doc.get("deleted_at"):
         raise HTTPException(status_code=404, detail=not_found)
     floor_id = doc.get("floor_id")
     allowed = accessible_floor_ids(user)

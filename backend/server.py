@@ -33,6 +33,8 @@ from routes.dashboard_routes import router as dashboard_router  # noqa: E402
 from routes.catalog_routes import router as catalog_router  # noqa: E402
 from routes.catalog_import_routes import router as catalog_import_router  # noqa: E402
 from routes.customer_routes import router as customer_router  # noqa: E402
+from routes.customer_search_routes import router as customer_search_router
+from routes.kitchen_customer_deletion_routes import router as kitchen_customer_deletion_router
 from routes.po_final_routes import router as po_final_router  # noqa: E402
 from routes.quotation_customer_sources import router as quotation_customer_sources_router
 from routes.quotation_routes import router as quotation_router  # noqa: E402
@@ -413,6 +415,8 @@ api.include_router(auth_router)
 api.include_router(dashboard_router)
 api.include_router(catalog_router)
 api.include_router(catalog_import_router)
+api.include_router(customer_search_router)
+api.include_router(kitchen_customer_deletion_router)
 api.include_router(customer_router)
 api.include_router(po_final_router)
 api.include_router(quotation_customer_sources_router)

@@ -16,6 +16,7 @@ Both reuse the shared image fetch/placeholder/escaping/footer helpers from
 pdf_generator so there is exactly one implementation of those in the codebase.
 """
 from __future__ import annotations
+from services.product_display import tile_product_name
 from services.phone_format import format_phone
 from services.referrer_identity import pdf_reference_label
 
@@ -418,7 +419,7 @@ def build_tiles_selection_pdf(quotation: dict, customer: dict, branding: dict | 
                 cover=True,
             ),
             Paragraph(_escape(item.get("room") or ""), styles["cell"]),
-            Paragraph(_escape(item.get("name") or ""), styles["cellBold"]),
+            Paragraph(_escape(tile_product_name(item.get("name"), item.get("size"))), styles["cellBold"]),
             Paragraph(_escape(item.get("size") or ""), styles["cell"]),
             Paragraph(_money(item.get("offer_rate") if item.get("offer_rate") is not None else (item.get("rate_sqft") if item.get("rate_sqft") is not None else item.get("unit_price") or 0)), styles["cellRed"]),
         ])
@@ -544,7 +545,7 @@ def build_tiles_quotation_pdf(quotation: dict, customer: dict, branding: dict | 
                 cover=True,
             ),
             Paragraph(_escape(item.get("room") or ""), styles["cell"]),
-            Paragraph(_escape(item.get("name") or ""), styles["cellBold"]),
+            Paragraph(_escape(tile_product_name(item.get("name"), item.get("size"))), styles["cellBold"]),
             Paragraph(_escape(item.get("size") or ""), styles["cell"]),
             Paragraph(rate_sqft_text, styles["cellRed"]),
             _SingleLineParagraph(_money(offer_rate) if offer_rate else "", styles["cellOffer"]),

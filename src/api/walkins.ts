@@ -110,6 +110,8 @@ export const walkinsApi = {
   analytics: () => api.get<WalkInsAnalytics>("/walkins/analytics"),
 
   listSources: () => api.get<{ sources: string[] }>("/walkins/config/sources"),
+  interestedFloors: (floorId: string, signal?: AbortSignal, walkinId?: string) => api.get<{ id: string; name: string }[]>(`/walkins/config/interested-floors${walkinId ? `?walkin_id=${encodeURIComponent(walkinId)}` : ""}`, { floorId, signal, cacheMs: 0 }),
+  interestAssignees: (floorId: string, floorIds: string[], walkinId?: string, customerPhone?: string) => api.get<{ id: string; full_name: string; role: string; floor_ids: string[] }[]>(`/walkins/config/interest-assignees?floor_ids=${encodeURIComponent(floorIds.join(","))}${walkinId ? `&walkin_id=${encodeURIComponent(walkinId)}` : customerPhone ? `&customer_phone=${encodeURIComponent(customerPhone.slice(0, 40))}` : ""}`, { floorId, cacheMs: 0 }),
   updateSources: (sources: string[]) => api.put<{ sources: string[] }>("/walkins/config/sources", { sources }),
 
   listAssignees: (options?: { floorId?: string }) => api.get<{ id: string; full_name: string; role: string }[]>("/walkins/config/assignees", options),

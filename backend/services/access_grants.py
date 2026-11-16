@@ -52,6 +52,8 @@ RESOURCE_REGISTRY["kitchen_restricted"] = {"label": "Restricted Kitchen staff", 
 for _resource in ("kitchen_design", "kitchen_quotation"):
     RESOURCE_REGISTRY[_resource]["actions"] += ["pdf_choose", "pdf_open", "pdf_download"]
 RESOURCE_REGISTRY["kitchen_projects"].update(label="All Kitchen stages", description="Access every Kitchen stage. Individual stage permissions can be assigned instead.")
+RESOURCE_REGISTRY["kitchen_customer_delete"] = {"label": "Delete Kitchen customers", "floor_ids": ["second-floor"],
+    "actions": ["view", "delete"], "description": "Separately allow recoverable deletion of a Kitchen customer and all their Kitchen projects. Requires access to each affected stage. Other floor records are preserved."}
 for _resource in ("catalog", "purchases", "godown_stock", "payments", "orders", "walkins"):
     RESOURCE_REGISTRY[_resource]["actions"] = ["view", "create", "update", "export"]
 
@@ -72,7 +74,7 @@ def delegation_resource_catalog(floor_ids: list[str]) -> list[dict[str, Any]]:
         supported = [floor for floor in floor_ids
                      if not metadata.get("floor_ids") or floor in metadata["floor_ids"]]
         assignable = [] if metadata.get("retired") or metadata.get("owner_only") else [
-            floor for floor in supported if floor != "second-floor" or key == "kitchen_projects" or key in KITCHEN_STAGE_RESOURCES.values() or key == "kitchen_restricted"
+            floor for floor in supported if floor != "second-floor" or key in {"kitchen_projects", "kitchen_customer_delete", "kitchen_restricted"} or key in KITCHEN_STAGE_RESOURCES.values()
         ]
         resources.append({
             "key": key, "label": metadata["label"], "retired": metadata.get("retired", False),
@@ -135,6 +137,7 @@ MFA_ACCOUNT_REQUESTS = frozenset({
 # unrelated child creation routes and future endpoints from inheriting an
 # action merely because their name contains "move", "cancel", or "confirm".
 POST_UPDATE_ROUTE_PATTERNS = (
+    r"/api/kitchen-projects/[^/]+/follow-ups",
     r"/api/kitchen-projects/[^/]+/commands",
     r"/api/kitchen-projects/[^/]+/attachments",
     r"/api/kitchen-projects/[^/]+/file-transfers(?:/[^/]+/finish(?:-async)?)?",
@@ -285,6 +288,7 @@ def resource_for_api_path(path: str) -> str | None:
         ("/api/families", "catalog"),
         ("/api/customers", "customers"),
         ("/api/kitchen-projects", "kitchen_projects"),
+        ("/api/kitchen-customer-deletion", "kitchen_customer_delete"),
         ("/api/purchases", "purchases"), ("/api/purchase-orders", "purchases"),
         ("/api/suppliers", "purchases"), ("/api/followups", "followups"),
         ("/api/godown-stock", "godown_stock"),

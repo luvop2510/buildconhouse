@@ -19,8 +19,10 @@ from models import UserPublic
 from media_storage.base import StorageError
 from models_kitchen import ConfigurePolicy, CreateProject, ProjectCommand, Stage, date_only, CommandKey
 from services.kitchen_projects import KitchenProjectService
+from services.kitchen_export import KitchenWorkbookExport, XLSX_MEDIA_TYPE
 from services.analytics import cache
 from services.kitchen_file_transfers import KitchenFileTransfers, TransferStart, TransferChunk, TransferFinish
+from services.kitchen_stage_followups import CreateStageFollowup, KitchenStageFollowups
 
 # Delegated accounts are already checked for the exact floor/page/action by
 # get_current_user. Legacy role labels alone must not open this launch.
@@ -50,6 +52,16 @@ async def _invalidate_projects():
     except Exception:
         # The project is already durable; cache entries retain their bounded TTL.
         logging.getLogger("forge.kitchen").exception("Analytics invalidation failed after committed Kitchen save")
+
+
+@router.get("/export.xlsx")
+async def export_workbook(user: UserPublic = Depends(get_current_user)):
+    data = await KitchenWorkbookExport(db).render(user)
+    return Response(data, media_type=XLSX_MEDIA_TYPE, headers={
+        "Content-Disposition": 'attachment; filename="kitchen-customers.xlsx"',
+        "Cache-Control": "no-store",
+        "X-Content-Type-Options": "nosniff",
+    })
 
 
 @router.get("/customers")
@@ -136,6 +148,23 @@ async def create_project(body: CreateProject, user: UserPublic = Depends(get_cur
 async def project_detail(project_id: str, response: Response, user: UserPublic = Depends(get_current_user)):
     response.headers["Cache-Control"] = "no-store"
     return await KitchenProjectService(db).get(user, project_id)
+
+
+@router.get("/{project_id}/follow-ups")
+async def stage_followups(project_id: str, response: Response, stage: Stage | None = None,
+                          page: int = Query(1, ge=1, le=100000), limit: int = Query(30, ge=1, le=100),
+                          user: UserPublic = Depends(get_current_user)):
+    response.headers["Cache-Control"] = "no-store"
+    return await KitchenStageFollowups(db).list(user, project_id, stage=stage, page=page, limit=limit)
+
+
+@router.post("/{project_id}/follow-ups")
+async def create_stage_followup(project_id: str, body: CreateStageFollowup, response: Response,
+                                user: UserPublic = Depends(get_current_user)):
+    if floor_for_write(user) != "second-floor":
+        raise HTTPException(403, "Select the Kitchen Floor for this interaction")
+    response.headers["Cache-Control"] = "no-store"
+    return await KitchenStageFollowups(db).create(user, project_id, body)
 
 
 @router.post("/{project_id}/commands")
