@@ -8,10 +8,10 @@ from catalog_pipeline.adapters.qutone import normalize_finish, parse_rate_per_sq
 from catalog_pipeline.base import MISSING
 
 
-def test_normalize_finish_covers_all_six_observed_supplier_values():
+def test_normalize_finish_covers_observed_supplier_values():
     cases = {
         "MATT": "Matt", "GLOSSY": "Glossy", "CHIFFON": "Chiffon",
-        "DOVE": "Dove", "SILK": "Silk", "STRUCTURE-MATT": "Structure Matt",
+        "DOVE": "Dove", "SILK": "Silk", "STRUCTURE-MATT": "Structure Matt", "NOVA": "Nova",
         "matt": "Matt",  # case-insensitive
         " GLOSSY ": "Glossy",  # whitespace-tolerant
     }
@@ -96,6 +96,7 @@ def test_family_key_groups_same_product_and_series_across_finishes_and_sizes():
     dove_rows = [r for r in rows if r.name.startswith("PANAMA DOVE")]
     assert len(dove_rows) == 3
     assert len({r.family_key for r in dove_rows}) == 1
+    assert {r.name for r in dove_rows} == {dove_rows[0].to_public()["family_name"]} == {"PANAMA DOVE"}
     saint = next(r for r in rows if r.name.startswith("PANAMA SAINT"))
     assert saint.family_key != dove_rows[0].family_key
 

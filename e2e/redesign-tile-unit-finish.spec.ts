@@ -198,3 +198,24 @@ test('critical same-size Kenzo prices are separately selectable by SKU', async (
   await page.getByTestId('tiles-picker-rate-kenzo-200').click();
   await expect(rate(page)).toHaveValue('200');
 });
+
+test('PROGETTO picker selects the exact alternate finish and size', async ({ page }) => {
+  await fixtures(page);
+  const nova = { id: 'progetto-nova', sku: 'QT-PROGETTO-NOVA-800X1600', name: 'DELICATO GREY',
+    finish: 'Nova', size: '800X1600', price: 195, mrp: 195, image,
+    specs: { price_unit: 'sqft', sqft_per_box: 27.55, pcs_per_box: '2' } };
+  const glossySameSize = { ...nova, id: 'progetto-glossy-small', sku: 'QT-PROGETTO-GLOSSY-800X1600', finish: 'Glossy' };
+  const product = { ...nova, id: 'progetto-glossy', sku: 'QT-PROGETTO-GLOSSY-1200X1800',
+    finish: 'Glossy', size: '1200X1800', price: 215, mrp: 215, images: [image],
+    available_sizes: [nova.size, '1200X1800'], variants: [nova, glossySameSize] };
+  await page.route('**/api/products?**', route => route.fulfill({ json: { items: [product], total: 1 } }));
+  await page.route('**/api/products/progetto-nova/size-variants', route => route.fulfill({ json: { product: { ...nova, variants: [glossySameSize] }, available_sizes: product.available_sizes } }));
+  await page.goto('/tiles/quotation');
+  await page.getByRole('button', { name: 'Select a product', exact: true }).first().click();
+  await expect(page.getByTestId('tiles-picker-card-progetto-glossy')).toContainText('1200X1800 · Glossy');
+  await page.getByRole('button', { name: 'Add DELICATO GREY · Nova · 800X1600', exact: true }).click();
+  await expect(finish(page)).toContainText('Nova');
+  await expect(page.locator('[data-testid="tiles-size-0"], [data-testid="mobile-size-0"]')).toContainText('800X1600');
+  await expect(rate(page)).toHaveValue('195');
+  await expect(page.locator('[data-testid="tiles-total-0"], [data-testid="mobile-total-0"]')).toHaveValue('5372.25');
+});

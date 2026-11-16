@@ -10,7 +10,7 @@ import httpx
 import pytest
 from botocore.stub import Stubber
 
-from media_storage.base import StorageError
+from media_storage.base import StorageError, StorageObjectExists
 from media_storage.r2_driver import R2StorageDriver
 from media_storage import r2_driver
 from scripts.migrate_storage_to_r2 import (FORMAT, apply_references, binding, copy_objects,
@@ -77,6 +77,20 @@ async def test_conditional_private_upload_is_standard_and_no_store(cfg, sdk):
     result = await R2StorageDriver(cfg=cfg, client=client).upload(bucket=cfg.supabase_private_bucket,
         key="backups/test.json", data=b"{}", content_type="application/json", upsert=False)
     assert result.public_url is None
+
+
+@pytest.mark.asyncio
+async def test_r2_create_only_conflict_is_distinct_from_provider_failure(cfg, sdk):
+    client, stub = sdk
+    stub.add_client_error("put_object", service_error_code="PreconditionFailed", http_status_code=412)
+    stub.add_client_error("put_object", service_error_code="AccessDenied", http_status_code=403)
+    driver = R2StorageDriver(cfg=cfg, client=client)
+    upload = dict(bucket=cfg.supabase_private_bucket, key="kitchen/test.pdf",
+                  data=b"%PDF-1.4", content_type="application/pdf", upsert=False)
+    with pytest.raises(StorageObjectExists):
+        await driver.upload(**upload)
+    with pytest.raises(StorageError, match="R2 put_object failed \\[403\\]"):
+        await driver.upload(**upload)
 
 
 @pytest.mark.asyncio

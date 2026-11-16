@@ -99,3 +99,20 @@ async def test_failed_duplicate_restore_preserves_existing_metadata(media_fakes)
     collection.insert_one.assert_not_awaited()
     collection.delete_one.assert_not_awaited()
     storage.delete.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("present", [True, False])
+async def test_supplier_siblings_reuse_one_object_and_own_separate_references(media_fakes, monkeypatch, present):
+    collection, storage, _ = media_fakes
+    collection.find_one.side_effect = [None, {"id": "sibling"}]
+    storage.exists = AsyncMock(return_value=present)
+    storage.get_public_url = lambda **_: "https://example.test/image.png"
+    monkeypatch.setattr(service, "public_bucket", lambda: "public")
+    saved = await service.upload_and_register(data=b"<svg xmlns='http://www.w3.org/2000/svg'/>",
+        mime="image/svg+xml", brand_slug="qutone", brand_id="qutone-id", floor_id="ground-floor",
+        product_id="variant", family_key="qutone:progetto:sample", source_type="supplier", role="hero")
+    assert saved.public_url == "https://example.test/image.png"
+    assert collection.insert_one.call_args.args[0]["product_id"] == "variant"
+    assert collection.find_one.call_args.args[0]["storage_key"] == saved.storage_key
+    assert storage.upload.await_count == int(not present)

@@ -1,4 +1,5 @@
 import { tilePriceUnit, tileSourcePriceUnit } from "@/src/components/tiles/tileQuantityUnit";
+import { tileProductName } from "@/src/components/tiles/tileProductName";
 // Catalog — premium family-first browsing.
 // -----------------------------------------------------------------------------
 // Mobile-first layout with tablet-landscape parallel design:
@@ -53,6 +54,7 @@ type Product = {
   id: string; name: string; sku: string; brand_id: string; category_id: string;
   listing_id?: string | null; catalog_entry?: CatalogEntry | null; price_unknown?: boolean;
   subcategory?: string | null; series?: string | null;
+  size?: string | null; dimensions?: string | null;
   price: number; mrp: number; finish?: string | null; images: string[]; stock: number; specs?: Record<string, any> | null;
   image_quality?: string | null;
   must_buy_concealed?: boolean;
@@ -746,11 +748,12 @@ function ActiveChip({ label, onClose }: { label: string; onClose: () => void }) 
 function FamilyCard({ family: f, brandName, onPress }: { family: Family; brandName: string; onPress: () => void }) {
   const representative = f.variants[0];
   const isTile = f.floor_id === "ground-floor";
+  const name = isTile ? tileProductName(f.family_name, representative?.size) : f.family_name;
   return (
     <Pressable
       testID={`family-${f.listing_id || f.family_key || f.sample_product_id}`}
       accessibilityRole="button"
-      accessibilityLabel={`View ${[brandName, f.family_name].filter(Boolean).join(" ")}`}
+      accessibilityLabel={`View ${[brandName, name].filter(Boolean).join(" ")}`}
       onPress={onPress}
       style={({ pressed }) => [styles.card, { opacity: pressed ? 0.9 : 1 }]}
     >
@@ -777,7 +780,7 @@ function FamilyCard({ family: f, brandName, onPress }: { family: Family; brandNa
             <Text style={styles.overlineSubtle} numberOfLines={1}>{f.catalog_entry ? [f.catalog_entry.serial_number, f.catalog_entry.category_name, f.subcategory].filter((v) => v !== null && v !== undefined && v !== "").join(" · ") : f.series || f.subcategory}</Text>
           ) : null}
         </View>
-        <Text numberOfLines={2} style={styles.title}>{f.family_name}</Text>
+        <Text numberOfLines={2} style={styles.title}>{name}</Text>
         {(isTile || f.catalog_entry) && representative ? (
           <Text style={type.caption} numberOfLines={2}>
             {[f.catalog_entry?.source_sku || representative.sku, representative.size, representative.finish].filter(Boolean).join(" · ")}
@@ -822,11 +825,13 @@ function FamilyCard({ family: f, brandName, onPress }: { family: Family; brandNa
 
 // ---------- Product (variant) card ----------
 function ProductCard({ product: p, brandName, onPress }: { product: Product; brandName: string; onPress: () => void }) {
+  const size = p.floor_id === "ground-floor" ? p.size || p.dimensions : null;
+  const name = tileProductName(p.name, size);
   return (
     <Pressable
       testID={`product-${p.listing_id || p.id}`}
       accessibilityRole="button"
-      accessibilityLabel={`View ${[brandName, p.name].filter(Boolean).join(" ")}, ${p.catalog_entry?.source_sku || p.sku}`}
+      accessibilityLabel={`View ${[brandName, name, size].filter(Boolean).join(" ")}, ${p.catalog_entry?.source_sku || p.sku}`}
       onPress={onPress}
       style={({ pressed }) => [styles.card, { opacity: pressed ? 0.9 : 1 }]}
     >
@@ -851,8 +856,9 @@ function ProductCard({ product: p, brandName, onPress }: { product: Product; bra
         <View style={styles.metaSlot}>
           {p.catalog_entry || p.series ? <Text style={styles.overlineSubtle} numberOfLines={1}>{p.catalog_entry ? [p.catalog_entry.serial_number, p.catalog_entry.category_name, p.subcategory].filter((v) => v !== null && v !== undefined && v !== "").join(" · ") : p.series}</Text> : null}
         </View>
-        <Text numberOfLines={2} style={styles.title}>{p.name}</Text>
-        <Text style={type.caption} numberOfLines={1}>{p.catalog_entry?.source_sku || p.sku}{p.finish ? ` · ${p.finish}` : ""}</Text>
+        <Text numberOfLines={2} style={styles.title}>{name}</Text>
+        {size ? <Text style={type.caption} numberOfLines={1}>{[size, p.finish].filter(Boolean).join(" · ")}</Text> : null}
+        <Text style={type.caption} numberOfLines={1}>{p.catalog_entry?.source_sku || p.sku}{!size && p.finish ? ` · ${p.finish}` : ""}</Text>
         {p.must_buy_concealed && (p.concealed_skus?.length || p.concealed_sku) ? (
           <Text numberOfLines={1} style={{ fontSize: 10, fontWeight: "700", color: "#B45309" }}>
             Must Buy Concealed · {(p.concealed_skus?.length ? p.concealed_skus : [p.concealed_sku]).filter(Boolean).join(", ")}

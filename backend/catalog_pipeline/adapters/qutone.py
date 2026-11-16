@@ -24,9 +24,8 @@ Rules:
   first occurrence keeps the plain SKU and each repeat gets a numeric
   suffix (`-2`, `-3`, ...), matching the Oyster adapter's convention, so it
   still imports as its own product instead of being dropped.
-* "FINISHES" is normalized via an explicit FINISH_LOOKUP table (not fuzzy
-  regex) built from the 6 distinct raw strings actually observed in the
-  real file. Anything new is flagged for manual review, never guessed.
+* "FINISHES" is normalized via an explicit lookup of observed supplier
+  values. Unknown values are flagged for manual review.
 * Family key groups sibling size/finish variants of the same product within
   the same series: `qutone:{series_slug}:{name_slug}`.
 * "RATE" is the only price the source provides (format "<number> PER
@@ -48,9 +47,7 @@ from ..image_extractor import ExtractedImage, extract_images_from_xlsx_ex
 BRAND = "Qutone"
 CATEGORY = "Tiles"
 
-# Explicit lookup, not regex guessing — built from the 6 distinct raw
-# "FINISHES" cell values actually present in the real source file
-# (verified by direct inspection before writing this table).
+# Explicit labels and stable SKU codes for the supplier's observed finishes.
 FINISH_LOOKUP: dict[str, tuple[str, str]] = {
     "MATT": ("Matt", "MT"),
     "GLOSSY": ("Glossy", "GL"),
@@ -58,6 +55,7 @@ FINISH_LOOKUP: dict[str, tuple[str, str]] = {
     "DOVE": ("Dove", "DV"),
     "SILK": ("Silk", "SK"),
     "STRUCTURE-MATT": ("Structure Matt", "SM"),
+    "NOVA": ("Nova", "NV"),
 }
 
 _RATE_RE = re.compile(r"^\s*([\d,]+(?:\.\d+)?)\s*PER\s*SQFT\s*$", re.I)
@@ -239,11 +237,12 @@ class QutoneAdapter(BrandAdapter):
                 pr = ProductRow(
                     brand=self.brand,
                     sku=sku,
-                    name=f"{name} - {display_finish} ({size})",
+                    name=name,
                     category=CATEGORY,
                     subcategory=MISSING,
                     series=series or MISSING,
                     family_key=family_key,
+                    family_name=name,
                     variant=f"{size} · {display_finish}",
                     finish=finish_label or display_finish,
                     finish_code=finish_code or MISSING,

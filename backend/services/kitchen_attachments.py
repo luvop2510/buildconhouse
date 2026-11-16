@@ -157,19 +157,27 @@ def validate_file(data, content_type, filename, policy, max_file_bytes=MAX_FILE_
 
 
 async def prepare_private_upload(database, storage, *, user, project, policy, data, content_type, filename, bucket, max_file_bytes=MAX_FILE_BYTES):
+    from media_storage.base import StorageObjectExists
+
     await access.require_project(database, user, project, policy, "update")
     await access.require_current_task(database, user, project, policy)
     digest = await asyncio.to_thread(validate_file, data, content_type, filename, policy, max_file_bytes)
     content_type = canonical_type(content_type, filename)
     await storage.require_private_bucket(bucket)
     key = f"kitchen/{access.KITCHEN_FLOOR}/{project['id']}/{digest}"
-    if await storage.exists(bucket=bucket, key=key):
+    exists = await storage.exists(bucket=bucket, key=key)
+    if not exists:
+        try:
+            await storage.upload(bucket=bucket, key=key, data=data, content_type=content_type,
+                                 upsert=False, cache_control="private, no-store")
+        except StorageObjectExists:
+            # An overlapping upload or a lost write acknowledgement can win
+            # between HEAD and the conditional PUT. Verify the winner's bytes.
+            exists = True
+    if exists:
         existing = await storage.download(bucket=bucket, key=key)
         if hashlib.sha256(existing).hexdigest() != digest:
             raise HTTPException(409, "Stored attachment failed immutable-content verification")
-    else:
-        await storage.upload(bucket=bucket, key=key, data=data, content_type=content_type,
-                             upsert=False, cache_control="private, no-store")
     return {"id": digest, "storage_key": key, "bucket": bucket, "sha256": digest,
             "size_bytes": len(data), "content_type": content_type, "filename": filename,
             "uploaded_by": user.id}

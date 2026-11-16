@@ -16,13 +16,14 @@ import { api } from "@/src/api/client";
 import { ProductImage } from "@/src/components/ProductImage";
 import { toast } from "@/src/components/Toast";
 import { productImageList } from "@/src/components/quotation/helpers/media";
-import type { Product } from "@/src/components/quotation/helpers/types";
+import type { Product, ProductVariant } from "@/src/components/quotation/helpers/types";
 import { colors, money, radius, spacing } from "@/src/theme/tokens";
 import { catalogGridRows, catalogPageProgress, fetchCatalogPage, mergeCatalogPage } from "@/src/services/catalogService";
 import { isNearScrollEnd } from "@/src/utils/scrollEnd";
 
 import { TILE_IMAGE_ASPECT_RATIO, tilesPickerColumns } from "./tilePresentation";
 import { tilePickerHistory } from "./tilePickerHistory";
+import { tileProductName } from "./tileProductName";
 import { tilePriceUnit, tileSourcePriceUnit } from "./tileQuantityUnit";
 
 const PAGE_SIZE = 24;
@@ -249,52 +250,71 @@ function TileCatalogCard({
   const sizes = tileSizes(product);
   const canSwitchSize = sizes.length >= 2;
   const selectedSize = String(product.size || product.dimensions || "").trim();
-  const alternateRates = (product.variants || []).filter(variant => variant.id && variant.id !== product.id
-    && (variant.size || variant.dimensions) === selectedSize && !variant.finish && !product.finish
+  const name = tileProductName(product.name, selectedSize);
+  const variants = (product.variants || []).filter((variant): variant is ProductVariant & { id: string } =>
+    Boolean(variant.id && variant.id !== product.id));
+  const alternateFinishes = variants.filter(variant => variant.finish && variant.finish !== product.finish);
+  const alternateRates = variants.filter(variant => (variant.size || variant.dimensions) === selectedSize && !variant.finish && !product.finish
     && variant.price > 0 && variant.price !== product.price);
+  const selectVariant = (variant: ProductVariant & { id: string }) => onPickVariant({
+    ...product, ...variant, name: variant.name || product.name,
+    hero_image_url: variant.image || null, images: variant.image ? [variant.image] : [], gallery: [],
+  });
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.card, { width: cardWidth }, compact && styles.phoneCard, pressed && styles.cardPressed]} testID={`tiles-picker-card-${product.id}`} accessibilityRole="button" accessibilityLabel={`Add ${product.name}`}>
-      <ProductImage source={productImageList(product)} style={[styles.image, ...(compact ? [styles.phoneImage] : [])]} fallbackLabel={product.sku} disableSkeleton contentFit="contain" />
-      <View style={styles.cardBody}>
-        <Text style={styles.brand} numberOfLines={1}>{product.brand_name || "Tile"}</Text>
-        <Text style={styles.name} numberOfLines={2}>{product.name}</Text>
-        <Text style={styles.meta} numberOfLines={1}>{[product.sku, product.size || product.dimensions].filter(Boolean).join(" · ")}</Text>
-        {canSwitchSize ? (
-          <View style={styles.sizePicker} accessibilityLabel={`${sizes.length} sizes available for ${product.name}`}>
-            <Text style={styles.sizeLabel}>{sizes.length} sizes</Text>
-            <View style={styles.sizeChoices}>
-              {sizes.map((choice) => (
-                <Pressable
-                  key={choice}
-                  onPress={(event) => { event.stopPropagation(); onPickSize(choice); }}
-                  style={({ pressed }) => [styles.sizeChoice, choice === selectedSize && styles.sizeChoiceCurrent, pressed && styles.sizeChoicePressed]}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: choice === selectedSize }}
-                  accessibilityLabel={`Choose ${choice}${choice === selectedSize ? ", selected" : ""}`}
-                  testID={`tiles-picker-size-${product.id}-${choice}`}
-                >
-                  <Text numberOfLines={1} style={[styles.sizeChoiceText, choice === selectedSize && styles.sizeChoiceTextCurrent]}>{choice}</Text>
-                </Pressable>
-              ))}
+    <View style={[styles.card, { width: cardWidth }]}>
+      <Pressable onPress={onPress} style={({ pressed }) => [compact && styles.phoneCard, pressed && styles.cardPressed]} testID={`tiles-picker-card-${product.id}`} accessibilityRole="button" accessibilityLabel={`Add ${[name, selectedSize, product.finish].filter(Boolean).join(" · ")}`}>
+        <ProductImage source={productImageList(product)} style={[styles.image, ...(compact ? [styles.phoneImage] : [])]} fallbackLabel={product.sku} disableSkeleton contentFit="contain" />
+        <View style={styles.cardBody}>
+          <Text style={styles.brand} numberOfLines={1}>{product.brand_name || "Tile"}</Text>
+          <Text style={styles.name} numberOfLines={2}>{name}</Text>
+          <Text style={styles.meta} numberOfLines={2}>{[selectedSize, product.finish, product.sku].filter(Boolean).join(" · ")}</Text>
+          {canSwitchSize ? (
+            <View style={styles.sizePicker} accessibilityLabel={`${sizes.length} sizes available for ${name}`}>
+              <Text style={styles.sizeLabel}>{sizes.length} sizes</Text>
+              <View style={styles.sizeChoices}>
+                {sizes.map((choice) => (
+                  <Pressable
+                    key={choice}
+                    onPress={(event) => { event.stopPropagation(); onPickSize(choice); }}
+                    style={({ pressed }) => [styles.sizeChoice, choice === selectedSize && styles.sizeChoiceCurrent, pressed && styles.sizeChoicePressed]}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: choice === selectedSize }}
+                    accessibilityLabel={`Choose ${choice}${choice === selectedSize ? ", selected" : ""}`}
+                    testID={`tiles-picker-size-${product.id}-${choice}`}
+                  >
+                    <Text numberOfLines={1} style={[styles.sizeChoiceText, choice === selectedSize && styles.sizeChoiceTextCurrent]}>{choice}</Text>
+                  </Pressable>
+                ))}
+              </View>
             </View>
+          ) : null}
+          {alternateRates.map(variant => (
+            <Pressable key={variant.id} accessibilityRole="button" testID={`tiles-picker-rate-${variant.id}`}
+              style={styles.sizeChoice} onPress={event => { event.stopPropagation(); selectVariant(variant); }}>
+              <Text style={styles.sizeChoiceText}>{variant.sku} · {money(variant.price)} {tilePriceUnit(tileSourcePriceUnit(variant.specs))}</Text>
+            </Pressable>
+          ))}
+          <View style={styles.cardFooter}>
+            <View style={{ flex: 1, minWidth: 0, gap: 3 }}><Text style={styles.price}>{product.price ? money(product.price) : "Price on request"}</Text>{tilePriceUnit(tileSourcePriceUnit(product.specs)) ? <Text style={styles.unitBadge}>{tilePriceUnit(tileSourcePriceUnit(product.specs))}</Text> : null}</View>
+            <View style={styles.add}><Feather name="plus" size={16} color={colors.onBrand} /></View>
           </View>
-        ) : null}
-        {alternateRates.map(variant => (
-          <Pressable key={variant.id} accessibilityRole="button" testID={`tiles-picker-rate-${variant.id}`}
-            style={styles.sizeChoice} onPress={event => {
-              event.stopPropagation();
-              onPickVariant({ ...product, ...variant, id: variant.id!, name: variant.name || product.name,
-                hero_image_url: variant.image || null, images: variant.image ? [variant.image] : [], gallery: [] });
-            }}>
-            <Text style={styles.sizeChoiceText}>{variant.sku} · {money(variant.price)} {tilePriceUnit(tileSourcePriceUnit(variant.specs))}</Text>
-          </Pressable>
-        ))}
-        <View style={styles.cardFooter}>
-          <View style={{ flex: 1, minWidth: 0, gap: 3 }}><Text style={styles.price}>{product.price ? money(product.price) : "Price on request"}</Text>{tilePriceUnit(tileSourcePriceUnit(product.specs)) ? <Text style={styles.unitBadge}>{tilePriceUnit(tileSourcePriceUnit(product.specs))}</Text> : null}</View>
-          <View style={styles.add}><Feather name="plus" size={16} color={colors.onBrand} /></View>
         </View>
-      </View>
-    </Pressable>
+      </Pressable>
+      {alternateFinishes.length ? (
+        <View style={[styles.sizeChoices, styles.finishChoices]}>
+          {alternateFinishes.map(variant => {
+            const label = [variant.finish, variant.size || variant.dimensions].filter(Boolean).join(" · ");
+            return (
+              <Pressable key={variant.id} accessibilityRole="button" accessibilityLabel={`Add ${name} · ${label}`}
+                testID={`tiles-picker-finish-${variant.id}`} style={[styles.sizeChoice, styles.finishChoice]}
+                onPress={() => selectVariant(variant)}>
+                <Text style={styles.sizeChoiceText}>{label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      ) : null}
+    </View>
   );
 }
 
@@ -310,7 +330,7 @@ const styles = StyleSheet.create({
   grid: { padding: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.xxxl, gap: spacing.md },
   gridRow: { gap: spacing.md },
   card: { minWidth: 0, overflow: "hidden", borderRadius: radius.md, backgroundColor: colors.surfaceSecondary, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border },
-  cardPressed: { opacity: 0.82, borderColor: colors.brand },
+  cardPressed: { opacity: 0.82 },
   image: { width: "100%", aspectRatio: TILE_IMAGE_ASPECT_RATIO, borderRadius: 0, backgroundColor: colors.surfaceTertiary },
   phoneCard: { flexDirection: "row", alignItems: "stretch", minHeight: 100 },
   phoneImage: { width: 88, aspectRatio: TILE_IMAGE_ASPECT_RATIO, alignSelf: "center", marginLeft: spacing.sm, borderRadius: radius.sm },
@@ -324,6 +344,8 @@ const styles = StyleSheet.create({
   // Size is an independent action inside an otherwise tappable product card,
   // so it receives a full touch target rather than inheriting chip-sized UI.
   sizeChoice: { maxWidth: 104, minHeight: 44, justifyContent: "center", borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, borderRadius: radius.pill, paddingHorizontal: 7, paddingVertical: 3, backgroundColor: colors.surface },
+  finishChoices: { paddingHorizontal: spacing.sm, paddingBottom: spacing.sm },
+  finishChoice: { maxWidth: "100%" },
   sizeChoiceCurrent: { backgroundColor: colors.brand, borderColor: colors.brand },
   sizeChoicePressed: { opacity: 0.72 },
   sizeChoiceText: { fontSize: 12, fontWeight: "600", color: colors.onSurfaceSecondary },
