@@ -59,3 +59,10 @@ def test_embedded_import_image_is_private_supabase_staged_and_resolvable(monkeyp
     assert staged["bucket"] == "forge-private"
     assert storage.objects[("forge-private", staged["storage_key"])] == (raw, "image/png")
     assert asyncio.run(orchestrator._resolve_blob(ref)) == data_url
+
+    storage.objects.clear()  # The database receipt survived a provider change.
+    retry = [{"images": [data_url], "image_meta": [{}]}]
+    asyncio.run(orchestrator._offload_row_images(retry))
+    assert retry[0]["images"] == [ref]
+    assert blobs.docs[sha1] == staged
+    assert asyncio.run(orchestrator._resolve_blob(ref)) == data_url

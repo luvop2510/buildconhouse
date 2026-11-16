@@ -15,7 +15,7 @@ from PIL import Image
 from auth import get_current_user
 from models import UserPublic
 from routes import catalog_routes, media_routes, quotation_routes
-from services import activity_log, catalog_service, media_service, sequence
+from services import activity_log, catalog_database, catalog_service, media_service, sequence
 from tests.integration.test_purchase_completion_mongo import mongo_url  # noqa: F401
 
 
@@ -25,7 +25,7 @@ def test_photo_retry_real_bytes_and_quotation_reorder_reload(mongo_url, tmp_path
         client = AsyncIOMotorClient(mongo_url)
         db = client.custom_media
         user = UserPublic(id="sales-photo", email="sales@example.test", full_name="Sales", role="sales", floor_ids=["first-floor"], active_floor_id="first-floor")
-        for module in (catalog_routes, media_routes, quotation_routes, activity_log, media_service, sequence):
+        for module in (catalog_routes, media_routes, quotation_routes, activity_log, catalog_database, media_service, sequence):
             monkeypatch.setattr(module, "db", db)
         monkeypatch.setattr(catalog_service, "schedule_catalog_refresh", lambda: None)
         monkeypatch.setattr(quotation_routes, "_track_product_usage", AsyncMock())

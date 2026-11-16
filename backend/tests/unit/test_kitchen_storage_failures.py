@@ -10,7 +10,7 @@ from fastapi import FastAPI
 
 from auth import get_current_user
 from media_storage import factory
-from media_storage.base import StorageError
+from media_storage.base import StorageError, StorageObjectExists
 from routes import kitchen_routes
 from services.kitchen_projects import resolved_policy
 from tests.unit.test_kitchen_file_transfer_recovery import finishing_transfer
@@ -61,6 +61,25 @@ async def test_upload_privacy_outage_leaves_project_unchanged_then_same_key_retr
     assert replay.json()["replayed"]
     assert len(database.kitchen_projects.rows[0]["attachments"]) == 1
     storage.upload.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stored_matches", [True, False])
+async def test_upload_recovers_create_only_race_only_for_verified_bytes(setup, monkeypatch, stored_matches):
+    database, service, owner = setup
+    project = await service.create(owner, create_request(customer_id="customer-a", idempotency_key="storage-race"))
+    data = b"%PDF-1.4\n"
+    storage = SimpleNamespace(require_private_bucket=AsyncMock(), exists=AsyncMock(return_value=False),
+        upload=AsyncMock(side_effect=StorageObjectExists()), download=AsyncMock(return_value=data if stored_matches else b"corrupt"))
+    app = kitchen_app(monkeypatch, database, owner, storage)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(f"/kitchen-projects/{project['id']}/attachments",
+            data={"expected_version": project["version"], "idempotency_key": "storage-race-upload"},
+            files={"file": ("Mix.pdf", data, "application/pdf")})
+    assert response.status_code == (200 if stored_matches else 409)
+    assert len(database.kitchen_projects.rows[0]["attachments"]) == int(stored_matches)
+    storage.download.assert_awaited_once_with(bucket="forge-private",
+        key=f"kitchen/second-floor/{project['id']}/{hashlib.sha256(data).hexdigest()}")
 
 
 @pytest.mark.asyncio

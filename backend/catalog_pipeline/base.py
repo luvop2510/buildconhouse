@@ -24,6 +24,7 @@ class ProductRow:
     subcategory: str = MISSING
     series: str = MISSING
     family_key: str = MISSING       # SKUs that share a family_key are variants of each other
+    family_name: str = MISSING
     variant: str = MISSING          # short label distinguishing this variant (finish / size / colour)
     finish: str = MISSING
     finish_code: str = MISSING
@@ -55,6 +56,7 @@ class ProductRow:
             "row_id": self.row_id, "brand": self.brand, "name": self.name, "sku": self.sku,
             "category": self.category, "subcategory": self.subcategory, "series": self.series,
             "family_key": self.family_key, "variant": self.variant, "finish": self.finish,
+            **({"family_name": self.family_name} if self.family_name != MISSING else {}),
             "finish_code": self.finish_code, "colour": self.colour, "material": self.material,
             "dimensions": self.dimensions, "size": self.size, "description": self.description,
             "mrp": self.mrp, "dealer_price": self.dealer_price, "warranty": self.warranty,

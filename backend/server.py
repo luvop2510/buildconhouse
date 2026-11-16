@@ -26,6 +26,7 @@ from services.monitoring import (
     request_timing_enabled,
 )
 from media_storage import get_media_storage
+from media_storage.base import StorageError, StorageProviderError
 
 from db import client, db  # noqa: E402
 from routes.auth_routes import router as auth_router  # noqa: E402
@@ -255,6 +256,14 @@ async def safe_request_validation_error(_request: Request, exc: RequestValidatio
                "type": error.get("type", "value_error"), "msg": "Invalid value"}
               for error in exc.errors()[:100]]
     return JSONResponse(status_code=422, content={"detail": detail}, headers={"Cache-Control": "no-store"})
+
+
+@app.exception_handler(StorageError)
+async def file_storage_unavailable(_request: Request, exc: StorageError):
+    reason = str(exc) if isinstance(exc, StorageProviderError) else type(exc).__name__
+    logger.warning("File storage operation unavailable (%s)", reason)
+    return JSONResponse(status_code=503, content={"detail": "File storage is temporarily unavailable. Please retry."},
+                        headers={"Retry-After": "2", "Cache-Control": "no-store"})
 
 
 @app.middleware("http")

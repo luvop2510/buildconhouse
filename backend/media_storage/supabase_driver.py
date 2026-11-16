@@ -14,7 +14,7 @@ import httpx
 
 from settings import settings
 
-from .base import MediaStorage, StoredObject, StorageError
+from .base import MediaStorage, StoredObject, StorageError, StorageObjectExists, StorageProviderError
 
 logger = logging.getLogger("forge.media_storage.supabase")
 
@@ -78,7 +78,10 @@ class SupabaseStorageDriver(MediaStorage):
     async def _request(self, method: str, url: str, **kwargs) -> httpx.Response:
         if self._client is None:
             self._client = httpx.AsyncClient(timeout=self.timeout)
-        return await self._client.request(method, url, **kwargs)
+        try:
+            return await self._client.request(method, url, **kwargs)
+        except httpx.HTTPError as exc:
+            raise StorageProviderError(f"Supabase {method} ({type(exc).__name__})") from exc
 
     # ---- writes ----------------------------------------------------------
 
@@ -104,7 +107,15 @@ class SupabaseStorageDriver(MediaStorage):
             headers=headers,
         )
         if resp.status_code >= 300:
-            raise StorageError(f"Supabase upload failed [{resp.status_code}]: {resp.text}")
+            if not upsert and resp.status_code in {400, 409}:
+                try:
+                    payload = resp.json()
+                except ValueError:
+                    payload = None
+                if isinstance(payload, dict) and (payload.get("code") in ("ResourceAlreadyExists", "KeyAlreadyExists")
+                        or payload.get("error") == "Duplicate"):
+                    raise StorageObjectExists("Supabase object already exists")
+            raise StorageProviderError("Supabase upload", resp.status_code)
         sha1 = hashlib.sha1(data).hexdigest()
         public_url = self.get_public_url(bucket=bucket, key=key) if self._is_public(bucket) else None
         return StoredObject(
@@ -130,7 +141,7 @@ class SupabaseStorageDriver(MediaStorage):
         if resp.status_code == 404:
             return
         if resp.status_code >= 300:
-            raise StorageError(f"Supabase delete failed [{resp.status_code}]: {resp.text}")
+            raise StorageProviderError("Supabase delete", resp.status_code)
 
     # ---- reads -----------------------------------------------------------
 
@@ -190,20 +201,28 @@ class SupabaseStorageDriver(MediaStorage):
             "GET", f"{self.url}/storage/v1/bucket/{quote(bucket, safe='')}",
             headers=self._headers(),
         )
-        if resp.status_code != 200 or resp.json().get("public") is not False:
+        if resp.status_code != 200:
+            raise StorageProviderError("Supabase bucket visibility", resp.status_code)
+        try:
+            payload = resp.json()
+        except ValueError as exc:
+            raise StorageError("Private bucket visibility response was invalid") from exc
+        if not isinstance(payload, dict) or payload.get("public") is not False:
             raise StorageError("Private bucket visibility could not be verified")
 
     async def download(self, *, bucket: str, key: str) -> bytes:
         resp = await self._request("GET", self._object_url(bucket, key), headers=self._headers())
         if resp.status_code >= 300:
-            raise StorageError(f"Supabase download failed [{resp.status_code}]: {resp.text}")
+            raise StorageProviderError("Supabase download", resp.status_code)
         return resp.content
 
     async def exists(self, *, bucket: str, key: str) -> bool:
         # HEAD isn't officially documented — use the info endpoint instead.
         info_url = f"{self.url}/storage/v1/object/info/{'authenticated' if not self._is_public(bucket) else 'public'}/{bucket}/{key}"
         resp = await self._request("GET", info_url, headers=self._headers())
-        return resp.status_code == 200
+        if resp.status_code in {200, 404}:
+            return resp.status_code == 200
+        raise StorageProviderError("Supabase object lookup", resp.status_code)
 
     def get_public_url(self, *, bucket: str, key: str) -> str:
         from urllib.parse import quote
@@ -220,10 +239,10 @@ class SupabaseStorageDriver(MediaStorage):
             json={"expiresIn": expires_in},
         )
         if resp.status_code >= 300:
-            raise StorageError(f"Supabase sign failed [{resp.status_code}]: {resp.text}")
+            raise StorageProviderError("Supabase sign", resp.status_code)
         signed_path = resp.json().get("signedURL") or resp.json().get("signedUrl")
         if not signed_path:
-            raise StorageError(f"Supabase sign returned no URL: {resp.text}")
+            raise StorageError("Supabase sign returned no URL")
         # signedURL is a relative path — prefix with base.
         if signed_path.startswith("http"):
             return signed_path

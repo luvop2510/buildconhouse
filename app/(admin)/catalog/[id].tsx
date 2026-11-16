@@ -1,4 +1,5 @@
 import { tilePriceUnit, tileSourcePriceUnit } from "@/src/components/tiles/tileQuantityUnit";
+import { tileProductName } from "@/src/components/tiles/tileProductName";
 // Product Detail — premium, mobile-first, Amazon-caliber.
 // -----------------------------------------------------------------------------
 // Layout
@@ -554,12 +555,8 @@ function ProductDetailWorkspace({ floorId }: { floorId: string }) {
         ) : null}
       </View>
 
-      {/* Title — always the product's own editable `name` (this is exactly
-          the field the shared Product Editor's "Product Name" writes to,
-          so an edit is immediately visible here; family grouping is still
-          shown above, in the overline, rather than replacing the title). */}
       <View>
-        <Text style={type.displayLg}>{p.name}</Text>
+        <Text style={type.displayLg}>{p.floor_id === "ground-floor" ? tileProductName(p.name, p.size || p.dimensions) : p.name}</Text>
         <Text style={[type.mono, { marginTop: 6, color: colors.onSurfaceMuted }]}>SKU · {p.sku}</Text>
       </View>
 
@@ -734,6 +731,7 @@ function ProductDetailWorkspace({ floorId }: { floorId: string }) {
               ["Colour / Finish", [p.colour, p.finish].filter(Boolean).join(" · ")],
               ["Finish code", p.finish_code],
               ["Material", p.material],
+              ["Size", p.floor_id === "ground-floor" ? p.size : null],
               ["Dimensions", p.dimensions],
               ["Warranty", p.warranty],
               ...((p.specs && Object.keys(p.specs).length)

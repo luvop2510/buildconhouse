@@ -24,7 +24,7 @@ logger = logging.getLogger("forge.catalog_pipeline")
 # ---------------------------------------------------------------------------
 async def _offload_row_images(rows: list[dict]) -> dict[str, str]:
     """Move every base64 data-URL out of ``rows[].images`` into private
-    Supabase Storage, with a lightweight metadata record keyed by SHA-1.
+    object storage, with a lightweight metadata record keyed by SHA-1.
 
     Mutates rows in-place: ``images`` becomes a list of ``blob:<sha1>`` refs.
     The original image bytes never enter the import-job JSON/BSON document,
@@ -32,7 +32,7 @@ async def _offload_row_images(rows: list[dict]) -> dict[str, str]:
     path is immutable and content-addressed so retries are idempotent.
 
     Legacy rows with a ``data_url`` continue to resolve in ``_resolve_blob``;
-    new imports are Supabase-backed exclusively.
+    new imports use the configured media storage.
     """
     blob_map: dict[str, str] = {}
     staged: dict[str, tuple[bytes, str]] = {}
@@ -68,12 +68,14 @@ async def _offload_row_images(rows: list[dict]) -> dict[str, str]:
         for sha1, (raw, mime) in staged.items():
             ext = {"image/jpeg": "jpg", "image/jpg": "jpg", "image/png": "png", "image/webp": "webp", "image/svg+xml": "svg"}.get(mime, "bin")
             key = f"catalog-import-images/{sha1[:2]}/{sha1}.{ext}"
-            existing = await db.catalog_image_blobs.find_one({"sha1": sha1}, {"_id": 0, "storage_key": 1})
-            if not existing or not existing.get("storage_key"):
-                # A content-addressed key makes this safe even if a prior
-                # process completed the upload but crashed before MongoDB.
-                if not await storage.exists(bucket=bucket, key=key):
-                    await storage.upload(bucket=bucket, key=key, data=raw, content_type=mime)
+            existing = await db.catalog_image_blobs.find_one({"sha1": sha1}, {"_id": 0, "bucket": 1, "storage_key": 1})
+            existing_key = existing.get("storage_key") if existing and existing.get("bucket") == bucket else None
+            key = existing_key or key
+            # A metadata record can outlive its original storage deployment.
+            # The staged workbook supplies the same hashed bytes for repair.
+            if not await storage.exists(bucket=bucket, key=key):
+                await storage.upload(bucket=bucket, key=key, data=raw, content_type=mime)
+            if not existing_key:
                 await db.catalog_image_blobs.update_one(
                     {"sha1": sha1},
                     {"$set": {
@@ -215,9 +217,9 @@ async def import_accepted(
             image_meta = r.get("image_meta") or []
             image_quality = _clean(r.get("image_quality")) or "missing"
 
-            # family_name is series + form: "Metropole · Wall Hung WC"
-            family_name = None
-            if series:
+            # Use an adapter's explicit family name, or derive it from the series and form.
+            family_name = _clean(r.get("family_name"))
+            if family_name is None and series:
                 series_clean = str(series).strip()
                 if description and str(description).strip():
                     desc_clean = str(description).strip()
@@ -230,7 +232,7 @@ async def import_accepted(
                         family_name = f"{series_clean} · {desc_clean}"
                 else:
                     family_name = series_clean
-            elif description:
+            elif family_name is None and description:
                 family_name = str(description).strip()
 
             # Resolve any blob:<sha1> references back to data URLs

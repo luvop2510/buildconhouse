@@ -16,7 +16,7 @@ from urllib.parse import quote
 from auth import get_current_user, floor_for_write
 from db import db
 from models import UserPublic
-from media_storage.base import StorageError
+from media_storage.base import StorageError, StorageProviderError
 from models_kitchen import ConfigurePolicy, CreateProject, ProjectCommand, Stage, date_only, CommandKey
 from services.kitchen_projects import KitchenProjectService
 from services.kitchen_export import KitchenWorkbookExport, XLSX_MEDIA_TYPE
@@ -41,7 +41,8 @@ async def _file_storage_operation():
     try:
         yield
     except StorageError as exc:
-        logging.getLogger("forge.kitchen").warning("Kitchen file storage operation unavailable (%s)", type(exc).__name__)
+        reason = str(exc) if isinstance(exc, StorageProviderError) else type(exc).__name__
+        logging.getLogger("forge.kitchen").warning("Kitchen file storage operation unavailable (%s)", reason)
         raise HTTPException(503, "Kitchen file storage is temporarily unavailable. Please retry this file operation.",
                             headers={"Retry-After": "2", "Cache-Control": "no-store"}) from exc
 

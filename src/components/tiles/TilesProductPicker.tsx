@@ -23,6 +23,7 @@ import { isNearScrollEnd } from "@/src/utils/scrollEnd";
 
 import { TILE_IMAGE_ASPECT_RATIO, tilesPickerColumns } from "./tilePresentation";
 import { tilePickerHistory } from "./tilePickerHistory";
+import { tileProductName } from "./tileProductName";
 import { tilePriceUnit, tileSourcePriceUnit } from "./tileQuantityUnit";
 
 const PAGE_SIZE = 24;
@@ -249,18 +250,19 @@ function TileCatalogCard({
   const sizes = tileSizes(product);
   const canSwitchSize = sizes.length >= 2;
   const selectedSize = String(product.size || product.dimensions || "").trim();
+  const name = tileProductName(product.name, selectedSize);
   const alternateRates = (product.variants || []).filter(variant => variant.id && variant.id !== product.id
     && (variant.size || variant.dimensions) === selectedSize && !variant.finish && !product.finish
     && variant.price > 0 && variant.price !== product.price);
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.card, { width: cardWidth }, compact && styles.phoneCard, pressed && styles.cardPressed]} testID={`tiles-picker-card-${product.id}`} accessibilityRole="button" accessibilityLabel={`Add ${product.name}`}>
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.card, { width: cardWidth }, compact && styles.phoneCard, pressed && styles.cardPressed]} testID={`tiles-picker-card-${product.id}`} accessibilityRole="button" accessibilityLabel={`Add ${name}`}>
       <ProductImage source={productImageList(product)} style={[styles.image, ...(compact ? [styles.phoneImage] : [])]} fallbackLabel={product.sku} disableSkeleton contentFit="contain" />
       <View style={styles.cardBody}>
         <Text style={styles.brand} numberOfLines={1}>{product.brand_name || "Tile"}</Text>
-        <Text style={styles.name} numberOfLines={2}>{product.name}</Text>
-        <Text style={styles.meta} numberOfLines={1}>{[product.sku, product.size || product.dimensions].filter(Boolean).join(" · ")}</Text>
+        <Text style={styles.name} numberOfLines={2}>{name}</Text>
+        <Text style={styles.meta} numberOfLines={2}>{[selectedSize, product.finish, product.sku].filter(Boolean).join(" · ")}</Text>
         {canSwitchSize ? (
-          <View style={styles.sizePicker} accessibilityLabel={`${sizes.length} sizes available for ${product.name}`}>
+          <View style={styles.sizePicker} accessibilityLabel={`${sizes.length} sizes available for ${name}`}>
             <Text style={styles.sizeLabel}>{sizes.length} sizes</Text>
             <View style={styles.sizeChoices}>
               {sizes.map((choice) => (

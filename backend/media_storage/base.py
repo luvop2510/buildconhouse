@@ -9,6 +9,17 @@ class StorageError(Exception):
     """Raised by any MediaStorage driver when an operation fails."""
 
 
+class StorageObjectExists(StorageError):
+    """A create-only write found an existing object at the requested key."""
+
+
+class StorageProviderError(StorageError):
+    """A provider failure with diagnostics safe to include in logs."""
+
+    def __init__(self, operation: str, status: int | None = None):
+        super().__init__(f"{operation} failed" + (f" [{status}]" if status is not None else ""))
+
+
 @dataclass
 class StoredObject:
     """Metadata about a file living behind the storage layer."""

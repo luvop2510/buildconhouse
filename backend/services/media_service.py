@@ -150,13 +150,23 @@ async def upload_and_register(
     )
 
     storage = get_media_storage()
-    obj = await storage.upload(bucket=bucket, key=key, data=data, content_type=mime)
+    shared = None
+    if source_type == "supplier" and product_id and family_key and not private:
+        shared = await db.product_media.find_one(
+            {"bucket": bucket, "storage_key": key, "sha1": sha1, "floor_id": floor_id, "brand_id": brand_id},
+            {"_id": 0, "id": 1},
+        )
+    if shared and await storage.exists(bucket=bucket, key=key):
+        public_url = storage.get_public_url(bucket=bucket, key=key)
+    else:
+        obj = await storage.upload(bucket=bucket, key=key, data=data, content_type=mime)
+        public_url = obj.public_url
 
     doc = ProductMedia(
         **({"id": registration_id} if registration_id else {}),
         product_id=product_id, family_key=family_key, brand_id=brand_id, floor_id=floor_id,
         source_type=source_type, role=role, bucket=bucket, storage_key=key,
-        public_url=obj.public_url, width=width, height=height, quality=quality,
+        public_url=public_url, width=width, height=height, quality=quality,
         sha1=sha1, mime=mime, size_bytes=len(data), is_primary=is_primary,
         sort_order=sort_order, uploaded_by=uploaded_by, notes=notes,
     )

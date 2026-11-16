@@ -16,7 +16,7 @@ from botocore.config import Config
 from botocore.exceptions import ClientError
 
 from settings import settings
-from .base import MediaStorage, StoredObject, StorageError
+from .base import MediaStorage, StoredObject, StorageError, StorageObjectExists, StorageProviderError
 from services.product_image_variants import MIN_BYTES, PREFIX, WIDTHS, create_image_variants, variant_key
 
 logger = logging.getLogger(__name__)
@@ -50,9 +50,14 @@ class R2StorageDriver(MediaStorage):
     async def _call(self, operation, **kwargs):
         try:
             return await asyncio.to_thread(getattr(self._client, operation), **kwargs)
+        except ClientError as exc:
+            status = exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+            if operation == "put_object" and kwargs.get("IfNoneMatch") == "*" and status == 412:
+                raise StorageObjectExists("R2 object already exists") from exc
+            raise StorageProviderError(f"R2 {operation}", status) from exc
         except Exception as exc:
             # Never echo provider bodies, access keys, signed URLs or object data.
-            raise StorageError(f"R2 {operation} failed ({type(exc).__name__})") from exc
+            raise StorageProviderError(f"R2 {operation} ({type(exc).__name__})") from exc
 
     async def close(self):
         if self._private_checks:
@@ -191,9 +196,10 @@ class R2StorageDriver(MediaStorage):
             await asyncio.to_thread(self._client.head_object, Bucket=bucket, Key=key)
             return True
         except ClientError as exc:
-            if exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode") == 404:
+            status = exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+            if status == 404:
                 return False
-            raise StorageError("R2 object lookup failed") from exc
+            raise StorageProviderError("R2 head_object", status) from exc
         except Exception as exc:
             raise StorageError("R2 object lookup failed") from exc
 
@@ -253,7 +259,7 @@ class R2StorageDriver(MediaStorage):
                         response = await client.get(root + "/" + suffix,
                             headers={"Authorization": f"Bearer {self.cfg.r2_api_token}"})
                         if response.status_code != 200:
-                            raise StorageError("R2 bucket visibility check failed")
+                            raise StorageProviderError(f"R2 bucket visibility ({suffix})", response.status_code)
                         payload = response.json()
                         if (not isinstance(payload, dict) or payload.get("success") is not True
                                 or not isinstance(payload.get("result"), dict)):
@@ -272,7 +278,7 @@ class R2StorageDriver(MediaStorage):
         except (httpx.HTTPError, TimeoutError, ValueError, TypeError) as exc:
             # Provider URLs/headers/bodies may contain credentials. Expose only
             # the error class through our storage abstraction, never its text.
-            raise StorageError(f"R2 bucket visibility unavailable ({type(exc).__name__})") from exc
+            raise StorageProviderError(f"R2 bucket visibility ({type(exc).__name__})") from exc
 
     async def require_private_bucket(self, bucket):
         if bucket != self.cfg.supabase_private_bucket:
