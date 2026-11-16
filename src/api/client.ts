@@ -315,7 +315,7 @@ async function request<T>(method: string, path: string, body?: any, opts?: Reque
     // useful, actionable message instead of leaving floor screens looking as
     // though their buttons did nothing when the configured API is offline.
     if (error instanceof TypeError) {
-      throw new ApiError(503, "Cannot reach the backend. Check the configured secure backend URL and try again.");
+      throw new ApiError(503, "The connection was interrupted before the server response was received. Check your connection and try again.");
     }
     throw error;
   } finally {
