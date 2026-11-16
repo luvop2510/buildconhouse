@@ -316,7 +316,7 @@ jobs:
         run: npx expo lint -- --max-warnings 0
       - name: Production web export
         env:
-          BACKEND_URL: https://buildconhouse-production.up.railway.app
+          BACKEND_URL: https://buildconhouse-production-25f49287.up.railway.app
         run: npm run build
       - name: Mobile initial-JavaScript budget
         run: npm run test:mobile-budget

@@ -52,7 +52,7 @@ jobs:
       - name: Frontend checks, tests, build and bundle budget
         working-directory: .
         env:
-          BACKEND_URL: https://buildconhouse-production.up.railway.app
+          BACKEND_URL: https://buildconhouse-production-25f49287.up.railway.app
         run: |
           npm install --global npm@11.17.0 --ignore-scripts --no-audit --no-fund
           npm ci --ignore-scripts

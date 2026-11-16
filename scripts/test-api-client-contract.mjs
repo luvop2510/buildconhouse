@@ -28,7 +28,7 @@ for (const path of ["../src/api/client.ts", "../src/api/client.web.ts"]) {
   assert.match(source, /inflightGets\.get\(key\) === shared/);
   assert.match(source, /contextVersion !== requestContextVersion/);
   assert.match(source, /Request timed out\. Please try again\./);
-  assert.match(source, /Cannot reach the backend/);
+  assert.match(source, /The connection was interrupted/);
 }
 
 // Run both real clients with controlled transports: an old response must not
@@ -296,7 +296,7 @@ for (const path of ['../src/api/client.ts', '../src/api/client.web.ts']) {
     if (cancel) assert.equal(error.name, 'AbortError', `${path}: cancelled mutation is not an outage`);
     else {
       assert.equal(error.status, 503);
-      assert.match(error.message, /Cannot reach the backend/);
+      assert.match(error.message, /The connection was interrupted/);
     }
   }
 }
