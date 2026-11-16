@@ -21,12 +21,16 @@ import { kitchenProjectPath, kitchenStage, useKitchenDraft, useKitchenProject } 
 import { useKitchenAutosave } from "./KitchenAutosave";
 import { kitchenHasFinalDesign, kitchenHasFinalQuotation } from "./KitchenVersions";
 import { formatPhone } from "@/src/utils/phone";
+import { KitchenFollowupHistory, KitchenStageFollowups } from "./KitchenStageFollowups";
+import { KitchenCustomerDeletion } from "./KitchenCustomerDeletion";
 
 type ProjectPage = "overview" | "stage" | "documents" | "history" | "assignments" | "exceptions";
 
 export function KitchenProjectDetail({ page = "stage" }: { page?: ProjectPage }) {
   const hasAccess = useModuleAccess();
   const customerAccess = useActionAccess("customers", "update", false);
+  const canDeleteCustomer = useActionAccess("kitchen_customer_delete", "delete", false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const state = useKitchenProject();
   const { project, loading, failure, policy, policyError, reload, updateProject, submission, command, returnTo, retainedDraft } = state;
   const { stage: parameter, details } = useLocalSearchParams<{ stage?: string; details?: string }>();
@@ -63,6 +67,7 @@ export function KitchenProjectDetail({ page = "stage" }: { page?: ProjectPage })
       { label: "Assigned to", icon: "user", onPress: () => setPanel("assignee") },
       { label: "Completion date", icon: "calendar", onPress: () => setPanel("assignments") },
       { label: "Reload saved project", icon: "refresh-cw", onPress: reload },
+      ...(canDeleteCustomer ? [{ label: "Delete customer", icon: "trash-2" as const, onPress: () => setDeleteOpen(true) }] : []),
       ...(project.permissions?.can_approve_exceptions ? [{ label: "Hold, cancel or revise project", icon: "settings" as const, onPress: () => setPanel("exceptions") }] : []),
     ]}><View style={{ minHeight: 44, minWidth: 44, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 8 }}><Text style={type.body}>Actions</Text><Feather name="more-horizontal" size={20} color={colors.onSurfaceSecondary} /></View></Menu> : undefined;
   if (!hasAccess(`kitchen-${selected}`)) return <KitchenFloor><KitchenPage title="Kitchen" back={back}><ErrorState title="Section access required" subtitle="The owner can enable this Kitchen section from Team." /></KitchenPage></KitchenFloor>;
@@ -103,8 +108,10 @@ export function KitchenProjectDetail({ page = "stage" }: { page?: ProjectPage })
         {selected === "lead" ? <DuplicateReview project={project} disabled={disabled || Boolean(held)} /> : null}
         <EarlyStage project={project} stage={selected} disabled={disabled || Boolean(held)} />
         <CommercialStages project={project} stage={selected} disabled={disabled || Boolean(held)} command={command} />
+        <KitchenStageFollowups key={`${project.id}:${selected}`} project={project} stage={selected} disabled={disabled} />
       </View>
       <Sheet scroll visible={lostOpen} onClose={() => setLostOpen(false)} title="Mark customer as lost" testID="kitchen-lost-sheet"><View style={{ gap: spacing.md }}><Text style={type.body}>Record why this customer was lost. This closes the project for changes.</Text><TextField label="Lost reason" value={lostReason} onChangeText={setLostReason} multiline testID="kitchen-lost-reason" /><Button label="Mark customer as lost" variant="danger" disabled={!lostReason.trim() || disabled} loading={submission.busy} onPress={() => { void command("mark_lost", { reason: lostReason.trim() }).then(ok => { if (ok) setLostOpen(false); }); }} testID="kitchen-confirm-lost" /></View></Sheet>
+      <KitchenCustomerDeletion project={project} visible={deleteOpen} onClose={() => setDeleteOpen(false)} />
       <Sheet scroll visible={panel === "advance" && !project.permissions?.restricted} onClose={() => setPanel(null)} title="Advance details" testID="kitchen-advance-sheet"><CommercialStages project={project} stage={selected} disabled={disabled || submission.busy || Boolean(held)} command={command} mode="advance" /></Sheet>
       <Sheet scroll visible={panel === "visits"} onClose={() => setPanel(null)} title="Site visits" testID="kitchen-site-visits-sheet"><CommercialStages project={project} stage={selected} disabled={disabled || submission.busy || Boolean(held)} command={command} mode="visits" /></Sheet>
       <Sheet scroll visible={panel === "documents" && (!project.permissions?.restricted || selected === "installation" && project.stage === "installation")} onClose={() => setPanel(null)} title="Project documents" testID="kitchen-documents-sheet">{policyError ? <Alert tone="warning" title="Upload settings unavailable" action={<Button label="Reload" variant="secondary" onPress={reload} />} /> : null}<KitchenDocuments project={project} policy={policy} disabled={disabled || Boolean(held)} onUpdated={updateProject} onReload={reload} /></Sheet>
@@ -309,6 +316,7 @@ function ProjectHistory({ project }: { project: KitchenProject }) {
       {entry.url ? <Button label="Open reference" variant="secondary" onPress={() => void Linking.openURL(entry.url!)} /> : null}
     </View>)}</KitchenPanel>
     {recordCount > limit ? <Button label="Show earlier records" variant="secondary" onPress={() => setLimit(value => value + 30)} /> : null}
+    {category === "activity" ? <KitchenFollowupHistory projectId={project.id} /> : null}
   </View>;
 }
 function auditChangeLines(changes: unknown, actor: (id?: string) => string) {

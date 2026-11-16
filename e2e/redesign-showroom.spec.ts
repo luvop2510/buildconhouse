@@ -63,7 +63,7 @@ test('critical walk-in duplicate resolution preserves the selected customer on r
   await mockSession(page, '/walkins/new');
   await page.route('**/api/walkins/config/sources', r => r.fulfill({ json: { sources: ['Walk-in'] } }));
   await page.route('**/api/walkins/config/assignees', r => r.fulfill({ json: [{ id: 'audit-owner', full_name: 'Audit Owner', role: 'owner' }] }));
-  await page.route('**/api/followups/assignees?**', r => r.fulfill({ json: [{ id: 'sanitary-worker', full_name: 'Sanitary Worker', role: 'worker', floor_ids: ['first-floor'] }] }));
+  await page.route('**/api/walkins/config/interest-assignees?**', r => r.fulfill({ json: [{ id: 'sanitary-worker', full_name: 'Sanitary Worker', role: 'worker', floor_ids: ['first-floor'] }] }));
   await page.route('**/api/walkins/check-duplicate?**', r => r.fulfill({ json: { high: [], medium: [{ id: 'existing-customer', name: 'Showroom customer', phone: '9000000000' }], low: [] } }));
   const writes: any[] = [];
   let fail = true;

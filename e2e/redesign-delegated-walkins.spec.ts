@@ -23,6 +23,15 @@ for (const floor of floors.filter(floor => floor.id !== 'second-floor')) {
       const path = new URL(request.url()).pathname;
       reads.push(path);
       if (path.endsWith('/config/sources')) return route.fulfill({ json: { sources: ['Walk-in'] } });
+      if (path.endsWith('/config/interested-floors')) {
+        expect(request.headers()['x-floor-id']).toBe(floor.id);
+        return route.fulfill({ json: [...floors.map(({ id, name }) => ({ id, name })), { id: 'future-floor', name: 'Future showroom' }] });
+      }
+      if (path.endsWith('/config/interest-assignees')) {
+        expect(new URL(request.url()).searchParams.get('floor_ids')).toBe(floor.id);
+        expect(request.headers()['x-floor-id']).toBe(floor.id);
+        return route.fulfill({ json: [{ ...staff, floor_ids: [floor.id] }] });
+      }
       if (path.endsWith('/config/assignees')) {
         expect(request.headers()['x-floor-id']).toBe(floor.id);
         return route.fulfill({ json: [{ id: staff.id, full_name: staff.full_name, role: 'worker' }] });
@@ -38,12 +47,13 @@ for (const floor of floors.filter(floor => floor.id !== 'second-floor')) {
       if (path === '/api/walkins' && request.method() === 'POST') {
         expect(request.headers()['x-floor-id']).toBe(floor.id);
         expect(request.postDataJSON()).toMatchObject({ floor_id: floor.id, salesperson_id: staff.id });
+        expect(request.postDataJSON().interested_floor_ids).toEqual(expect.arrayContaining(['ground-floor', 'first-floor', 'second-floor', 'third-floor', 'future-floor']));
+        expect(request.postDataJSON().assignments.every((assignment: any) => assignment.floor_id === floor.id)).toBe(true);
         return route.fulfill({ json: walkin });
       }
       if (path === '/api/walkins/page') return route.fulfill({ json: { items: [walkin], next_cursor: null } });
       return route.fulfill({ json: walkin });
     });
-    await page.route('**/api/followups/assignees?**', r => r.fulfill({ json: [{ ...staff, floor_ids: [floor.id] }] }));
     await page.goto('/walkins');
     await expect(page.getByRole('heading', { name: 'Walk-ins', exact: true })).toBeVisible();
     await expect(page.getByTestId('walkin-card-delegated-visitor')).toContainText('Bathroom fittings, Tiles');
@@ -56,6 +66,11 @@ for (const floor of floors.filter(floor => floor.id !== 'second-floor')) {
     await page.getByTestId('walkin-name').fill('Delegated visitor');
     await page.getByTestId('walkin-phone').fill('9876543210');
     await page.getByTestId('walkin-address').fill('12 Showroom Road, Mumbai');
+    for (const option of [...floors.map(row => row.id), 'future-floor']) await expect(page.getByTestId(`lead-floor-${option}`)).toBeVisible();
+    await page.getByTestId('lead-floor-second-floor').click();
+    await expect(page.getByTestId(`lead-assign-${floor.id}-${staff.id}`)).toBeVisible();
+    await expect(page.locator('[data-testid^="lead-assign-second-floor-"]')).toHaveCount(0);
+    await page.getByTestId('lead-floors-all').click();
     if (['first-floor', 'ground-floor', 'third-floor'].includes(floor.id)) await page.getByTestId(`lead-assign-${floor.id}-${staff.id}`).click();
     await page.getByTestId('walkin-save-btn').click();
     await expect(page).toHaveURL(new RegExp(`/walkins/delegated-visitor\\?floor_id=${floor.id}`));

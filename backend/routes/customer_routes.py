@@ -61,7 +61,7 @@ async def list_customers(
     search: str | None = None,
     user: UserPublic = Depends(get_current_user),
 ):
-    query = floor_query(user)
+    query = floor_query(user, {"deleted_at": {"$exists": False}})
     if tile_lookup:
         query = {"$and": [query, {"exclude_from_tile_customer_lookup": {"$ne": True}}]}
     if search and search.strip():

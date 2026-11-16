@@ -1,17 +1,33 @@
 import { useEffect, useState } from "react";
 import { ScrollView, View } from "react-native";
 import { leadsApi, type LeadScope } from "@/src/api/leads";
+import { walkinsApi } from "@/src/api/walkins";
+import { useFloorAccess } from "@/src/hooks/use-floor-access";
 import { Alert, Button, Sheet } from "@/src/components/ui";
 import { toast } from "@/src/components/Toast";
 import { LeadScopeFields, type LeadPartner } from "./LeadScopeFields";
 import { spacing } from "@/src/theme/tokens";
 
 type Lead = Partial<LeadScope> & { id: string; customer_name: string; floor_id?: string; is_converted?: boolean; referrer_name?: string | null; referrer_type?: "architect" | "interior_designer" | null };
-export function LeadScopeSheet({ lead, floorId, onClose, onSaved, leadIds, saveScope }: { lead: Lead | null; floorId: string; onClose: () => void; onSaved: () => void; leadIds?: string[]; saveScope?: (value: LeadScope) => Promise<unknown> }) {
+export function LeadScopeSheet({ lead, floorId, onClose, onSaved, leadIds, saveScope, walkin = false }: { lead: Lead | null; floorId: string; onClose: () => void; onSaved: () => void; leadIds?: string[]; saveScope?: (value: LeadScope) => Promise<unknown>; walkin?: boolean }) {
   const [value, setValue] = useState<LeadScope>({ interested_floor_ids: [], assignments: [] });
   const [partner, setPartner] = useState<LeadPartner>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [floorChoices, setFloorChoices] = useState<Awaited<ReturnType<typeof walkinsApi.interestedFloors>>>();
+  const [floorError, setFloorError] = useState(false);
+  const [retryFloors, setRetryFloors] = useState(0);
+  const { floors } = useFloorAccess();
+  const identity = lead?.id;
+  useEffect(() => {
+    if (!identity || !walkin) return;
+    const controller = new AbortController();
+    setFloorChoices(undefined); setFloorError(false);
+    void walkinsApi.interestedFloors(floorId, controller.signal, identity).then(choices => {
+      if (!controller.signal.aborted) setFloorChoices(choices);
+    }).catch(() => { if (!controller.signal.aborted) setFloorError(true); });
+    return () => controller.abort();
+  }, [identity, walkin, floorId, retryFloors]);
   useEffect(() => {
     if (!lead) return;
     setValue({ interested_floor_ids: lead.interested_floor_ids?.length ? lead.interested_floor_ids : [lead.floor_id || floorId], assignments: lead.assignments || [], reference_source: lead.reference_source, referrer_id: lead.referrer_id });
@@ -38,7 +54,8 @@ export function LeadScopeSheet({ lead, floorId, onClose, onSaved, leadIds, saveS
   return <Sheet visible={!!lead} onClose={onClose} title="Interested floors & team assignment" subtitle={lead?.customer_name} variant="drawer" footer={<Button label="Save assignments" onPress={() => void save()} loading={saving} disabled={!value.interested_floor_ids.length} testID="lead-scope-save" />}>
     <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: spacing.lg, gap: spacing.md }}>
       {error ? <Alert tone="error" title={error} /> : null}
-      {lead ? <View><LeadScopeFields value={value} onChange={setValue} converted={lead.is_converted} sourceId={lead.id} sourceFloorId={lead.floor_id || floorId} reference={!leadIds?.length} partner={partner} onPartnerChange={leadIds?.length ? undefined : setPartner} /></View> : null}
+      {floorError ? <Alert tone="error" title="Interested floors unavailable" action={<Button label="Retry floors" variant="secondary" onPress={() => setRetryFloors(value => value + 1)} />} /> : null}
+      {lead ? <View><LeadScopeFields value={value} onChange={setValue} converted={lead.is_converted} sourceId={lead.id} sourceFloorId={lead.floor_id || floorId} interestFloors={walkin ? floorChoices : undefined} assignmentFloorIds={walkin ? floors.map(floor => floor.id) : undefined} reference={!leadIds?.length} partner={partner} onPartnerChange={leadIds?.length ? undefined : setPartner} /></View> : null}
     </ScrollView>
   </Sheet>;
 }

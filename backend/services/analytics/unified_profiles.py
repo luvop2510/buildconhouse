@@ -211,7 +211,7 @@ async def profile_history(db, q, floors):
     async def kitchen():
         if "second-floor" not in selected_floors or q.source not in {None, "kitchen"} or any((q.company_id, q.product_id, q.category, q.size, q.finish, q.series)):
             return [], [], []
-        docs = await _bounded(db.kitchen_projects.find({**scope, **shared, "floor_id": "second-floor"}, {"_id": 0, "id": 1, "project_reference": 1, "customer_id": 1, "customer.name": 1, "referrer_id": 1, "referrer_name": 1, "stage": 1, "status": 1, "created_at": 1, "quotation_versions": 1, "activity": 1, "work_history": 1}), "Project history", MAX_RECORDS)
+        docs = await _bounded(db.kitchen_projects.find({**scope, **shared, "floor_id": "second-floor", "deleted_at": {"$exists": False}}, {"_id": 0, "id": 1, "project_reference": 1, "customer_id": 1, "customer.name": 1, "referrer_id": 1, "referrer_name": 1, "stage": 1, "status": 1, "created_at": 1, "quotation_versions": 1, "activity": 1, "work_history": 1}), "Project history", MAX_RECORDS)
         if sum(len(doc.get("quotation_versions") or []) + len(doc.get("activity") or []) + len(doc.get("work_history") or []) for doc in docs) > MAX_RECORDS:
             raise HTTPException(422, "Project histories exceed 20,000 entries; choose a narrower department or entity")
         quotes, projects, kitchen_activity = [], [], []

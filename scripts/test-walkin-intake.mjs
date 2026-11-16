@@ -63,6 +63,7 @@ function fixture(floorId) {
       parseDuplicateConflict: () => null,
       walkinsApi: {
         listSources: async () => ({ sources: ['Walk-in', 'Reference'] }),
+        interestedFloors: async () => floors,
         listAssignees: async () => [],
         checkDuplicate: async () => duplicateMatches,
         async create(body) { writes.push(plain(body)); if (failure) throw { detail: failure }; return { id: 'saved', floor_id: floorId }; },
@@ -71,6 +72,7 @@ function fixture(floorId) {
   };
   const exports = {};
   vm.runInNewContext(compiled, { exports, require: name => modules[name] || {},
+    AbortController,
     setTimeout: callback => { const id = ++nextTimer; timers.set(id, callback); return id; }, clearTimeout: id => timers.delete(id),
   });
   const render = () => { cursor = 0; dirty = false; tree = exports.default(); while (effects.length) effects.shift()(); };

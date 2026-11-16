@@ -103,6 +103,7 @@ def test_explicit_foreign_customer_is_not_updated_through_authorized_floor(monke
 def test_scope_admission_failure_leaves_address_and_walkin_unchanged(monkeypatch):
     customer, updates, db, _matches, _log = install(monkeypatch)
     monkeypatch.setattr(walkin_routes.lead_scope, "validate_scope", AsyncMock())
+    monkeypatch.setattr(walkin_routes.walkin_interests, "plan", AsyncMock(return_value=(["ground-floor"], ["ground-floor"])))
     scope = AsyncMock(side_effect=HTTPException(status_code=422, detail="Choose eligible floor workers"))
     monkeypatch.setattr(walkin_routes, "_walkin_scope", scope)
     with pytest.raises(HTTPException):

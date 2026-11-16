@@ -267,7 +267,7 @@ function WalkInWorkspace() {
         )}
       </ScrollView>
 
-      <LeadScopeSheet lead={scopeOpen ? w : null} floorId={w.floor_id} onClose={() => setScopeOpen(false)} onSaved={() => void load()} saveScope={value => walkinsApi.update(id, value, requestOptions)} />
+      <LeadScopeSheet walkin lead={scopeOpen ? w : null} floorId={w.floor_id} onClose={() => setScopeOpen(false)} onSaved={() => void load()} saveScope={value => walkinsApi.update(id, value, requestOptions)} />
       <Sheet visible={lostOpen} onClose={() => setLostOpen(false)} title="Mark as lost" variant="bottom">
         <View style={{ padding: spacing.lg, gap: spacing.md }}>
           <TextField label="Lost reason" value={notes} onChangeText={setNotes} multiline numberOfLines={3} placeholder="Cannot afford the service, or we cannot work with this customer" testID="walkin-lost-reason" />

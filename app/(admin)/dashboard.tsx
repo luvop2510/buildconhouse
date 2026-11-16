@@ -14,6 +14,7 @@ import { useActionAccess } from "@/src/hooks/use-permissions";
 import { useFloorAccess } from "@/src/hooks/use-floor-access";
 import { KITCHEN_FLOOR_ID } from "@/src/constants/floors";
 import type { TodayData, TodayOverview, TodayTask } from "@/src/api/today";
+import { HomeCustomerSearch } from "@/src/components/HomeCustomerSearch";
 import { TodaySummary, WorkflowDistribution } from "@/src/components/today/TodayGraphics";
 
 const DEPARTMENTS: Record<string, string> = {
@@ -155,6 +156,7 @@ export default function Today() {
     contentContainerStyle={{ paddingHorizontal: gutter, paddingTop: space.x4, paddingBottom: space.x8 }}
     showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void load(true)} tintColor={color.inkSoft} />}>
     <View style={{ width: "100%", maxWidth: 1200, alignSelf: "center", gap: space.x4 }}>
+      <HomeCustomerSearch />
       <View style={{ flexDirection: "row", alignItems: "center", gap: space.x3 }}>
         <View style={{ flex: 1, minWidth: 0, gap: space.x1 }}>
           <Txt v="heading" style={{ fontSize: isPhone ? 20 : 24, lineHeight: isPhone ? 28 : 32 }}>Today</Txt>

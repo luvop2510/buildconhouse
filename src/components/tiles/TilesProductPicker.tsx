@@ -207,6 +207,7 @@ export function TilesProductPicker({
               cardWidth={cardWidth}
               onPress={() => void pick(item)}
               onPickSize={(size) => void pick(item, size)}
+              onPickVariant={(variant) => void pick(variant)}
             />
           )}
           initialNumToRender={catalogGridRows(columns, 8)}
@@ -240,13 +241,17 @@ export function TilesProductPicker({
 }
 
 function TileCatalogCard({
-  product, compact, cardWidth, onPress, onPickSize,
+  product, compact, cardWidth, onPress, onPickSize, onPickVariant,
 }: {
   product: Product; compact: boolean; cardWidth: number; onPress: () => void; onPickSize: (size: string) => void;
+  onPickVariant: (product: Product) => void;
 }) {
   const sizes = tileSizes(product);
   const canSwitchSize = sizes.length >= 2;
   const selectedSize = String(product.size || product.dimensions || "").trim();
+  const alternateRates = (product.variants || []).filter(variant => variant.id && variant.id !== product.id
+    && (variant.size || variant.dimensions) === selectedSize && !variant.finish && !product.finish
+    && variant.price > 0 && variant.price !== product.price);
   return (
     <Pressable onPress={onPress} style={({ pressed }) => [styles.card, { width: cardWidth }, compact && styles.phoneCard, pressed && styles.cardPressed]} testID={`tiles-picker-card-${product.id}`} accessibilityRole="button" accessibilityLabel={`Add ${product.name}`}>
       <ProductImage source={productImageList(product)} style={[styles.image, ...(compact ? [styles.phoneImage] : [])]} fallbackLabel={product.sku} disableSkeleton contentFit="contain" />
@@ -274,6 +279,16 @@ function TileCatalogCard({
             </View>
           </View>
         ) : null}
+        {alternateRates.map(variant => (
+          <Pressable key={variant.id} accessibilityRole="button" testID={`tiles-picker-rate-${variant.id}`}
+            style={styles.sizeChoice} onPress={event => {
+              event.stopPropagation();
+              onPickVariant({ ...product, ...variant, id: variant.id!, name: variant.name || product.name,
+                hero_image_url: variant.image || null, images: variant.image ? [variant.image] : [], gallery: [] });
+            }}>
+            <Text style={styles.sizeChoiceText}>{variant.sku} · {money(variant.price)} {tilePriceUnit(tileSourcePriceUnit(variant.specs))}</Text>
+          </Pressable>
+        ))}
         <View style={styles.cardFooter}>
           <View style={{ flex: 1, minWidth: 0, gap: 3 }}><Text style={styles.price}>{product.price ? money(product.price) : "Price on request"}</Text>{tilePriceUnit(tileSourcePriceUnit(product.specs)) ? <Text style={styles.unitBadge}>{tilePriceUnit(tileSourcePriceUnit(product.specs))}</Text> : null}</View>
           <View style={styles.add}><Feather name="plus" size={16} color={colors.onBrand} /></View>

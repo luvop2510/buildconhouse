@@ -124,7 +124,7 @@ def duplicate_selector(customer_id, phone, name, exclude=None):
         candidates.append({"customer_phone_normalized": phone})
     if name:
         candidates.append({"customer_name_normalized": name})
-    return {"floor_id": access.KITCHEN_FLOOR, "$or": candidates, "id": {"$ne": exclude}}
+    return {"floor_id": access.KITCHEN_FLOOR, "deleted_at": {"$exists": False}, "$or": candidates, "id": {"$ne": exclude}}
 
 
 def lead_error(project):

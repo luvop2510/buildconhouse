@@ -10,9 +10,12 @@ FLOORS = ["ground-floor", "first-floor", "second-floor", "third-floor"]
 def test_kitchen_assignment_only_offers_the_current_workspace():
     catalog = delegation_resource_catalog(FLOORS)
     kitchen = [row for row in catalog if "second-floor" in row["assignable_floor_ids"]]
-    assert [row["key"] for row in kitchen] == ["kitchen_projects", *KITCHEN_STAGE_RESOURCES.values(), "kitchen_restricted"]
+    assert [row["key"] for row in kitchen] == ["kitchen_projects", *KITCHEN_STAGE_RESOURCES.values(), "kitchen_restricted", "kitchen_customer_delete"]
     assert kitchen[0]["label"] == "All Kitchen stages"
     assert kitchen[0]["actions"] == ["view", "create", "update", "export"]
+    assert kitchen[-1]["actions"] == ["view", "delete"]
+    assert resource_supports("kitchen_customer_delete", "second-floor", ["view", "delete"])
+    assert not resource_supports("kitchen_customer_delete", "first-floor", ["view", "delete"])
 
 
 def test_current_catalog_preserves_historical_grants_for_round_trip_and_revocation():

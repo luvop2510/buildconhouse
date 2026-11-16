@@ -165,3 +165,36 @@ test('critical touch gestures scroll a long selection in both directions', async
   await expect.poll(() => scroll.evaluate(node => node.scrollTop)).toBeLessThan(before);
   await context.close();
 });
+
+for (const docType of ['tiles_selection', 'tiles_quotation']) test(`critical ${docType} product detail shows dimensions only in the Size field`, async ({ page }, info) => {
+  await fixtures(page);
+  const name = 'DELICATO GREY - Matt (1200X1800)';
+  const doc = { id: 'size-display', number: 'T-SIZE', doc_type: docType, floor_id: 'ground-floor', status: 'draft',
+    customer_name: 'Synthetic size display', updated_at: '2026-11-16T00:00:00Z', items: [{ id: 'line', product_id: matt.id,
+      sku: 'DELICATO-GREY-MATT', name, image, size: '1200X1800', offer_rate: 160, unit_price: 160, qty: 1, quantity_unit: 'Pieces', price_basis: 'piece' }] };
+  await page.route(/\/api\/quotations\/size-display(?:\?.*)?$/, route => route.fulfill({ json: doc }));
+  await page.route('**/api/products/finish-matt/size-variants', route => route.fulfill({ json: {
+    product: { ...matt, name, size: '1200X1800' }, available_sizes: ['1200X1800', '600X600'],
+  } }));
+  await page.goto(`/tiles/${docType === 'tiles_selection' ? 'selection' : 'quotation'}?id=size-display`);
+  const displayName = page.locator('[data-testid="tiles-product-0-name"], [data-testid="mobile-name-0"]');
+  await expect(displayName).toHaveValue('DELICATO GREY - Matt');
+  await expect(page.locator('[data-testid="tiles-size-0"], [data-testid="mobile-size-0"]')).toContainText('1200X1800');
+  expect(doc.items[0].name).toBe(name);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+  await page.screenshot({ path: info.outputPath(`${docType}-clean-product-name.png`), fullPage: true });
+});
+
+test('critical same-size Kenzo prices are separately selectable by SKU', async ({ page }) => {
+  await fixtures(page);
+  const alternative = { id: 'kenzo-200', sku: 'KENZO-SQ10-60X300-2', name: 'SQ 10 (60X300)', size: '60X300', price: 200, mrp: 200, image, specs: { price_unit: 'per piece' } };
+  const product = { ...alternative, id: 'kenzo-180', sku: 'KENZO-SQ10-60X300', price: 180, mrp: 180, images: [image], variants: [alternative] };
+  await page.route('**/api/products?**', route => route.fulfill({ json: { items: [product], total: 1 } }));
+  await page.route('**/api/products/kenzo-200/size-variants', route => route.fulfill({ json: { product: alternative, available_sizes: ['60X300'] } }));
+  await page.goto('/tiles/selection');
+  await page.getByRole('button', { name: 'Select a product', exact: true }).first().click();
+  await expect(page.getByTestId('tiles-picker-card-kenzo-180')).toContainText('180');
+  await expect(page.getByTestId('tiles-picker-rate-kenzo-200')).toContainText('200');
+  await page.getByTestId('tiles-picker-rate-kenzo-200').click();
+  await expect(rate(page)).toHaveValue('200');
+});

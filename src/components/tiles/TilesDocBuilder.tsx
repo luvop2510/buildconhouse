@@ -1,6 +1,7 @@
 import { ExistingTileCustomer } from "./ExistingTileCustomer";
 import { clearsManualTileTotal, tileLineTotal, tileRateWithoutCoverage, tileUnitRate } from "./tilePriceEdits";
 import { formatPhone } from "@/src/utils/phone";
+import { tileProductName } from "./tileProductName";
 import { useAuth } from "@/src/state/auth";
 import { useActionAccess } from "@/src/hooks/use-permissions";
 import { useInputActive } from "@/src/hooks/use-input-active";
@@ -1389,7 +1390,7 @@ function ProductCell({
   }
   return (
     <View style={{ flex: 1, alignSelf: "stretch", justifyContent: "center" }}>
-      <CellInput value={row.name} onChangeText={onChangeName} bold={bold} multiline testID={testID ? `${testID}-name` : undefined} />
+      <CellInput value={tileProductName(row.name, row.size)} onChangeText={onChangeName} bold={bold} multiline testID={testID ? `${testID}-name` : undefined} />
       <Pressable accessibilityRole="button" accessibilityLabel={`Change product from ${row.name}`} onPress={onOpenPicker} hitSlop={8} style={productStyles.swapBtn} testID={testID ? `${testID}-swap` : undefined}>
         <Feather name="refresh-cw" size={11} color="#666" />
       </Pressable>
@@ -2079,7 +2080,7 @@ function MobileRowCard({
           {row.productId ? (
             <>
               <TextInput
-                value={row.name}
+                value={tileProductName(row.name, row.size)}
                 onChangeText={(t) => doc.updateRow(row.key, { name: t })}
                 multiline
                 scrollEnabled={false}

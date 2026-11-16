@@ -5,7 +5,7 @@ import vm from 'node:vm';
 import ts from 'typescript';
 
 const source = readFileSync(new URL('../src/components/leads/LeadScopeFields.tsx', import.meta.url), 'utf8');
-const instrumented = source.replace('  return <View', '  return { workers, error, loading };\n  return <View');
+const instrumented = source.replace('  return <View', '  return { workers, error, loading, floors, teamFloors, changeFloors };\n  return <View');
 assert.notEqual(instrumented, source);
 const compiled = ts.transpileModule(instrumented, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
 function fixture() {
@@ -30,6 +30,7 @@ function fixture() {
   const modules = {
     react,
     '@/src/hooks/use-floor-access': { useFloorAccess: () => ({ floors: [] }) },
+    '@/src/api/walkins': { walkinsApi: { interestAssignees: (...args) => new Promise(resolve => requests.push({ args, resolve })) } },
     '@/src/api/leads': { leadsApi: { assignees: (...args) => new Promise(resolve => requests.push({ args, resolve })) } },
   };
   const exports = {};
@@ -71,4 +72,23 @@ test('eligibility from the prior customer cannot remove new customer selections'
   view.render({ ...old, assignments: [{ floor_id: 'first-floor', user_id: 'new-worker' }] }, { customerId: 'new-customer' }, false);
   view.requests[0].resolve([worker]); await view.settle();
   assert.equal(view.changes.length, 0);
+});
+
+test('all-floor Walk-in interests never request foreign workers or replace source assignment', async () => {
+  const view = fixture();
+  const assignment = { floor_id: 'ground-floor', user_id: 'local-worker' };
+  const value = { interested_floor_ids: ['ground-floor', 'second-floor', 'future-floor'], assignments: [assignment] };
+  const extra = { sourceFloorId: 'ground-floor', assignmentFloorIds: ['ground-floor'],
+    interestFloors: [{ id: 'ground-floor', name: 'Tiles' }, { id: 'second-floor', name: 'Kitchen' }, { id: 'future-floor', name: 'Future showroom' }] };
+  const state = view.render(value, extra); view.start();
+  assert.deepEqual(Array.from(state.floors, row => row.id), ['ground-floor', 'second-floor', 'future-floor']);
+  assert.deepEqual(Array.from(state.teamFloors), ['ground-floor']);
+  assert.deepEqual(Array.from(view.requests[0].args[1]), ['ground-floor']);
+  assert.equal(view.requests[0].args[0], 'ground-floor');
+  state.changeFloors(['second-floor']);
+  assert.deepEqual(Array.from(view.changes[0].interested_floor_ids), ['second-floor']);
+  assert.equal(view.changes[0].assignments[0], assignment, 'interest changes preserve the source-floor team');
+  view.requests[0].resolve([{ id: 'local-worker', full_name: 'Local worker', floor_ids: ['ground-floor'] }]);
+  await view.settle();
+  assert.equal(view.changes.length, 1, 'the source assignment remains eligible and is never cleared by foreign interests');
 });
