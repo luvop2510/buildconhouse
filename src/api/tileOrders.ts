@@ -119,13 +119,17 @@ export type CompletedTileOrder = {
 };
 export type GodownInventoryRow = {
   id: string; customer: string; name: string; brand: string; product: string | null; size: string | null; arrival_date: string;
+  quantity: number; quantity_unit: "Box" | "Pieces";
+  product_id: string | null; purchase_order_id: string; po_item_id: string;
+  series: string | null; finish: string | null;
 };
 
 export type MovementItemInput = { po_item_id: string; qty: number };
+export type SavedDispatchDriver = { name: string; mobile: string; vehicle_number: string };
 export type DispatchDestinationOverride = {
   destination_name?: string; destination_address?: string; destination_city?: string;
   reference_number?: string; receiver_name?: string; sender_name?: string;
-  vehicle_number?: string; driver_name?: string;
+  vehicle_number?: string; driver_name?: string; driver_mobile?: string;
   labor_cost?: number;
 };
 
@@ -138,7 +142,7 @@ export type ChalanDetail = {
   id: string; number: string; generated_at: string; generated_by_name: string;
   delivery_address: string; delivery_city: string; reference_number: string | null;
   receiver_name: string | null; sender_name: string | null;
-  vehicle_number: string | null; driver_name: string | null;
+  vehicle_number: string | null; driver_name: string | null; driver_mobile?: string | null;
   supplier_name: string; customer_name: string; customer_phone: string | null;
   labor_cost: number;
   items: ChalanItem[];
@@ -162,7 +166,7 @@ export type DispatchDetail = {
 };
 
 export type DispatchTransportInput = {
-  vehicle_number?: string; driver_name?: string;
+  vehicle_number?: string; driver_name?: string; driver_mobile?: string;
   receiver_name?: string; sender_name?: string; reference_number?: string;
 };
 
@@ -175,6 +179,8 @@ export type DispatchTransportInput = {
 const GROUND_FLOOR = { floorId: TILES_FLOOR_ID } as const;
 
 export const tileOrdersApi = {
+  listDrivers: (search: string, signal?: AbortSignal) =>
+    api.get<{ drivers: SavedDispatchDriver[] }>(`/tile-orders/drivers${toQuery({ search })}`, { ...GROUND_FLOOR, signal }),
   // ---- Customer tab ----
   listCustomerOrders: (params?: { page?: number; page_size?: number; sort?: string; status?: string; search?: string; customer_id?: string }, signal?: AbortSignal) =>
     api.get<{ orders: CustomerOrderCard[] } & PageMeta>(
@@ -193,15 +199,15 @@ export const tileOrdersApi = {
   purchaseOrderDetail: (poId: string) => api.get<PurchaseOrderDetail>(`/tile-orders/purchase-orders/${poId}`, GROUND_FLOOR),
 
   // ---- Brand page's ONLY action ----
-  releaseMaterial: (poId: string, items: MovementItemInput[]) =>
+  releaseMaterial: (poId: string, items: MovementItemInput[], requestKey?: string) =>
     api.post<{ po_id: string; ready_batches: Record<string, any>[]; overall_status: TileOverallStatus }>(
-      `/tile-orders/purchase-orders/${poId}/ready`, { items }, GROUND_FLOOR,
+      `/tile-orders/purchase-orders/${poId}/ready`, { items, request_key: requestKey }, GROUND_FLOOR,
     ),
 
   // ---- Customer page actions (BuildCon decides Godown vs. Dispatch) ----
-  moveToGodown: (poId: string, items: MovementItemInput[]) =>
+  moveToGodown: (poId: string, items: MovementItemInput[], requestKey?: string) =>
     api.post<{ po_id: string; moved: Record<string, any>[] }>(
-      `/tile-orders/purchase-orders/${poId}/items/move-to-godown`, { items }, GROUND_FLOOR,
+      `/tile-orders/purchase-orders/${poId}/items/move-to-godown`, { items, request_key: requestKey }, GROUND_FLOOR,
     ),
   dispatchFromReleased: (poId: string, items: MovementItemInput[], destination?: DispatchDestinationOverride) =>
     api.post<{ po_id: string; dispatch: Record<string, any>; chalan: { id: string; [key: string]: any }; overall_status: TileOverallStatus }>(

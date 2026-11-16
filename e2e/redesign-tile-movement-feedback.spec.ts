@@ -61,7 +61,8 @@ test('critical tile release prevents duplicate submissions and preserves quantit
   });
   await page.route('**/api/tile-orders/purchase-orders/feedback-po/ready', async route => {
     writes += 1;
-    expect(route.request().postDataJSON()).toEqual({ items: [{ po_item_id: 'feedback-line', qty: 4 }] });
+    expect(route.request().postDataJSON()).toEqual({ items: [{ po_item_id: 'feedback-line', qty: 4 }], request_key: expect.any(String) });
+    expect(route.request().postDataJSON().request_key.length).toBeGreaterThan(0);
     if (writes === 1) {
       await writePending;
       await route.fulfill({ status: 409, json: { detail: 'Release not accepted; review the current quantity.' } });

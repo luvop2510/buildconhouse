@@ -93,6 +93,7 @@ function screen(kind, width = 'desktop') {
     '@/src/api/godownStock': { getCustomerStockTransfers: async () => ({ transfers: [] }) },
     '@/src/hooks/use-floor-access': { useFloorAccess: () => ({ selectedFloorId: floor }), useRequireFloorAccess: () => ready },
     '@/src/hooks/use-permissions': { useActionAccess: () => true, useModuleAccess: () => () => true },
+    '@/src/hooks/use-customer-delete-access': { useCustomerDeleteAccess: () => true },
     '@/src/state/auth': { useAuth: () => ({ staff: { role: 'owner' } }) },
     '@/src/constants/roles': { canManageDestructiveData: () => true },
     '@/src/design/responsive': { useBp: () => bp },

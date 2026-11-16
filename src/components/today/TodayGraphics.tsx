@@ -4,6 +4,7 @@ import { HalfGauge, SegmentedMeter } from '@/src/design/graphics';
 import { Surface, Txt, Skeleton } from '@/src/design/components';
 import { useBp } from '@/src/design/responsive';
 import { color, space } from '@/src/design/tokens';
+import { kitchenStageColor, kitchenStageLabel } from '@/src/design/kitchenStageColors';
 
 export function TodaySummary({summary,unavailable=false}:{summary:TodayData['task_summary']|undefined;unavailable?:boolean}) {
  const {isPhone,width}=useBp();
@@ -26,9 +27,11 @@ export function TodaySummary({summary,unavailable=false}:{summary:TodayData['tas
 
 export function WorkflowDistribution({workflow}:{workflow:TodayData['workflows'][number]}) {
  const tones=[color.action,color.inkMid,color.inkSoft];
+ const kitchen=workflow.resource==='kitchen_projects';
+ const rows=workflow.statuses.map((row,i)=>({...row,label:kitchen?kitchenStageLabel(row.status):row.status,color:(kitchen?kitchenStageColor(row.status):undefined)??tones[i%tones.length]}));
  return <View testID={`today-workflow-${workflow.resource}`} style={{gap:space.x2}}>
   <View style={{flexDirection:'row',justifyContent:'space-between',gap:space.x2}}><Txt v="rowTitle" style={{flex:1}}>{workflow.label}</Txt><Txt v="num">{workflow.total.toLocaleString('en-IN')}</Txt></View>
-  <SegmentedMeter values={workflow.statuses.map((row,i)=>({value:row.count,color:tones[i%tones.length]}))} label={`${workflow.label}. ${workflow.statuses.map(row=>`${row.status}: ${row.count}`).join('. ')}`}/>
-  {workflow.statuses.map((row,i)=><View key={row.status} style={{flexDirection:'row',alignItems:'center',gap:space.x2}}><View aria-hidden style={{width:6,height:6,borderRadius:3,backgroundColor:tones[i%tones.length]}}/><Txt v="sub" tone="soft" style={{flex:1}}>{row.status}</Txt><Txt v="num">{row.count.toLocaleString('en-IN')}</Txt></View>)}
+  <SegmentedMeter testID={`today-workflow-meter-${workflow.resource}`} values={rows.map(row=>({value:row.count,color:row.color}))} label={`${workflow.label}. ${rows.map(row=>`${row.label}: ${row.count}`).join('. ')}`}/>
+  {rows.map(row=><View key={row.status} testID={`today-workflow-stage-${workflow.resource}-${row.status}`} style={{flexDirection:'row',alignItems:'center',gap:space.x2}}><View testID={`today-workflow-swatch-${workflow.resource}-${row.status}`} aria-hidden style={{width:8,height:8,borderRadius:4,backgroundColor:row.color}}/><Txt v="sub" tone="soft" style={{flex:1}}>{row.label}</Txt><Txt v="num">{row.count.toLocaleString('en-IN')}</Txt></View>)}
  </View>;
 }

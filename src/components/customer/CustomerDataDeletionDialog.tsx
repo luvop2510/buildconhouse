@@ -5,6 +5,7 @@ import { api } from "@/src/api/client";
 import { Text } from "@/src/components/AppText";
 import { Button, Sheet } from "@/src/components/ui";
 import { colors, spacing, type } from "@/src/theme/tokens";
+import { useFloorAccess } from "@/src/hooks/use-floor-access";
 
 type Preview = {
   customer_id: string;
@@ -14,6 +15,7 @@ type Preview = {
   private_files: number;
   furniture_candidates?: { id: string; customer_name?: string; customer_phone?: string; selected: boolean }[];
   selected_furniture_ids?: string[];
+  recoverable?: boolean;
 };
 
 const labels: Record<string, string> = {
@@ -29,6 +31,7 @@ export function CustomerDataDeletionDialog({ customer, onClose, onDeleted }: {
   onClose: () => void;
   onDeleted: (id: string) => void;
 }) {
+  const { selectedFloorId } = useFloorAccess();
   const [preview, setPreview] = useState<Preview | null>(null);
   const [loading, setLoading] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -44,14 +47,14 @@ export function CustomerDataDeletionDialog({ customer, onClose, onDeleted }: {
     setError("");
     setOutcomeUnknown(false);
     try {
-      const result = await api.get<Preview>(`/customers/${encodeURIComponent(id)}/deletion-preview?furniture_ids=${encodeURIComponent(selected.join(","))}`);
+      const result = await api.get<Preview>(`/customers/${encodeURIComponent(id)}/deletion-preview?furniture_ids=${encodeURIComponent(selected.join(","))}`, { floorId: selectedFloorId });
       if (request === generation.current) setPreview(result);
     } catch (e: any) {
       if (request === generation.current) setError(e?.detail || "The deletion summary could not load. Try again.");
     } finally {
       if (request === generation.current) setLoading(false);
     }
-  }, [id]);
+  }, [id, selectedFloorId]);
   useEffect(() => {
     setPreview(null);
     setError("");
@@ -68,7 +71,7 @@ export function CustomerDataDeletionDialog({ customer, onClose, onDeleted }: {
     setDeleting(true);
     setError("");
     try {
-      await api.delete(`/customers/${encodeURIComponent(targetId)}?confirmation=${encodeURIComponent(preview.confirmation)}&furniture_ids=${encodeURIComponent((preview.selected_furniture_ids || []).join(","))}`);
+      await api.delete(`/customers/${encodeURIComponent(targetId)}?confirmation=${encodeURIComponent(preview.confirmation)}&furniture_ids=${encodeURIComponent((preview.selected_furniture_ids || []).join(","))}`, { floorId: selectedFloorId });
       if (request === generation.current) onDeleted(targetId);
     } catch (e: any) {
       if (request === generation.current) {
@@ -91,11 +94,11 @@ export function CustomerDataDeletionDialog({ customer, onClose, onDeleted }: {
     footer={<>
       <Button label="Cancel" variant="secondary" onPress={onClose} disabled={deleting} />
       <View style={{ flex: 1 }} />
-      <Button label={outcomeUnknown ? "Retry confirmed deletion" : "Delete all customer data"} variant="danger" onPress={remove} loading={deleting}
+      <Button label={outcomeUnknown ? "Retry confirmed deletion" : "Confirm delete customer"} variant="danger" onPress={remove} loading={deleting}
         disabled={!preview || loading || deleting} testID="confirm-delete-customer-list-confirm" />
     </>}>
     <View style={{ padding: spacing.lg, gap: spacing.md }}>
-      <Text style={type.body}>This permanently removes this customer&apos;s quotations, orders, payments, purchases and activity across all explicitly linked floor profiles. This cannot be undone.</Text>
+      <Text style={type.body}>{preview?.recoverable ? "Remove this Kitchen customer and their Kitchen projects from active records. Saved history and documents remain available for controlled recovery. Other departments are preserved." : "Review the linked records below before deleting this customer from the selected department. The existing deletion process permanently removes these records and retains stock movement evidence. This cannot be undone. Customers with linked records on other departments need separate review."}</Text>
       {loading ? <View accessibilityRole="progressbar" accessibilityLabel="Loading deletion summary" style={{ padding: spacing.lg }}><ActivityIndicator color={colors.brand} /></View> : null}
       {preview ? <View testID="customer-deletion-summary" style={{ gap: spacing.sm }}>
         {Object.entries(preview.counts).filter(([key]) => labels[key]).map(([key, count]) =>

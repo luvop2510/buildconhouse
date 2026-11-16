@@ -20,7 +20,7 @@ import {
 } from "@/src/components/ds";
 import { colors, icon as iconSize, radius, spacing, type } from "@/src/theme/tokens";
 import { useAuth } from "@/src/state/auth";
-import { useActionAccess } from "@/src/hooks/use-permissions";
+import { useCustomerDeleteAccess } from "@/src/hooks/use-customer-delete-access";
 import { CustomerDataDeletionDialog } from "@/src/components/customer/CustomerDataDeletionDialog";
 import { toast } from "@/src/components/Toast";
 import { ErrorState } from "@/src/components/ui";
@@ -45,14 +45,13 @@ export default function Customers() {
   const completed = view === "completed";
   const { isDesktop, isPhone } = useBp();
   const { staff } = useAuth();
-  const canDeleteCustomers = useActionAccess("customers", "delete", staff?.role === "owner") && staff?.role === "owner";
+  const canDeleteCustomers = useCustomerDeleteAccess();
   const { selectedFloorId } = useFloorAccess();
   const isTileDeliveryLookup = staff?.access_profile === "ground_tile_quotations_followups";
 
   const [items, setItems] = useState<Customer[] | null>(null);
   const [q, setQ] = useState("");
   const [visibleCount, setVisibleCount] = useState(CUSTOMER_RENDER_BATCH);
-  const deleting = useRef(false);
   const [deleteTarget, setDeleteTarget] = useState<Customer | null>(null);
   const resetCommand = useRef<{ key: string; floor: string; pending: boolean } | null>(null);
   const [resetting, setResetting] = useState(false);
@@ -69,17 +68,6 @@ export default function Customers() {
       () => { if (id === requestId.current) setLoadError(true); },
     );
   }, [selectedFloorId, completed]);
-  const deleteCustomer = async (customerId: string) => {
-    if (!selectedFloorId || deleting.current) return;
-    deleting.current = true;
-    const request = requestId.current;
-    try {
-      await api.delete(`/customers/${encodeURIComponent(customerId)}`, { floorId: selectedFloorId });
-      if (request === requestId.current) setItems(current => (current || []).filter(item => item.id !== customerId));
-    } catch (error: any) {
-      if (request === requestId.current) toast.error(error?.detail || "Could not delete customer data");
-    } finally { deleting.current = false; }
-  };
   const resetFloorCustomers = async () => {
     if (!["first-floor", "ground-floor"].includes(selectedFloorId) || !staff?.id || resetCommand.current?.pending) return;
     const command = resetCommand.current?.floor === selectedFloorId ? resetCommand.current : { key: "", floor: selectedFloorId, pending: false };
@@ -166,7 +154,7 @@ export default function Customers() {
 
         {/* Toolbar */}
         <View style={{ gap: spacing.md }}>
-          {canDeleteCustomers && ["first-floor", "ground-floor"].includes(selectedFloorId) ? <Button label="Reset floor customer data" icon="trash-2" variant="secondary" loading={resetting} onPress={() => { void resetFloorCustomers(); }} testID="reset-floor-customer-data" /> : null}
+          {staff?.role === "owner" && ["first-floor", "ground-floor"].includes(selectedFloorId) ? <Button label="Reset floor customer data" icon="trash-2" variant="secondary" loading={resetting} onPress={() => { void resetFloorCustomers(); }} testID="reset-floor-customer-data" /> : null}
           <MobileFilterSection testID="customers-filters">
           <SearchField
             value={q}
@@ -262,7 +250,7 @@ export default function Customers() {
                     {canDeleteCustomers ? (
                       <IconButton
                         icon="trash-2"
-                        onPress={() => { if (["first-floor", "ground-floor"].includes(selectedFloorId)) void deleteCustomer(c.id); else setDeleteTarget(c); }}
+                        onPress={() => setDeleteTarget(c)}
                         size={isDesktop ? 30 : 44}
                         tone="danger"
                         accessibilityLabel={`Delete ${c.name}`}

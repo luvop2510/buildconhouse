@@ -54,6 +54,10 @@ for _resource in ("kitchen_design", "kitchen_quotation"):
 RESOURCE_REGISTRY["kitchen_projects"].update(label="All Kitchen stages", description="Access every Kitchen stage. Individual stage permissions can be assigned instead.")
 RESOURCE_REGISTRY["kitchen_customer_delete"] = {"label": "Delete Kitchen customers", "floor_ids": ["second-floor"],
     "actions": ["view", "delete"], "description": "Separately allow recoverable deletion of a Kitchen customer and all their Kitchen projects. Requires access to each affected stage. Other floor records are preserved."}
+RESOURCE_REGISTRY["kitchen_customer_delete"]["retired"] = True
+RESOURCE_REGISTRY["customer_delete"] = {"label": "Delete Customers", "actions": ["view", "delete"],
+    "floor_ids": ["ground-floor", "first-floor", "second-floor", "third-floor"],
+    "description": "Explicitly allow confirmed customer deletion in this department. Requires department access; disabled by default. Kitchen history and files are retained."}
 for _resource in ("catalog", "purchases", "godown_stock", "payments", "orders", "walkins"):
     RESOURCE_REGISTRY[_resource]["actions"] = ["view", "create", "update", "export"]
 
@@ -74,7 +78,7 @@ def delegation_resource_catalog(floor_ids: list[str]) -> list[dict[str, Any]]:
         supported = [floor for floor in floor_ids
                      if not metadata.get("floor_ids") or floor in metadata["floor_ids"]]
         assignable = [] if metadata.get("retired") or metadata.get("owner_only") else [
-            floor for floor in supported if floor != "second-floor" or key in {"kitchen_projects", "kitchen_customer_delete", "kitchen_restricted"} or key in KITCHEN_STAGE_RESOURCES.values()
+            floor for floor in supported if floor != "second-floor" or key in {"kitchen_projects", "kitchen_customer_delete", "customer_delete", "kitchen_restricted"} or key in KITCHEN_STAGE_RESOURCES.values()
         ]
         resources.append({
             "key": key, "label": metadata["label"], "retired": metadata.get("retired", False),
@@ -110,6 +114,7 @@ CUSTOM_ACCESS_COMMON_PATHS = frozenset({
     "/api/auth/me", "/api/auth/logout",
     "/api/auth/sessions", "/api/settings/floor-access", "/api/settings/floors",
     "/api/settings/permission-matrix", "/api/roles", "/api/downloads/token",
+    "/api/settings/permission-matrix/customer-deletion-access",
     "/api/settings/access-grants/me",
     "/api/exports/page.xlsx",
 })

@@ -6,6 +6,7 @@ import { Text } from "@/src/components/AppText";
 import { Alert, ErrorState, LoadingState, Sheet } from "@/src/components/ds";
 import { Menu } from "@/src/design/navigationControls";
 import { NavigationLink } from "@/src/design/NavigationLink";
+import { useCustomerDeleteAccess } from "@/src/hooks/use-customer-delete-access";
 import { useActionAccess, useModuleAccess } from "@/src/hooks/use-permissions";
 import { KITCHEN_STAGES, KITCHEN_VISIBLE_STAGES, kitchenDisplayStage, STAGE_LABELS, type KitchenCad, type KitchenLead, type KitchenProject, type KitchenStage, type KitchenVisit } from "@/src/api/kitchenProjects";
 import { Choice, displayDate, ErrorNotice, KitchenFloor, KitchenPage, KitchenPanel, rupees } from "./shared";
@@ -29,8 +30,9 @@ type ProjectPage = "overview" | "stage" | "documents" | "history" | "assignments
 export function KitchenProjectDetail({ page = "stage" }: { page?: ProjectPage }) {
   const hasAccess = useModuleAccess();
   const customerAccess = useActionAccess("customers", "update", false);
-  const canDeleteCustomer = useActionAccess("kitchen_customer_delete", "delete", false);
+  const canDeleteCustomer = useCustomerDeleteAccess();
   const [deleteOpen, setDeleteOpen] = useState(false);
+  useEffect(() => { if (!canDeleteCustomer) setDeleteOpen(false); }, [canDeleteCustomer]);
   const state = useKitchenProject();
   const { project, loading, failure, policy, policyError, reload, updateProject, submission, command, returnTo, retainedDraft } = state;
   const { stage: parameter, details } = useLocalSearchParams<{ stage?: string; details?: string }>();

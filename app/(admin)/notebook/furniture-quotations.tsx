@@ -1,5 +1,6 @@
 import { formatPhone } from "@/src/utils/phone";
 import { useEffect, useRef, useState } from "react";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { Platform, ScrollView, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Text } from "@/src/components/AppText";
@@ -32,6 +33,8 @@ const LEDGER_COLUMN_WIDTH = 145;
 const LEDGER_WIDTH = 7 * LEDGER_COLUMN_WIDTH;
 
 export default function FurnitureQuotations() {
+  const { id: requestedId } = useLocalSearchParams<{ id?: string }>();
+  const router = useRouter();
   const authorized = useRequireFloorAccess(FURNITURE_FLOOR_ID);
   const { staff } = useAuth();
   const legacyCanEdit = Boolean(staff && ["owner", "admin", "manager", "sales"].includes(staff.role));
@@ -84,6 +87,11 @@ export default function FurnitureQuotations() {
     } catch (err: any) { if (version === requestVersion.current) setError(typeof err?.detail === "string" ? err.detail : "Could not open the quotation."); }
     finally { if (version === requestVersion.current) setBusy(null); }
   };
+  // Universal customer search names one exact quotation; keep the existing
+  // detail request generation and authorization rather than matching by phone.
+  useEffect(() => {
+    if (authorized && requestedId) void open(requestedId);
+  }, [authorized, requestedId]);
   const save = async (finalize = false) => {
     if (!authorized || !draft || busy || !(saved ? canUpdate : canCreate)) return;
     const totals = ledgerTotals(draft.charges, draft.deposits);
@@ -143,7 +151,7 @@ export default function FurnitureQuotations() {
         {cursor ? <Button label="Load more quotations" loading={busy === "list"} onPress={() => void load(true)} /> : null}
         {error ? <Button label="Reload quotations" variant="secondary" onPress={() => void load()} /> : null}
       </> : <>
-        <View style={styles.actions}><Button label="Quotation list" variant="secondary" disabled={Boolean(busy)} onPress={() => { setDraft(null); setSaved(null); setError(null); void load(); }} />
+        <View style={styles.actions}><Button label="Quotation list" variant="secondary" disabled={Boolean(busy)} onPress={() => { router.setParams({ id: "" }); setDraft(null); setSaved(null); setError(null); void load(); }} />
           {saved ? <Button label="Reload saved quotation" variant="ghost" disabled={Boolean(busy)} onPress={() => void open(saved.id)} /> : null}</View>
         <View style={styles.card}>
           {editable && !locked && !busy ? <CustomerLinkField value={draft.customer_id} floorId={FURNITURE_FLOOR_ID}

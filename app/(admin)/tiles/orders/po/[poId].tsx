@@ -11,6 +11,7 @@
 // a sticky bar that is always reachable without scrolling back.
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { randomUUID } from "expo-crypto";
 import { Platform, Pressable, StyleSheet, View } from "react-native";
 import { Text, TextInput } from "@/src/components/AppText";
 
@@ -75,6 +76,11 @@ export default function BrandOrderDetailScreen() {
   if (activeScope.current.id !== poId) activeScope.current = { id: poId, active: true };
   const scope = activeScope.current;
   const submitBusy = useRef(false);
+  const releaseRequest = useRef<{ scope: typeof scope; key: string } | null>(null);
+  const releaseKey = useCallback(() => {
+    if (releaseRequest.current?.scope !== scope) releaseRequest.current = { scope, key: randomUUID() };
+    return releaseRequest.current.key;
+  }, [scope]);
 
   const deletePurchase = async () => {
     if (!poId || !canDelete || submitBusy.current) return;
@@ -148,7 +154,9 @@ export default function BrandOrderDetailScreen() {
     setSubmittingLine(itemId);
     setSubmitting(true);
     try {
-      await tileOrdersApi.releaseMaterial(order?.id || poId!, [{ po_item_id: itemId, qty }]);
+      const key = releaseKey();
+      await tileOrdersApi.releaseMaterial(order?.id || poId!, [{ po_item_id: itemId, qty }], key);
+      if (releaseRequest.current?.key === key) releaseRequest.current = null;
       if (!scope.active || activeScope.current !== scope) return;
       const releasedUnit = qtyUnit(order?.items.find((item) => item.id === itemId) || ({ quantity_unit: "Box" } as ReleaseItem));
       toast.success(`${qty} ${releasedUnit} released`);
@@ -162,7 +170,7 @@ export default function BrandOrderDetailScreen() {
       submitBusy.current = false;
       if (activeScope.current.active) { setSubmitting(false); setSubmittingLine(null); }
     }
-  }, [releaseQty, order?.id, order?.items, poId, load, scope]);
+  }, [releaseQty, order?.id, order?.items, poId, load, scope, releaseKey]);
 
   const columns = useMemo<Column<ReleaseItem>[]>(() => [
     {
@@ -328,7 +336,9 @@ export default function BrandOrderDetailScreen() {
     submitBusy.current = true;
     setSubmitting(true);
     try {
-      await tileOrdersApi.releaseMaterial(order.id, selectedItems);
+      const key = releaseKey();
+      await tileOrdersApi.releaseMaterial(order.id, selectedItems, key);
+      if (releaseRequest.current?.key === key) releaseRequest.current = null;
       if (!scope.active || activeScope.current !== scope) return;
       toast.success(`${selectedItems.length} product line${selectedItems.length === 1 ? "" : "s"} released`);
       setReleaseQty({});

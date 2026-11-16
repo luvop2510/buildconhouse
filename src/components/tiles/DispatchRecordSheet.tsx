@@ -22,6 +22,7 @@ import { toast } from "@/src/components/Toast";
 import { Sheet } from "@/src/components/ui";
 import { colors, radius, spacing, type } from "@/src/theme/tokens";
 import { tileIdentityMeta } from "@/src/components/tiles/tilePresentation";
+import { DriverFields, validateDriverFields } from "./DriverFields";
 import { downloadApiFile, printApiFile } from "@/src/utils/downloadFile";
 
 export async function openChalanPdf(chalanId: string, mode: "view" | "print" = "view") {
@@ -68,7 +69,7 @@ export function ChalanPreviewSheet({ chalanId, onClose }: { chalanId: string; on
               <Field label="Brand / supplier" value={chalan.supplier_name} />
               <Field label="Customer" value={`${chalan.customer_name}${chalan.customer_phone ? ` · ${formatPhone(chalan.customer_phone)}` : ""}`} />
               <Field label="Delivery address" value={[chalan.delivery_address, chalan.delivery_city].filter(Boolean).join(", ")} />
-              <Field label="Vehicle / driver" value={[chalan.vehicle_number, chalan.driver_name].filter(Boolean).join(" · ")} />
+              <Field label="Vehicle / driver" value={[chalan.vehicle_number, chalan.driver_name, chalan.driver_mobile].filter(Boolean).join(" · ")} />
               <Field label="Received by" value={chalan.receiver_name} />
               <Field label="Reference no." value={chalan.reference_number} />
               <Field label="Labour cost" value={money(chalan.labor_cost)} />
@@ -119,7 +120,7 @@ export function DispatchRecordSheet({
   const scope = activeScope.current;
   const [editing, setEditing] = useState(false);
   const [preview, setPreview] = useState(false);
-  const [form, setForm] = useState({ vehicle_number: "", driver_name: "", receiver_name: "", reference_number: "" });
+  const [form, setForm] = useState({ vehicle_number: "", driver_name: "", driver_mobile: "", receiver_name: "", reference_number: "" });
   const [receivedBy, setReceivedBy] = useState("");
 
   const load = useCallback(async () => {
@@ -133,6 +134,7 @@ export function DispatchRecordSheet({
       setDetail(next);
       setForm({
         vehicle_number: next.chalan.vehicle_number || "", driver_name: next.chalan.driver_name || "",
+        driver_mobile: next.chalan.driver_mobile || "",
         receiver_name: next.chalan.receiver_name || "", reference_number: next.chalan.reference_number || "",
       });
     } catch (e: any) {
@@ -172,6 +174,7 @@ export function DispatchRecordSheet({
   };
 
   const saveTransport = async () => {
+    try { validateDriverFields(form); } catch (e: any) { toast.error(e.message); return; }
     const saved = await run(
     () => tileOrdersApi.updateDispatchTransport(dispatchId, form),
     "Dispatch updated",
@@ -219,8 +222,8 @@ export function DispatchRecordSheet({
 
               {editing && !readOnly ? (
                 <View style={{ gap: spacing.sm, marginTop: spacing.sm }}>
+                  <DriverFields value={form} onChange={(driver) => setForm((f) => ({ ...f, ...driver }))} testPrefix="tile-dispatch-edit" disabled={busy} />
                   {([
-                    ["vehicle_number", "Vehicle number"], ["driver_name", "Driver name"],
                     ["receiver_name", "Received by"], ["reference_number", "Reference no."],
                   ] as const).map(([key, label]) => (
                     <View key={key}>

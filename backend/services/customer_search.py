@@ -12,13 +12,15 @@ from typing import get_args, get_origin
 from fastapi import HTTPException
 from pydantic import BaseModel
 from auth import accessible_floor_ids, authorize_staff_resource
-from models import CustomerPublic, Followup, Quotation
+from models import Followup, Quotation
 from models_walkins import WalkIn
 from models_tile_orders import TileCustomerOrder
 from services import kitchen_access
 from services.lead_scope import POST_ORDER_CATEGORIES, POST_ORDER_RULES
 from services.kitchen_projects import KitchenProjectService
-from services.kitchen_stage_followups import public_followup
+from services.kitchen_projects import current_status
+from services.kitchen_workflow import current as kitchen_current
+from services.purchase_stages import active_quantity, normalized_stage
 
 SOURCES = {
     "customer": ("customers", "/api/customers", ("name",), ("phone",)),
@@ -102,8 +104,84 @@ def summary(kind, row):
             "customer_id": row.get("customer_id") or (row["id"] if kind == "customer" else None),
             "name": contact.get("name") or row.get("name") or row.get("customer_name") or row.get("customer_name_snapshot") or "Customer",
             "phone": contact.get("phone") or row.get("phone") or row.get("customer_phone") or row.get("phone_snapshot"),
-            "reference": row.get("project_reference") or row.get("reference") or row.get("number") or row["id"],
+            "reference": display_reference(row.get("project_reference") or row.get("reference") or row.get("number")),
+            "address": contact.get("address") or row.get("address") or row.get("address_snapshot"),
             "stage": row.get("stage"), "status": row.get("status"), "doc_type": row.get("doc_type"), "updated_at": row.get("updated_at")}
+
+
+def display_reference(value):
+    """Only business references belong in the employee view, never UUID fallbacks."""
+    if (not value or re.search(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", str(value), re.I)
+            or re.fullmatch(r"KIT-[0-9A-F]{16}", str(value), re.I)):
+        return None
+    return str(value)
+
+
+def current_stage(kind, row):
+    """Read workflow state, not edit time. Terminal records never become active."""
+    status = str(row.get("lifecycle_status") or row.get("status") or "").lower()
+    if kind == "kitchen":
+        return None if row.get("stage") == "completed" or str(row.get("lifecycle_status") or "").lower() in {"cancelled", "lost"} else row.get("stage")
+    if status in {"cancelled", "canceled", "lost", "completed", "expired", "rejected", "dismissed"} or row.get("customer_outcome"):
+        return None
+    if kind == "order":
+        return None if row.get("overall_status") == "Delivered" else "order"
+    if kind == "quotation":
+        if row.get("purchase_completion_status") == "completed":
+            return None
+        if status == "ordered":
+            return "order"
+        # Historical won classification is not an actual confirmed order.
+        if status == "won":
+            return None
+        return "selection" if row.get("doc_type") == "tiles_selection" else "quotation"
+    if kind == "furniture":
+        return "quotation"
+    if kind == "walkin":
+        return "lead" if status in {"new", "contacted", "selection_scheduled", ""} else None
+    if kind == "followup":
+        return "lead" if status in {"open", "pending", ""} and row.get("notebook_status") not in {"won", "lost"} else None
+    return None
+
+
+def current_data(kind, row, stage):
+    """Small explicit presentation contract; no recursive record/history dumps."""
+    fields = {"number", "doc_number", "status", "doc_date", "order_date", "grand_total", "currency"}
+    data = {key: row[key] for key in fields if row.get(key) is not None}
+    if kind == "kitchen":
+        cycle = row.get("workflow_cycle", 1)
+        if stage in {"design", "quotation", "order"}:
+            key = {"design": "design_versions", "quotation": "quotation_versions", "order": "orders"}[stage]
+            versions = row.get(key, [])
+            selected = kitchen_current(row, key) if versions else {}
+            if stage == "design" and row.get("final_design_version_id"):
+                selected = next((item for item in versions if item.get("id") == row["final_design_version_id"]), {})
+            basis = next((item for item in row.get("design_versions", []) if item.get("id") == selected.get("design_version_id")), None)
+            if (stage == "design" and selected.get("workflow_cycle", 1) != cycle
+                    or stage == "quotation" and basis and basis.get("workflow_cycle", 1) != cycle
+                    or stage == "order" and selected.get("workflow_cycle", 1) != cycle):
+                selected = {}
+            data = {key: value for key, value in selected.items() if key in {
+                "number", "response", "received_status", "sent_status", "received_date", "shared_date", "kitchen_type",
+                "confirmed", "status", "order_date", "final_amount", "amount", "handoff_status"} and value is not None}
+        else:
+            data = {key: value for key, value in (row.get(stage) or {}).items() if key in {
+                "status", "site_location", "scheduled_date", "visit_date", "percentage", "start_date", "completed_date", "notes"} and value is not None}
+        if row.get("status"):
+            data["status"] = row["status"]
+    elif kind == "quotation":
+        data["products"] = [{key: value for key, value in item.items() if key in {
+            "name", "size", "finish", "colour", "qty", "unit_price", "room"} | ({"quantity_unit"} if row.get("floor_id") == "ground-floor" else set())}
+            for item in row.get("items", []) if not item.get("cancelled")]
+    elif kind == "order":
+        data.update({key: row[key] for key in ("overall_status", "total_products", "total_boxes", "total_value") if row.get(key) is not None})
+    elif kind == "walkin":
+        data.update({key: row[key] for key in ("interested_products", "next_followup_at") if row.get(key)})
+    elif kind == "followup":
+        data.update({key: row[key] for key in ("followup_date", "next_followup_at", "notebook_status") if row.get(key)})
+    elif kind == "furniture":
+        data.update({key: row[key] for key in ("total_payable_rmb", "balance_rmb") if row.get(key) is not None})
+    return data
 
 
 class CustomerSearchService:
@@ -203,6 +281,12 @@ class CustomerSearchService:
             return found
         batches = await asyncio.gather(*(matching_rows(kind, floor, actor) for kind, floor, actor in scopes))
         rows = [summary(kind, row) for (kind, _, _), batch in zip(scopes, batches) for row in batch]
+        priority = {"kitchen": 0, "order": 1, "quotation": 2, "furniture": 3, "walkin": 4, "followup": 5, "customer": 6}
+        grouped = {}
+        for row in sorted(rows, key=lambda row: (priority[row["kind"]], row["id"])):
+            key = (row["floor_id"], row.get("customer_id") or f"{row['kind']}:{row['id']}")
+            grouped.setdefault(key, row)
+        rows = list(grouped.values())
         rows.sort(key=lambda row: (row["name"].casefold(), row["floor_id"], row["kind"], row["id"]))
         return {"rows": rows[(page - 1) * limit:page * limit], "total": len(rows), "page": page, "limit": limit}
 
@@ -216,22 +300,6 @@ class CustomerSearchService:
             raise HTTPException(404, "Customer record is unavailable")
         source = rows[0]
         customer_id = source.get("customer_id") or (identity if kind == "customer" else None)
-        async def record(source_kind, row, source_actor):
-            if source_kind == "kitchen":
-                value = await KitchenProjectService(self.db).get(source_actor, row["id"])
-                value.pop("duplicate_candidates", None)
-                # A customer's persisted stage follow-ups have independent rows.
-                permitted = kitchen_access.semantic_stages(source_actor)
-                followups = await self.db.kitchen_stage_followups.find({"project_id": row["id"], "stage": {"$in": permitted}}, {"_id": 0, "fingerprint": 0, "idempotency_key": 0}).sort([("created_at", 1), ("id", 1)]).limit(10001).to_list(10001)
-                if len(followups) > 10000:
-                    raise HTTPException(422, "This history is too large for one profile. Open the project follow-up history.")
-                value["follow_ups"] = [public_followup(followup, source_actor) for followup in followups]
-            elif source_kind == "customer":
-                value = CustomerPublic(**row).model_dump()
-            else:
-                value = public_source(source_kind, row)
-            contact_row = {**row, "customer": value.get("customer", row.get("customer", {}))} if source_kind == "kitchen" else row
-            return {"kind": source_kind, "summary": summary(source_kind, contact_row), "data": value}
         linked = [(kind, source, actor)]
         if customer_id:
             identities = await self.linked_customer_ids(customer_id, scopes)
@@ -240,5 +308,88 @@ class CustomerSearchService:
                 for candidate, scope, source_actor in scopes))
             for (candidate, _, source_actor), batch in zip(scopes, batches):
                 linked.extend((candidate, row, source_actor) for row in batch if candidate != kind or row["id"] != identity)
-        records = await asyncio.gather(*(record(*entry) for entry in linked))
-        return {"customer": records[0]["summary"], "records": records}
+
+        # Order → quotation is the persisted Ground relationship. Even a completed
+        # order supersedes its quote; do not resurrect it as an active quotation.
+        ordered_quotes = {row.get("quotation_id") for candidate, row, _ in linked if candidate == "order"}
+        tile_orders = [row for candidate, row, _ in linked if candidate == "order"]
+        completed_orders = set()
+        if tile_orders:
+            # Use the Completed register's quantity contract. Parent status can
+            # lag the last partial dispatch and is not completion evidence.
+            from routes.tile_orders import _is_fully_dispatched
+            order_ids = [row["id"] for row in tile_orders]
+            order_scope = {"floor_id": "ground-floor", "customer_order_id": {"$in": order_ids}, "is_deleted": {"$ne": True}}
+            pos, dispatches = await asyncio.gather(*(
+                getattr(self.db, collection).find(order_scope, {"_id": 0}).max_time_ms(5000).limit(MAX_ROWS + 1).to_list(MAX_ROWS + 1)
+                for collection in ("purchase_orders", "dispatches")))
+            if len(pos) > MAX_ROWS or len(dispatches) > MAX_ROWS:
+                raise HTTPException(422, "Too many fulfillment records. Open the order directly.")
+            completed_orders = {identity for identity in order_ids if _is_fully_dispatched(
+                [po for po in pos if po.get("customer_order_id") == identity],
+                [dispatch for dispatch in dispatches if dispatch.get("customer_order_id") == identity])}
+        # Sanitary fulfillment shares the existing authoritative quantity/stage
+        # rules. A latest edited quotation or PO status cannot prove completion.
+        sanitary_orders = {row["id"] for candidate, row, _ in linked
+            if candidate == "quotation" and row.get("floor_id") == "first-floor" and row.get("status") == "ordered"}
+        completed_quotes = set()
+        if sanitary_orders:
+            purchases = await self.db.purchase_orders.find({"floor_id": "first-floor", "quotation_id": {"$in": sorted(sanitary_orders)},
+                "status": {"$ne": "cancelled"}}, {"_id": 0}).max_time_ms(5000).limit(MAX_ROWS + 1).to_list(MAX_ROWS + 1)
+            if len(purchases) > MAX_ROWS:
+                raise HTTPException(422, "Too many order records. Open the order directly.")
+            by_quote = {}
+            for purchase in purchases:
+                active = [item for item in purchase.get("items", []) if not item.get("cancelled") and active_quantity(item) > 0]
+                by_quote.setdefault(purchase["quotation_id"], []).extend(normalized_stage(item, purchase) == "dispatched" for item in active)
+            completed_quotes = {quote for quote, states in by_quote.items() if states and all(states)}
+
+        kitchen_customer_ids = {row.get("customer_id") for candidate, row, _ in linked if candidate == "kitchen"}
+        # Shared pre-project leads are not separate Kitchen workflows. Their
+        # old stage must not appear beside (or resurrect) a project aggregate.
+        if customer_id and any(scope == kitchen_access.KITCHEN_FLOOR for _, scope, _ in scopes):
+            kitchen_links = await self.db.kitchen_projects.find({"floor_id": kitchen_access.KITCHEN_FLOOR,
+                "customer_id": {"$in": identities}, "deleted_at": {"$in": [None, ""]}, "is_deleted": {"$ne": True}},
+                {"_id": 0, "customer_id": 1}).max_time_ms(5000).limit(MAX_ROWS + 1).to_list(MAX_ROWS + 1)
+            if len(kitchen_links) > MAX_ROWS:
+                raise HTTPException(422, "Too many project records. Open the Kitchen workspace.")
+            kitchen_customer_ids.update(row["customer_id"] for row in kitchen_links)
+        candidates = []
+        for candidate, row, source_actor in linked:
+            if candidate == "order" and row["id"] in completed_orders:
+                continue
+            if candidate != "kitchen" and row.get("floor_id") == kitchen_access.KITCHEN_FLOOR and row.get("customer_id") in kitchen_customer_ids:
+                continue
+            if candidate == "quotation" and (row["id"] in ordered_quotes or row["id"] in completed_quotes):
+                continue
+            stage = current_stage(candidate, row)
+            if stage:
+                candidates.append((candidate, row, source_actor, stage))
+        # Kitchen stage belongs to each persisted project. Catalog floors have
+        # one pipeline: actual Order, then Quotation, Selection, Lead. Retain all
+        # independent records at that stage rather than guessing by timestamp.
+        rank = {"order": 4, "quotation": 3, "selection": 2, "lead": 1}
+        highest = {}
+        for candidate, row, _, stage in candidates:
+            if candidate != "kitchen":
+                highest[row["floor_id"]] = max(highest.get(row["floor_id"], 0), rank.get(stage, 0))
+        candidates = [entry for entry in candidates if entry[0] == "kitchen" or rank.get(entry[3], 0) == highest[entry[1]["floor_id"]]]
+
+        async def record(source_kind, row, source_actor, stage):
+            # Reuse Kitchen's own canonical-contact and stage/financial redaction.
+            value = await KitchenProjectService(self.db).get(source_actor, row["id"]) if source_kind == "kitchen" else row
+            contact_row = {**row, "customer": value.get("customer", row.get("customer", {}))} if source_kind == "kitchen" else row
+            source_summary = {**summary(source_kind, contact_row), "stage": stage}
+            if source_kind == "kitchen":
+                source_summary["status"] = row.get("status") or current_status({"design_versions": [], "quotation_versions": [], "orders": [], **row})
+            return {"kind": source_kind, "summary": source_summary, "data": current_data(source_kind, value, stage)}
+        records = await asyncio.gather(*(record(*entry) for entry in candidates))
+        contact = next((row for candidate, row, _ in linked if candidate == "customer" and row["id"] == customer_id), None)
+        customer = summary("customer", contact) if contact else summary(kind, source)
+        if not contact and kind == "kitchen" and records:
+            customer = records[0]["summary"]
+        workflows = []
+        for scope in sorted({record["summary"]["floor_id"] for record in records}):
+            department = [record for record in records if record["summary"]["floor_id"] == scope]
+            workflows.append({"floor_id": scope, "records": department})
+        return {"customer": customer, "records": records, "workflows": workflows}

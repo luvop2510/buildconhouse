@@ -8,13 +8,17 @@ from services.money import format_indian_money
 from services.multi_filters import filter_values, filter_condition
 
 from datetime import datetime, timezone
+import hashlib
+import json
+from contextlib import asynccontextmanager
 import re
 from typing import Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 from pymongo import InsertOne, UpdateOne
+from pymongo.errors import DuplicateKeyError, OperationFailure
 from starlette.concurrency import run_in_threadpool
 
 from auth import TILES_FLOOR_ID, require_min_role, tiles_floor_query
@@ -27,6 +31,7 @@ from services.export import export_response
 from services.sequence import next_number
 from services.purchase_images import hydrate_purchase_images
 from services.tile_movement_log import record_movement
+from services.dispatch_drivers import DriverSnapshotFields, save_dispatch_driver, search_dispatch_drivers
 from services.tile_order_status import (
     ageing_band, completion_percentage, derive_current_location, derive_item_status,
     rollup_status, supplier_silent_days, waiting_days,
@@ -35,13 +40,63 @@ from services.tile_order_status import (
 router = APIRouter(prefix="/tile-orders", tags=["tile-orders"])
 
 
+@router.get("/drivers")
+async def list_saved_drivers(
+    response: Response, search: str = Query(default="", max_length=80),
+    user: UserPublic = Depends(require_min_role("warehouse")),
+):
+    # Uses the same floor/resource admission as dispatch; never expose another
+    # department's contact directory through the shared search field.
+    tiles_floor_query(user)
+    response.headers["Cache-Control"] = "no-store"
+    return {"drivers": await search_dispatch_drivers(db, floor_id=TILES_FLOOR_ID, search=search)}
+
+
 class ReadyItemInput(BaseModel):
     po_item_id: str
-    qty: float = Field(gt=0)
+    qty: float = Field(gt=0, allow_inf_nan=False)
 
 
 class BulkReadyBody(BaseModel):
     items: list[ReadyItemInput] = Field(min_length=1)
+    request_key: Optional[str] = Field(default=None, min_length=8, max_length=128)
+
+
+async def _movement_replay(action: str, po_id: str, body, user: UserPublic, session):
+    """Bind an optional retry receipt to the exact actor, PO and quantities.
+
+    The receipt commits with the PO, FIFO batches and permanent movement rows.
+    No key keeps compatibility with existing integrations.
+    """
+    if not body.request_key:
+        return None, None
+    identity = json.dumps([TILES_FLOOR_ID, user.id, po_id, action, body.request_key])
+    receipt_id = hashlib.sha256(identity.encode()).hexdigest()
+    rows = sorted((entry.po_item_id, entry.qty) for entry in body.items)
+    fingerprint = hashlib.sha256(json.dumps(rows).encode()).hexdigest()
+    receipt = await db.tile_movement_receipts.find_one({"_id": receipt_id}, session=session)
+    if receipt:
+        if receipt["request_hash"] != fingerprint:
+            raise HTTPException(status_code=409, detail="This release or move was already saved with different quantities. Refresh before starting another.")
+        return None, receipt["response"]
+    return {"_id": receipt_id, "request_hash": fingerprint, "actor_id": user.id,
+            "purchase_order_id": po_id, "floor_id": TILES_FLOOR_ID, "action": action}, None
+
+
+async def _save_movement_receipt(receipt, response: dict, session):
+    if receipt is not None:
+        await db.tile_movement_receipts.insert_one({**receipt, "response": response, "created_at": now_iso()}, session=session)
+
+
+@asynccontextmanager
+async def _movement_transaction(session):
+    try:
+        async with session.start_transaction():
+            yield
+    except (DuplicateKeyError, OperationFailure) as error:
+        if isinstance(error, DuplicateKeyError) or error.has_error_label("TransientTransactionError"):
+            raise HTTPException(409, "Stock changed while saving. Retry the same quantities to confirm the result.") from error
+        raise
 
 
 async def _sync_customer_order_brand_status(
@@ -102,10 +157,13 @@ async def mark_items_ready(
     Chalan (see Task 8's Dispatch endpoint for that)."""
     session = await client.start_session()
     async with session:
-        async with session.start_transaction():
+        async with _movement_transaction(session):
             po = await db.purchase_orders.find_one(tiles_floor_query(user, {"id": po_id}), {"_id": 0}, session=session)
             if not po:
                 raise HTTPException(status_code=404, detail="Purchase order not found")
+            receipt, replay = await _movement_replay("release", po_id, body, user, session)
+            if replay is not None:
+                return replay
             items_by_id = {item["id"]: item for item in po.get("items", [])}
             created_batches: list[dict] = []
             year = datetime.now(timezone.utc).year
@@ -166,6 +224,8 @@ async def mark_items_ready(
                     size=batch.get("size"), sku=batch.get("sku"), boxes=batch["qty"], source="Brand",
                     destination="BuildCon", performed_by=user.id, performed_by_name=user.full_name, session=session,
                 )
+            response = {"po_id": po_id, "ready_batches": created_batches, "overall_status": new_status}
+            await _save_movement_receipt(receipt, response, session)
 
     for batch in created_batches:
         await log_event(
@@ -180,7 +240,7 @@ async def mark_items_ready(
             customer_id=po.get("customer_id"), purchase_id=po_id,
             summary=f"Status changed to {new_status}", payload={"to": new_status},
         )
-    return {"po_id": po_id, "ready_batches": created_batches, "overall_status": new_status}
+    return response
 
 
 class DispatchLineInput(BaseModel):
@@ -189,7 +249,7 @@ class DispatchLineInput(BaseModel):
     qty: float = Field(gt=0)
 
 
-class DispatchBody(BaseModel):
+class DispatchBody(DriverSnapshotFields):
     items: list[DispatchLineInput] = Field(min_length=1)
     destination_type: Literal["Customer", "Godown"]
     destination_name: str
@@ -365,6 +425,7 @@ async def commit_dispatch(po_id: str, body: DispatchBody, user: UserPublic = Dep
                 delivery_address=body.destination_address, delivery_city=body.destination_city,
                 reference_number=body.reference_number, items=chalan_items,
                 receiver_name=body.receiver_name, sender_name=body.sender_name,
+                vehicle_number=body.vehicle_number, driver_name=body.driver_name, driver_mobile=body.driver_mobile,
                 labor_cost=body.labor_cost,
                 created_by=user.id, created_by_name=user.full_name,
                 generated_at=now, generated_by_name=user.full_name,
@@ -382,6 +443,7 @@ async def commit_dispatch(po_id: str, body: DispatchBody, user: UserPublic = Dep
             chalan.dispatch_id = dispatch.id
             await db.chalans.insert_one(chalan.model_dump(), session=session)
             await db.dispatches.insert_one(dispatch.model_dump(), session=session)
+            await save_dispatch_driver(db, body, floor_id=TILES_FLOOR_ID, actor_id=user.id, session=session)
             await _apply_dispatch_labor_cost(po, dispatch.model_dump(), body.labor_cost, session)
 
             items = list(items_by_id.values())
@@ -452,11 +514,12 @@ async def _consume_released_pool(po_id: str, po_item_id: str, qty: float, sessio
 
 class GodownItemInput(BaseModel):
     po_item_id: str
-    qty: float = Field(gt=0)
+    qty: float = Field(gt=0, allow_inf_nan=False)
 
 
 class MoveToGodownBody(BaseModel):
     items: list[GodownItemInput] = Field(min_length=1)
+    request_key: Optional[str] = Field(default=None, min_length=8, max_length=128)
 
 
 @router.post("/purchase-orders/{po_id}/items/move-to-godown")
@@ -473,10 +536,13 @@ async def move_material_to_godown(
     moved_rows: list[dict] = []
     now = now_iso()
     async with session:
-        async with session.start_transaction():
+        async with _movement_transaction(session):
             po = await db.purchase_orders.find_one(tiles_floor_query(user, {"id": po_id}), {"_id": 0}, session=session)
             if not po:
                 raise HTTPException(status_code=404, detail="Purchase order not found")
+            receipt, replay = await _movement_replay("move_to_godown", po_id, body, user, session)
+            if replay is not None:
+                return replay
             items_by_id = {item["id"]: item for item in po.get("items", [])}
             for entry in body.items:
                 item = items_by_id.get(entry.po_item_id)
@@ -524,6 +590,8 @@ async def move_material_to_godown(
                     sku=row.get("sku"), boxes=row["qty"], source="Released", destination="BuildCon Godown",
                     performed_by=user.id, performed_by_name=user.full_name, session=session,
                 )
+            response = {"po_id": po_id, "moved": moved_rows}
+            await _save_movement_receipt(receipt, response, session)
 
     for row in moved_rows:
         await log_event(
@@ -532,7 +600,7 @@ async def move_material_to_godown(
             summary=f"Moved {row['qty']:g} boxes of '{row['tile_name']}' to Godown",
             payload={"po_item_id": row["po_item_id"], "qty": row["qty"]},
         )
-    return {"po_id": po_id, "moved": moved_rows}
+    return response
 
 
 class SimpleDispatchItemInput(BaseModel):
@@ -540,7 +608,7 @@ class SimpleDispatchItemInput(BaseModel):
     qty: float = Field(gt=0)
 
 
-class SimpleDispatchBody(BaseModel):
+class SimpleDispatchBody(DriverSnapshotFields):
     items: list[SimpleDispatchItemInput] = Field(min_length=1)
     destination_name: Optional[str] = None
     destination_address: Optional[str] = None
@@ -553,8 +621,6 @@ class SimpleDispatchBody(BaseModel):
     # Dispatch List row rendered a blank vehicle/driver. Captured here, at
     # the moment the operator raises the dispatch, which is when a warehouse
     # actually knows the truck.
-    vehicle_number: Optional[str] = None
-    driver_name: Optional[str] = None
     labor_cost: float = Field(default=0, ge=0, allow_inf_nan=False)
 
 
@@ -685,7 +751,7 @@ async def _commit_simple_dispatch(
                 delivery_address=destination_address, delivery_city=destination_city,
                 reference_number=body.reference_number, items=chalan_items,
                 receiver_name=body.receiver_name, sender_name=body.sender_name,
-                vehicle_number=body.vehicle_number, driver_name=body.driver_name,
+                vehicle_number=body.vehicle_number, driver_name=body.driver_name, driver_mobile=body.driver_mobile,
                 labor_cost=body.labor_cost,
                 created_by=user.id, created_by_name=user.full_name, generated_at=now, generated_by_name=user.full_name,
             )
@@ -701,6 +767,7 @@ async def _commit_simple_dispatch(
             chalan.dispatch_id = dispatch.id
             await db.chalans.insert_one(chalan.model_dump(), session=session)
             await db.dispatches.insert_one(dispatch.model_dump(), session=session)
+            await save_dispatch_driver(db, body, floor_id=TILES_FLOOR_ID, actor_id=user.id, session=session)
             await _apply_dispatch_labor_cost(po, dispatch.model_dump(), body.labor_cost, session)
 
             items = list(items_by_id.values())
@@ -870,7 +937,7 @@ async def dispatch_detail(dispatch_id: str, user: UserPublic = Depends(require_m
             "delivery_address": chalan.get("delivery_address"), "delivery_city": chalan.get("delivery_city"),
             "reference_number": chalan.get("reference_number"), "receiver_name": chalan.get("receiver_name"),
             "sender_name": chalan.get("sender_name"), "vehicle_number": chalan.get("vehicle_number"),
-            "driver_name": chalan.get("driver_name"), "items": chalan.get("items", []),
+            "driver_name": chalan.get("driver_name"), "driver_mobile": chalan.get("driver_mobile"), "items": chalan.get("items", []),
             "labor_cost": float(chalan.get("labor_cost") or 0),
             "supplier_name": chalan.get("supplier_name"), "customer_name": chalan.get("customer_name"),
             "customer_phone": chalan.get("customer_phone"),
@@ -890,9 +957,7 @@ async def chalan_detail(chalan_id: str, user: UserPublic = Depends(require_min_r
     return chalan
 
 
-class DispatchTransportBody(BaseModel):
-    vehicle_number: Optional[str] = None
-    driver_name: Optional[str] = None
+class DispatchTransportBody(DriverSnapshotFields):
     receiver_name: Optional[str] = None
     sender_name: Optional[str] = None
     reference_number: Optional[str] = None
@@ -916,12 +981,27 @@ async def update_dispatch_transport(
     dispatch, chalan = await _dispatch_with_chalan(dispatch_id, user)
     if not chalan:
         raise HTTPException(status_code=404, detail="Chalan not found for this dispatch")
-    updates = {k: v for k, v in body.model_dump().items() if v is not None}
+    updates = {k: v for k, v in body.model_dump(exclude_unset=True).items()}
     if not updates:
         raise HTTPException(status_code=400, detail="Nothing to update")
     now = now_iso()
-    await db.chalans.update_one({"id": chalan["id"]}, {"$set": {**updates, "updated_at": now}})
-    await db.dispatches.update_one({"id": dispatch_id}, {"$set": {"updated_at": now}})
+    session = await client.start_session()
+    async with session:
+        async with session.start_transaction():
+            current_chalan = await db.chalans.find_one(tiles_floor_query(user, {"id": chalan["id"]}), {"_id": 0}, session=session)
+            if not current_chalan:
+                raise HTTPException(status_code=404, detail="Chalan not found for this dispatch")
+            driver_changed = any(key in updates and (updates[key] or "") != (current_chalan.get(key) or "") for key in ("driver_name", "driver_mobile", "vehicle_number"))
+            snapshot = None
+            if driver_changed:
+                try:
+                    snapshot = DriverSnapshotFields(**{key: updates.get(key, current_chalan.get(key)) for key in ("driver_name", "driver_mobile", "vehicle_number")})
+                except ValidationError:
+                    raise HTTPException(status_code=400, detail="Enter a driver name and valid mobile number, or clear the driver mobile") from None
+            await db.chalans.update_one(tiles_floor_query(user, {"id": chalan["id"]}), {"$set": {**updates, "updated_at": now}}, session=session)
+            await db.dispatches.update_one(tiles_floor_query(user, {"id": dispatch_id}), {"$set": {"updated_at": now}}, session=session)
+            if snapshot is not None:
+                await save_dispatch_driver(db, snapshot, floor_id=TILES_FLOOR_ID, actor_id=user.id, session=session)
     await log_event(
         event_type="chalan.updated", entity_type="purchase", entity_id=dispatch["purchase_order_id"], actor=user, floor_id=TILES_FLOOR_ID,
         customer_id=dispatch.get("customer_id"), purchase_id=dispatch["purchase_order_id"],
@@ -1900,6 +1980,10 @@ async def godown_inventory(
                 "customer": "$customer_name", "name": "$items.name",
                 "brand": {"$ifNull": ["$brand_name", "Unassigned"]},
                 "product": "$items.sku", "size": "$items.size",
+                "quantity": "$items.boxes_godown",
+                "quantity_unit": {"$ifNull": ["$items.quantity_unit", "Box"]},
+                "product_id": "$items.product_id", "series": "$items.series", "finish": "$items.finish",
+                "purchase_order_id": "$id", "po_item_id": "$items.id",
                 "arrival_date": {"$ifNull": ["$items.godown_arrived_at", {"$ifNull": ["$latest_ready_date", "$created_at"]}]},
             }},
         ]
@@ -1910,7 +1994,7 @@ async def godown_inventory(
                 {"product": safe_search}, {"size": safe_search},
             ]}})
         pipeline.extend([
-            {"$sort": {"name": 1, "customer": 1}},
+            {"$sort": {"name": 1, "customer": 1, "id": 1}},
             {"$facet": {
                 "rows": [{"$skip": (page - 1) * page_size}, {"$limit": page_size}],
                 "meta": [{"$count": "total"}],
@@ -1936,12 +2020,15 @@ async def godown_inventory(
                 "brand": po.get("brand_name") or "Unassigned",
                 "product": item.get("sku"),
                 "size": item.get("size"),
+                "quantity": current, "quantity_unit": item.get("quantity_unit") or "Box",
+                "product_id": item.get("product_id"), "series": item.get("series"), "finish": item.get("finish"),
+                "purchase_order_id": po["id"], "po_item_id": item["id"],
                 "arrival_date": item.get("godown_arrived_at") or po.get("latest_ready_date") or po.get("created_at"),
             }
             haystack = " ".join(str(row.get(key) or "") for key in ("customer", "name", "brand", "product", "size")).lower()
             if search and search.lower() not in haystack: continue
             rows.append(row)
-    rows.sort(key=lambda row: ((row["name"] or "").lower(), (row["customer"] or "").lower()))
+    rows.sort(key=lambda row: ((row["name"] or "").lower(), (row["customer"] or "").lower(), row["id"]))
     total = len(rows)
     start = (page - 1) * page_size
     return {"rows": rows[start:start + page_size], "total": total, "page": page, "page_size": page_size,

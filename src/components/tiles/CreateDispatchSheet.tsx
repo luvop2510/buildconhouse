@@ -23,6 +23,7 @@ import { toast } from "@/src/components/Toast";
 import { downloadApiFile } from "@/src/utils/downloadFile";
 import { Button, ErrorState, SearchField, Sheet } from "@/src/components/ui";
 import { colors, radius, spacing, type } from "@/src/theme/tokens";
+import { DriverFields, validateDriverFields } from "./DriverFields";
 
 type Source = "released" | "godown";
 
@@ -67,7 +68,7 @@ export function CreateDispatchSheet({ onClose, onCreated }: { onClose: () => voi
   const [group, setGroup] = useState<CustomerOrderBrandGroup | null>(null);
   const [source, setSource] = useState<Source>("released");
   const [qty, setQty] = useState<Record<string, string>>({});
-  const [transport, setTransport] = useState({ vehicle_number: "", driver_name: "", receiver_name: "", reference_number: "", labor_cost: "" });
+  const [transport, setTransport] = useState({ vehicle_number: "", driver_name: "", driver_mobile: "", receiver_name: "", reference_number: "", labor_cost: "" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -156,6 +157,7 @@ export function CreateDispatchSheet({ onClose, onCreated }: { onClose: () => voi
 
   const confirm = async () => {
     if (!group || submitBusy.current) return;
+    try { validateDriverFields(transport); } catch (e: any) { toast.error(e.message); return; }
     if (Object.keys(quantityValidation.errors).length || quantityValidation.formError) {
       toast.error("Fix the highlighted quantities before creating the dispatch");
       return;
@@ -294,8 +296,8 @@ export function CreateDispatchSheet({ onClose, onCreated }: { onClose: () => voi
             ))}
             {quantityValidation.formError ? <Text style={styles.inputError}>{quantityValidation.formError}</Text> : null}
             <Text style={[type.bodyStrong, { marginTop: spacing.xs }]}>Transport details</Text>
+            <DriverFields value={transport} onChange={(driver) => setTransport((t) => ({ ...t, ...driver }))} testPrefix="tile-create-dispatch" disabled={busy} />
             {([ 
-              ["vehicle_number", "Vehicle number"], ["driver_name", "Driver name"],
               ["receiver_name", "Received by"], ["reference_number", "Reference no."],
             ] as const).map(([key, label]) => (
               <TextInput

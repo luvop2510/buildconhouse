@@ -30,8 +30,8 @@ import { tilesStageLabel } from "@/src/components/tiles/tilesStage";
 import { SANITARY_FLOOR_ID } from "@/src/constants/floors";
 import { useFloorAccess } from "@/src/hooks/use-floor-access";
 import { toast } from "@/src/components/Toast";
-import { useAuth } from "@/src/state/auth";
-import { useActionAccess } from "@/src/hooks/use-permissions";
+import { useCustomerDeleteAccess } from "@/src/hooks/use-customer-delete-access";
+import { CustomerDataDeletionDialog } from "@/src/components/customer/CustomerDataDeletionDialog";
 import { colors, icon as iconSize, money, moneyShort, PRODUCT_IMAGE_ASPECT_RATIO, radius, spacing, type } from "@/src/theme/tokens";
 import { downloadSectionExcel } from "@/src/utils/sectionExcel";
 import {
@@ -146,8 +146,8 @@ export default function CustomerDetail() {
     stage?: string | string[];
   }>();
   const router = useRouter();
-  const { staff } = useAuth();
-  const canDeleteCustomers = useActionAccess("customers", "delete", staff?.role === "owner") && staff?.role === "owner";
+  const canDeleteCustomers = useCustomerDeleteAccess();
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const { isDesktop, isPhone } = useBp();
   const { selectedFloorId } = useFloorAccess();
   const isSanitaryFloor = selectedFloorId === SANITARY_FLOOR_ID;
@@ -190,20 +190,8 @@ export default function CustomerDetail() {
   const coreAbortRef = useRef<AbortController | null>(null);
   const coreActiveRef = useRef(false);
   const coreContextRef = useRef("");
-  const deletingCustomer = useRef(false);
   const coreContext = `${selectedFloorId}:${id}`;
   coreContextRef.current = coreContext;
-
-  const deleteCustomer = async () => {
-    if (!id || !selectedFloorId || deletingCustomer.current) return;
-    deletingCustomer.current = true;
-    try {
-      await api.delete(`/customers/${encodeURIComponent(id)}`, { floorId: selectedFloorId });
-      if (coreContextRef.current === coreContext) router.replace("/(admin)/customers" as any);
-    } catch (error: any) {
-      if (coreContextRef.current === coreContext) toast.error(error?.detail || "Could not delete customer data");
-    } finally { deletingCustomer.current = false; }
-  };
 
   const workspaceFilters = useMemo<WorkspaceServerFilters>(() => ({
     productSearch: productSearch.trim(),
@@ -501,6 +489,7 @@ export default function CustomerDetail() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }} edges={isPhone ? [] : ["top"]}>
+      <CustomerDataDeletionDialog customer={deleteOpen && canDeleteCustomers ? customer : null} onClose={() => setDeleteOpen(false)} onDeleted={() => { setDeleteOpen(false); router.replace("/(admin)/customers" as any); }} />
       <ScrollView contentContainerStyle={{ padding: isPhone ? spacing.md : spacing.xl, gap: spacing.lg, paddingBottom: spacing.xxxl }}>
       <PageHeader
         title={customer.name}
@@ -526,11 +515,11 @@ export default function CustomerDetail() {
             />
             {canDeleteCustomers ? (
               <Button
-                icon={["first-floor", "ground-floor"].includes(selectedFloorId) ? "trash-2" : "settings"}
-                label={["first-floor", "ground-floor"].includes(selectedFloorId) ? "Delete customer data" : "Manage customer data"}
+                icon="trash-2"
+                label="Delete Customer"
                 variant="secondary"
                 size="md"
-                onPress={() => { if (["first-floor", "ground-floor"].includes(selectedFloorId)) void deleteCustomer(); else router.push("/(admin)/customers" as any); }}
+                onPress={() => setDeleteOpen(true)}
                 testID="delete-customer-detail"
               />
             ) : null}

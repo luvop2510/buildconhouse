@@ -188,6 +188,9 @@ async def plan_deletion(database, *, customer_id=None, quotation=None, furniture
                      in_ids("purchase_id", deleted_po_ids), in_ids("po_id", deleted_po_ids))
     for collection in ("payments", "followups", "walkins", "ready_batches", "dispatches", "chalans", "material_movements", "purchase_shortages"):
         deletes[collection] = await fetch(collection, related, session)
+    # Retry acknowledgements include release snapshots. Remove only receipts
+    # belonging to deleted POs so a removed customer is not retained in them.
+    deletes["tile_movement_receipts"] = await fetch("tile_movement_receipts", in_ids("purchase_order_id", deleted_po_ids), session)
     for collection in ("quotation_shares",):
         deletes[collection] = await fetch(collection, scope, session)
     source_ids = quotes | furniture
@@ -360,8 +363,21 @@ async def apply_plan(database, plan, session):
     return counts
 
 
-async def delete_customer_graph(database, client, customer_id, actor_id, confirmation="", furniture_ids=(), allowed_floors=None):
+def check_deletion_floors(plan, allowed_floors):
+    if allowed_floors is None:
+        return
+    for collection, documents in plan["delete"].items():
+        if any(row.get("floor_id") and row["floor_id"] not in allowed_floors for row in documents):
+            raise HTTPException(409, f"This customer has linked data on another floor ({collection}). Review it with the owner.")
+    for collection, changes in plan["updates"].items():
+        if any(row.get("floor_id") and row["floor_id"] not in allowed_floors for row, _ in changes):
+            raise HTTPException(409, f"This customer has linked data on another floor ({collection}). Review it with the owner.")
+
+
+async def delete_customer_graph(database, client, customer_id, actor_id, confirmation="", furniture_ids=(), allowed_floors=None, authorize=None):
     async def operation(session):
+        if authorize is not None:
+            await authorize()
         receipt_id = "customer-deletion:" + customer_id
         previous = await database.settings.find_one({"id": receipt_id}, session=session)
         if previous:
@@ -369,13 +385,7 @@ async def delete_customer_graph(database, client, customer_id, actor_id, confirm
         plan = await plan_deletion(database, customer_id=customer_id, furniture_ids=furniture_ids, session=session)
         if not plan["delete"].get("customers"):
             raise HTTPException(404, "Customer not found")
-        if allowed_floors is not None:
-            for collection, documents in plan["delete"].items():
-                if any(row.get("floor_id") and row["floor_id"] not in allowed_floors for row in documents):
-                    raise HTTPException(409, f"This customer has linked data on another floor ({collection}).")
-            for collection, changes in plan["updates"].items():
-                if any(row.get("floor_id") and row["floor_id"] not in allowed_floors for row, _ in changes):
-                    raise HTTPException(409, f"This customer has linked data on another floor ({collection}).")
+        check_deletion_floors(plan, allowed_floors)
         if confirmation and not hmac.compare_digest(confirmation, _snapshot_token(plan, actor_id)):
             raise HTTPException(409, "Customer data changed. Review the deletion summary again before confirming.")
         deleted = await apply_plan(database, plan, session)
@@ -383,6 +393,7 @@ async def delete_customer_graph(database, client, customer_id, actor_id, confirm
         # customer snapshots are never copied into the deletion receipt.
         await database.settings.insert_one({"id": receipt_id, "kind": "customer_deletion_receipt",
             "actor_id": actor_id, "completed_at": now_iso(), "deleted": deleted,
+            "floor_id": next(iter(allowed_floors)) if allowed_floors and len(allowed_floors) == 1 else None,
             "pending_private_files": plan["files"]}, session=session)
         return {"ok": True, "customer_id": customer_id, "deleted": deleted}
     async with await client.start_session() as session:

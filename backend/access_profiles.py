@@ -24,6 +24,7 @@ _COMMON = {
     ("POST", "/api/auth/sessions/logout-all"),
     ("GET", "/api/settings/floor-access"), ("GET", "/api/settings/floors"),
     ("GET", "/api/settings/permission-matrix"), ("GET", "/api/roles"),
+    ("GET", "/api/settings/permission-matrix/customer-deletion-access"),
 } | MFA_ACCOUNT_REQUESTS
 
 

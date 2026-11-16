@@ -51,7 +51,7 @@ class Collection:
 
 class Database:
     def __init__(self, **rows):
-        for name in ("floors", "customers", "kitchen_projects", "walkins", "followups", "quotations", "furniture_quotations", "customer_orders", "kitchen_stage_followups"):
+        for name in ("floors", "customers", "kitchen_projects", "walkins", "followups", "quotations", "furniture_quotations", "customer_orders", "kitchen_stage_followups", "purchase_orders", "dispatches"):
             setattr(self, name, Collection(rows.get(name, ())))
 
 
@@ -123,9 +123,9 @@ async def test_profile_only_exact_linked_records_and_internal_fields_hidden(allo
         quotations=[{"id": "quote", "floor_id": "first-floor", "customer_id": "c1", "status": "ordered", "items": [{"name": "Tap", "password": "hidden"}], "command_receipts": ["secret"]},
                     {"id": "not-linked", "floor_id": "first-floor", "customer_id": "relative", "customer_phone": "9876543210"}])
     profile = await module.CustomerSearchService(database).profile(principal(), "customer", "c1", "first-floor")
-    assert {row["summary"]["id"] for row in profile["records"]} == {"c1", "quote"}
+    assert {row["summary"]["id"] for row in profile["records"]} == {"quote"}
     quote = next(row["data"] for row in profile["records"] if row["kind"] == "quotation")
-    assert quote["items"] == [{"name": "Tap"}]
+    assert quote["products"] == [{"name": "Tap"}]
     assert "command_receipts" not in quote
 
 
@@ -147,8 +147,8 @@ async def test_kitchen_stage_history_and_restricted_followup_notes(monkeypatch, 
     assert len(profile["records"]) == 1
     data = profile["records"][0]["data"]
     assert "duplicate_candidates" not in data
-    assert len(data["follow_ups"]) == 1 and data["follow_ups"][0]["notes"] is None
-    assert "request_fingerprint" not in data["follow_ups"][0]
+    assert "follow_ups" not in data and "design_versions" not in data
+    assert database.kitchen_stage_followups.queries == []
     with pytest.raises(HTTPException) as failure:
         await module.CustomerSearchService(database).profile(user, "kitchen", "unpermitted", "second-floor")
     assert failure.value.status_code == 404
@@ -211,4 +211,127 @@ async def test_explicit_customer_import_links_permitted_floors_without_phone_mer
         {"id": "restricted", "floor_id": "third-floor", "name": "Same person", "imported_from_customer_id": "original"},
     ], quotations=[{"id": "quote", "floor_id": "first-floor", "customer_id": "imported", "name": "Saved quotation"}])
     result = await module.CustomerSearchService(database).profile(principal(), "customer", "original", "ground-floor")
-    assert {row["summary"]["id"] for row in result["records"]} == {"original", "imported", "quote"}
+    assert {row["summary"]["id"] for row in result["records"]} == {"quote"}
+
+
+@pytest.mark.asyncio
+async def test_search_returns_one_customer_instead_of_every_linked_record(allow_all):
+    database = Database(customers=[{"id": "c", "floor_id": "ground-floor", "name": "Meena"}],
+        walkins=[{"id": "w", "customer_id": "c", "floor_id": "ground-floor", "customer_name": "Meena"}],
+        quotations=[{"id": "q", "customer_id": "c", "floor_id": "ground-floor", "customer_name": "Meena"}])
+    result = await module.CustomerSearchService(database).search(principal(), "Meena")
+    assert result["total"] == 1
+    assert result["rows"][0]["customer_id"] == "c"
+
+
+@pytest.mark.asyncio
+async def test_actual_order_wins_over_later_edited_selection_and_quotes(allow_all):
+    database = Database(customers=[{"id": "c", "floor_id": "ground-floor", "name": "Meena", "address": "Main street"}],
+        quotations=[{"id": "selection", "customer_id": "c", "floor_id": "ground-floor", "doc_type": "tiles_selection", "updated_at": "2099-01-01"},
+                    {"id": "basis", "customer_id": "c", "floor_id": "ground-floor", "doc_type": "tiles_quotation", "status": "ordered"}],
+        customer_orders=[{"id": "order", "floor_id": "ground-floor", "customer_id": "c", "quotation_id": "basis", "number": "TORD-1", "overall_status": "Ready", "total_boxes": 10}])
+    profile = await module.CustomerSearchService(database).profile(principal(), "customer", "c", "ground-floor")
+    assert [row["summary"]["id"] for row in profile["records"]] == ["order"]
+    assert profile["customer"]["address"] == "Main street"
+    assert profile["customer"]["reference"] is None
+    assert len(profile["workflows"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_multiple_active_quotes_retained_without_timestamp_guess_and_terminal_rows_omitted(allow_all):
+    database = Database(customers=[{"id": "c", "floor_id": "ground-floor", "name": "Meena"}],
+        quotations=[{"id": identity, "customer_id": "c", "floor_id": "ground-floor", "doc_type": "tiles_quotation", "status": status, "updated_at": date}
+            for identity, status, date in [("q1", "approved", "2024-01-01"), ("q2", "draft", "2023-01-01"), ("cancelled", "cancelled", "2099-01-01"), ("lost", "lost", "2099-01-02")]])
+    profile = await module.CustomerSearchService(database).profile(principal(), "customer", "c", "ground-floor")
+    assert {row["summary"]["id"] for row in profile["records"]} == {"q1", "q2"}
+    assert {row["summary"]["stage"] for row in profile["records"]} == {"quotation"}
+
+
+@pytest.mark.asyncio
+async def test_completed_ground_order_does_not_resurrect_its_quotation(allow_all):
+    database = Database(customers=[{"id": "c", "floor_id": "ground-floor", "name": "Meena"}],
+        quotations=[{"id": "q", "customer_id": "c", "floor_id": "ground-floor", "status": "ordered"}],
+        customer_orders=[{"id": "order", "floor_id": "ground-floor", "customer_id": "c", "quotation_id": "q", "overall_status": "Delivered"}])
+    profile = await module.CustomerSearchService(database).profile(principal(), "customer", "c", "ground-floor")
+    assert profile["records"] == [] and profile["workflows"] == []
+
+
+@pytest.mark.asyncio
+async def test_kitchen_uses_persisted_stage_current_cycle_and_keeps_departments_separate(allow_all, monkeypatch):
+    kitchen = {"id": "k", "customer_id": "kc", "floor_id": "second-floor", "customer": {"name": "Meena", "address": "Current address"},
+        "stage": "quotation", "status": "Pending", "workflow_cycle": 2, "final_design_version_id": "design-2",
+        "quotation_versions": [{"id": "old", "number": 1, "workflow_cycle": 1, "amount": 11},
+            {"id": "new", "number": 2, "workflow_cycle": 2, "design_version_id": "design-2", "amount": 22}],
+        "lead": {"notes": "Past lead"}, "activity": [{"summary": "Past event"}]}
+    monkeypatch.setattr(module.KitchenProjectService, "get", AsyncMock(return_value=kitchen))
+    database = Database(customers=[{"id": "c", "floor_id": "ground-floor", "name": "Meena"},
+        {"id": "kc", "floor_id": "second-floor", "name": "Meena", "imported_from_customer_id": "c"}],
+        kitchen_projects=[kitchen], quotations=[{"id": "q", "floor_id": "ground-floor", "customer_id": "c", "status": "draft", "doc_type": "tiles_quotation"}])
+    profile = await module.CustomerSearchService(database).profile(principal(), "customer", "c", "ground-floor")
+    assert {workflow["floor_id"] for workflow in profile["workflows"]} == {"ground-floor", "second-floor"}
+    card = next(row for row in profile["records"] if row["kind"] == "kitchen")
+    assert card["summary"]["stage"] == "quotation"
+    assert card["data"]["number"] == 2 and card["data"]["amount"] == 22
+    assert "Past" not in repr(profile)
+
+
+@pytest.mark.asyncio
+async def test_sanitary_completion_uses_exact_order_fulfillment_quantities(allow_all):
+    database = Database(customers=[{"id": "c", "floor_id": "first-floor", "name": "Meena"}],
+        quotations=[{"id": "done", "floor_id": "first-floor", "customer_id": "c", "status": "ordered"},
+                    {"id": "open", "floor_id": "first-floor", "customer_id": "c", "status": "ordered"}],
+        purchase_orders=[{"id": "p1", "floor_id": "first-floor", "quotation_id": "done", "items": [{"id": "i1", "qty": 5, "stage": "dispatched"}]},
+                         {"id": "p2", "floor_id": "first-floor", "quotation_id": "open", "items": [{"id": "i2", "qty": 5, "stage": "in_box"}]}])
+    profile = await module.CustomerSearchService(database).profile(principal(), "customer", "c", "first-floor")
+    assert [row["summary"]["id"] for row in profile["records"]] == ["open"]
+
+
+@pytest.mark.asyncio
+async def test_kitchen_current_project_hides_old_shared_lead_and_completed_substage_is_still_current(allow_all, monkeypatch):
+    project = {"id": "k", "customer_id": "c", "floor_id": "second-floor", "stage": "cad", "status": "Completed",
+        "customer": {"name": "Meena"}, "cad": {"status": "Completed", "percentage": 100}}
+    monkeypatch.setattr(module.KitchenProjectService, "get", AsyncMock(return_value=project))
+    database = Database(kitchen_projects=[project], walkins=[{"id": "old", "customer_id": "c", "floor_id": "second-floor", "status": "new"}])
+    profile = await module.CustomerSearchService(database).profile(principal(), "kitchen", "k", "second-floor")
+    assert [row["summary"]["id"] for row in profile["records"]] == ["k"]
+    assert profile["records"][0]["summary"]["stage"] == "cad"
+    assert profile["records"][0]["data"]["percentage"] == 100
+
+
+@pytest.mark.asyncio
+async def test_unpermitted_kitchen_current_stage_cannot_resurrect_old_shared_lead(allow_all, monkeypatch):
+    async def kitchen_grants(database, actor, action):
+        object.__setattr__(actor, "_kitchen_stage_actions", {"view": ["lead"]})
+        object.__setattr__(actor, "_kitchen_semantic_actions", {"view": ["lead"]})
+    monkeypatch.setattr(module.kitchen_access, "require_capability", kitchen_grants)
+    database = Database(walkins=[{"id": "old", "floor_id": "second-floor", "customer_id": "c", "customer_name": "Meena", "status": "new"}],
+        kitchen_projects=[{"id": "hidden", "floor_id": "second-floor", "customer_id": "c", "stage": "quotation"}])
+    profile = await module.CustomerSearchService(database).profile(principal(custom_access=True), "walkin", "old", "second-floor")
+    assert profile["records"] == []
+    assert "quotation" not in repr(profile)
+
+
+@pytest.mark.asyncio
+async def test_tile_completed_quantity_evidence_does_not_resurrect_its_ordered_quote(allow_all):
+    database = Database(customers=[{"id": "c", "floor_id": "ground-floor", "name": "Meena"}],
+        quotations=[{"id": "basis", "customer_id": "c", "floor_id": "ground-floor", "status": "ordered"}],
+        customer_orders=[{"id": "o", "customer_id": "c", "floor_id": "ground-floor", "quotation_id": "basis", "overall_status": "Ready"}],
+        purchase_orders=[{"id": "po", "customer_order_id": "o", "floor_id": "ground-floor", "items": [{"id": "i", "qty": 5, "boxes_dispatched": 5}]}],
+        dispatches=[{"id": "d", "customer_order_id": "o", "floor_id": "ground-floor"}])
+    profile = await module.CustomerSearchService(database).profile(principal(), "customer", "c", "ground-floor")
+    assert profile["records"] == []
+
+
+def test_kitchen_current_quote_uses_saved_design_basis_until_explicit_resave():
+    row = {"workflow_cycle": 2, "final_design_version_id": "new-final",
+        "design_versions": [{"id": "previous-final", "workflow_cycle": 2}, {"id": "new-final", "workflow_cycle": 2}],
+        "quotation_versions": [{"id": "quote", "number": 3, "design_version_id": "previous-final", "amount": 120}]}
+    assert module.current_data("kitchen", row, "quotation")["number"] == 3
+    row["design_versions"][0]["workflow_cycle"] = 1
+    assert "number" not in module.current_data("kitchen", row, "quotation")
+
+
+def test_generated_internal_kitchen_reference_is_hidden_but_business_numbers_remain():
+    assert module.display_reference("KIT-7779AA0A0C965C85") is None
+    assert module.display_reference("Quotation 3") == "Quotation 3"
+    assert module.display_reference("FQ-2026-0243") == "FQ-2026-0243"

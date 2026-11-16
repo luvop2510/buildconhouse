@@ -10,6 +10,7 @@ import { TILES_FLOOR_ID } from "@/src/constants/floors";
 // Replaces src/components/tiles/ReadyDispatchSheets.tsx (MarkReadySheet /
 // DispatchSheet), which conflated all of this into one Brand-owned action.
 import { useRef, useState } from "react";
+import { randomUUID } from "expo-crypto";
 import { View } from "react-native";
 import { Text } from "@/src/components/AppText";
 
@@ -20,6 +21,7 @@ import { Sheet } from "@/src/design/components";
 import { Alert, Button, TextField } from "@/src/components/ui";
 import { colors, spacing, type } from "@/src/theme/tokens";
 import { tileIdentityMeta } from "@/src/components/tiles/tilePresentation";
+import { DriverFields, validateDriverFields } from "./DriverFields";
 
 function SheetFooter({ onCancel, onConfirm, confirmLabel, busy, disabled = false }: { onCancel: () => void; onConfirm: () => void; confirmLabel: string; busy: boolean; disabled?: boolean }) {
   return <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, flex: 1 }}>
@@ -75,6 +77,7 @@ function qtyUnit(unit: "Box" | "Pieces" | undefined) {
 
 // ---------------------------------------------------------------- Brand page
 export function ReleaseMaterialSheet({ poId, items, onClose, onDone }: { poId: string; items: PurchaseOrderItemDetail[]; onClose: () => void; onDone: () => void }) {
+  const requestKey = useRef<string | null>(null);
   const [qtyByItem, setQtyByItem] = useState<Record<string, string>>(
     () => prefill(items, (item) => item.id, (item) => item.boxes_pending),
   );
@@ -95,7 +98,8 @@ export function ReleaseMaterialSheet({ poId, items, onClose, onDone }: { poId: s
     busyRef.current = true;
     setBusy(true);
     try {
-      await tileOrdersApi.releaseMaterial(poId, validation.entries);
+      requestKey.current ??= randomUUID();
+      await tileOrdersApi.releaseMaterial(poId, validation.entries, requestKey.current);
       toast.success("Material released");
       onDone();
     } catch (e: any) {
@@ -124,6 +128,7 @@ export function ReleaseMaterialSheet({ poId, items, onClose, onDone }: { poId: s
 
 // ------------------------------------------------------------- Customer page
 export function MoveToGodownSheet({ poId, items, onClose, onDone }: { poId: string; items: CustomerOrderItem[]; onClose: () => void; onDone: () => void }) {
+  const requestKey = useRef<string | null>(null);
   const [qtyByItem, setQtyByItem] = useState<Record<string, string>>(
     () => prefill(items, (item) => item.po_item_id, (item) => item.boxes_ready),
   );
@@ -144,7 +149,8 @@ export function MoveToGodownSheet({ poId, items, onClose, onDone }: { poId: stri
     busyRef.current = true;
     setBusy(true);
     try {
-      await tileOrdersApi.moveToGodown(poId, validation.entries);
+      requestKey.current ??= randomUUID();
+      await tileOrdersApi.moveToGodown(poId, validation.entries, requestKey.current);
       toast.success("Moved to Godown");
       onDone();
     } catch (e: any) {
@@ -175,8 +181,8 @@ export function MoveToGodownSheet({ poId, items, onClose, onDone }: { poId: stri
 // always had vehicle_number/driver_name columns (they print on the Chalan
 // PDF and show on the Dispatch List) but nothing ever collected them, so
 // both rendered permanently blank.
-export type TransportDetails = { vehicle_number: string; driver_name: string; receiver_name: string; reference_number: string; labor_cost: string };
-const EMPTY_TRANSPORT: TransportDetails = { vehicle_number: "", driver_name: "", receiver_name: "", reference_number: "", labor_cost: "" };
+export type TransportDetails = { vehicle_number: string; driver_name: string; driver_mobile: string; receiver_name: string; reference_number: string; labor_cost: string };
+const EMPTY_TRANSPORT: TransportDetails = { vehicle_number: "", driver_name: "", driver_mobile: "", receiver_name: "", reference_number: "", labor_cost: "" };
 
 function TransportFields({ value, onChange }: { value: TransportDetails; onChange: (next: TransportDetails) => void }) {
   const field = (key: keyof TransportDetails, label: string, placeholder: string) => (
@@ -188,10 +194,7 @@ function TransportFields({ value, onChange }: { value: TransportDetails; onChang
   return (
     <View style={{ gap: spacing.sm, marginBottom: spacing.md }}>
       <Text style={type.bodyStrong}>Transport details</Text>
-      <View style={{ flexDirection: "row", gap: spacing.sm, flexWrap: "wrap" }}>
-        {field("vehicle_number", "Vehicle number", "GJ-01-AB-1234")}
-        {field("driver_name", "Driver name", "Driver")}
-      </View>
+      <DriverFields value={value} onChange={(driver) => onChange({ ...value, ...driver })} />
       <View style={{ flexDirection: "row", gap: spacing.sm, flexWrap: "wrap" }}>
         {field("receiver_name", "Received by", "Site contact")}
         {field("reference_number", "Reference no.", "Optional")}
@@ -204,6 +207,7 @@ function TransportFields({ value, onChange }: { value: TransportDetails; onChang
 }
 
 function transportPayload(t: TransportDetails): DispatchDestinationOverride {
+  validateDriverFields(t);
   const laborCost = Number(t.labor_cost || 0);
   if (!Number.isFinite(laborCost) || laborCost < 0) throw new Error("Enter a valid labour cost");
   return {

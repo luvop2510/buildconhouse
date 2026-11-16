@@ -6,12 +6,21 @@ The shared harness creates/drops a random database and never boots production.
 import asyncio
 from uuid import uuid4
 
+import pytest
+from tests.integration.test_tile_release_godown_mongo import tile_replica
+
+
+@pytest.fixture(autouse=True)
+def owned_replica(tile_replica, monkeypatch):
+    monkeypatch.setenv("KITCHEN_TEST_MONGO_URL", tile_replica.split("?")[0])
+    monkeypatch.setenv("PYTHON_DOTENV_DISABLED", "1")
+
 from auth import invalidate_principal_cache
 from services.access_grants import build_grant
 from tests.integration.test_kitchen_projects_mongo import environment, headers, create_project
 
 
-def test_home_search_real_phone_matching_complete_profile_and_source_permissions():
+def test_home_search_real_phone_matching_current_profile_and_source_permissions():
     async def scenario():
         async with environment() as env:
             project, _ = await create_project(env)
@@ -34,12 +43,15 @@ def test_home_search_real_phone_matching_complete_profile_and_source_permissions
             response = await env["api"].get("/api/customer-search/profile", params={"kind": "kitchen", "id": project["id"], "floor_id": "second-floor"}, headers=headers(env))
             assert response.status_code == 200, response.text
             assert response.headers["cache-control"] == "no-store"
-            record = next(row["data"] for row in response.json()["records"] if row["kind"] == "kitchen")
-            assert record["completion_date"] == "2026-11-15"
-            assert record["installation"]["notes"] == "Saved installation history"
-            assert record["activity"][0]["payload"]["from_stage"] == "installation"
-            assert record["follow_ups"][0]["notes"] == "Saved inquiry call"
-            assert record["attachments"][0]["filename"] == "design.pdf"
+            assert response.json()["records"] == []
+            assert response.json()["workflows"] == []
+            # Completed stages disappear from the current view, while immutable
+            # workflow/file/follow-up evidence remains safely stored.
+            stored = await env["db"].kitchen_projects.find_one({"id": project["id"]})
+            assert stored["installation"]["notes"] == "Saved installation history"
+            assert stored["activity"][0]["payload"]["from_stage"] == "installation"
+            assert stored["attachments"][0]["storage_key"] == "private-object"
+            assert await env["db"].kitchen_stage_followups.count_documents({"project_id": project["id"]}) == 1
             assert "private-object" not in response.text and '"request_fingerprint"' not in response.text
             # The normal Kitchen worker has this floor only, so same phone on
             # another floor never enlarges the consolidated identity.

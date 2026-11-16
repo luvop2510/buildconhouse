@@ -410,33 +410,60 @@ async def reset_sanitary_customers(body: FloorCustomerResetPayload, user: UserPu
 
 @router.get("/customers/{customer_id}/deletion-preview")
 async def preview_customer_deletion(
-    customer_id: str, furniture_ids: str = "", user: UserPublic = Depends(_customer_deletion_owner),
+    customer_id: str, furniture_ids: str = "", user: UserPublic = Depends(get_current_user),
 ):
-    _customer_deletion_owner(user)
-    await get_floor_scoped_or_404(db.customers, customer_id, user, not_found="Customer not found")
+    from services.customer_delete_access import require_customer_delete
+    await require_customer_delete(db, user, user.active_floor_id)
+    customer = await get_floor_scoped_or_404(db.customers, customer_id, user, not_found="Customer not found")
+    if customer.get("floor_id") != user.active_floor_id:
+        raise HTTPException(404, "Customer not found")
+    if user.active_floor_id == "second-floor":
+        from services.kitchen_customer_deletion import preview
+        project = await db.kitchen_projects.find_one({"customer_id": customer_id, "floor_id": "second-floor", "deleted_at": {"$exists": False}}, {"id": 1})
+        if not project:
+            raise HTTPException(409, "Open this Kitchen customer in the Kitchen workspace to review deletion")
+        result = await preview(db, user, project["id"])
+        return {**result, "counts": {"customers": 1, "kitchen_projects": len(result["projects"])},
+                "recoverable": True, "shared_records_preserved": 0, "private_files": 0}
     from services.customer_deletion import plan_deletion, public_plan
-    return public_plan(await plan_deletion(db, customer_id=customer_id, furniture_ids=tuple(filter(None, furniture_ids.split(",")))), user.id)
+    plan = await plan_deletion(db, customer_id=customer_id, furniture_ids=tuple(filter(None, furniture_ids.split(","))))
+    from services.customer_deletion import check_deletion_floors
+    check_deletion_floors(plan, {user.active_floor_id})
+    return public_plan(plan, user.id)
 
 
 @router.delete("/customers/{customer_id}")
 async def delete_customer(
     customer_id: str, confirmation: str = "", furniture_ids: str = "",
-    user: UserPublic = Depends(_customer_deletion_owner),
+    user: UserPublic = Depends(get_current_user),
 ):
-    """Remove the owner's customer graph, including linked orders."""
-    _customer_deletion_owner(user)
-    allowed_floors = None
+    """Confirm the selected department's existing safe deletion workflow."""
+    from services.customer_delete_access import require_customer_delete
+    await require_customer_delete(db, user, user.active_floor_id)
     if not confirmation:
-        from auth import floor_scope_ids
-        if floor_scope_ids(user) not in (["first-floor"], ["ground-floor"]):
-            raise HTTPException(409, "Review the customer deletion summary before confirming.")
-        allowed_floors = set(floor_scope_ids(user))
+        raise HTTPException(409, "Review the customer deletion summary before confirming.")
+    if user.active_floor_id == "second-floor":
+        from services.kitchen_customer_deletion import remove
+        project = await db.kitchen_projects.find_one({"customer_id": customer_id, "floor_id": "second-floor"}, {"id": 1})
+        if not project:
+            raise HTTPException(404, "Kitchen customer not found")
+        result = await remove(db, user, project["id"], confirmation)
+        invalidate_principal_cache("customer", customer_id)
+        return result
+    allowed_floors = {user.active_floor_id}
     from services.customer_deletion import delete_customer_graph
-    if not await db.settings.find_one({"id": "customer-deletion:" + customer_id}):
-        customer = await get_floor_scoped_or_404(db.customers, customer_id, user, not_found="Customer not found")
-        if allowed_floors is not None and customer.get("floor_id") not in floor_scope_ids(user):
+    previous = await db.settings.find_one({"id": "customer-deletion:" + customer_id})
+    if previous:
+        if previous.get("actor_id") != user.id or previous.get("floor_id") != user.active_floor_id:
             raise HTTPException(404, "Customer not found")
-    result = await delete_customer_graph(db, db.client, customer_id, user.id, confirmation, tuple(filter(None, furniture_ids.split(","))), allowed_floors=allowed_floors)
+    else:
+        customer = await get_floor_scoped_or_404(db.customers, customer_id, user, not_found="Customer not found")
+        if customer.get("floor_id") != user.active_floor_id:
+            raise HTTPException(404, "Customer not found")
+    async def authorize():
+        await require_customer_delete(db, user, user.active_floor_id)
+    result = await delete_customer_graph(db, db.client, customer_id, user.id, confirmation,
+        tuple(filter(None, furniture_ids.split(","))), allowed_floors=allowed_floors, authorize=authorize)
     # Invalidate current-process principal reads immediately. Other processes
     # reload the now-missing identity under their normal short cache expiry.
     invalidate_principal_cache("customer", customer_id)

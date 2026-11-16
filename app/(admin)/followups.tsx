@@ -289,7 +289,7 @@ function FollowupsWorkspace() {
     mounted.current = true;
     return () => { mounted.current = false; };
   }, []);
-  const routeParams = useLocalSearchParams<{ workspace?: string; showroom_followup?: string }>();
+  const routeParams = useLocalSearchParams<{ workspace?: string; showroom_followup?: string; id?: string }>();
   const { staff } = useAuth();
   const canDeleteFollowups = useActionAccess("followups", "delete", !!staff && MANAGER_ROLES.includes(staff.role));
   const canCreateTileSelection = useActionAccess("tiles", "create");
@@ -601,6 +601,16 @@ function FollowupsWorkspace() {
       if (mounted.current && version === detailRequestVersion.current) setLoadingDetail(false);
     }
   }, [selectedFloorId]);
+
+  useEffect(() => {
+    if (!routeParams.id || !selectedFloorId) return;
+    setSelectedId(routeParams.id);
+    void loadDetail(routeParams.id);
+    setCustomerPreviewOpen(true);
+    // Consume a direct-open intent so returning to the same record after Close
+    // works even when this inbox remains mounted.
+    router.setParams({ id: "" });
+  }, [routeParams.id, selectedFloorId, loadDetail, router]);
 
   const selectCard = useCallback((f: Followup) => {
     setSelectedId(f.id);

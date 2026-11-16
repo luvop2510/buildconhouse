@@ -1,6 +1,7 @@
 """JWT + password hashing + role-based dependencies."""
 from __future__ import annotations
 import asyncio
+import re
 from datetime import datetime, timedelta, timezone
 from time import monotonic
 from typing import Any, Optional
@@ -240,6 +241,18 @@ async def authorize_staff_request(user: UserPublic, request: Request | None) -> 
     if request.method == "GET" and path in {"/api/dashboard/today", "/api/dashboard/today/overview", "/api/customer-search", "/api/customer-search/profile"}:
         # The DTO applies current department grants before any business read.
         # It is also the safe landing page for narrowly scoped profiles.
+        return user
+    deletion_request = (
+        path.startswith("/api/kitchen-customer-deletion/") and request.method in {"GET", "DELETE"}
+        or request.method == "GET" and re.fullmatch(r"/api/customers/[^/]+/deletion-preview", path)
+        or request.method == "DELETE" and re.fullmatch(r"/api/customers/[^/]+", path)
+    )
+    if deletion_request:
+        # This capability is explicitly delegated, independent of ordinary page
+        # delete or historical role rank. Re-read it even for a cached principal.
+        from services.customer_delete_access import require_customer_delete
+        floor = "second-floor" if path.startswith("/api/kitchen-customer-deletion/") else user.active_floor_id
+        await require_customer_delete(db, user, floor)
         return user
     if not profile_allows_request(user.access_profile, request.method, path):
         raise HTTPException(status_code=403, detail="This account is not permitted to use this function")

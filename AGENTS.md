@@ -1,5 +1,39 @@
 # AGENTS.md — BuildCon House ERP (forge2.0)
 
+## Customer lookup, drivers, Godown and delegated deletion — 2026-11-16
+
+Universal search shows current workflow cards, not raw document timelines or
+internal identifiers. Resolve Kitchen stage from the project aggregate/current
+ledger and catalog orders from explicit relationships and fulfillment evidence;
+never infer stage from last edit time. Keep distinct same-phone identities and
+all saved history. Linked departments retain their own authorized current work.
+
+Dispatch driver profiles use normalized mobile identity under the existing floor
+boundary. Save profiles in the dispatch transaction; each chalan keeps its own
+immutable-at-dispatch snapshot. Receiver, destination, reference and labour are
+trip details. Godown inventory exposes the persisted item balance and operational
+unit with exact product/variant identity. Release/move retry receipts commit with
+quantities, FIFO batches and movement rows; changed-body reuse rejects safely.
+
+Delete Customers is explicitly owner-configured in existing Team & Roles:
+`customer_delete` per-account department grants or `delete-customers` role matrix
+setting. Non-owner defaults are false. Re-read current account, department and
+permission on each preview/delete, including retries; rank, page edit/delete and
+cached staff snapshots cannot confer it. Preserve historic explicitly granted
+`kitchen_customer_delete` for compatibility and offer the reusable permission for
+new assignments. Kitchen still requires every affected project's current-stage
+access and soft-deletes customer/projects transactionally with actor/time audit,
+version guards and retained private files/history. Other floors use the existing
+reviewed graph deletion contract under selected-department protection. Every
+customer deletion requires named preview and explicit confirmation. Bulk floor
+reset remains owner-only. The new request supersedes older owner-only customer
+deletion notes below; it does not delegate Team or role management.
+
+Kitchen Department Progress uses `src/design/kitchenStageColors.ts` for both
+segments and legend marks, including zero/dynamically changing counts. The eight
+requested colours are exact; the existing ninth CAD File stage is distinct pink.
+
+
 ## Kitchen historical dates and tile rate units — 2026-11-06
 
 Kitchen order dates may predate quotation sharing, including 2024 or earlier;

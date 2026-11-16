@@ -1,21 +1,29 @@
 import { test, expect } from '@playwright/test';
 import { mockSession } from './audit-fixtures';
 
-test('critical customer deletes immediately without review and keeps other customers', async ({ page }) => {
+test('critical customer deletion requires named review and keeps other customers', async ({ page }) => {
   await mockSession(page, '/customers', false);
-  await page.route('**/api/customers?**', route => route.fulfill({json: [
+  let deleted = false;
+  await page.route('**/api/customers?**', route => route.fulfill({json: (deleted ? [
+    {id:'keep-other',name:'Other Buyer',company:'Other Buyer',phone:'9000000001'},
+  ] : [
     {id:'delete-target',name:'Synthetic Buyer',company:'Synthetic Buyer',phone:'9000000000'},
     {id:'keep-other',name:'Other Buyer',company:'Other Buyer',phone:'9000000001'},
-  ]}));
+  ])}));
+  await page.route("**/api/customers/delete-target/deletion-preview?**", route => route.fulfill({json:{customer_id:"delete-target",confirmation:"a".repeat(64),counts:{customers:1},shared_records_preserved:0,private_files:0}}));
   let deletes = 0;
   await page.route(/\/api\/customers\/delete-target(?:\?.*)?$/, route => {
     expect(route.request().method()).toBe('DELETE');
-    expect(new URL(route.request().url()).searchParams.has('confirmation')).toBe(false);
-    deletes++;
+    expect(new URL(route.request().url()).searchParams.get('confirmation')).toBe('a'.repeat(64));
+    deletes++; deleted = true;
     return route.fulfill({json:{ok:true}});
   });
   await page.goto('/customers');
   await page.getByTestId('delete-customer-delete-target').click();
+  await expect(page.getByTestId('confirm-delete-customer-list')).toBeVisible();
+  await expect(page.getByTestId('confirm-delete-customer-list').getByText('Synthetic Buyer', {exact:true})).toBeVisible();
+  expect(deletes).toBe(0);
+  await page.getByTestId('confirm-delete-customer-list-confirm').click();
   await expect(page.getByTestId('customer-delete-target')).toHaveCount(0);
   await expect(page.getByTestId('customer-keep-other')).toBeVisible();
   expect(deletes).toBe(1);
@@ -64,9 +72,9 @@ test('critical new Furniture ledger carries the selected canonical customer thro
   await page.goto('/notebook/furniture-quotations');
   await page.getByRole('button',{name:'New RNB quotation',exact:true}).click();
   await page.getByRole('button',{name:'Link customer profile',exact:true}).click();
-  await page.getByRole('button',{name:'Linked showroom customer · 9876543210',exact:true}).click();
+  await page.getByRole('button',{name:'Linked showroom customer · 987-654-32-10',exact:true}).click();
   await expect(page.getByRole('textbox',{name:'Customer name / quotation heading (RDCL)',exact:true})).toHaveValue('Linked showroom customer');
-  await expect(page.getByRole('textbox',{name:'Customer WhatsApp mobile',exact:true})).toHaveValue('9876543210');
+  await expect(page.getByRole('textbox',{name:'Customer WhatsApp mobile',exact:true})).toHaveValue('987-654-32-10');
   await page.getByRole('textbox',{name:'Charge 1 RNB',exact:true}).fill('100');
   await page.getByRole('button',{name:'Remove charge 2',exact:true}).click();
   await page.getByRole('button',{name:'Save quotation',exact:true}).click();
@@ -75,5 +83,20 @@ test('critical new Furniture ledger carries the selected canonical customer thro
   await page.getByRole('button',{name:'Open Linked showroom customer',exact:true}).click();
   await expect(page.getByRole('button',{name:'Change linked customer',exact:true})).toBeVisible();
   await expect(page.getByRole('textbox',{name:'Customer name / quotation heading (RDCL)',exact:true})).toHaveValue('Linked showroom customer');
-  await expect(page.getByRole('textbox',{name:'Customer WhatsApp mobile',exact:true})).toHaveValue('9876543210');
+  await expect(page.getByRole('textbox',{name:'Customer WhatsApp mobile',exact:true})).toHaveValue('987-654-32-10');
+});
+
+for (const allowed of [false, true]) test(`critical employee customer deletion controls follow explicit permission ${allowed}`, async ({ page }) => {
+  await mockSession(page, '/customers', false, { floorId: 'first-floor', staff: {
+    id: 'delete-employee', email: 'employee@example.invalid', full_name: 'Delete employee',
+    role: 'sales', active: true, custom_access: false, floor_ids: ['first-floor'],
+  } });
+  await page.route('**/api/settings/permission-matrix/customer-deletion-access', route => route.fulfill({ json: { allowed } }));
+  await page.route('**/api/customers?**', route => route.fulfill({ json: [
+    { id: 'permission-buyer', name: 'Permission buyer', floor_id: 'first-floor', phone: '9000000000' },
+  ] }));
+  await page.goto('/customers');
+  await expect(page.getByTestId('customer-permission-buyer')).toBeVisible();
+  await expect(page.getByTestId('delete-customer-permission-buyer')).toHaveCount(allowed ? 1 : 0);
+  await expect(page.getByTestId('reset-floor-customer-data')).toHaveCount(0);
 });

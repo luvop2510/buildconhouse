@@ -4,7 +4,7 @@ import { captureRuntimeHealth } from './runtime-health';
 
 const headers = { 'X-Floor-Id': 'second-floor' };
 
-test('Home search finds saved customers and opens complete linked history on desktop and phone', async ({ page, context }, info) => {
+test('Home search finds saved customers and opens current customer details on desktop and phone', async ({ page, context }, info) => {
   const health = captureRuntimeHealth(page);
   const marker = randomUUID().slice(0, 8);
   const name = `Home history ${marker}`;
@@ -41,9 +41,12 @@ test('Home search finds saved customers and opens complete linked history on des
   const profile = page.getByTestId('home-customer-profile');
   await expect(profile).toBeVisible();
   await expect(profile).toContainText(`Saved lead ${marker}`);
-  await expect(profile).toContainText(`Saved call ${marker}`);
-  await expect(profile).toContainText('2026-09-15');
-  await page.screenshot({ path: info.outputPath('home-complete-customer-profile.png'), fullPage: true });
+  await expect(profile).not.toContainText(`Saved call ${marker}`);
+  await expect(profile).not.toContainText(project.id);
+  await expect(profile).not.toContainText('Customer timeline');
+  await expect(profile).toContainText('Synthetic Home search address');
+  await expect(profile.getByRole('button', { name: 'Open lead', exact: true })).toBeVisible();
+  await page.screenshot({ path: info.outputPath('home-current-customer-profile.png'), fullPage: true });
   await page.getByRole('button', { name: 'Close' }).last().click();
   await search.fill(phone.slice(2, 8));
   await expect(result).toBeVisible();
@@ -51,5 +54,11 @@ test('Home search finds saved customers and opens complete linked history on des
   await expect(page.getByText('No matching customers', { exact: true })).toBeVisible();
   const geometry = await page.evaluate(() => ({ width: innerWidth, content: document.documentElement.scrollWidth }));
   expect(geometry.content).toBeLessThanOrEqual(geometry.width + 1);
+  await search.fill(marker);
+  await expect(result).toBeVisible();
+  await result.click();
+  await profile.getByRole('button', { name: 'Open lead', exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/kitchen/${project.id}/stages/lead`));
+  await expect(page.getByTestId('kitchen-project-detail')).toBeVisible();
   await health.assertHealthy();
 });

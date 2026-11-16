@@ -541,11 +541,12 @@ export default function TileOrdersScreen() {
   ], []);
 
   const inventoryColumns = useMemo<Column<GodownInventoryRow>[]>(() => [
-    { key: "customer", label: "CUSTOMER", grow: 2, minWidth: 180, mobile: "hidden", render: (row) => <CellTitle>{row.customer}</CellTitle> },
-    { key: "name", label: "TILE NAME", grow: 3, minWidth: 220, mobile: "primary", render: (row) => <CellText>{row.name}</CellText> },
+    { key: "customer", label: "CUSTOMER", grow: 2, minWidth: 180, render: (row) => <CellTitle>{row.customer}</CellTitle> },
+    { key: "name", label: "TILE NAME", grow: 3, minWidth: 220, mobile: "primary", render: (row) => <CellText>{[row.name, row.series, row.finish].filter(Boolean).join(" · ")}</CellText> },
     { key: "brand", label: "BRAND", grow: 2, minWidth: 150, render: (row) => <CellText muted>{row.brand}</CellText> },
     { key: "product", label: "SKU", grow: 2, minWidth: 150, mobile: "hidden", render: (row) => <CellMono>{row.product || "—"}</CellMono> },
     { key: "size", label: "SIZE", width: 130, render: (row) => <CellText muted>{row.size || "—"}</CellText> },
+    { key: "quantity", label: "AT GODOWN", width: 140, align: "right", render: (row) => <CellNumber value={quantityLabel(row.quantity, row.quantity_unit)} /> },
     { key: "arrival", label: "ARRIVED", width: 160, mobile: "hidden", render: (row) => <CellMono>{timestamp(row.arrival_date)}</CellMono> },
   ], []);
 

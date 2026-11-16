@@ -1,4 +1,4 @@
-"""Recoverable Kitchen-only customer removal with explicit owner delegation.
+"""Recoverable Kitchen customer removal using owner-configured delete access.
 
 The customer pin, all project tombstones and audit receipt commit together.
 Files and workflow evidence are retained for controlled recovery.
@@ -15,21 +15,17 @@ from pymongo.write_concern import WriteConcern
 
 from models import now_iso
 from services import kitchen_access as access
-from services.access_grants import grant_allows, grants_for_user
+from services.customer_delete_access import require_customer_delete
 from settings import settings
 
-RESOURCE = "kitchen_customer_delete"
 LIMIT = 1000
 
 
 async def require_delete(database, user):
+    await require_customer_delete(database, user, access.KITCHEN_FLOOR)
+    # Delete Customers is separate from access to the affected Kitchen stages.
+    # A grant cannot expose or remove another team's unpermitted project.
     await access.require_capability(database, user, "view")
-    if access.owner(user):
-        return
-    # Never inherit delete from a role, update permission, or an old cached UI.
-    grants = await grants_for_user(database, user.id)
-    if not any(grant_allows(g, user_id=user.id, resource=RESOURCE, action="delete", floor_id=access.KITCHEN_FLOOR) for g in grants):
-        raise HTTPException(403, "The owner must grant Delete Kitchen customers permission")
 
 
 def confirmation_for(user, customer, projects):
@@ -59,7 +55,7 @@ async def preview(database, user, project_id):
     await require_delete(database, user)
     customer, projects = await deletion_plan(database, user, project_id)
     return {"customer_id": customer["id"], "customer_name": customer.get("name", ""),
-            "projects": [{"id": row["id"], "reference": row.get("reference", row["id"]), "stage": row["stage"]} for row in projects],
+            "projects": [{"id": row["id"], "reference": row.get("project_reference") or row.get("reference") or "Kitchen project", "stage": row["stage"]} for row in projects],
             "confirmation": confirmation_for(user, customer, projects)}
 
 

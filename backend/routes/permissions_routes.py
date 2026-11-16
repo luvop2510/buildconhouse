@@ -1,24 +1,14 @@
-"""Settings > Team > Permissions — configurable per-role module visibility.
+"""Existing Team & Roles matrix for module visibility and Delete Customers.
 
-This is an ADDITIVE, UI-visibility layer on top of the existing hard RBAC
-(auth.require_min_role / require_roles on every route — untouched by this
-file). It lets the owner show/hide entire modules in the nav per role
-without touching a single line of the real authorization checks that
-protect the underlying data. Misconfiguring this matrix can only hide or
-reveal a nav entry; it can never grant access to an endpoint the visiting
-role's real backend role-check would otherwise reject, because every data
-endpoint keeps enforcing its own require_min_role/require_roles exactly as
-before — this file never reads or influences those decorators.
-
-Defaults exactly mirror the nav `roles` arrays that existed in
-app/(admin)/_layout.tsx before this feature (every module open to every
-role except Team, which was already manager+) — so until an owner
-explicitly saves an override, behaviour is byte-for-byte identical to
-before this feature shipped.
+Ordinary module rows remain a visibility layer; business routes retain their
+existing authorization. The explicit `delete-customers` row additionally grants
+customer deletion to a role through services.customer_delete_access. It defaults
+off for every non-owner and never widens department assignments or a custom
+account's explicit capabilities. Only the owner can change this matrix.
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 
 from auth import ROLE_HIERARCHY, ROLE_LABELS, get_current_user, require_min_role
 from db import db
@@ -45,11 +35,13 @@ MODULES: list[dict[str, str]] = [
 ]
 MODULES.extend({"key": f"kitchen-{stage}", "label": f"Kitchen · {RESOURCE_REGISTRY[resource]['label']}"}
                for stage, resource in KITCHEN_STAGE_RESOURCES.items())
+MODULES.append({"key": "delete-customers", "label": "Delete Customers"})
 MODULE_KEYS = {m["key"] for m in MODULES}
 
 # Mirrors the nav `roles` restriction that existed before this feature —
-# every module defaults to "worker" (i.e. visible to everyone) except Team.
-DEFAULT_MIN_ROLE: dict[str, str] = {"team": "owner", "sales-data": "owner"}
+# ordinary modules default to worker visibility; destructive deletion and
+# owner reporting require explicit owner configuration.
+DEFAULT_MIN_ROLE: dict[str, str] = {"team": "owner", "sales-data": "owner", "delete-customers": "owner"}
 
 
 def _default_matrix() -> dict[str, dict[str, bool]]:
@@ -86,6 +78,7 @@ async def get_permission_matrix(_: UserPublic = Depends(get_current_user)):
                 matrix[role][mod_key] = bool(allowed)
     for role, row in matrix.items():
         row["sales-data"] = role == "owner"
+        row["delete-customers"] = role == "owner" or overrides.get(role, {}).get("delete-customers") is True
         for stage in KITCHEN_STAGE_RESOURCES:
             key = f"kitchen-{stage}"
             if role == "owner":
@@ -99,6 +92,19 @@ async def get_permission_matrix(_: UserPublic = Depends(get_current_user)):
         "updated_at": (doc or {}).get("updated_at"),
         "updated_by_name": (doc or {}).get("updated_by_name"),
     }
+
+
+@router.get("/customer-deletion-access")
+async def customer_deletion_access(response: Response, user: UserPublic = Depends(get_current_user)):
+    from services.customer_delete_access import require_customer_delete
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        await require_customer_delete(db, user, user.active_floor_id)
+    except HTTPException as error:
+        if error.status_code != 403:
+            raise
+        return {"allowed": False}
+    return {"allowed": True}
 
 
 @router.put("")
@@ -117,12 +123,16 @@ async def update_permission_matrix(body: dict, user: UserPublic = Depends(requir
         for mod_key, allowed in row.items():
             if mod_key not in MODULE_KEYS:
                 raise HTTPException(status_code=400, detail=f"Unknown module '{mod_key}'")
+            if mod_key == "delete-customers" and not isinstance(allowed, bool):
+                raise HTTPException(400, "Delete Customers must be enabled or disabled explicitly")
             clean_row[mod_key] = bool(allowed)
         clean[role] = clean_row
 
     # Guard rail — owner can never lock themselves out of Settings/Team by
     # a fat-fingered save; every other combination is fair game.
     owner_row = clean.get("owner", {})
+    owner_row["delete-customers"] = True
+    clean["owner"] = owner_row
     if owner_row.get("settings") is False or owner_row.get("team") is False:
         raise HTTPException(status_code=400, detail="Owner must always keep Settings and Team visible")
 

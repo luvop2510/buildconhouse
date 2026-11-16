@@ -362,13 +362,20 @@ def test_retry_is_idempotent_and_does_not_release_stock_twice():
     assert database.godown_stock.rows[0]['available_qty'] == 9
     receipt = database.settings.rows[0]
     assert receipt['kind'] == 'customer_deletion_receipt'
-    assert set(receipt) == {'id', 'kind', 'actor_id', 'completed_at', 'deleted', 'pending_private_files'}
+    assert set(receipt) == {'id', 'kind', 'actor_id', 'floor_id', 'completed_at', 'deleted', 'pending_private_files'}
+    assert receipt['floor_id'] is None  # This legacy service-level test explicitly has an unrestricted graph.
 
 
 @pytest.mark.parametrize('role', ['sales', 'manager', 'admin', 'worker'])
-def test_all_customer_deletion_requires_owner_even_with_custom_page_grants(role):
+def test_customer_deletion_requires_explicit_permission_even_with_custom_page_grants(monkeypatch, role):
+    principal = user(role, custom_access=True)
+    database = Database({'users': [principal.model_dump()], 'access_grants': [{
+        'id': 'page-grant', 'user_id': principal.id, 'resource': 'customers',
+        'actions': ['view', 'delete'], 'floor_id': 'first-floor', 'expires_at': None,
+    }]})
+    monkeypatch.setattr(customer_routes, 'db', database)
     with pytest.raises(HTTPException) as error:
-        asyncio.run(customer_routes.delete_customer('c1', user=user(role, custom_access=True)))
+        asyncio.run(customer_routes.delete_customer('c1', user=principal))
     assert error.value.status_code == 403
 
 
@@ -506,3 +513,14 @@ def test_legacy_furniture_requires_explicit_review_and_selection():
         await delete_customer_graph(database,Client(database),'customer','owner',confirmation,['legacy'])
         assert ids(database,'furniture_quotations') == {'keep'}
     asyncio.run(scenario())
+
+
+def test_customer_deletion_removes_only_its_purchase_order_retry_snapshots():
+    database = sample()
+    database.tile_movement_receipts.rows = [
+        {"_id": "receipt-own", "purchase_order_id": "p2", "floor_id": "first-floor", "response": {"customer_name": "Imported"}},
+        {"_id": "receipt-other", "purchase_order_id": "supplier-stock", "floor_id": "first-floor", "response": {}},
+    ]
+    token = preview(database)["confirmation"]
+    remove(database, token)
+    assert [row["_id"] for row in database.tile_movement_receipts.rows] == ["receipt-other"]

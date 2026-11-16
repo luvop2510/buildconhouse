@@ -198,6 +198,7 @@ class TileChalan(TimestampedModel):
     sender_name: Optional[str] = None
     vehicle_number: Optional[str] = None
     driver_name: Optional[str] = None
+    driver_mobile: Optional[str] = None
     created_by: str
     created_by_name: str
     generated_at: str
