@@ -94,7 +94,7 @@ export const requiredStabilityScenarios: Record<string, string[]> = {
     ...[0, 40].map(pan => `critical keyboard has no hidden chrome gaps with viewport pan ${pan}`),
   ],
   'redesign-keyboard-viewport.spec.ts': [
-    'critical keyboard viewport: customer entries and save remain visible through keyboard and rotation',
+    'critical keyboard viewport: customer draft remains visible and the save bar returns after dismissal',
     'critical keyboard viewport: staff drawer scrolls focused lower fields and preserves Phone-only input',
     'critical keyboard viewport: command search panel fits above the keyboard',
   ],

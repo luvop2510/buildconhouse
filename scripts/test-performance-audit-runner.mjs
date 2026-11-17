@@ -8,6 +8,7 @@ import { preparationScripts, runPerformanceAudit, verifyBrowserEvidence, verifyE
 // Exercise the actual orchestrator with disposable files/command adapters.
 // No build, browser, provider or operating database is started by these tests.
 const directory = mkdtempSync(join(tmpdir(), 'forge-performance-gate-'));
+const productionBackend = JSON.parse(readFileSync(new URL('../eas.json', import.meta.url), 'utf8')).build.production.env.EXPO_PUBLIC_BACKEND_URL;
 const profiles = ['android-chrome', 'iphone-safari', 'ipad-safari', 'desktop-chrome'];
 const stages = ['backend', ...preparationScripts, 'test:e2e:stability', 'test:e2e:performance', 'summary'];
 const env = { ...process.env, GITHUB_ACTIONS: 'true', GITHUB_RUN_ID: '1234', GITHUB_RUN_ATTEMPT: '2', GITHUB_SHA: 'a'.repeat(40),
@@ -38,7 +39,7 @@ function run(command, args, options) {
   if (args.includes('scripts/test-release-network-routing.mjs')) { calls.push('network'); return { status: 0 }; }
   const stage = command === 'npm' ? args[1] : args.includes('scripts/summarize-performance.mjs') ? 'summary' : args.includes('scripts/verify-release-stability.mjs') ? 'verify-stability' : 'backend';
   calls.push(stage);
-  if (stage !== 'backend') { assert.equal(options.env.EXPO_NO_DOTENV, '1'); assert.match(options.env.BACKEND_URL, /^https:\/\/buildconhouse-production\.up\.railway\.app$/); }
+  if (stage !== 'backend') { assert.equal(options.env.EXPO_NO_DOTENV, '1'); assert.equal(options.env.BACKEND_URL, productionBackend); }
   else { assert.equal(options.env.DB_NAME, 'forge_ci_unit_tests'); assert.equal(options.env.PYTHON_DOTENV_DISABLED, '1'); }
   if (stage === failAt) return { status: 42 };
   if (stage === 'build') { write('dist/client/index.html', '<html>fresh export</html>'); write('dist/client/chunk.js', 'current source'); }
