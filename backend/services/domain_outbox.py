@@ -715,9 +715,9 @@ async def outbox_worker() -> None:
     next_share_cleanup = 0.0
     while True:
         try:
-            from services.mutation_admission import admission
+            from services.mutation_admission import admission, finish_on_cancel
             async with admission(db):
-                await dispatch_pending()
+                await finish_on_cancel(dispatch_pending())
             now = datetime.now(timezone.utc).timestamp()
             if not customer_reset_maintenance() and now >= next_share_cleanup:
                 await cleanup_expired_shares()
@@ -729,7 +729,7 @@ async def outbox_worker() -> None:
                 # another floor cannot acquire an image during file removal.
                 if await db.settings.find_one({'kind': 'stock_media_deletion_receipt', 'pending_files.0': {'$exists': True}}, {'_id': 1}):
                     async with admission(db, exclusive=True):
-                        await cleanup_stock_media(db, get_media_storage())
+                        await finish_on_cancel(cleanup_stock_media(db, get_media_storage()))
                 next_share_cleanup = now + 3600
         except asyncio.CancelledError:
             raise

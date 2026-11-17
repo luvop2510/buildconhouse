@@ -1,4 +1,5 @@
 """Real transaction/auth acceptance on an explicitly selected loopback replica."""
+import asyncio
 from copy import deepcopy
 
 import pytest
@@ -143,3 +144,35 @@ async def test_delete_grant_does_not_bypass_other_current_stage_visibility(monke
         assert denied.status_code == 403, denied.text
         assert "installation" not in denied.text
         assert await env["db"].customers.count_documents({"deleted_at": {"$exists": True}}) == 0
+
+
+@pytest.mark.asyncio
+async def test_genuine_pending_write_blocks_deletion_until_failed_save_exits(monkeypatch):
+    from fastapi import HTTPException
+    async with environment() as env:
+        mount(env, monkeypatch)
+        project, _ = await create_project(env)
+        entered, finish = asyncio.Event(), asyncio.Event()
+
+        @env["app"].post("/api/test-save")
+        async def failing_save():
+            entered.set()
+            await finish.wait()
+            raise HTTPException(422, "Synthetic failed save")
+
+        path = "/api/kitchen-customer-deletion/" + project["id"]
+        api, actor_headers = env["api"], headers(env)
+        preview = await api.get(path, headers=actor_headers)
+        confirmation = {"confirmation": preview.json()["confirmation"]}
+        pending = asyncio.create_task(api.post("/api/test-save", headers=actor_headers))
+        try:
+            await asyncio.wait_for(entered.wait(), 3)
+            busy = await api.delete(path, headers=actor_headers, params=confirmation)
+            assert busy.status_code == 409
+            assert busy.json()["code"] == "mutation_admission_busy"
+            assert await env["db"].kitchen_customer_deletions.count_documents({}) == 0
+        finally:
+            finish.set()
+            failed = await pending
+        assert failed.status_code == 422
+        assert (await api.delete(path, headers=actor_headers, params=confirmation)).status_code == 200

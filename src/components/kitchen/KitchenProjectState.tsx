@@ -24,6 +24,13 @@ type ProjectState = {
   pendingStage: KitchenStage | null;
   submission: ReturnType<typeof useKitchenSubmission>;
   documentSubmission: ReturnType<typeof useKitchenSubmission>;
+  deletionReview: boolean;
+  setDeletionReview: (open: boolean) => void;
+  writesPaused: () => boolean;
+  writesBusy: boolean;
+  writesPending: () => boolean;
+  beginAuxiliaryWrite: () => (() => void) | null;
+  finishDeletion: () => void;
   drafts: Record<string, unknown>;
   setDrafts: Dispatch<SetStateAction<Record<string, unknown>>>;
   dirty: boolean;
@@ -70,6 +77,24 @@ export function KitchenProjectProvider({ id, returnTo, children }: { id: string;
   const [backgroundSaving, setBackgroundSaving] = useState(false);
   const [pendingStage, setPendingStage] = useState<KitchenStage | null>(null);
   const commandPending = useRef(false);
+  const [deletionReview, setReviewOpen] = useState(false);
+  const reviewOpen = useRef(false);
+  const setDeletionReview = useCallback((open: boolean) => {
+    reviewOpen.current = open;
+    setReviewOpen(open);
+  }, []);
+  const writesPaused = useCallback(() => reviewOpen.current, []);
+  const auxiliaryPending = useRef(0);
+  const [auxiliaryBusy, setAuxiliaryBusy] = useState(false);
+  const beginAuxiliaryWrite = () => {
+    if (writesPaused()) return null;
+    auxiliaryPending.current += 1;
+    setAuxiliaryBusy(true);
+    return () => {
+      auxiliaryPending.current -= 1;
+      if (live.current && !auxiliaryPending.current) setAuxiliaryBusy(false);
+    };
+  };
   const [drafts, publishDrafts] = useState<Record<string, unknown>>({});
   const liveDrafts = useRef(drafts);
   const setDrafts = useCallback<Dispatch<SetStateAction<Record<string, unknown>>>>(next => {
@@ -106,8 +131,15 @@ export function KitchenProjectProvider({ id, returnTo, children }: { id: string;
   saved.current = project;
   const isDraftStale = useCallback((key: string) => key in draftSources.current
     && !sameDraft(draftSources.current[key], persistedDraftSource(saved.current, key)), []);
-  const submission = useKitchenSubmission();
-  const documentSubmission = useKitchenSubmission();
+  const submission = useKitchenSubmission(() => !writesPaused());
+  const documentSubmission = useKitchenSubmission(() => !writesPaused());
+  const writesBusy = submission.busy || documentSubmission.busy || auxiliaryBusy;
+  const writesPending = () => commandPending.current || submission.isPending() || documentSubmission.isPending() || auxiliaryPending.current > 0;
+  const finishDeletion = () => {
+    allowLeave();
+    setDrafts({});
+    router.replace("/kitchen" as any);
+  };
   const acceptProject = useCallback((value: KitchenProject) => {
     if (!live.current || value.id !== id || saved.current && value.version < saved.current.version) return false;
     saved.current = value;
@@ -130,7 +162,7 @@ export function KitchenProjectProvider({ id, returnTo, children }: { id: string;
   const updateProject = acceptProject;
   const command = (name: KitchenCommand, payload: Record<string, unknown>, background = false): Promise<boolean> => {
     const current = saved.current;
-    if (!current || loading || failure || commandPending.current) return Promise.resolve(false);
+    if (!current || loading || failure || commandPending.current || writesPaused()) return Promise.resolve(false);
     // A response/reload can publish before React rerenders the timer that captured this draft.
     if (background && current.version !== project?.version) return Promise.resolve(false);
     // Completing legacy installation may already advance the saved project.
@@ -295,7 +327,9 @@ export function KitchenProjectProvider({ id, returnTo, children }: { id: string;
   };
   return <Context.Provider value={{ id, project, loading, failure, policy, policyError,
     returnTo: origin.current, retainedDraft, reload: () => { setRetainedDraft(true); setRetry(value => value + 1); },
-    updateProject, command, backgroundSaving, pendingStage, submission, documentSubmission, drafts, setDrafts, dirty, currentTaskDirty, setDraftValue, resetDraftValue, isDraftStale,
+    updateProject, command, backgroundSaving, pendingStage, submission, documentSubmission,
+    deletionReview, setDeletionReview, writesPaused, writesBusy, writesPending, beginAuxiliaryWrite, finishDeletion,
+    drafts, setDrafts, dirty, currentTaskDirty, setDraftValue, resetDraftValue, isDraftStale,
   }}>{children}</Context.Provider>;
 }
 

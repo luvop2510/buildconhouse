@@ -91,14 +91,14 @@ export function errorText(error: unknown) {
   return error instanceof Error ? error.message : "Please try again. Your entries have been kept.";
 }
 /** A retry keeps its command key; a changed draft starts a distinct command. */
-export function useKitchenSubmission() {
+export function useKitchenSubmission(canStart = () => true) {
   const pending = useRef(false);
   const receipt = useRef<{ fingerprint: string; key: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [stale, setStale] = useState(false);
   const submit = async <T,>(fingerprint: unknown, work: (key: string) => Promise<T>, success: (result: T) => void) => {
-    if (pending.current) return false;
+    if (pending.current || !canStart()) return false;
     const serialized = JSON.stringify(fingerprint);
     if (receipt.current?.fingerprint !== serialized) receipt.current = { fingerprint: serialized, key: kitchenRequestKey() };
     pending.current = true; setBusy(true); setError(null); setStale(false);
@@ -106,7 +106,7 @@ export function useKitchenSubmission() {
     catch (cause) { setError(`${errorText(cause)} Your entries have been kept.`); setStale((cause as { status?: number })?.status === 409); return false; }
     finally { pending.current = false; setBusy(false); }
   };
-  return { busy, error, stale, submit, setError, clearFeedback: () => { setError(null); setStale(false); } };
+  return { busy, isPending: () => pending.current, error, stale, submit, setError, clearFeedback: () => { setError(null); setStale(false); } };
 }
 export function displayDate(value?: string | null) {
   if (!value) return "—";

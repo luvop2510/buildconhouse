@@ -416,9 +416,9 @@ async def followup_worker() -> None:
 
 
 async def reconcile_followups_admitted() -> dict:
-    from services.mutation_admission import admission
+    from services.mutation_admission import admission, finish_on_cancel
     async with admission(db):
-        return await reconcile_followups()
+        return await finish_on_cancel(reconcile_followups())
 
 
 async def reconcile_followups() -> dict:

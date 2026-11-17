@@ -31,10 +31,9 @@ export function KitchenProjectDetail({ page = "stage" }: { page?: ProjectPage })
   const hasAccess = useModuleAccess();
   const customerAccess = useActionAccess("customers", "update", false);
   const canDeleteCustomer = useCustomerDeleteAccess();
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  useEffect(() => { if (!canDeleteCustomer) setDeleteOpen(false); }, [canDeleteCustomer]);
   const state = useKitchenProject();
-  const { project, loading, failure, policy, policyError, reload, updateProject, submission, command, returnTo, retainedDraft } = state;
+  const { project, loading, failure, policy, policyError, reload, updateProject, submission, command, returnTo, retainedDraft, setDeletionReview } = state;
+  useEffect(() => () => setDeletionReview(false), [setDeletionReview]);
   const { stage: parameter, details } = useLocalSearchParams<{ stage?: string; details?: string }>();
   const router = useRouter();
   const [panel, setPanel] = useState<ProjectPage | "workflow" | "assignee" | "advance" | "visits" | null>(["documents", "history", "assignments", "exceptions"].includes(page) ? page : null);
@@ -54,7 +53,7 @@ export function KitchenProjectDetail({ page = "stage" }: { page?: ProjectPage })
   const held = project?.lifecycle_status === "On Hold" || project?.lifecycle_status === "Cancelled" || project?.lifecycle_status === "Lost";
   const back = () => { if (router.canGoBack()) router.back(); else router.replace(returnTo as any); };
   const actionLabel = project ? currentTaskLabel(project) : "Open current task";
-  const disabled = !canUpdate || submission.busy && !state.backgroundSaving || state.documentSubmission.busy || loading || Boolean(failure);
+  const disabled = !canUpdate || state.deletionReview || submission.busy && !state.backgroundSaving || state.documentSubmission.busy || loading || Boolean(failure);
   const savedAt = project?.updated_at ? new Date(project.updated_at) : null;
   const savedLabel = savedAt && Number.isFinite(savedAt.getTime())
     ? `Saved · ${savedAt.toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })} IST`
@@ -69,7 +68,7 @@ export function KitchenProjectDetail({ page = "stage" }: { page?: ProjectPage })
       { label: "Assigned to", icon: "user", onPress: () => setPanel("assignee") },
       { label: "Completion date", icon: "calendar", onPress: () => setPanel("assignments") },
       { label: "Reload saved project", icon: "refresh-cw", onPress: reload },
-      ...(canDeleteCustomer ? [{ label: "Delete customer", icon: "trash-2" as const, onPress: () => setDeleteOpen(true) }] : []),
+      ...(canDeleteCustomer ? [{ label: "Delete customer", icon: "trash-2" as const, onPress: () => setDeletionReview(true) }] : []),
       ...(project.permissions?.can_approve_exceptions ? [{ label: "Hold, cancel or revise project", icon: "settings" as const, onPress: () => setPanel("exceptions") }] : []),
     ]}><View style={{ minHeight: 44, minWidth: 44, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 8 }}><Text style={type.body}>Actions</Text><Feather name="more-horizontal" size={20} color={colors.onSurfaceSecondary} /></View></Menu> : undefined;
   if (!hasAccess(`kitchen-${selected}`)) return <KitchenFloor><KitchenPage title="Kitchen" back={back}><ErrorState title="Section access required" subtitle="The owner can enable this Kitchen section from Team." /></KitchenPage></KitchenFloor>;
@@ -113,7 +112,7 @@ export function KitchenProjectDetail({ page = "stage" }: { page?: ProjectPage })
         <KitchenStageFollowups key={`${project.id}:${selected}`} project={project} stage={selected} disabled={disabled} />
       </View>
       <Sheet scroll visible={lostOpen} onClose={() => setLostOpen(false)} title="Mark customer as lost" testID="kitchen-lost-sheet"><View style={{ gap: spacing.md }}><Text style={type.body}>Record why this customer was lost. This closes the project for changes.</Text><TextField label="Lost reason" value={lostReason} onChangeText={setLostReason} multiline testID="kitchen-lost-reason" /><Button label="Mark customer as lost" variant="danger" disabled={!lostReason.trim() || disabled} loading={submission.busy} onPress={() => { void command("mark_lost", { reason: lostReason.trim() }).then(ok => { if (ok) setLostOpen(false); }); }} testID="kitchen-confirm-lost" /></View></Sheet>
-      <KitchenCustomerDeletion project={project} visible={deleteOpen} onClose={() => setDeleteOpen(false)} />
+      <KitchenCustomerDeletion project={project} />
       <Sheet scroll visible={panel === "advance" && !project.permissions?.restricted} onClose={() => setPanel(null)} title="Advance details" testID="kitchen-advance-sheet"><CommercialStages project={project} stage={selected} disabled={disabled || submission.busy || Boolean(held)} command={command} mode="advance" /></Sheet>
       <Sheet scroll visible={panel === "visits"} onClose={() => setPanel(null)} title="Site visits" testID="kitchen-site-visits-sheet"><CommercialStages project={project} stage={selected} disabled={disabled || submission.busy || Boolean(held)} command={command} mode="visits" /></Sheet>
       <Sheet scroll visible={panel === "documents" && (!project.permissions?.restricted || selected === "installation" && project.stage === "installation")} onClose={() => setPanel(null)} title="Project documents" testID="kitchen-documents-sheet">{policyError ? <Alert tone="warning" title="Upload settings unavailable" action={<Button label="Reload" variant="secondary" onPress={reload} />} /> : null}<KitchenDocuments project={project} policy={policy} disabled={disabled || Boolean(held)} onUpdated={updateProject} onReload={reload} /></Sheet>

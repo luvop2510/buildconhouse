@@ -5,7 +5,7 @@ import { useKitchenProject } from "./KitchenProjectState";
 export function useKitchenAutosave({ draftKey, value, saved, enabled, save }: {
   draftKey: string; value: unknown; saved: unknown; enabled: boolean; save: () => Promise<boolean>;
 }) {
-  const { drafts, submission } = useKitchenProject();
+  const { drafts, submission, deletionReview, writesPaused } = useKitchenProject();
   const setError = submission.setError;
   const fingerprint = JSON.stringify(value);
   const changed = fingerprint !== JSON.stringify(saved);
@@ -20,10 +20,10 @@ export function useKitchenAutosave({ draftKey, value, saved, enabled, save }: {
   const failed = result?.key === draftKey && result.fingerprint === fingerprint && result.failed;
   useEffect(() => { live.current = true; return () => { live.current = false; }; }, []);
   useEffect(() => {
-    if (!changed || !touched || !enabled || submission.busy || failed || running.current) return;
+    if (!changed || !touched || !enabled || deletionReview || submission.busy || failed || running.current) return;
     const timer = setTimeout(async () => {
       const current = latest.current;
-      if (!live.current || running.current || !current.enabled || current.busy || current.draftKey !== draftKey || current.fingerprint !== fingerprint) return;
+      if (!live.current || running.current || writesPaused() || !current.enabled || current.busy || current.draftKey !== draftKey || current.fingerprint !== fingerprint) return;
       running.current = true; setSaving(true);
       let accepted = false;
       try { accepted = await current.save(); }
@@ -34,7 +34,7 @@ export function useKitchenAutosave({ draftKey, value, saved, enabled, save }: {
       }
     }, 700);
     return () => clearTimeout(timer);
-  }, [changed, touched, draftKey, fingerprint, enabled, submission.busy, failed, retryCount, saving, setError]);
+  }, [changed, touched, draftKey, fingerprint, enabled, deletionReview, writesPaused, submission.busy, failed, retryCount, saving, setError]);
   // A successful command is not enough: Saved requires the displayed server value.
   const status = !changed ? "saved" : saving ? "saving" : failed ? "failed" : "pending";
   return { status, retry: () => { setResult(null); setRetryCount(count => count + 1); } };

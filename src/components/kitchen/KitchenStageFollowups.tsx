@@ -72,7 +72,7 @@ export function KitchenStageFollowups({ project, stage, disabled = false }: { pr
   const [initial, setInitial] = useState(() => ({ date: "", notes: "", interaction_type: "Visit" as "Visit" | "Call", idempotency_key: kitchenRequestKey() }));
   const draftKey = `followup.${stage}.entry`;
   const [draft, setDraft] = useKitchenDraft(draftKey, initial);
-  const { resetDraftValue } = useKitchenProject();
+  const { resetDraftValue, beginAuxiliaryWrite } = useKitchenProject();
   const history = useFollowupHistory(project.id, stage, expanded);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -84,6 +84,8 @@ export function KitchenStageFollowups({ project, stage, disabled = false }: { pr
   const canSave = !disabled && project.permissions?.can_update === true && (!editableStages || editableStages.includes(stage));
   const save = async () => {
     if (pending.current || !canSave || !draft.date) return;
+    const finishWrite = beginAuxiliaryWrite();
+    if (!finishWrite) return;
     pending.current = true; setSaving(true); setError(""); setSaved("");
     try {
       const result = await kitchenProjectsApi.addFollowup(project.id, { ...draft, stage });
@@ -94,7 +96,7 @@ export function KitchenStageFollowups({ project, stage, disabled = false }: { pr
       void history.reload();
     } catch (cause) {
       if (mounted.current) setError(cause instanceof Error ? cause.message : "Could not save follow-up. Retry this entry.");
-    } finally { pending.current = false; if (mounted.current) setSaving(false); }
+    } finally { finishWrite(); pending.current = false; if (mounted.current) setSaving(false); }
   };
   return <KitchenPanel>
     <Pressable accessibilityRole="button" accessibilityLabel="Follow-Up" accessibilityState={{ expanded }} aria-expanded={expanded} testID="kitchen-followup-toggle" onPress={() => setExpanded(value => !value)} style={{ minHeight: 44, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.sm }}>
