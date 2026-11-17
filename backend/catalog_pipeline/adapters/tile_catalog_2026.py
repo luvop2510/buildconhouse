@@ -157,6 +157,17 @@ class MCMAdapter(TileCatalog2026Adapter):
     def __init__(self) -> None:
         super().__init__("MCM")
 
+    def extract(self, data: bytes, filename: str) -> tuple[list[ProductRow], ExtractionReport]:
+        rows, report = super().extract(data, filename)
+        for row in rows:
+            row.name = row.name.removesuffix(f" ({row.size})")
+            row.family_name = row.name
+            if row.specs.get("box_pieces"):
+                row.specs["pcs_per_box"] = row.specs["box_pieces"]
+            if row.specs.get("box_sqft"):
+                row.specs["sqft_per_box"] = row.specs["box_sqft"]
+        return rows, report
+
 
 class GranolandAdapter(TileCatalog2026Adapter):
     """GRANOLAND 2026 ground-floor tile catalogue."""
