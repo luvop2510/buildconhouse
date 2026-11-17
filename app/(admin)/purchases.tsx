@@ -548,7 +548,8 @@ export default function PurchasesScreen() {
         <CancelPurchaseModal item={cancelTarget} onClose={() => setCancelTarget(null)} onConfirm={cancelItem} />
         <CustomerPurchasePanel visible={!!customerWorkspaceId} loading={loadingWorkspace} workspace={customerWorkspace} onClose={() => setCustomerWorkspaceId(null)} onMove={(item) => { setCustomerWorkspaceId(null); setRowMoveTarget(item); }} onTransfer={(item) => { setCustomerWorkspaceId(null); setTransferItem(item); }} onHistory={(item) => { setCustomerWorkspaceId(null); setHistoryItemId(item.item_id); }} />
         {selected.size > 0 ? (
-          <View style={[styles.mobileBulkDock, { paddingBottom: Math.max(spacing.sm, insets.bottom + spacing.sm) }]} pointerEvents="box-none">
+          <View {...(Platform.OS === "web" ? { dataSet: { keyboardActionBar: "true" } } : {})}
+            style={[styles.mobileBulkDock, { paddingBottom: Math.max(spacing.sm, insets.bottom + spacing.sm) }]} pointerEvents="box-none">
             <View style={styles.mobileBulkDockInner} pointerEvents="auto">
               <Pressable accessibilityRole="button" accessibilityLabel="Clear selected purchases" onPress={() => setSelected(new Set())} style={styles.mobileBulkClear}>
                 <Feather name="x" size={18} color={colors.onSurface} />

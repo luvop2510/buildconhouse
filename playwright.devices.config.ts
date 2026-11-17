@@ -9,6 +9,7 @@ export default defineConfig({
     'redesign-access.spec.ts',
     'redesign-team-delegation.spec.ts',
     'redesign-keyboard-viewport.spec.ts',
+    'redesign-dispatch-drivers.spec.ts',
     'redesign-lead-multifloor.spec.ts',
     'redesign-interior-acquisition.spec.ts',
     'responsive-furniture-rmb.spec.ts',

@@ -18,13 +18,14 @@ export function useInputActive() {
   useEffect(() => {
     if (Platform.OS === "web") {
       let editingElement: HTMLElement | null = null;
+      let dismissedEditor: HTMLElement | null = null;
       const activePointers = new Set<number>();
       let restorePending = false;
       const update = () => {
         restorePending = false;
         const input = document.activeElement;
         editingElement = input instanceof HTMLElement && input.matches('input:not([type="button"]):not([type="checkbox"]):not([type="radio"]),textarea,[contenteditable="true"]') ? input : null;
-        setActive(editingElement !== null);
+        setActive(editingElement !== null && editingElement !== dismissedEditor);
       };
       let blurTimer: ReturnType<typeof setTimeout>;
       // A press can outlast the blur delay (especially while a scroll view
@@ -48,10 +49,18 @@ export function useInputActive() {
         if (restorePending) afterBlur();
       };
       const onFocus = () => {
+        dismissedEditor = null;
         const element = document.activeElement;
         if (element instanceof HTMLElement && element.matches('input,textarea,[contenteditable="true"]')) { clearTimeout(blurTimer); update(); }
         else afterBlur();
       };
+      const onKeyboardClosed = () => {
+        // Android Back can dismiss the keyboard while leaving the caret in place.
+        dismissedEditor = editingElement;
+        afterBlur();
+      };
+      document.addEventListener("forge:keyboard-open", onFocus);
+      document.addEventListener("forge:keyboard-closed", onKeyboardClosed);
       document.addEventListener("focusin", onFocus);
       document.addEventListener("focusout", afterBlur);
       document.addEventListener("pointerdown", onPointerDown, true);
@@ -71,6 +80,8 @@ export function useInputActive() {
       return () => {
         observer.disconnect();
         clearTimeout(blurTimer);
+        document.removeEventListener("forge:keyboard-open", onFocus);
+        document.removeEventListener("forge:keyboard-closed", onKeyboardClosed);
         document.removeEventListener("focusin", onFocus);
         document.removeEventListener("focusout", afterBlur);
         document.removeEventListener("pointerdown", onPointerDown, true);

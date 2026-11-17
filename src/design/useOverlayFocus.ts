@@ -84,10 +84,11 @@ export function useOverlayFocus(open: boolean, onClose: () => void, dismissable 
       }
     };
     const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && panel?.contains(document.activeElement)) {
-        event.preventDefault(); event.stopImmediatePropagation();
-        if (dismissableRef.current) closeRef.current();
-      }
+      const active = document.activeElement;
+      if (event.key !== 'Escape' || !panel?.contains(active)) return;
+      if (active?.matches('[role="combobox"][aria-expanded="true"]')) return;
+      event.preventDefault(); event.stopImmediatePropagation();
+      if (dismissableRef.current) closeRef.current();
     };
     document.addEventListener('keydown', handleKey, true);
     document.addEventListener('keyup', handleEscape, true);

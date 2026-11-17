@@ -21,7 +21,7 @@ import { tileProductName } from "@/src/components/tiles/tileProductName";
 import Feather from "@expo/vector-icons/Feather";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, FlatList, LayoutChangeEvent, NativeScrollEvent, NativeSyntheticEvent, Pressable, ScrollView, Share, StyleSheet, View } from "react-native";
+import { ActivityIndicator, FlatList, LayoutChangeEvent, NativeScrollEvent, NativeSyntheticEvent, Platform, Pressable, ScrollView, Share, StyleSheet, View } from "react-native";
 import { Text, TextInput } from "@/src/components/AppText";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -873,7 +873,8 @@ function ProductDetailWorkspace({ floorId }: { floorId: string }) {
 
       {/* Sticky bottom CTA — phone only */}
       {isPhone && quotationAction ? (
-        <View style={[styles.stickyBar, { paddingBottom: insets.bottom + 10 }]}>
+        <View {...(Platform.OS === "web" ? { dataSet: { keyboardActionBar: "true" } } : {})}
+          style={[styles.stickyBar, { paddingBottom: insets.bottom + 10 }]}>
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={type.caption}>Total</Text>
             <Text style={{ fontSize: 18, fontWeight: "800", color: colors.onSurface, fontVariant: ["tabular-nums"] }} numberOfLines={1}>{money(p.price)}</Text>

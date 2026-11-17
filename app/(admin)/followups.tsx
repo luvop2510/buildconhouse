@@ -1300,7 +1300,8 @@ function FollowupsWorkspace() {
 
       {/* Mobile: floating quick-contact for the #1 priority item */}
       {!isSanitary && !isDesktop && !isPhone && topPriorityOpen ? (
-        <View style={styles.fabWrap} pointerEvents="box-none">
+        <View {...(Platform.OS === "web" ? { dataSet: { keyboardActionBar: "true" } } : {})}
+          style={styles.fabWrap} pointerEvents="box-none">
           <Pressable
             testID="fab-whatsapp"
             onPress={() => contact(topPriorityOpen, "whatsapp")}
@@ -1321,7 +1322,9 @@ function FollowupsWorkspace() {
       {/* Selection should remain actionable while moving through a long phone
           queue; keeping it in the list header stranded it above the cards. */}
       {isPhone && selectedIds.size > 0 ? (
-        <View onLayout={({ nativeEvent }) => setBulkDockHeight(nativeEvent.layout.height)} style={[styles.mobileBulkDock, { paddingBottom: Math.max(spacing.sm, insets.bottom + spacing.xs) }]} pointerEvents="box-none">
+        <View {...(Platform.OS === "web" ? { dataSet: { keyboardActionBar: "true" } } : {})}
+          onLayout={({ nativeEvent }) => setBulkDockHeight(nativeEvent.layout.height)}
+          style={[styles.mobileBulkDock, { paddingBottom: Math.max(spacing.sm, insets.bottom + spacing.xs) }]} pointerEvents="box-none">
           <BulkActionBar
             busy={bulkSaving}
             count={selectedIds.size}
@@ -2007,14 +2010,14 @@ function CustomSnoozeSheet({ visible, f, onClose, onSave }: { visible: boolean; 
     onSave(f, iso);
   };
   return (
-    <Sheet visible={visible} onClose={onClose} variant="modal" title="Custom Snooze" subtitle={f.customer_name} width={400}
+    <Sheet visible={visible} onClose={onClose} variant="modal" title="Custom Snooze" subtitle={f.customer_name} width={400} scroll
       footer={<>
         <Button label="Cancel" variant="secondary" onPress={onClose} size="md" />
         <View style={{ flex: 1 }} />
         <Button label="Snooze" variant="primary" icon="clock" onPress={submit} size="md" />
       </>}
     >
-      <View style={{ padding: spacing.xl, gap: spacing.md }}>
+      <View style={{ gap: spacing.md }}>
         <FormField label="Date">
           {Platform.OS === "web" ? (
             // @ts-ignore native HTML date input

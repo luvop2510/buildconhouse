@@ -14,16 +14,17 @@ import * as DocumentPicker from "expo-document-picker";
 import { KitchenFileDrop } from "@/src/components/kitchen/KitchenFileDrop";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, KeyboardAvoidingView, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { ActivityIndicator, Linking, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { Text, TextInput } from "@/src/components/AppText";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { ActivityTimeline, TimelineEvent } from "@/src/components/ActivityTimeline";
+import { Overlay } from "@/src/design/Overlay";
 import { useBp } from "@/src/design/responsive";
-import { Badge, Button, Card, ErrorState, IconButton, LoadingState } from "@/src/components/ui";
+import { Badge, Button, Card, ErrorState, LoadingState } from "@/src/components/ui";
 import { toast } from "@/src/components/Toast";
 import { api } from "@/src/api/client";
-import { colors, money, radius, shadow, spacing, type } from "@/src/theme/tokens";
+import { colors, money, radius, spacing, type } from "@/src/theme/tokens";
 import {
   HistorySheet, MovableItem, MoveStageSheet, TransferSheet,
 } from "@/src/components/purchases/MovementEngine";
@@ -1012,52 +1013,27 @@ function StatusModal({
   const [note, setNote] = useState("");
   useEffect(() => { if (visible) { setNext(null); setNote(""); } }, [visible]);
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-        <Pressable onPress={onClose} style={styles.modalScrim}>
-          <Pressable onPress={() => {}} style={styles.modalCard}>
-            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-              <Text style={type.titleMd}>Change status</Text>
-              <IconButton icon="x" size={30} onPress={onClose} />
-            </View>
-            <Text style={[type.caption, { marginTop: 4 }]}>Current · {labels[current]}</Text>
-            <View style={{ gap: 8, marginTop: spacing.md }}>
-              {allowed.map((s) => (
-                <Pressable
-                  key={s}
-                  testID={`status-opt-${s}`}
-                  onPress={() => setNext(s)}
-                  style={[styles.optionRow, next === s && { borderColor: colors.brand, backgroundColor: colors.brandTint }]}
-                >
-                  <View style={[styles.statusDot, { backgroundColor: STATUS_TONE[s] }]} />
-                  <Text style={{ fontSize: 14, fontWeight: "600", flex: 1 }}>{labels[s]}</Text>
-                  {next === s ? <Feather name="check" size={16} color={colors.brand} /> : null}
-                </Pressable>
-              ))}
-            </View>
-            <TextInput
-              value={note}
-              onChangeText={setNote}
-              placeholder="Add a note (optional)"
-              placeholderTextColor={colors.onSurfaceMuted}
-              style={[styles.notesInput, { minHeight: 60, marginTop: spacing.md }]}
-              multiline
-            />
-            <View style={{ flexDirection: "row", gap: 8, justifyContent: "flex-end", marginTop: spacing.md }}>
-              <Button label="Cancel" variant="ghost" onPress={onClose} />
-              <Button
-                label="Confirm"
-                icon="check"
-                onPress={() => next && onConfirm(next, note || undefined)}
-                disabled={!next}
-                loading={busy}
-                testID="confirm-status"
-              />
-            </View>
+    <Overlay open={visible} onClose={onClose} title="Change status" subtitle={`Current · ${labels[current]}`} width={480}
+      footer={<View style={styles.sheetActions}>
+        <Button label="Cancel" variant="ghost" onPress={onClose} />
+        <Button label="Confirm" icon="check" onPress={() => next && onConfirm(next, note || undefined)}
+          disabled={!next} loading={busy} testID="confirm-status" />
+      </View>}>
+      <View style={{ gap: spacing.sm }}>
+        {allowed.map((s) => (
+          <Pressable key={s} testID={`status-opt-${s}`} onPress={() => setNext(s)}
+            accessibilityRole="radio" accessibilityState={{ checked: next === s }}
+            style={[styles.optionRow, next === s && { borderColor: colors.brand, backgroundColor: colors.brandTint }]}>
+            <View style={[styles.statusDot, { backgroundColor: STATUS_TONE[s] }]} />
+            <Text style={{ fontSize: 14, fontWeight: "600", flex: 1 }}>{labels[s]}</Text>
+            {next === s ? <Feather name="check" size={16} color={colors.brand} /> : null}
           </Pressable>
-        </Pressable>
-      </KeyboardAvoidingView>
-    </Modal>
+        ))}
+      </View>
+      <TextInput value={note} onChangeText={setNote}
+        accessibilityLabel="Status note" placeholder="Add a note (optional)" placeholderTextColor={colors.onSurfaceMuted}
+        style={[styles.notesInput, { minHeight: 60 }]} multiline />
+    </Overlay>
   );
 }
 
@@ -1100,54 +1076,31 @@ function ReceiveModal({
   };
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-        <Pressable onPress={onClose} style={styles.modalScrim}>
-          <Pressable onPress={() => {}} style={[styles.modalCard, { maxHeight: "90%" }]}>
-            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-              <Text style={type.titleMd}>Record receipts</Text>
-              <IconButton icon="x" size={30} onPress={onClose} />
+    <Overlay open={visible} onClose={onClose} title="Record receipts" subtitle="Enter quantities received per line item" width={480} maxHeight={0.9}
+      footer={<View style={styles.sheetActions}>
+        <Button label="Cancel" variant="ghost" onPress={onClose} />
+        <Button label="Save receipts" icon="package" onPress={submit} loading={busy} testID="confirm-receive" />
+      </View>}>
+      <Button label="Mark all full" variant="secondary" onPress={setAllFull} style={{ alignSelf: "flex-end" }} />
+      <View style={{ gap: spacing.sm }}>
+        {items.map((it) => (
+          <View key={it.id} style={styles.receiveRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={type.bodyStrong} numberOfLines={1}>{it.name}</Text>
+              <Text style={type.caption}>{it.sku} · ordered {it.qty}</Text>
             </View>
-            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 4 }}>
-              <Text style={type.caption}>Enter quantities received per line item</Text>
-              <Pressable onPress={setAllFull} hitSlop={8}>
-                <Text style={{ fontSize: 12, fontWeight: "600", color: colors.brand }}>Mark all full</Text>
-              </Pressable>
-            </View>
-            <ScrollView style={{ maxHeight: 360, marginTop: spacing.md }} contentContainerStyle={{ gap: spacing.sm }} keyboardShouldPersistTaps="handled">
-              {items.map((it) => (
-                <View key={it.id} style={styles.receiveRow}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 13, fontWeight: "600" }} numberOfLines={1}>{it.name}</Text>
-                    <Text style={type.caption}>{it.sku} · ordered {it.qty}</Text>
-                  </View>
-                  <TextInput
-                    value={draft[it.id] ?? "0"}
-                    onChangeText={(v) => setDraft((d) => ({ ...d, [it.id]: v.replace(/[^0-9.]/g, "") }))}
-                    keyboardType="numeric"
-                    style={styles.qtyInput}
-                    testID={`recv-${it.sku}`}
-                  />
-                  <Text style={type.caption}>of {it.qty}</Text>
-                </View>
-              ))}
-            </ScrollView>
-            <TextInput
-              value={note}
-              onChangeText={setNote}
-              placeholder="Note (e.g. invoice #, courier)"
-              placeholderTextColor={colors.onSurfaceMuted}
-              style={[styles.notesInput, { minHeight: 50, marginTop: spacing.md }]}
-              multiline
-            />
-            <View style={{ flexDirection: "row", gap: 8, justifyContent: "flex-end", marginTop: spacing.md }}>
-              <Button label="Cancel" variant="ghost" onPress={onClose} />
-              <Button label="Save receipts" icon="package" onPress={submit} loading={busy} testID="confirm-receive" />
-            </View>
-          </Pressable>
-        </Pressable>
-      </KeyboardAvoidingView>
-    </Modal>
+            <TextInput value={draft[it.id] ?? "0"}
+              onChangeText={(v) => setDraft((d) => ({ ...d, [it.id]: v.replace(/[^0-9.]/g, "") }))}
+              keyboardType="numeric" style={styles.qtyInput}
+              testID={`recv-${it.sku}`} accessibilityLabel={`Quantity received for ${it.name}`} />
+            <Text style={type.caption}>of {it.qty}</Text>
+          </View>
+        ))}
+      </View>
+      <TextInput value={note} onChangeText={setNote} accessibilityLabel="Receipt note"
+        placeholder="Note (e.g. invoice #, courier)" placeholderTextColor={colors.onSurfaceMuted}
+        style={[styles.notesInput, { minHeight: 50 }]} multiline />
+    </Overlay>
   );
 }
 
@@ -1202,68 +1155,43 @@ function GenerateChalanModal({
   };
 
   return (
-    <Modal visible transparent animationType="slide" onRequestClose={() => { if (!submitting) onClose(); }}>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-        <View style={styles.sheetScrim}>
-          <View style={styles.chalanSheet} testID="sanitary-generate-chalan-modal">
-            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-              <View style={{ flex: 1 }}>
-                <Text style={type.titleLg}>Generate Chalan</Text>
-                <Text style={type.bodyMuted}>Release all or part of the remaining sanitary material.</Text>
-              </View>
-              <IconButton icon="x" size={34} disabled={submitting} onPress={onClose} accessibilityLabel="Close generate Chalan form" />
-            </View>
-
-            <ScrollView style={{ maxHeight: 430, marginTop: spacing.md }} contentContainerStyle={{ gap: spacing.md }} keyboardShouldPersistTaps="handled">
-              {releasable.map((item) => (
-                <View key={item.id} style={styles.chalanFormItem}>
-                  <View style={{ flex: 1, minWidth: 150 }}>
-                    <Text style={type.bodyStrong}>{item.name}</Text>
-                    <Text style={type.caption}>
-                      {[item.sku, item.finish].filter(Boolean).join(" · ")} · {po.remaining_qty_by_item[item.id]} remaining
-                    </Text>
-                  </View>
-                  <TextInput
-                    value={qtyById[item.id] || ""}
-                    onChangeText={(value) => setQtyById((current) => ({ ...current, [item.id]: value.replace(/[^0-9.]/g, "") }))}
-                    keyboardType="numeric"
-                    style={styles.chalanQtyInput}
-                    testID={`sanitary-chalan-qty-${item.id}`}
-                    accessibilityLabel={`Quantity for ${item.name}`}
-                  />
-                </View>
-              ))}
-
-              <View style={styles.chalanFieldGrid}>
-                <ChalanTextField label="Reference number" placeholder="Optional" value={referenceNumber} onChangeText={setReferenceNumber} testID="sanitary-chalan-reference" />
-                <ChalanTextField label="Receiver name" placeholder="Site contact" value={receiverName} onChangeText={setReceiverName} testID="sanitary-chalan-receiver" />
-                <ChalanTextField label="Supplier representative" placeholder="Sender name" value={senderName} onChangeText={setSenderName} testID="sanitary-chalan-sender" />
-                <ChalanTextField label="Transport" placeholder="Transport details" value={transport} onChangeText={setTransport} testID="sanitary-chalan-transport" />
-                <ChalanTextField label="Remarks" placeholder="Optional remarks" value={remarks} onChangeText={setRemarks} testID="sanitary-chalan-remarks" />
-              </View>
-
-              {error ? (
-                <View style={[styles.inlineNotice, { backgroundColor: colors.errorBg, borderColor: colors.errorBorder }]} testID="sanitary-generate-chalan-error">
-                  <Feather name="alert-triangle" size={14} color={colors.error} />
-                  <Text style={[type.bodySm, { color: colors.error, flex: 1 }]}>{error}</Text>
-                </View>
-              ) : null}
-            </ScrollView>
-
-            <View style={styles.sheetActions}>
-              <Button label="Cancel" variant="ghost" disabled={submitting} onPress={onClose} />
-              <Button
-                label={error ? "Retry Generate" : "Generate Chalan"}
-                icon="file-plus"
-                loading={submitting}
-                onPress={submit}
-                testID="sanitary-generate-chalan-confirm"
-              />
-            </View>
+    <Overlay open onClose={onClose} dismissable={!submitting} dismissOnBackdrop={false} title="Generate Chalan"
+      subtitle="Release all or part of the remaining sanitary material." presentation="bottom" maxHeight={0.9}
+      testID="sanitary-generate-chalan-modal" footer={<View style={styles.sheetActions}>
+        <Button label="Cancel" variant="ghost" disabled={submitting} onPress={onClose} />
+        <Button label={error ? "Retry Generate" : "Generate Chalan"} icon="file-plus"
+          loading={submitting} onPress={submit} testID="sanitary-generate-chalan-confirm" />
+      </View>}>
+      {releasable.map((item) => (
+        <View key={item.id} style={styles.chalanFormItem}>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={type.bodyStrong}>{item.name}</Text>
+            <Text style={type.caption}>
+              {[item.sku, item.finish].filter(Boolean).join(" · ")} · {po.remaining_qty_by_item[item.id]} remaining
+            </Text>
           </View>
+          <TextInput value={qtyById[item.id] || ""}
+            onChangeText={(value) => setQtyById((current) => ({ ...current, [item.id]: value.replace(/[^0-9.]/g, "") }))}
+            keyboardType="numeric" style={styles.chalanQtyInput}
+            testID={`sanitary-chalan-qty-${item.id}`} accessibilityLabel={`Quantity for ${item.name}`} />
         </View>
-      </KeyboardAvoidingView>
-    </Modal>
+      ))}
+
+      <View style={styles.chalanFieldGrid}>
+        <ChalanTextField label="Reference number" placeholder="Optional" value={referenceNumber} onChangeText={setReferenceNumber} testID="sanitary-chalan-reference" />
+        <ChalanTextField label="Receiver name" placeholder="Site contact" value={receiverName} onChangeText={setReceiverName} testID="sanitary-chalan-receiver" />
+        <ChalanTextField label="Supplier representative" placeholder="Sender name" value={senderName} onChangeText={setSenderName} testID="sanitary-chalan-sender" />
+        <ChalanTextField label="Transport" placeholder="Transport details" value={transport} onChangeText={setTransport} testID="sanitary-chalan-transport" />
+        <ChalanTextField label="Remarks" placeholder="Optional remarks" value={remarks} onChangeText={setRemarks} testID="sanitary-chalan-remarks" />
+      </View>
+
+      {error ? (
+        <View style={[styles.inlineNotice, { backgroundColor: colors.errorBg, borderColor: colors.errorBorder }]} testID="sanitary-generate-chalan-error">
+          <Feather name="alert-triangle" size={14} color={colors.error} />
+          <Text style={[type.bodySm, { color: colors.error, flex: 1 }]}>{error}</Text>
+        </View>
+      ) : null}
+    </Overlay>
   );
 }
 
@@ -1286,6 +1214,7 @@ function ChalanTextField({
         placeholderTextColor={colors.onSurfaceMuted}
         style={styles.chalanTextInput}
         testID={testID}
+        accessibilityLabel={label}
       />
     </View>
   );
@@ -1312,50 +1241,30 @@ function ChalanTransitionModal({
   };
 
   return (
-    <Modal visible transparent animationType="fade" onRequestClose={() => { if (!submitting) onClose(); }}>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-        <Pressable style={styles.modalScrim} onPress={() => { if (!submitting) onClose(); }}>
-          <Pressable style={styles.modalCard} onPress={() => {}} testID="sanitary-chalan-transition-modal">
-            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-              <Text style={type.titleMd}>{isDispatch ? "Dispatch Chalan" : "Confirm Godown receipt"}</Text>
-              <IconButton icon="x" size={30} disabled={submitting} onPress={onClose} />
-            </View>
-            <Text style={[type.bodyMuted, { marginTop: spacing.xs }]}>
-              {isDispatch
-                ? `${transition.chalan.number} will be marked dispatched from ${transition.chalan.stage === "at_godown" ? "the Godown" : "the supplier"}.`
-                : `${transition.chalan.number} will move from Released to At Godown.`}
-            </Text>
-            {isDispatch ? (
-              <TextInput
-                value={dispatchNote}
-                onChangeText={setDispatchNote}
-                placeholder="Dispatch note (optional)"
-                placeholderTextColor={colors.onSurfaceMuted}
-                multiline
-                style={[styles.notesInput, { minHeight: 64, marginTop: spacing.md }]}
-                testID="sanitary-chalan-dispatch-note"
-              />
-            ) : null}
-            {error ? (
-              <View style={[styles.inlineNotice, { backgroundColor: colors.errorBg, borderColor: colors.errorBorder, marginTop: spacing.md }]} testID="sanitary-chalan-transition-error">
-                <Feather name="alert-triangle" size={14} color={colors.error} />
-                <Text style={[type.bodySm, { color: colors.error, flex: 1 }]}>{error}</Text>
-              </View>
-            ) : null}
-            <View style={styles.sheetActions}>
-              <Button label="Cancel" variant="ghost" disabled={submitting} onPress={onClose} />
-              <Button
-                label={error ? "Retry" : isDispatch ? "Confirm Dispatch" : "Confirm Receipt"}
-                icon={isDispatch ? "truck" : "archive"}
-                loading={submitting}
-                onPress={submit}
-                testID="sanitary-chalan-transition-confirm"
-              />
-            </View>
-          </Pressable>
-        </Pressable>
-      </KeyboardAvoidingView>
-    </Modal>
+    <Overlay open onClose={onClose} dismissable={!submitting} title={isDispatch ? "Dispatch Chalan" : "Confirm Godown receipt"}
+      width={480} testID="sanitary-chalan-transition-modal" footer={<View style={styles.sheetActions}>
+        <Button label="Cancel" variant="ghost" disabled={submitting} onPress={onClose} />
+        <Button label={error ? "Retry" : isDispatch ? "Confirm Dispatch" : "Confirm Receipt"}
+          icon={isDispatch ? "truck" : "archive"} loading={submitting} onPress={submit}
+          testID="sanitary-chalan-transition-confirm" />
+      </View>}>
+      <Text style={type.bodyMuted}>
+        {isDispatch
+          ? `${transition.chalan.number} will be marked dispatched from ${transition.chalan.stage === "at_godown" ? "the Godown" : "the supplier"}.`
+          : `${transition.chalan.number} will move from Released to At Godown.`}
+      </Text>
+      {isDispatch ? (
+        <TextInput value={dispatchNote} onChangeText={setDispatchNote}
+          accessibilityLabel="Dispatch note" placeholder="Dispatch note (optional)" placeholderTextColor={colors.onSurfaceMuted}
+          multiline style={[styles.notesInput, { minHeight: 64 }]} testID="sanitary-chalan-dispatch-note" />
+      ) : null}
+      {error ? (
+        <View style={[styles.inlineNotice, { backgroundColor: colors.errorBg, borderColor: colors.errorBorder }]} testID="sanitary-chalan-transition-error">
+          <Feather name="alert-triangle" size={14} color={colors.error} />
+          <Text style={[type.bodySm, { color: colors.error, flex: 1 }]}>{error}</Text>
+        </View>
+      ) : null}
+    </Overlay>
   );
 }
 
@@ -1448,11 +1357,6 @@ const styles = StyleSheet.create({
   },
   chalanMeta: { gap: 2 },
   chalanActions: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
-  sheetScrim: { flex: 1, backgroundColor: colors.overlay, justifyContent: "flex-end" },
-  chalanSheet: {
-    backgroundColor: colors.surfaceSecondary, borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg,
-    padding: spacing.xl, maxHeight: "90%", ...shadow.lifted,
-  },
   chalanFormItem: {
     flexDirection: "row", alignItems: "center", gap: spacing.md,
     padding: spacing.sm, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
@@ -1469,7 +1373,7 @@ const styles = StyleSheet.create({
     padding: 10, marginTop: 3, fontSize: 14, color: colors.onSurface, backgroundColor: colors.surface,
   },
   sheetActions: {
-    flexDirection: "row", justifyContent: "flex-end", flexWrap: "wrap", gap: spacing.sm, marginTop: spacing.lg,
+    width: "100%", flexDirection: "row", justifyContent: "flex-end", flexWrap: "wrap", gap: spacing.sm,
   },
   notesInput: {
     borderWidth: 1, borderColor: colors.border, borderRadius: radius.md,
@@ -1487,12 +1391,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceTertiary,
   },
   statusMarker: { width: 10, height: 10, borderRadius: 5, marginTop: 4 },
-  modalScrim: { flex: 1, backgroundColor: colors.overlay, justifyContent: "center", alignItems: "center", padding: spacing.lg },
-  modalCard: {
-    width: "100%", maxWidth: 480,
-    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md,
-    padding: spacing.lg, ...shadow.lifted,
-  },
   optionRow: {
     flexDirection: "row", alignItems: "center", gap: 10,
     padding: spacing.md, borderRadius: radius.md,

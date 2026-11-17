@@ -70,18 +70,53 @@ async def save_dispatch_driver(database, snapshot: DriverSnapshotFields, *, floo
     )
 
 
+def _phone_search_digits(text: str) -> str:
+    if re.search(r"[^\d\s()+-]", text):
+        return ""
+    digits = re.sub(r"\D", "", text)
+    if digits.startswith("91") and (len(digits) > 10 or (text.startswith("+") and len(digits) > 2)):
+        return digits[2:]
+    if len(digits) == 11 and digits.startswith("0"):
+        return digits[1:]
+    return digits
+
+
 async def search_dispatch_drivers(database, *, floor_id: str, search: str):
     text = search.strip()[:80]
     query = {"floor_id": floor_id}
-    if text:
-        literal = {"$regex": re.escape(text), "$options": "i"}
-        fields = [{"name": literal}, {"vehicle_number": literal}]
-        digits = re.sub(r"\D", "", text)
-        if digits:
-            if len(digits) > 10 and digits.startswith("91"):
-                digits = digits[2:]
-            fields.append({"mobile": {"$regex": re.escape(digits)}})
-        query["$or"] = fields
-    return await database.dispatch_drivers.find(
-        query, {"_id": 0, "name": 1, "mobile": 1, "vehicle_number": 1},
-    ).sort([("updated_at", -1), ("_id", 1)]).to_list(12)
+    projection = {"_id": 0, "name": 1, "mobile": 1, "vehicle_number": 1}
+    sort = {"updated_at": -1, "_id": 1}
+    limit = 12
+    if not text:
+        return await database.dispatch_drivers.find(query, projection).sort(list(sort.items())).to_list(limit)
+
+    literal = re.escape(text)
+    fields = {"name": literal, "vehicle_number": literal}
+    digits = _phone_search_digits(text)
+    if digits:
+        fields["mobile"] = re.escape(digits)
+
+    query["$or"] = [
+        {field: {"$regex": pattern, "$options": "i"}}
+        for field, pattern in fields.items()
+    ]
+
+    def matches(suffix: str):
+        return {"$or": [
+            {"$regexMatch": {"input": {"$ifNull": [f"${field}", ""]}, "regex": f"^{pattern}{suffix}", "options": "i"}}
+            for field, pattern in fields.items()
+        ]}
+
+    # Rank before limiting so newer substring hits can't hide an exact or
+    # prefix match. Mongo returns only the compact, bounded result set.
+    pipeline = [
+        {"$match": query},
+        {"$set": {"search_rank": {"$switch": {"branches": [
+            {"case": matches("$"), "then": 0},
+            {"case": matches(""), "then": 1},
+        ], "default": 2}}}},
+        {"$sort": {"search_rank": 1, **sort}},
+        {"$limit": limit},
+        {"$project": projection},
+    ]
+    return await database.dispatch_drivers.aggregate(pipeline).to_list(limit)

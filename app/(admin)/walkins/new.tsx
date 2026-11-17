@@ -246,7 +246,7 @@ export default function NewWalkIn() {
           </View>
           </Disclosure>
         </ScrollView>
-        <View style={styles.submitFooter}>
+        <View {...(Platform.OS === "web" ? { dataSet: { keyboardActionBar: "true" } } : {})} style={styles.submitFooter}>
           {error ? <Text accessibilityRole="alert" testID="walkin-submit-error" style={[type.bodySm, { color: colors.error }]}>{error}</Text> : null}
           <Button label="Log Walk-in" onPress={save} loading={saving} testID="walkin-save-btn" />
         </View>
@@ -256,7 +256,7 @@ export default function NewWalkIn() {
       <Sheet visible={spSheetOpen} onClose={() => setSpSheetOpen(false)} title="Assign Salesperson" variant="bottom" minHeight="56%" testID="walkin-salesperson-sheet">
         <View style={{ padding: spacing.lg, gap: spacing.md, flex: 1 }}>
           <SearchField placeholder="Search staff…" value={spSearch} onChangeText={setSpSearch} onClear={() => setSpSearch("")} />
-          <ScrollView>
+          <ScrollView keyboardShouldPersistTaps="handled">
             {filteredAssignees.map((a, i) => (
               <ListRow
                 key={a.id} title={a.full_name} subtitle={a.role}

@@ -10,7 +10,6 @@ import Feather from "@expo/vector-icons/Feather";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { Text, TextInput } from "@/src/components/AppText";
-import { SafeAreaView } from "react-native-safe-area-context";
 
 import { clearCatalogCache } from "@/src/services/catalogService";
 import { api } from "@/src/api/client";
@@ -394,7 +393,8 @@ export function ProductModal() {
             </Pressable>
           </View>
 
-          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 16 }}>
+          <ScrollView style={{ flex: 1, minHeight: 0 }} contentContainerStyle={{ paddingBottom: 16 }}
+            keyboardShouldPersistTaps="handled">
             <View style={[styles.body, isPhone && styles.bodyPhone]}>
               {/* Left: gallery + price */}
               <View style={[styles.left, isPhone && styles.leftPhone]}>
@@ -716,7 +716,8 @@ export function ProductModal() {
               a full-width primary "Add to quotation" button that's always
               easy to hit with a thumb and never gets squeezed by its
               siblings. Desktop/tablet keep the original single-row layout. */}
-          <SafeAreaView edges={isPhone ? ["bottom"] : []} style={styles.footerSafeArea}>
+          <View {...(Platform.OS === "web" ? { dataSet: { keyboardActionBar: "true" } } : {})}
+            style={styles.footerSafeArea}>
           {isCompactFooter ? (
             <View style={styles.footerStacked}>
               <View style={styles.footerStackedTopRow}>
@@ -753,7 +754,7 @@ export function ProductModal() {
               </Pressable>
             </View>
           )}
-          </SafeAreaView>
+          </View>
         </View>
     </Overlay>
 

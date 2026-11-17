@@ -24,7 +24,26 @@ export default function Root({ children }: PropsWithChildren) {
         <style
           dangerouslySetInnerHTML={{
             __html: `
-              html { color-scheme: light; }
+              html { color-scheme: light; --forge-default-viewport-height: 100%; }
+              @supports (height: 100dvh) {
+                html { --forge-default-viewport-height: 100dvh; }
+              }
+              @supports (height: 100svh) {
+                /* Measure normal browser chrome independently of the visual viewport. */
+                html::before {
+                  content: ""; position: fixed; width: 0; height: 100svh; visibility: hidden; pointer-events: none;
+                }
+              }
+              html[data-keyboard-open] { --forge-overlay-bottom-inset: 0px; }
+              html[data-keyboard-open] [data-keyboard-action-bar="true"] { display: none !important; }
+              @media (any-pointer: coarse) {
+                html { --forge-input-font-floor: 16px; }
+              }
+              @media (pointer: fine) {
+                [data-driver-options="true"] {
+                  max-block-size: min(15rem, 28vh); overflow-y: auto;
+                }
+              }
               body, input, textarea, select, button { font-family: ${WEB_SYSTEM_FONT_STACK}; }
               body { -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
               :is(button, a, input, textarea, select, [role="button"], [role="link"], [role="tab"], [role="checkbox"], [tabindex]):focus-visible {
@@ -44,10 +63,10 @@ export default function Root({ children }: PropsWithChildren) {
               @media (prefers-reduced-motion: reduce) {
                 *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
               }
-              #root { position: fixed !important; top: var(--forge-visible-top, 0px); left: 0; right: 0; bottom: auto !important; height: var(--forge-visible-height, 100%) !important; }
+              #root { position: fixed !important; top: var(--forge-visible-top, 0px); left: 0; right: 0; bottom: auto !important; height: var(--forge-visible-height, var(--forge-default-viewport-height)) !important; }
               /* React Native Web portals sit outside the application root.
                  Resize only their outer modal, leaving inner dialog panels alone. */
-              [aria-modal="true"]:not([aria-modal="true"] [aria-modal="true"]) { top: var(--forge-visible-top, 0px) !important; bottom: auto !important; height: var(--forge-visible-height, 100%) !important; }
+              [aria-modal="true"]:not([aria-modal="true"] [aria-modal="true"]) { top: var(--forge-visible-top, 0px) !important; bottom: auto !important; height: var(--forge-visible-height, var(--forge-default-viewport-height)) !important; }
               input, textarea { scroll-margin-block: 12px; }
               [role="tablist"] [role="tab"] * { overflow: visible !important; }
               [role="heading"], [role="heading"] * { overflow: visible !important; }

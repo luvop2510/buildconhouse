@@ -25,6 +25,12 @@ export const TextInput = forwardRef<TextInput, TextInputProps>(function AppTextI
     const id = focusId.current;
     return () => { if (Platform.OS !== "web") reportInputFocus(id, false); };
   }, []);
+  const inputStyle = StyleSheet.flatten(style);
+  const configuredSize = inputStyle?.fontSize;
+  // A minimum on touch browsers prevents focus-induced Safari zoom.
+  const webFontSize = configuredSize === undefined
+    ? "var(--forge-input-font-floor, revert)"
+    : `max(var(--forge-input-font-floor, 0px), ${configuredSize}px)`;
   const phone = props.keyboardType === "phone-pad" || props.inputMode === "tel";
   return <NativeTextInput {...props} ref={ref}
     value={phone && !focused && typeof props.value === "string" ? formatPhone(props.value) : props.value}
@@ -35,5 +41,5 @@ export const TextInput = forwardRef<TextInput, TextInputProps>(function AppTextI
     blurOnSubmit={props.blurOnSubmit ?? (props.submitBehavior || props.onSubmitEditing ? undefined : false)}
     onFocus={event => { setFocused(true); if (Platform.OS !== "web") reportInputFocus(focusId.current, true); onFocus?.(event); }}
     onBlur={event => { setFocused(false); if (Platform.OS !== "web") reportInputFocus(focusId.current, false); onBlur?.(event); }}
-    style={[{ fontFamily: appTextFamily(StyleSheet.flatten(style), Platform.OS) }, style]} />;
+    style={[{ fontFamily: appTextFamily(inputStyle, Platform.OS) }, style, Platform.OS === "web" ? { fontSize: webFontSize as unknown as number } : undefined]} />;
 });

@@ -69,20 +69,23 @@ def test_unidentified_name_does_not_merge_drivers_or_touch_directory():
 
 def test_directory_search_is_literal_bounded_and_floor_scoped():
     class Cursor:
-        def sort(self, sort):
-            assert sort == [("updated_at", -1), ("_id", 1)]
-            return self
         async def to_list(self, limit):
             assert limit == 12
             return []
+
     class Collection:
-        def find(self, query, projection):
-            assert query == {"floor_id": "ground-floor", "$or": [
+        def aggregate(self, pipeline):
+            assert pipeline[0] == {"$match": {"floor_id": "ground-floor", "$or": [
                 {"name": {"$regex": r"Ram\.\*", "$options": "i"}},
                 {"vehicle_number": {"$regex": r"Ram\.\*", "$options": "i"}},
-            ]}
-            assert projection == {"_id": 0, "name": 1, "mobile": 1, "vehicle_number": 1}
+            ]}}
+            assert pipeline[2:] == [
+                {"$sort": {"search_rank": 1, "updated_at": -1, "_id": 1}},
+                {"$limit": 12},
+                {"$project": {"_id": 0, "name": 1, "mobile": 1, "vehicle_number": 1}},
+            ]
             return Cursor()
+
     asyncio.run(search_dispatch_drivers(SimpleNamespace(dispatch_drivers=Collection()), floor_id="ground-floor", search="Ram.*"))
 
 

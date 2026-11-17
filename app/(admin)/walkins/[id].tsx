@@ -268,8 +268,8 @@ function WalkInWorkspace() {
       </ScrollView>
 
       <LeadScopeSheet walkin lead={scopeOpen ? w : null} floorId={w.floor_id} onClose={() => setScopeOpen(false)} onSaved={() => void load()} saveScope={value => walkinsApi.update(id, value, requestOptions)} />
-      <Sheet visible={lostOpen} onClose={() => setLostOpen(false)} title="Mark as lost" variant="bottom">
-        <View style={{ padding: spacing.lg, gap: spacing.md }}>
+      <Sheet visible={lostOpen} onClose={() => setLostOpen(false)} title="Mark as lost" variant="bottom" scroll>
+        <View style={{ gap: spacing.md }}>
           <TextField label="Lost reason" value={notes} onChangeText={setNotes} multiline numberOfLines={3} placeholder="Cannot afford the service, or we cannot work with this customer" testID="walkin-lost-reason" />
           <Button label="Mark as lost" variant="danger" disabled={!notes.trim()} onPress={() => void updateStatus("lost")} loading={busy} testID="walkin-confirm-lost" />
         </View>
@@ -277,7 +277,7 @@ function WalkInWorkspace() {
       <Sheet visible={reassignOpen} onClose={() => setReassignOpen(false)} title="Reassign Salesperson" variant="bottom">
         <View style={{ padding: spacing.lg, gap: spacing.md, flex: 1 }}>
           <SearchField placeholder="Search staff…" value={spSearch} onChangeText={setSpSearch} onClear={() => setSpSearch("")} />
-          <ScrollView>
+          <ScrollView keyboardShouldPersistTaps="handled">
             {filteredAssignees.map((a, i) => (
               <ListRow
                 key={a.id} title={a.full_name} subtitle={a.role}

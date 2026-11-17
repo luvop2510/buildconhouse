@@ -1,6 +1,27 @@
 import { useEffect } from 'react';
 import { Platform } from 'react-native';
 
+const editableSelector = [
+  'input:not([type="button"],[type="checkbox"],[type="radio"],[type="file"],[type="range"],[type="date"],[type="time"],[type="color"],[readonly],[disabled],[inputmode="none"])',
+  'textarea:not([readonly],[disabled],[inputmode="none"])',
+  '[contenteditable="true"],[contenteditable="plaintext-only"]',
+].join(',');
+
+function activeEditor() {
+  const element = document.activeElement;
+  return element instanceof HTMLElement && element.matches(editableSelector) ? element : null;
+}
+
+function visibleArea() {
+  const viewport = window.visualViewport;
+  return {
+    height: viewport?.height ?? window.innerHeight,
+    width: viewport?.width ?? window.innerWidth,
+    top: viewport?.offsetTop ?? 0,
+    zoomed: Math.abs((viewport?.scale ?? 1) - 1) > .01,
+  };
+}
+
 /** Mobile browsers can keep the layout viewport tall when their keyboard opens.
  * Size the app and modal portals to the visible area, without rerendering pages.
  */
@@ -8,8 +29,13 @@ export function useKeyboardViewport() {
   useEffect(() => {
     if (Platform.OS !== 'web' || typeof window === 'undefined') return;
     const viewport = window.visualViewport;
-    if (!viewport) return;
-    const style = document.documentElement.style;
+    const root = document.documentElement;
+    const { style } = root;
+    const hasTouch = window.matchMedia('(any-pointer: coarse)').matches || navigator.maxTouchPoints > 0;
+    let keyboardOpen = false;
+    let restingHeight = 0;
+    let lastWidth = -1;
+    let textareaObserver: ResizeObserver | undefined;
     let frame = 0;
     let revealFrame = 0;
     let revealPending = false;
@@ -17,9 +43,10 @@ export function useKeyboardViewport() {
     let lastTop = -1;
     const reveal = () => {
       revealFrame = 0;
-      const input = document.activeElement;
-      if (Math.abs(viewport.scale - 1) > .01) return;
-      if (!(input instanceof HTMLElement) || !input.matches('input,textarea,[contenteditable="true"]')) return;
+      const input = activeEditor();
+      const area = visibleArea();
+      if (!input || area.zoomed) return;
+      const option = input.closest('[data-reveal-first-option="true"]')?.querySelector('[data-reveal-option="true"]');
       // Browser focus scrolling happens before the keyboard has finished
       // resizing. Repeat only when a visible-area change clips the input.
       const clips: { element: HTMLElement; scrollable: boolean }[] = [];
@@ -34,8 +61,8 @@ export function useKeyboardViewport() {
         if (parent === document.body || parent === document.documentElement || parent.id === 'root'
           || !scrollable
           || parent.scrollHeight <= parent.clientHeight) continue;
-        let top = viewport.offsetTop + 8;
-        let bottom = viewport.offsetTop + viewport.height - 8;
+        let top = area.top + 8;
+        let bottom = area.top + area.height - 8;
         // Descendant scrollports move with this parent. Including their
         // current bounds can make the intersection empty when an inner form
         // is entirely offscreen, preventing the outer form from revealing it.
@@ -55,8 +82,12 @@ export function useKeyboardViewport() {
           if (bottom <= top) continue;
         }
         const box = input.getBoundingClientRect();
-        const delta = box.height > bottom - top || box.top < top ? box.top - top : Math.max(0, box.bottom - bottom);
-        // Most keystrokes need no correction; avoid repeated layout reads and scroll writes.
+        const optionBottom = option?.getBoundingClientRect().bottom ?? box.bottom;
+        const combinedBottom = Math.max(box.bottom, optionBottom);
+        const targetBottom = combinedBottom - box.top <= bottom - top ? combinedBottom : box.bottom;
+        const delta = box.height > bottom - top || box.top < top
+          ? box.top - top
+          : Math.max(0, targetBottom - bottom);
         if (delta === 0) {
           if (index === 0 && !outside) return;
           continue;
@@ -67,37 +98,77 @@ export function useKeyboardViewport() {
     };
     const update = () => {
       frame = 0;
-      // Pinch zoom must retain ordinary browser panning; it is not a keyboard.
-      if (Math.abs(viewport.scale - 1) > .01) return;
-      const resized = viewport.height !== lastHeight;
-      if (resized) style.setProperty('--forge-visible-height', `${viewport.height}px`);
-      if (viewport.offsetTop !== lastTop) style.setProperty('--forge-visible-top', `${viewport.offsetTop}px`);
-      lastHeight = viewport.height;
-      lastTop = viewport.offsetTop;
-      if (revealPending || resized) {
+      const { height, width, top, zoomed } = visibleArea();
+      // Pinch zoom retains ordinary browser panning.
+      if (zoomed || height <= 0) return;
+      const resized = height !== lastHeight;
+      const shrank = height < lastHeight;
+      if (resized) style.setProperty('--forge-visible-height', `${height}px`);
+      if (top !== lastTop) style.setProperty('--forge-visible-top', `${top}px`);
+      if (Math.abs(width - lastWidth) > 1) restingHeight = height;
+      const input = activeEditor();
+      if (hasTouch && resized && (input || keyboardOpen)) {
+        // Small viewport units exclude browser toolbar travel. With Chromium
+        // resizes-content, both viewport sizes shrink, so compare against the
+        // last settled height for this width as well.
+        const smallHeight = parseFloat(window.getComputedStyle(root, '::before').height);
+        const belowBrowserChrome = Number.isFinite(smallHeight) && height < smallHeight - 1;
+        const contentResized = height < restingHeight * .8;
+        const open = belowBrowserChrome || contentResized;
+        if (open !== keyboardOpen) {
+          keyboardOpen = open;
+          if (open) root.setAttribute('data-keyboard-open', 'true');
+          else root.removeAttribute('data-keyboard-open');
+          document.dispatchEvent(new Event(open ? 'forge:keyboard-open' : 'forge:keyboard-closed'));
+        }
+      }
+      if (!keyboardOpen && (!input || height > restingHeight)) restingHeight = height;
+      lastHeight = height;
+      lastWidth = width;
+      lastTop = top;
+      if (revealPending || shrank) {
         cancelAnimationFrame(revealFrame);
         revealFrame = requestAnimationFrame(reveal);
       }
       revealPending = false;
     };
     const schedule = () => { if (!frame) frame = requestAnimationFrame(update); };
-    // Browser focus scrolling also emits viewport scroll events. Correcting
-    // focus on those events fights the user's scroll and can bounce the form.
-    const onFocus = () => { revealPending = true; schedule(); };
-    schedule();
-    viewport.addEventListener('resize', schedule);
-    viewport.addEventListener('scroll', schedule);
+    // Scroll events align the portal with Safari's visual viewport pan.
+    // They never trigger reveal, so the user can freely scroll the form.
+    const requestReveal = () => { revealPending = true; schedule(); };
+    const onFocus = () => {
+      textareaObserver?.disconnect();
+      const input = activeEditor();
+      if (input?.matches('textarea,[contenteditable]') && typeof ResizeObserver !== 'undefined') {
+        // Growing notes can change clipping without a viewport resize.
+        let height = input.getBoundingClientRect().height;
+        textareaObserver = new ResizeObserver(() => {
+          const nextHeight = input.getBoundingClientRect().height;
+          if (nextHeight !== height && activeEditor() === input) requestReveal();
+          height = nextHeight;
+        });
+        textareaObserver.observe(input);
+      }
+      requestReveal();
+    };
+    onFocus();
+    viewport?.addEventListener('resize', schedule);
+    viewport?.addEventListener('scroll', schedule);
     window.addEventListener('resize', schedule);
     document.addEventListener('focusin', onFocus);
-    document.addEventListener('input', onFocus);
+    document.addEventListener('forge:reveal-focused-input', requestReveal);
     return () => {
-      cancelAnimationFrame(frame); cancelAnimationFrame(revealFrame);
-      viewport.removeEventListener('resize', schedule);
-      viewport.removeEventListener('scroll', schedule);
+      cancelAnimationFrame(frame);
+      cancelAnimationFrame(revealFrame);
+      textareaObserver?.disconnect();
+      viewport?.removeEventListener('resize', schedule);
+      viewport?.removeEventListener('scroll', schedule);
       window.removeEventListener('resize', schedule);
       document.removeEventListener('focusin', onFocus);
-      document.removeEventListener('input', onFocus);
-      style.removeProperty('--forge-visible-height'); style.removeProperty('--forge-visible-top');
+      document.removeEventListener('forge:reveal-focused-input', requestReveal);
+      root.removeAttribute('data-keyboard-open');
+      style.removeProperty('--forge-visible-height');
+      style.removeProperty('--forge-visible-top');
     };
   }, []);
 }

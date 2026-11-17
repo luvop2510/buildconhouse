@@ -6,13 +6,23 @@ import { formatPhone } from '../src/utils/phone.ts';
 
 for (const file of ['../app/_layout.tsx', '../app/_layout.web.tsx']) assert.match(readFileSync(new URL(file, import.meta.url), 'utf8'), /useKeyboardViewport\(\)/);
 const source = readFileSync(new URL('../src/hooks/use-keyboard-viewport.ts', import.meta.url), 'utf8');
-const viewport = new EventTarget(); Object.assign(viewport, { height: 1024, offsetTop: 0, scale: 1 });
+const viewport = new EventTarget(); Object.assign(viewport, { height: 1024, width: 390, offsetTop: 0, scale: 1 });
 const win = new EventTarget(); win.visualViewport = viewport;
+win.matchMedia = () => ({ matches: true });
 let styleReads = 0, scrollWrites = 0;
-win.getComputedStyle = element => { styleReads++; return { overflowY: element.overflowY || 'visible' }; };
+let smallHeight = 980;
+win.getComputedStyle = (element, pseudo) => {
+  if (pseudo) return { height: `${smallHeight}px` };
+  styleReads++;
+  return { overflowY: element.overflowY || 'visible' };
+};
 const doc = new EventTarget(), properties = new Map();
 let writes = 0, cleanup;
-doc.documentElement = { style: { setProperty: (key, value) => { writes++; properties.set(key, value); }, removeProperty: key => properties.delete(key) } };
+const attributes = new Map();
+doc.documentElement = {
+  setAttribute: (name, value) => attributes.set(name, value),
+  removeAttribute: name => attributes.delete(name),
+  style: { setProperty: (key, value) => { writes++; properties.set(key, value); }, removeProperty: key => properties.delete(key) } };
 doc.body = { overflowY: 'hidden', parentElement: null, clientTop: 0, clientHeight: 1024, scrollHeight: 1800, scrollTop: 0, getBoundingClientRect: () => ({ top: 0 }) };
 const panel = { overflowY: 'auto', parentElement: doc.body, clientTop: 0, clientHeight: 1000, scrollHeight: 1800, scrollTop: 0, getBoundingClientRect: () => ({ top: 0 }) };
 let panelScrollTop = 0;
@@ -21,6 +31,8 @@ class Input {
   parentElement = panel;
   box = { top: 40, bottom: 90 };
   matches() { return true; }
+  option = null;
+  closest() { return this.option ? { querySelector: () => this.option } : null; }
   getBoundingClientRect() { const top = this.box.top - panel.scrollTop, bottom = this.box.bottom - panel.scrollTop; return { top, bottom, height: bottom - top }; }
   scrollIntoView() { assert.fail('Never pan the document or hidden application root'); }
 }
@@ -30,7 +42,7 @@ const frames = () => { for (const [id, callback] of [...callbacks]) { callbacks.
 const flush = () => { frames(); frames(); };
 const exports = {};
 vm.runInNewContext(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, {
-  exports, window: win, document: doc, HTMLElement: Input,
+  exports, window: win, document: doc, HTMLElement: Input, Event,
   requestAnimationFrame: callback => { const id = ++nextFrame; callbacks.set(id, callback); return id; }, cancelAnimationFrame: id => callbacks.delete(id),
   require: name => name === 'react' ? { useEffect: effect => { cleanup = effect(); } } : { Platform: { OS: 'web' } },
 });
@@ -41,20 +53,21 @@ const beforeBurst = writes;
 for (let i = 0; i < 30; i++) { viewport.dispatchEvent(new Event('resize')); viewport.dispatchEvent(new Event('scroll')); }
 assert.equal(callbacks.size, 1); flush();
 assert.equal(writes - beforeBurst, 2); assert.equal(properties.get('--forge-visible-top'), '20px');
+assert.equal(attributes.get('data-keyboard-open'), 'true');
 assert.equal(panel.scrollTop, 438, 'Reveal only the clipped distance, retaining eight-pixel margin');
 assert.equal(doc.body.scrollTop, 0, 'Body remains anchored');
 const stable = panel.scrollTop, afterResize = writes;
 const beforeTypingStyles = styleReads, beforeTypingScrolls = scrollWrites;
 for (let i = 0; i < 3; i++) { viewport.dispatchEvent(new Event('scroll')); doc.dispatchEvent(new Event('input')); flush(); }
 assert.equal(panel.scrollTop, stable, 'Visible typing does not bounce the field'); assert.equal(writes, afterResize);
-assert.equal(styleReads - beforeTypingStyles, 6, 'Read ancestor styles once per reveal, including the non-scrollable body');
+assert.equal(styleReads, beforeTypingStyles, 'Typing does not read ancestor geometry');
 assert.equal(scrollWrites, beforeTypingScrolls, 'Visible keystrokes must not issue no-op scroll writes');
 viewport.offsetTop = 25; viewport.dispatchEvent(new Event('scroll')); flush();
 assert.equal(panel.scrollTop, stable, 'User panning never triggers automatic reveal');
 panel.clientHeight = 200; panel.getBoundingClientRect = () => ({ top: 25 }); panel.scrollTop = 0;
-doc.activeElement.box = { top: 160, bottom: 240 }; doc.dispatchEvent(new Event('input')); flush();
+doc.activeElement.box = { top: 160, bottom: 240 }; doc.dispatchEvent(new Event('focusin')); flush();
 assert.equal(panel.scrollTop, 23, 'Nested scrollport clipping participates in reveal');
-panel.scrollTop = 0; doc.activeElement.box = { top: 160, bottom: 760 }; doc.dispatchEvent(new Event('input')); flush();
+panel.scrollTop = 0; doc.activeElement.box = { top: 160, bottom: 760 }; doc.dispatchEvent(new Event('focusin')); flush();
 const tallPosition = panel.scrollTop;
 for (let i = 0; i < 5; i++) { doc.dispatchEvent(new Event('input')); flush(); }
 assert.equal(panel.scrollTop, tallPosition, 'A tall field anchors its top instead of alternating between edges');
@@ -88,7 +101,23 @@ assert.equal(doc.activeElement.getBoundingClientRect().bottom, 292);
 panel.parentElement = doc.body;
 Object.assign(viewport, { height: 150, scale: 2 }); viewport.dispatchEvent(new Event('resize')); doc.dispatchEvent(new Event('input')); flush();
 assert.equal(panel.scrollTop, 458); assert.equal(properties.get('--forge-visible-height'), '300px', 'Pinch zoom retains ordinary browser pan/zoom');
-viewport.scale = 1; viewport.dispatchEvent(new Event('resize')); cleanup(); flush();
+viewport.scale = 1;
+viewport.height = 980;
+viewport.offsetTop = 0;
+viewport.dispatchEvent(new Event('resize')); flush();
+assert.equal(attributes.has('data-keyboard-open'), false, 'Restores actions when the viewport recovers while input remains focused');
+assert.equal(panel.scrollTop, 458, 'Keyboard dismissal keeps the local scroll position');
+viewport.height = 300;
+smallHeight = 300; // Chromium resizes both the layout and visual viewport.
+viewport.dispatchEvent(new Event('resize')); flush();
+assert.equal(attributes.has('data-keyboard-open'), true);
+panel.getBoundingClientRect = () => ({ top: 0 }); panel.scrollTop = 0; panel.clientHeight = 300;
+doc.activeElement.getBoundingClientRect = () => ({ top: 210 - panel.scrollTop, bottom: 250 - panel.scrollTop, height: 40 });
+doc.activeElement.option = { getBoundingClientRect: () => ({ bottom: 315 - panel.scrollTop }) };
+doc.dispatchEvent(new Event('forge:reveal-focused-input')); flush();
+assert.equal(panel.scrollTop, 23, 'Async options reveal alongside the input in its own form');
+cleanup(); flush();
+assert.equal(attributes.size, 0);
 assert.equal(properties.size, 0); const finalWrites = writes;
 viewport.dispatchEvent(new Event('resize')); doc.dispatchEvent(new Event('focusin')); doc.dispatchEvent(new Event('input')); win.dispatchEvent(new Event('resize')); flush();
 assert.equal(writes, finalWrites);

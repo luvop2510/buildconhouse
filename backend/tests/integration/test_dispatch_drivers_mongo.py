@@ -106,3 +106,45 @@ def test_concurrent_first_use_deduplicates_normalized_mobile(tile_replica):
             await client.drop_database(db.name)
             client.close()
     asyncio.run(run())
+
+
+def test_driver_search_ranks_before_limit_and_matches_first_character(tile_replica, monkeypatch):
+    async def run():
+        client, db, app, _actor, _route = await _bind(monkeypatch, tile_replica)
+
+        def profile(name, mobile, vehicle="", *, day=1, floor="ground-floor"):
+            return {"_id": f"{floor}:{mobile}", "floor_id": floor, "name": name, "mobile": mobile,
+                    "vehicle_number": vehicle, "updated_at": f"2026-11-{day:02d}"}
+
+        try:
+            await db.dispatch_drivers.insert_many([
+                profile("H", "7000000000"),
+                profile("Harish", "9876543210", "GJ-01-1000", day=2),
+                profile("Ramesh", "7999000000", "GJ-01-9000", day=3),
+                profile("H", "7777777777", day=30, floor="first-floor"),
+                *[profile(f"Shah {i}", f"71000000{i:02d}", day=20) for i in range(15)],
+            ])
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://local-qa") as http:
+                async def search(query):
+                    response = await http.get("/api/tile-orders/drivers", params={"search": query})
+                    assert response.status_code == 200, response.text
+                    assert response.headers["cache-control"] == "no-store"
+                    return response.json()["drivers"]
+
+                one = await search("h")
+                assert len(one) == 12
+                assert [driver["name"] for driver in one[:2]] == ["H", "Harish"]
+                assert [driver["name"] for driver in one[2:]] == [f"Shah {i}" for i in range(10)]
+                assert set(one[0]) == {"name", "mobile", "vehicle_number"}
+                assert (await search("Ha"))[0]["name"] == "Harish"
+                assert [driver["name"] for driver in await search("gj")] == ["Ramesh", "Harish"]
+                for query in ("9", "987", "+91 (987) 654-3210", "09876-543210", "+91 987"):
+                    assert (await search(query))[0]["name"] == "Harish"
+                assert await search("9-") == await search("9")
+                assert await search("GJ-01-1000") == await search("9876543210")
+                assert await search("GJ1") == []
+                assert await search(".*") == []
+        finally:
+            await client.drop_database(db.name)
+            client.close()
+    asyncio.run(run())

@@ -74,6 +74,13 @@ assert.equal(native.keyboard.size, 0);
 
 const web = mount('web');
 assert.equal(web.active(), false);
+web.document.activeElement = web.input();
+web.events.get('focusin')();
+web.events.get('forge:keyboard-closed')();
+await new Promise(resolve => setTimeout(resolve, 170));
+assert.equal(web.active(), false, 'Keyboard dismissal restores navigation while the input still has focus');
+web.events.get('forge:keyboard-open')();
+assert.equal(web.active(), true, 'Reopening the keyboard on the same editor hides navigation again');
 const removed = web.input();
 web.document.activeElement = removed;
 web.events.get('focusin')();

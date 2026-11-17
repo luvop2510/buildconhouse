@@ -61,7 +61,7 @@ test('critical keyboard viewport: entirely clipped nested scrollport reveals the
   expect(await page.evaluate(() => window.scrollY)).toBe(0);
 });
 
-test('critical keyboard viewport: customer entries and save remain visible through keyboard and rotation', async ({ page }) => {
+test('critical keyboard viewport: customer draft remains visible and the save bar returns after dismissal', async ({ page, hasTouch }) => {
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   await keyboardFixture(page);
@@ -71,15 +71,18 @@ test('critical keyboard viewport: customer entries and save remain visible throu
   await page.getByTestId('new-customer-name').fill('Keyboard customer');
   await page.getByRole('button', { name: 'Additional customer details' }).click();
   const address = page.getByTestId('new-customer-address');
+  const save = page.getByTestId('new-customer-save');
   await address.fill('Visible while typing');
   await address.focus();
   await resizeKeyboard(page, 360, 40);
   await inVisibleArea(address, 360, 40);
-  await inVisibleArea(page.getByTestId('new-customer-save'), 360, 40);
+  if (hasTouch) await expect(save).toBeHidden();
+  else await inVisibleArea(save, 360, 40);
   await expect(address).toHaveValue('Visible while typing');
   await resizeKeyboard(page, 300, 60);
   await inVisibleArea(address, 300, 60);
   await resizeKeyboard(page, page.viewportSize()!.height);
+  await inVisibleArea(save, page.viewportSize()!.height);
   await expect(page.getByTestId('new-customer-name')).toHaveValue('Keyboard customer');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
   expect(errors).toEqual([]);

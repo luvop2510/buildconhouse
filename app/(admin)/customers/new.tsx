@@ -127,7 +127,8 @@ export default function NewCustomer() {
 
           </Disclosure>
         </ScrollView>
-        <View style={{ width: "100%", maxWidth: 760, alignSelf: "center", paddingHorizontal: gutter, paddingVertical: spacing.lg, gap: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border, backgroundColor: colors.surfaceSecondary }}>
+        <View {...(Platform.OS === "web" ? { dataSet: { keyboardActionBar: "true" } } : {})}
+          style={{ width: "100%", maxWidth: 760, alignSelf: "center", paddingHorizontal: gutter, paddingVertical: spacing.lg, gap: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border, backgroundColor: colors.surfaceSecondary }}>
           {saveError ? <Alert tone="error" title={saveError} /> : null}
           <Button
             label={saving ? "Saving…" : "Save Customer"}
