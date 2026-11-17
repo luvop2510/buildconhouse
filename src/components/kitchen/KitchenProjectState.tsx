@@ -249,6 +249,10 @@ export function KitchenProjectProvider({ id, returnTo, children }: { id: string;
           replaceSaved("cad.value", value.cad);
           replaceSaved("cad.progress", String(value.cad.progress));
         }
+        if (name === "attachment_date") {
+          const file = value.attachments?.find(row => row.id === payload.attachment_id);
+          if (file) replaceSaved(`documents.attachment.${file.id}.date`, file.upload_date || "");
+        }
         if (name === "production_update" || name === "installation_update") {
           const work = name === "production_update" ? "production" : "installation";
           replaceSaved(`${cycle}.${work}`, value[work]);
@@ -277,7 +281,29 @@ export function KitchenProjectProvider({ id, returnTo, children }: { id: string;
         const designEditorKey = `${cycle}.design.${String(payload.version_id)}.edit`;
         const quotationEditorKey = `${cycle}.quotation.${String(payload.version_id)}.edit`;
         const editorKey = name === "order_update" ? orderEditorKey : name === "quotation_update" ? quotationEditorKey : designEditorKey;
-        if (["order_update", "quotation_update", "design_update"].includes(name) && editorKey in submittedDrafts) {
+        const quotationDateOnly = name === "quotation_update" && Object.keys(payload).every(key => ["version_id", "upload_date"].includes(key));
+        if (quotationDateOnly || name === "attachment_date") {
+          // A file-date acknowledgement must retain unsaved business fields in the same editor.
+          for (const family of ["design", "quotation"] as const) {
+            const records = family === "design" ? value.design_versions : value.quotation_versions;
+            const previousRecords = family === "design" ? current.design_versions : current.quotation_versions;
+            for (const record of records || []) {
+              if (quotationDateOnly ? family !== "quotation" || record.id !== payload.version_id : record.final_attachment_id !== payload.attachment_id) continue;
+              const key = `${cycle}.${family}.${record.id}.edit`;
+              const submitted = submittedDrafts[key] as { source: string; upload_date?: string } | undefined;
+              const edited = updated[key] as typeof submitted;
+              const baseline = submittedBaselines[key] as typeof submitted;
+              if (!submitted || !edited || edited.source !== submitted.source) continue;
+              const source = family === "design" ? JSON.stringify([record, value.final_design_version_id ?? null]) : JSON.stringify(record);
+              const savedDate = record.upload_date || "";
+              const previousDate = previousRecords?.find(row => row.id === record.id)?.upload_date || "";
+              const acknowledgedDate = quotationDateOnly ? submitted.upload_date : previousDate;
+              updated[key] = { ...edited, source, ...(edited.upload_date === acknowledgedDate ? { upload_date: savedDate } : {}) };
+              baselines.current[key] = { ...baseline, source, ...(family === "quotation" || "upload_date" in submitted ? { upload_date: savedDate } : {}) };
+            }
+          }
+        }
+        if (!quotationDateOnly && ["order_update", "quotation_update", "design_update"].includes(name) && editorKey in submittedDrafts) {
           if (unchanged(editorKey)) remove(editorKey);
           else {
             const submitted = submittedDrafts[editorKey] as { source: string };

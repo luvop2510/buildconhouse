@@ -2480,3 +2480,218 @@ def test_lost_customers_are_scoped_and_excluded_from_stage_queues():
             denied = await command(env, lost, "save_visit", {"status": "Visited"}, actor="worker")
             assert denied.status_code == 422
     asyncio.run(run())
+
+
+def test_pdf_record_date_http_and_mongo_persist_before_upload_and_after_replacement(monkeypatch):
+    from media_storage import factory
+
+    class OwnedStorage:
+        objects = {}
+
+        async def require_private_bucket(self, bucket):
+            assert bucket == "forge-private"
+
+        async def exists(self, *, bucket, key):
+            return key in self.objects
+
+        async def upload(self, *, bucket, key, data, **kwargs):
+            self.objects[key] = data
+
+        async def download(self, *, bucket, key):
+            return self.objects[key]
+
+    storage = OwnedStorage()
+    monkeypatch.setattr(factory, "get_media_storage", lambda: storage)
+
+    async def run():
+        async with environment() as env:
+            project = await reach_stage(env, "quotation")
+            route = f"/api/kitchen-projects/{project['id']}"
+            # The ordinary HTTP command creates a date draft without a PDF.
+            response = await command(env, project, "quotation_receive", {
+                "design_version_id": project["final_design_version_id"], "upload_date": "2026-10-27",
+                "pdf_options": [], "final_attachment_id": None, "sent_status": "Yes", "shared_date": "2026-11-17"})
+            assert response.status_code == 200, response.text
+            project = response.json()
+            quote_id = project["quotation_versions"][-1]["id"]
+
+            async def persisted(day):
+                reloaded = await env["api"].get(route, headers=headers(env))
+                assert reloaded.status_code == 200, reloaded.text
+                row = reloaded.json()["quotation_versions"][-1]
+                stored = await env["db"].kitchen_projects.find_one({"id": project["id"]})
+                assert row["upload_date"] == stored["quotation_versions"][-1]["upload_date"] == day
+                assert row["shared_date"] == "2026-11-17"
+                return reloaded.json()
+
+            project = await persisted("2026-10-27")
+            assert project["quotation_versions"][-1]["final_attachment_id"] is None
+            blocked = await command(env, project, "move_stage", {"target_stage": "order"})
+            assert blocked.status_code == 422
+            # Leaving and returning uses the real stage commands and fresh API reads.
+            project = await accepted(env, project, "move_stage", {"target_stage": "design"})
+            project = await accepted(env, project, "move_stage", {"target_stage": "quotation"})
+            project = await persisted("2026-10-27")
+            initial_attachment_count = len(project["attachments"])
+            for index, kind in enumerate(("GI", "Mix")):
+                data = f"%PDF-1.4\nSynthetic historical record {index}".encode()
+                uploaded = await env["api"].post(route + "/attachments", headers=headers(env),
+                    data={"expected_version": str(project["version"]), "idempotency_key": str(uuid4())},
+                    files={"file": (f"record-{index}.pdf", data, "application/pdf")})
+                assert uploaded.status_code == 200, uploaded.text
+                project = uploaded.json()
+                attachment = project["attachments"][-1]
+                stored_upload = await env["db"].kitchen_projects.find_one({"id": project["id"]})
+                assert storage.objects[stored_upload["attachments"][-1]["storage_key"]] == data
+                # Omitting upload_date while changing final PDF must preserve it.
+                project = await accepted(env, project, "quotation_update", {"version_id": quote_id,
+                    "pdf_options": [{"attachment_id": attachment["id"], "kitchen_type": kind}],
+                    "final_attachment_id": attachment["id"]})
+                project = await persisted("2026-10-27")
+            assert len(project["attachments"]) == initial_attachment_count + 2
+            project = await accepted(env, project, "quotation_update", {"version_id": quote_id, "response": "Approved"})
+            quote_before = dict(project["quotation_versions"][-1])
+            attachments_before = list(project["attachments"])
+            # Authorized employees can correct the metadata on an approved record.
+            project = await accepted(env, project, "quotation_update", {"version_id": quote_id, "upload_date": "2026-10-28"}, actor="worker")
+            project = await persisted("2026-10-28")
+            quote_after = project["quotation_versions"][-1]
+            for field, value in quote_before.items():
+                if field not in {"upload_date", "corrected_by", "corrected_at"}:
+                    assert quote_after[field] == value, field
+            for attachment, previous in zip(project["attachments"], attachments_before):
+                expected = {**previous, "upload_date": "2026-10-28"} if attachment["id"] == quote_after["final_attachment_id"] else previous
+                assert attachment == expected
+            old = project
+            key = str(uuid4())
+            project = await accepted(env, project, "quotation_update", {"version_id": quote_id, "upload_date": "2026-10-29"}, key=key)
+            stale = await command(env, old, "quotation_update", {"version_id": quote_id, "upload_date": "2026-10-27"})
+            assert stale.status_code == 409
+            replay = await command(env, old, "quotation_update", {"version_id": quote_id, "upload_date": "2026-10-29"}, key=key)
+            assert replay.status_code == 200 and replay.json()["replayed"]
+            project = await persisted("2026-10-29")
+            before = await env["db"].kitchen_projects.find_one({"id": project["id"]})
+            invalid = await command(env, project, "quotation_update", {"version_id": quote_id, "upload_date": "2026-02-30"})
+            assert invalid.status_code == 422
+            denied = await command(env, project, "quotation_update", {"version_id": quote_id, "upload_date": "2026-10-27"}, actor="denied")
+            assert denied.status_code == 403
+            assert await env["db"].kitchen_projects.find_one({"id": project["id"]}) == before
+    asyncio.run(run())
+
+
+def test_pdf_record_date_correction_accepts_legacy_approved_quotation_without_pdf():
+    async def run():
+        async with environment() as env:
+            project = await reach_stage(env, "quotation")
+            legacy = {"id": str(uuid4()), "number": 1, "response": "Approved", "upload_date": None,
+                "received_date": "2024-01-02", "shared_date": "2024-01-03", "notes": "Legacy historical evidence"}
+            await env["db"].kitchen_projects.update_one({"id": project["id"]}, {"$push": {"quotation_versions": legacy}})
+            before_attachments = (await env["db"].kitchen_projects.find_one({"id": project["id"]}))["attachments"]
+            project = await accepted(env, project, "quotation_update", {"version_id": legacy["id"], "upload_date": "2026-10-27"}, actor="worker")
+            stored = await env["db"].kitchen_projects.find_one({"id": project["id"]})
+            assert stored["quotation_versions"][-1]["upload_date"] == "2026-10-27"
+            for field in ("received_date", "shared_date", "notes", "response"):
+                assert stored["quotation_versions"][-1][field] == legacy[field]
+            assert stored["attachments"] == before_attachments
+    asyncio.run(run())
+
+
+def test_attachment_record_date_preserves_bytes_timestamps_and_business_dates():
+    async def run():
+        async with environment() as env:
+            project = await reach_stage(env, "quotation")
+            design = project["design_versions"][-1]
+            identity = design["final_attachment_id"]
+            before = await env["db"].kitchen_projects.find_one({"id": project["id"]})
+            project = await accepted(env, project, "attachment_date", {"attachment_id": identity, "upload_date": "2026-10-27"})
+            stored = await env["db"].kitchen_projects.find_one({"id": project["id"]})
+            attachment = next(row for row in stored["attachments"] if row["id"] == identity)
+            original = next(row for row in before["attachments"] if row["id"] == identity)
+            assert attachment == {**original, "upload_date": "2026-10-27"}
+            assert stored["design_versions"][-1] == {**before["design_versions"][-1], "upload_date": "2026-10-27"}
+            # A subsequent design save must retain the corrected PDF record date.
+            project = await accepted(env, project, "move_stage", {"target_stage": "design"})
+            project = await accepted(env, project, "design_update", {"version_id": design["id"], "response": "Approved", "reason": "Preserve PDF date", "notes": "Updated note"})
+            assert project["design_versions"][-1]["upload_date"] == "2026-10-27"
+            assert project["design_versions"][-1]["presentation_date"] == design["presentation_date"]
+            # Explicit clearing is preserved through a later ordinary save.
+            project = await accepted(env, project, "attachment_date", {"attachment_id": identity, "upload_date": None})
+            project = await accepted(env, project, "design_update", {"version_id": design["id"], "response": "Approved", "reason": "Preserve cleared PDF date", "notes": "Another note"})
+            assert project["design_versions"][-1]["upload_date"] is None
+            assert next(row for row in project["attachments"] if row["id"] == identity)["upload_date"] is None
+            invalid = await command(env, project, "attachment_date", {"attachment_id": identity, "upload_date": "2026-02-30"})
+            assert invalid.status_code == 422
+            foreign = await command(env, project, "attachment_date", {"attachment_id": "foreign-pdf", "upload_date": "2026-10-27"})
+            assert foreign.status_code == 404
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("stage", ["cad", "design", "quotation", "order", "production", "installation", "completed"])
+def test_pdf_record_date_metadata_round_trip_in_each_kitchen_stage(stage):
+    async def run():
+        async with environment() as env:
+            await configure(env)
+            project = await reach_stage(env, "installation" if stage == "completed" else stage)
+            if stage == "completed":
+                day = project["production"]["completion_date"]
+                project = await accepted(env, project, "installation_update", {"status": "Completed", "start_date": day, "completion_date": day})
+                if project["stage"] != "completed":
+                    project = await accepted(env, project, "approval", {"scope": "closure", "decision": "Approved"}, actor="manager")
+                assert project["stage"] == "completed"
+            attachment = {"id": str(uuid4()), "stage": "installation" if stage == "completed" else stage, "filename": "historical-record.pdf",
+                "content_type": "application/pdf", "uploaded_at": "2026-11-17T02:00:00+00:00",
+                "size_bytes": 100, "sha256": "immutable-content-hash", "bucket": "private-fixture", "storage_key": str(uuid4())}
+            await env["db"].kitchen_projects.update_one({"id": project["id"]}, {"$push": {"attachments": attachment}})
+            before = await env["db"].kitchen_projects.find_one({"id": project["id"]})
+            project = await accepted(env, project, "attachment_date", {"attachment_id": attachment["id"], "upload_date": "2026-10-27"}, actor="worker")
+            reread = await env["api"].get(f"/api/kitchen-projects/{project['id']}", headers=headers(env, "worker"))
+            assert reread.status_code == 200
+            public_file = next(row for row in reread.json()["attachments"] if row["id"] == attachment["id"])
+            assert public_file["upload_date"] == "2026-10-27" and public_file["can_edit_date"]
+            stored = await env["db"].kitchen_projects.find_one({"id": project["id"]})
+            assert stored["attachments"][-1] == {**attachment, "upload_date": "2026-10-27"}
+            for field in ("lead", "visit", "cad", "design_versions", "quotation_versions", "orders", "production", "installation"):
+                assert stored.get(field) == before.get(field), (stage, field)
+    asyncio.run(run())
+
+
+def test_pdf_record_date_enforces_source_stage_permissions_and_project_ownership():
+    from services.access_grants import build_grant
+
+    async def run():
+        async with environment() as env:
+            project = await reach_stage(env, "quotation")
+            identity = project["design_versions"][-1]["final_attachment_id"]
+            await env["db"].kitchen_projects.update_one({"id": project["id"], "attachments.id": identity}, {"$set": {"attachments.$.stage": "design"}})
+            grant = build_grant(user_id=env["ids"]["worker"], resource="kitchen_quotation", actions=["view", "update"],
+                floor_id="second-floor", expires_at=None, actor_id=env["ids"]["owner"], actor_name="Synthetic owner")
+            await env["db"].users.update_one({"id": env["ids"]["worker"]}, {"$set": {"delegation_grants": [grant]}})
+            reread = await env["api"].get(f"/api/kitchen-projects/{project['id']}", headers=headers(env, "worker"))
+            assert reread.status_code == 200
+            file = next(row for row in reread.json()["attachments"] if row["id"] == identity)
+            assert file["can_edit_date"] is False
+            before = await env["db"].kitchen_projects.find_one({"id": project["id"]})
+            denied = await command(env, project, "attachment_date", {"attachment_id": identity, "upload_date": "2026-10-27"}, actor="worker")
+            assert denied.status_code == 403
+            foreign = await command(env, project, "attachment_date", {"attachment_id": str(uuid4()), "upload_date": "2026-10-27"})
+            assert foreign.status_code == 404
+            assert await env["db"].kitchen_projects.find_one({"id": project["id"]}) == before
+    asyncio.run(run())
+
+
+def test_pdf_date_metadata_keeps_earlier_cycle_and_historical_version_dates():
+    async def run():
+        async with environment() as env:
+            project = await reach_stage(env, "quotation")
+            identity = project["design_versions"][-1]["final_attachment_id"]
+            rows = [
+                {"id": str(uuid4()), "number": 1, "workflow_cycle": 0, "final_attachment_id": identity, "upload_date": "2024-01-02"},
+                {"id": str(uuid4()), "number": 2, "workflow_cycle": 1, "final_attachment_id": identity, "upload_date": "2025-02-03"},
+                {"id": str(uuid4()), "number": 3, "workflow_cycle": 1, "final_attachment_id": identity, "upload_date": "2026-03-04"},
+            ]
+            await env["db"].kitchen_projects.update_one({"id": project["id"]}, {"$set": {"quotation_versions": rows}})
+            project = await accepted(env, project, "attachment_date", {"attachment_id": identity, "upload_date": "2026-10-27"})
+            stored = await env["db"].kitchen_projects.find_one({"id": project["id"]})
+            assert stored["quotation_versions"][:2] == rows[:2]
+            assert stored["quotation_versions"][-1] == {**rows[-1], "upload_date": "2026-10-27"}
+    asyncio.run(run())

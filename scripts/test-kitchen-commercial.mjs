@@ -91,6 +91,7 @@ assert.equal(view.control('kitchen-quotation-receive').props.disabled, true);
 assert.equal(view.control('kitchen-complete-design'), undefined);
 assert.equal(view.nodes.some(node => node.type === 'document'), false);
 function chooseQuotation(view, kitchenType = 'GI', id = 'file') {
+  if (!view.control('kitchen-quotation-upload-date').props.value) view.control('kitchen-quotation-upload-date').props.onChange('2026-10-19');
   view.control(`kitchen-quotation-${kitchenType}-pdf`).props.onAdd(id);
   view = view.refresh();
   view.control(`kitchen-quotation-${kitchenType}-pdf`).props.onSelect(id);
@@ -127,6 +128,7 @@ view.control('kitchen-quotation-GI-pdf').props.onAdd('file');
 view = view.refresh(undefined, false);
 assert.equal(view.control('kitchen-quotation-shared-date').props.value, '2026-10-26', 'A temporary upload lock cannot erase the untouched automatic quotation date when the first PDF initializes the draft');
 view.control('kitchen-quotation-GI-pdf').props.onSelect('file');
+view.control('kitchen-quotation-upload-date').props.onChange('2026-10-27');
 view.control('kitchen-quotation-sent').props.onChange('Yes');
 view.control('kitchen-version-response').props.onChange('Approved');
 view = view.refresh();
@@ -155,7 +157,7 @@ for (const response of ['Pending', 'Approved']) {
     const locked = response === 'Approved' && !owner;
     assert.equal(view.control('kitchen-quotation-GI-pdf').props.disabled, locked, `Saved ${response} PDF chooser lock for ${owner ? 'owner' : 'staff'}`);
     assert.equal(view.control('kitchen-quotation-sent').props.disabled, locked);
-    assert.equal(view.control('kitchen-quotation-upload-date').props.disabled, locked);
+    assert.equal(view.control('kitchen-quotation-upload-date').props.disabled, false, 'Authorized staff can edit PDF metadata independently from approved commercial fields');
     assert.equal(view.control('kitchen-version-response').props.disabled, locked);
   }
 }
@@ -663,3 +665,28 @@ assert.equal(limitedInstallation.control('kitchen-installation-notes').props.val
 limitedInstallation.control('kitchen-installation-notes').props.onChangeText('Edited installation note');
 await limitedInstallation.refresh().control('kitchen-installation-save').props.onPress();
 assert.equal(installationCalls[0][1].notes,'Edited installation note','Installation notes remain editable and saved');
+
+// Date entry before any PDF is uploaded uses the normal Pending quotation save.
+view = render('quotation');
+assert.equal(view.control('kitchen-quotation-upload-date').props.disabled, false);
+assert.equal(view.control('kitchen-quotation-upload-date').props.value, '');
+view.control('kitchen-quotation-upload-date').props.onChange('2026-10-27');
+view = view.refresh();
+assert.equal(view.control('kitchen-quotation-upload-date').props.value, '2026-10-27');
+assert.equal(view.control('kitchen-quotation-receive').props.disabled, false);
+await view.control('kitchen-quotation-receive').props.onPress();
+assert.equal(calls.at(-1)[1].upload_date, '2026-10-27');
+assert.deepEqual(calls.at(-1)[1].pdf_options, []);
+view.control('kitchen-quotation-Mix-pdf').props.onAdd('mix-file');
+view = view.refresh();
+view.control('kitchen-quotation-Mix-pdf').props.onSelect('mix-file');
+view = view.refresh();
+assert.equal(view.control('kitchen-quotation-upload-date').props.value, '2026-10-27', 'Adding and selecting a PDF preserves the historical date');
+view = render('quotation', { quotation_versions: [{ ...quotation, upload_date: '2026-10-19' }] });
+view.control('kitchen-quotation-upload-date').props.onChange('2026-10-27');
+view = view.refresh();
+await view.control('kitchen-quotation-upload-date-save').props.onPress();
+assert.deepEqual(calls.pop(), ['quotation_update', { version_id: quotation.id, upload_date: '2026-10-27' }]);
+view = view.refresh(undefined, true);
+assert.equal(view.control('kitchen-quotation-upload-date').props.disabled, false, 'An unrelated save does not lock date entry');
+console.log('Kitchen quotation PDF dates: preupload, historical editing, replacement preservation and metadata-only payload passed');

@@ -16,7 +16,7 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 from pymongo.errors import DuplicateKeyError, ExecutionTimeout
 
-from models_kitchen import (AdvancePayload, CadFields, ConfigurePolicy,
+from models_kitchen import (AdvancePayload, AttachmentDate, CadFields, ConfigurePolicy,
                             LeadCustomer, LeadFields, LostPayload, MetadataPayload, PolicyFields, STAGES, VisitFields, AssignmentPayload)
 from services import kitchen_access as access
 from services import kitchen_workflow as workflow
@@ -403,6 +403,8 @@ class KitchenProjectService:
         for scope in ("production", "closure"):
             result["permissions"][f"can_approve_{scope}"] = access.department_manager(user, policy) and result["permissions"]["can_update"]
         result["permissions"]["can_approve_exceptions"] = access.owner(user)
+        for attachment in result.get("attachments", []):
+            attachment["can_edit_date"] = result["permissions"]["can_update"] and access.attachment_date_allowed(user, project, attachment)
         index = STAGES.index(project["stage"])
         blocked = []
         if not summary and index < len(STAGES) - 1:
@@ -850,6 +852,25 @@ class KitchenProjectService:
                 "reason": review.reason, "reviewed_by": user.id, "reviewed_at": timestamp()}
             if review.decision == "duplicate":
                 updated["lead"].update(status="Lost", lost_reason=review.reason)
+        elif command == "attachment_date":
+            body_date = validate(AttachmentDate, payload)
+            attachment = next((row for row in updated["attachments"] if row["id"] == body_date.attachment_id), None)
+            if not attachment or not access.is_pdf(attachment):
+                raise HTTPException(404, "Kitchen PDF attachment not found")
+            visible = access.visible_attachment_ids(project, user)
+            if visible is not None and attachment["id"] not in visible:
+                raise HTTPException(404, "Kitchen PDF attachment not found")
+            if not access.attachment_date_allowed(user, project, attachment):
+                raise HTTPException(403, "Changing this Kitchen PDF date is not permitted")
+            attachment["upload_date"] = body_date.upload_date
+            # A record date describes the PDF; business dates and immutable byte
+            # provenance remain independent when its calendar date is corrected.
+            for key in ("design_versions", "quotation_versions"):
+                row = next((row for row in reversed(updated.get(key, []))
+                    if row.get("workflow_cycle", 1) == updated.get("workflow_cycle", 1)
+                    and (row.get("final_attachment_id") or row.get("attachment_id")) == attachment["id"]), None)
+                if row:
+                    row["upload_date"] = body_date.upload_date
         elif command == "metadata":
             updated.update(validate(MetadataPayload, payload).model_dump(exclude_unset=True))
         elif command in workflow.COMMANDS:
@@ -880,7 +901,7 @@ class KitchenProjectService:
             workflow.apply(updated, command, payload, policy, user, timestamp(), validate)
         else:
             raise HTTPException(422, "Unsupported Kitchen command")
-        if project["stage"] == "completed" and command not in {"exception", "move_stage", "order_installment", "order_installment_edit", "order_installment_delete", "order_material_arrived"}:
+        if project["stage"] == "completed" and command not in {"exception", "move_stage", "attachment_date", "order_installment", "order_installment_edit", "order_installment_delete", "order_material_arrived"}:
             raise HTTPException(422, "The owner must explicitly reopen a completed project before editing it")
         if updated["stage"] != project["stage"] and command not in {"exception", "move_stage"}:
             required = required_fields_error(updated, project["stage"], policy)
@@ -899,6 +920,10 @@ class KitchenProjectService:
         for field in ("lead", "visit", "cad", "production", "installation", "assignments", "next_action", "deadline", "target_completion_date", "duplicate_review", "lifecycle_status", "lost_customer", "workflow_cycle", "commercial_basis_invalidated", "manual_stage_navigation", "completion_date", "closure_pending_reason", "customer_order_confirmation", "final_design_version_id"):
             if project.get(field) != updated.get(field):
                 record["changes"][field] = {"before": project.get(field), "after": updated.get(field)}
+        if command == "attachment_date":
+            record["subject_id"] = payload["attachment_id"]
+            before_attachment = next(row for row in project["attachments"] if row["id"] == payload["attachment_id"])
+            record["changes"]["upload_date"] = {"before": before_attachment.get("upload_date"), "after": payload["upload_date"]}
         if command in workflow.COMMANDS:
             record["subject_id"] = payload.get("version_id") or payload.get("quotation_version_id") or payload.get("design_version_id")
             if command in {"order_installment_edit", "order_installment_delete"}:

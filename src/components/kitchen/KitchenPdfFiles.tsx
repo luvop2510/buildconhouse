@@ -4,7 +4,7 @@ import * as DocumentPicker from "expo-document-picker";
 import { Text } from "@/src/components/AppText";
 import { kitchenProjectsApi, type KitchenAttachment, type KitchenOwnFileTransfer, type KitchenProject } from "@/src/api/kitchenProjects";
 import { ErrorNotice, displayDate } from "./shared";
-import { KitchenOption } from "./KitchenFilters";
+import { KitchenDateField, KitchenOption } from "./KitchenFilters";
 import { useKitchenDraft, useKitchenProject } from "./KitchenProjectState";
 import { downloadKitchenFile, uploadKitchenFile, KITCHEN_MAX_PDF_BYTES, KITCHEN_MAX_FILE_BYTES } from "./KitchenFileTransport";
 import { KitchenButton as Button, kitchenType as type } from "./KitchenPrimitives";
@@ -13,7 +13,24 @@ import { colors, spacing } from "@/src/theme/tokens";
 import { KitchenFileDrop } from "./KitchenFileDrop";
 import { subscribeApiCacheInvalidation } from "@/src/api/client";
 
-export function KitchenPdfFile({ project, file, selected, onSelect, disabled, testID, photo = false, bordered = false }: { bordered?: boolean; photo?: boolean; project: KitchenProject; file: KitchenAttachment; selected?: boolean; onSelect?: () => void; disabled?: boolean; testID: string }) {
+export function KitchenPdfRecordDate({ project, file, testID }: { project: KitchenProject; file: KitchenAttachment; testID: string }) {
+  const { command, submission, documentSubmission, deletionReview, reload } = useKitchenProject();
+  const savedDate = file.upload_date === undefined ? kitchenApprovalDate(file.uploaded_at) || "" : file.upload_date || "";
+  const [date, setDate] = useKitchenDraft(`documents.attachment.${file.id}.date`, savedDate);
+  const saving = useRef(false);
+  return <View style={{ gap: spacing.sm }}>
+    <KitchenDateField label="PDF upload date" value={date} onChange={setDate} defaultToToday={false} disabled={deletionReview} testID={`${testID}-date`} />
+    <Button label="Save PDF date" variant="secondary" disabled={deletionReview || submission.busy || documentSubmission.busy || date === savedDate} onPress={async () => {
+      if (saving.current) return;
+      saving.current = true;
+      try { await command("attachment_date", { attachment_id: file.id, upload_date: date || null }); }
+      finally { saving.current = false; }
+    }} testID={`${testID}-date-save`} />
+    <ErrorNotice error={submission.error} stale={submission.stale} onReload={reload} />
+  </View>;
+}
+
+export function KitchenPdfFile({ project, file, selected, onSelect, disabled, testID, photo = false, bordered = false, editableDate = true }: { editableDate?: boolean; bordered?: boolean; photo?: boolean; project: KitchenProject; file: KitchenAttachment; selected?: boolean; onSelect?: () => void; disabled?: boolean; testID: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const pending = useRef(false);
@@ -59,11 +76,14 @@ export function KitchenPdfFile({ project, file, selected, onSelect, disabled, te
     } catch (failure) { setError(failure instanceof Error ? failure.message : "Could not prepare the PDF. Try again."); }
     finally { pending.current = false; setBusy(false); }
   };
-  if (restricted && !canOpen && !canDownload) return null;
-  const uploadDate = file.upload_date || kitchenApprovalDate(file.uploaded_at) || "";
+  const uploadDate = file.upload_date === undefined ? kitchenApprovalDate(file.uploaded_at) || "" : file.upload_date || "";
+  const canEditDate = editableDate && !photo && (file.can_edit_date ?? (project.permissions?.can_update !== false && !project.lifecycle_status
+    && (!file.stage || file.stage === project.stage) && (!restricted || !["design", "quotation"].includes(project.stage) || project.permissions?.can_choose_pdf === true)));
+  if (restricted && !canOpen && !canDownload) return canEditDate ? <KitchenPdfRecordDate project={project} file={file} testID={testID} /> : null;
   return <View style={[{ gap: spacing.sm }, bordered && { borderWidth: 1, borderColor: colors.borderStrong, borderRadius: 6, padding: spacing.s12, backgroundColor: colors.surfaceSecondary }]} testID={testID}>
     <Text style={type.bodyStrong}>{file.filename}{selected ? " · Finalize PDF" : ""}</Text>
-    <Text style={type.caption}>Uploaded: {uploadDate ? displayDate(uploadDate) : "Historical date not recorded"}</Text>
+    {canEditDate ? <KitchenPdfRecordDate project={project} file={file} testID={testID} /> : !photo ? <Text style={type.caption}>PDF upload date: {uploadDate ? displayDate(uploadDate) : "Not recorded"}</Text> : null}
+    <Text style={type.caption}>Uploaded: {file.uploaded_at ? displayDate(file.uploaded_at) : "Historical date not recorded"}</Text>
     <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
       {onSelect ? <KitchenOption label={selected ? "Finalize PDF · Selected" : "Finalize PDF"} accessibilityLabel={`Finalize PDF: ${file.filename}`} active={selected} disabled={disabled} onPress={onSelect} testID={`${testID}-final`} /> : null}
       {canOpen ? <Button label={photo ? "Open photo" : "Open PDF"} variant="secondary" disabled={busy} onPress={() => void download(true)} testID={`${testID}-open`} /> : null}
@@ -78,7 +98,7 @@ type PdfTransfer = Pick<KitchenOwnFileTransfer, "project_id" | "transfer_id" | "
 
 /** Uploads attach private files; the parent explicitly saves its PDF selection. */
 export function KitchenPdfFiles({ project, attachmentIds, finalId, onAdd, onSelect, disabled, selectionDisabled = false, label, testID, draftKey, fileKind = "pdf", finalProduction = false }: { finalProduction?: boolean; fileKind?: "pdf" | "photo"; project: KitchenProject; attachmentIds: string[]; finalId: string; onAdd: (id: string) => void | boolean | Promise<void | boolean>; onSelect?: (id: string) => void; disabled: boolean; selectionDisabled?: boolean; label?: string; testID: string; draftKey: string }) {
-  const { policy, documentSubmission: submission, updateProject, reload } = useKitchenProject();
+  const { policy, documentSubmission: submission, updateProject, reload, command, resetDraftValue, deletionReview } = useKitchenProject();
   const photo = fileKind === "photo";
   const restricted = !photo && project.permissions?.restricted;
   const canChoose = !restricted || !finalProduction && project.permissions?.can_choose_pdf === true;
@@ -87,6 +107,11 @@ export function KitchenPdfFiles({ project, attachmentIds, finalId, onAdd, onSele
   const [picked, setPicked] = useKitchenDraft<DocumentPicker.DocumentPickerAsset | null>(`${draftKey}.picked`, null);
   const [photoQueue, setPhotoQueue] = useKitchenDraft<DocumentPicker.DocumentPickerAsset[]>(`${draftKey}.photoQueue`, []);
   const [uploadedFile, setUploadedFile] = useKitchenDraft<{ id: string; fingerprint: string } | null>(`${draftKey}.uploaded`, null);
+  const previousFile = project.attachments?.find(file => file.id === project.production?.final_attachment_id);
+  const initialDate = finalProduction && previousFile ? previousFile.upload_date === undefined ? kitchenApprovalDate(previousFile.uploaded_at) : previousFile.upload_date || "" : undefined;
+  const [recordDate, setRecordDate] = useKitchenDraft<string | undefined>(`${draftKey}.recordDate`, initialDate);
+  const currentRecordDate = useRef(recordDate);
+  currentRecordDate.current = recordDate;
   const [progress, setProgress] = useState(0);
   const scopeKey = `${project.id}:${draftKey}`;
   const scope = useRef({ key: scopeKey, live: true });
@@ -154,6 +179,11 @@ export function KitchenPdfFiles({ project, attachmentIds, finalId, onAdd, onSele
         if (!uploaded || !addedFileId || !active()) return;
       }
       setProgress(100);
+      const submittedDate = currentRecordDate.current;
+      if (!photo && submittedDate !== undefined) {
+        const dated = await command("attachment_date", { attachment_id: addedFileId, upload_date: submittedDate || null });
+        if (!dated || !active()) return;
+      }
       const accepted = await onAdd(addedFileId);
       if (!active()) return;
       if (accepted === false) {
@@ -161,6 +191,7 @@ export function KitchenPdfFiles({ project, attachmentIds, finalId, onAdd, onSele
         return;
       }
       setPicked(photo ? photoQueue[0] || null : null); setPhotoQueue(photoQueue.slice(1)); setUploadedFile(null); setProgress(0);
+      if (!photo && currentRecordDate.current === submittedDate) resetDraftValue(`${draftKey}.recordDate`);
     } catch (failure) {
       if (active()) submission.setError(`${failure instanceof Error ? failure.message : `The ${noun} entry could not be saved.`} Your file selection has been kept.`);
     } finally { pending.current = false; if (active()) setOperation(null); }
@@ -182,7 +213,8 @@ export function KitchenPdfFiles({ project, attachmentIds, finalId, onAdd, onSele
   return <View style={[{ gap: spacing.md }, quotationSection && { borderWidth: 1, borderColor: colors.borderStrong, borderRadius: 8, padding: spacing.s16, backgroundColor: colors.surfaceSubtle }]} testID={testID}>
     {label ? <Text style={type.bodyStrong}>{label}</Text> : null}
     {!disabled && canChoose ? <Text style={type.caption}>{photo ? "JPG or PNG · Up to 25 MB per photo. Select multiple photos or add more at any time." : finalProduction ? "PDF" : "PDF · Up to 10 MB (10,000,000 bytes) per file."}</Text> : null}
-    {included.map(file => <KitchenPdfFile key={file.id} project={project} file={file} photo={photo} bordered={quotationSection} selected={!photo && file.id === finalId} onSelect={photo || !onSelect ? undefined : () => onSelect(file.id)} disabled={disabled || selectionDisabled || busy} testID={`${testID}-${file.id}`} />)}
+    {included.map(file => <KitchenPdfFile key={file.id} project={project} file={file} photo={photo} bordered={quotationSection} editableDate selected={!photo && file.id === finalId} onSelect={photo || !onSelect ? undefined : () => onSelect(file.id)} disabled={disabled || selectionDisabled || busy} testID={`${testID}-${file.id}`} />)}
+    {!photo && canChoose && project.permissions?.can_update !== false && !project.lifecycle_status ? <KitchenDateField label="PDF upload date" value={recordDate || ""} onChange={setRecordDate} defaultToToday={false} disabled={deletionReview} testID={`${testID}-upload-date`} /> : null}
     {!disabled && canChoose ? <>
       {!photo ? <KitchenFileDrop pdfOnly disabled={busy || !policy?.files} onChoose={() => void pick()} onFile={file => { submission.clearFeedback(); setPicked(file); setPhotoQueue([]); setUploadedFile(null); }} onError={submission.setError} /> : null}
       <Button label={photo ? "Choose photo" : label ? `Choose ${label} PDF` : "Choose PDF"} variant="secondary" disabled={busy || !policy?.files} onPress={pick} testID={`${testID}-pick`} />

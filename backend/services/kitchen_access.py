@@ -90,6 +90,19 @@ def require_upload(user, project, content_type):
         raise HTTPException(403, "File upload is not permitted")
 
 
+def attachment_date_allowed(user, project, metadata):
+    stage = project.get("stage")
+    source_stage = metadata.get("stage") or stage
+    if (not is_pdf(metadata) or project.get("lifecycle_status")
+            or stage not in allowed_stages(user, "update") or source_stage not in semantic_stages(user, "update")):
+        return False
+    try:
+        require_attachment(user, project, metadata, "choose")
+    except HTTPException:
+        return False
+    return True
+
+
 def final_pdf_ids(project, stage):
     if stage == "design":
         identity = project.get("final_design_version_id")

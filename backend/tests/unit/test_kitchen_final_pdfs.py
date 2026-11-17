@@ -104,7 +104,8 @@ def test_multiple_quote_types_select_only_one_with_its_own_upload_date(setup):
     assert quote["upload_date"] == quote["received_date"] == "2026-10-25"
     assert quote["received_status"] == "Yes" and quote["amount"] is None
     apply(project, "quotation_update", {"version_id": quote["id"], "final_attachment_id": "mix"}, owner)
-    assert quote["kitchen_type"] == "Mix" and quote["received_date"] == "2026-10-26"
+    assert quote["kitchen_type"] == "Mix"
+    assert quote["upload_date"] == quote["received_date"] == "2026-10-25"
 
 
 
@@ -115,7 +116,8 @@ def test_quote_upload_date_can_be_corrected_and_stays_with_selected_pdf(setup):
     quote = project["quotation_versions"][-1]
     assert quote["upload_date"] == quote["received_date"] == "2026-10-18"
     apply(project, "quotation_update", {"version_id": quote["id"], "upload_date": "2026-10-19"}, owner)
-    assert quote["upload_date"] == quote["received_date"] == "2026-10-19"
+    assert quote["upload_date"] == "2026-10-19"
+    assert quote["received_date"] == "2026-10-18"
     apply(project, "quotation_update", {"version_id": quote["id"], "notes": "Preserve date"}, owner)
     assert quote["upload_date"] == "2026-10-19"
     with pytest.raises(ValidationError):
@@ -127,7 +129,7 @@ def test_quote_type_is_mandatory_and_cannot_be_supplied_separately():
     with pytest.raises(ValidationError):
         QuotationReceived(**quotation_fields(kitchen_type="SS"))
     with pytest.raises(ValidationError):
-        DesignPresentation(**design_fields(upload_date="2000-01-01"))
+        DesignPresentation(**design_fields(upload_date="2026-02-30"))
 
 
 @pytest.mark.parametrize("status", [None, "No", "Not recorded"])
@@ -381,3 +383,16 @@ async def test_existing_customer_historical_pdfs_save_reload_replay_and_advance(
     assert loaded["design_versions"][0]["handoff_date"] == "2025-01-12"
     assert loaded["quotation_versions"][0]["shared_date"] == "2025-01-13"
     assert len(loaded["design_versions"]) == len(loaded["quotation_versions"]) == 1
+
+
+def test_design_record_date_inherits_explicit_attachment_date_without_changing_presentation(setup):
+    _, _, owner = setup
+    project = aggregate("design")
+    project["design_versions"] = []
+    file = next(row for row in project["attachments"] if row["id"] == "design-pdf")
+    file["upload_date"] = "2026-10-01"
+    apply(project, "design_present", design_fields(handoff_status="No"), owner)
+    row = project["design_versions"][-1]
+    assert row["upload_date"] == "2026-10-01"
+    assert row["presentation_date"] == "2026-10-20"
+    assert file["uploaded_at"] == "2026-10-20T00:00:00+00:00"

@@ -69,14 +69,23 @@ def pdf_selection(project, fields, *, quotation=False):
         row = attachments.get(identity)
         if not row or row.get("content_type") != "application/pdf" or not recorded_day(row.get("uploaded_at")):
             reject("Select uploaded PDF files belonging to this project with a recorded upload date")
-    day = (fields.get("upload_date") if quotation else None) or recorded_day(attachments[final]["uploaded_at"])
+    day = fields["upload_date"] if "upload_date" in fields else attachments[final].get("upload_date", recorded_day(attachments[final]["uploaded_at"]))
     result = {"final_attachment_id": final, "attachment_id": final, "url": None, "upload_date": day}
     if quotation:
         result.update(pdf_options=options, kitchen_type=next(row["kitchen_type"] for row in options if row["attachment_id"] == final),
-                      received_date=day, received_status="Yes")
+                      received_date=fields.get("received_date") or day, received_status="Yes")
     else:
-        result.update(attachment_ids=ids, presentation_date=day)
+        result.update(attachment_ids=ids, presentation_date=recorded_day(attachments[final]["uploaded_at"]))
     return result
+
+
+def set_pdf_record_date(project, row, day):
+    row["upload_date"] = day
+    identity = row.get("final_attachment_id") or row.get("attachment_id")
+    attachment = next((file for file in project.get("attachments", [])
+        if file["id"] == identity and file.get("content_type") == "application/pdf"), None)
+    if attachment and day != attachment.get("upload_date", recorded_day(attachment.get("uploaded_at"))):
+        attachment["upload_date"] = day
 
 
 def finalized_design(project, version_id=False):
@@ -261,6 +270,8 @@ def apply(project, command, payload, policy, user, now, validate):
             reject("Production has started; use the owner-authorized Return to Design workflow")
         version = record({**body.model_dump(exclude={"reason"}),
             "workflow_cycle": project.get("workflow_cycle", 1), "number": max((row.get("number") or 0 for row in project["design_versions"]), default=0) + 1})
+        if "upload_date" not in body.model_fields_set:
+            version.pop("upload_date", None)
         version.update(pdf_selection(project, version))
         if len(version["attachment_ids"]) != 1:
             reject("Each uploaded PDF creates one design version; upload designs separately")
@@ -278,6 +289,7 @@ def apply(project, command, payload, policy, user, now, validate):
         if version["handoff_date"]:
             version["handoff_by"] = user.id
         project["design_versions"].append(version)
+        set_pdf_record_date(project, version, version["upload_date"])
         if version["response"] == "Approved" and version["handoff_status"] == "Yes":
             project["final_design_version_id"] = version["id"]
         if body.response != "Pending":
@@ -338,6 +350,8 @@ def apply(project, command, payload, policy, user, now, validate):
             row["handoff_by"] = user.id
         row.update(body.model_dump(exclude_unset=True, exclude={"version_id", "reason", "revision_count", "approval_date", "response_notes", "finalize"}))
         row.update(pdf_fields)
+        if "upload_date" in row:
+            set_pdf_record_date(project, row, row["upload_date"])
         if pdf_fields:
             row["handoff_date"] = handoff_date
         if pdf_fields or "handoff_status" in body.model_fields_set or "handoff_date" in body.model_fields_set:
@@ -430,6 +444,12 @@ def apply(project, command, payload, policy, user, now, validate):
         editing = command == "quotation_update"
         body = validate(QuotationUpdate if editing else QuotationReceived, payload)
         row = selected(project, "quotation_versions", body.version_id) if editing else {}
+        # Record-date corrections are metadata only. Historical/missing PDF
+        # references and commercial approval locks must not require a re-upload.
+        if editing and body.model_fields_set == {"version_id", "upload_date"}:
+            set_pdf_record_date(project, row, body.upload_date)
+            row["corrected_by"], row["corrected_at"] = user.id, now
+            return
         started = production_has_started(project)
         if started and editing and (row.get("workflow_cycle", 1) != project.get("workflow_cycle", 1)
                 or any(order.get("quotation_version_id") == row.get("id") for order in project.get("orders", []))):
@@ -440,7 +460,11 @@ def apply(project, command, payload, policy, user, now, validate):
             reject("Only the owner can correct an approved quotation")
         fields = body.model_dump(exclude_unset=True, exclude={"version_id"}) if editing else body.model_dump()
         proposed = {**row, **fields}
-        pdf_workflow = (not editing or bool(row.get("final_attachment_id"))
+        if not editing and "upload_date" not in body.model_fields_set:
+            proposed.pop("upload_date", None)
+        date_draft = (not proposed.get("pdf_options") and not proposed.get("final_attachment_id")
+            and bool(proposed.get("upload_date")) and proposed.get("response", "Pending") == "Pending")
+        pdf_workflow = not date_draft and (not editing or bool(row.get("final_attachment_id"))
             or bool({"pdf_options", "final_attachment_id"}.intersection(body.model_fields_set))
             or proposed.get("response") == "Approved" and row.get("response") != "Approved")
         design = (finalized_design if pdf_workflow else approved_design)(project, proposed.get("design_version_id"))
@@ -450,8 +474,8 @@ def apply(project, command, payload, policy, user, now, validate):
             reject("Choose the finalized design version for this quotation")
         bound_orders = [o for o in project.get("orders", []) if o.get("quotation_version_id") == row.get("id") and not o.get("authorization_invalidated")]
         if pdf_workflow:
-            if editing and proposed.get("final_attachment_id") != row.get("final_attachment_id") and "upload_date" not in body.model_fields_set:
-                proposed.pop("upload_date", None)
+            if not editing:
+                proposed.pop("received_date", None)
             proposed.update(pdf_selection(project, proposed, quotation=True))
         if editing and bound_orders and pdf_workflow:
             previous_pdf = pdf_selection(project, row, quotation=True)
@@ -479,6 +503,8 @@ def apply(project, command, payload, policy, user, now, validate):
             row = record({**proposed,
                 "number": max((row.get("number") or 0 for row in project["quotation_versions"]), default=0) + 1, "workflow_cycle": project.get("workflow_cycle", 1)})
             project["quotation_versions"].append(row)
+        if "upload_date" in row:
+            set_pdf_record_date(project, row, row["upload_date"])
         if row.get("shared_date") and (not editing or before.get("shared_date") != row.get("shared_date")):
             row["shared_by"] = user.id
         if row.get("response") != before.get("response", "Pending"):

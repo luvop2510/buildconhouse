@@ -5,7 +5,7 @@ if (origin.protocol !== 'http:' || origin.hostname !== '127.0.0.1' || !origin.po
   throw new Error('Run scripts/test-kitchen-e2e.mjs; Kitchen persistence acceptance requires its owned loopback API.');
 }
 const workflow = ['home-customer-search.spec.ts', 'kitchen-stage-followups.spec.ts', 'kitchen-order-production.spec.ts', 'kitchen-search-dashboard.spec.ts', 'redesign-kitchen-projects.spec.ts', 'kitchen-responsive-interactions.spec.ts', 'kitchen-release-review.spec.ts', 'kitchen-note-fields.spec.ts', 'kitchen-version-workflow.spec.ts', 'kitchen-autosave.spec.ts', 'kitchen-draft-autosave.spec.ts', 'kitchen-date-defaults.spec.ts', 'kitchen-keyboard-stability.spec.ts'];
-workflow.push('kitchen-customer-updates.spec.ts');
+workflow.push('kitchen-customer-updates.spec.ts', 'kitchen-pdf-record-dates.spec.ts', 'kitchen-pdf-stage-dates.spec.ts');
 const matrix = 'kitchen-route-matrix.spec.ts';
 export default defineConfig({
   testDir: './e2e', testMatch: [...workflow, matrix],
