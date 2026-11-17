@@ -30,18 +30,20 @@ export function QuotationStage({ project, disabled, command }: { project: Kitche
 function QuotationForm({ project, quote, seed, revision = false, disabled, command, onRevisionSaved }: { project: KitchenProject; quote?: KitchenVersion; seed?: KitchenVersion; revision?: boolean; disabled: boolean; command: StageCommand; onRevisionSaved: () => void }) {
   const prefix = `commercial.cycle.${project.workflow_cycle ?? 1}.quotation.${revision ? `revision.${seed?.id}` : quote?.id || "new"}.edit`;
   const saving = useRef(false);
-  const { resetDraftValue, documentSubmission } = useKitchenProject();
+  const { resetDraftValue, documentSubmission, submission, deletionReview } = useKitchenProject();
   const source = JSON.stringify(quote || null);
   const savedDesign = project.design_versions?.find(row => row.id === quote?.design_version_id);
   const savedHistorical = Boolean(savedDesign && (savedDesign.workflow_cycle ?? 1) !== (project.workflow_cycle ?? 1));
   const boundOrder = Boolean(quote && (quote.order_bound || !project.commercial_basis_invalidated && project.orders?.some(row => row.quotation_version_id === quote.id && !row.authorization_invalidated) || project.access_scoped && quote.order_bound === undefined && kitchenProductionStarted(project)));
   const readOnly = project.stage !== "quotation" || Boolean(project.lifecycle_status) || boundOrder && kitchenProductionStarted(project) || savedHistorical || project.permissions?.can_update === false || quote?.response === "Approved" && !project.permissions?.can_approve_exceptions;
   const locked = disabled || readOnly;
+  const dateLocked = deletionReview || project.stage !== "quotation" || Boolean(project.lifecycle_status) || savedHistorical || project.permissions?.can_update === false;
   // An upload temporarily disables controls; it must not clear a proposed date.
   const defaultDate = readOnly ? "" : kitchenToday();
   const initial = quote || seed;
   const initialFile = project.attachments?.find(file => file.id === initial?.final_attachment_id);
-  const [draft, setDraft] = useKitchenDraft(prefix, { source, pdf_options: initial?.pdf_options || [] as KitchenPdfOption[], final_attachment_id: initial?.final_attachment_id || "", upload_date: initial?.upload_date || initialFile?.upload_date || kitchenApprovalDate(initialFile?.uploaded_at) || "", sent_status: revision ? "No" : quote?.sent_status === "No" ? "No" : quote?.sent_status === "Yes" || quote?.shared_date ? "Yes" : "No", shared_date: revision ? defaultDate : quote?.shared_date || defaultDate, response: revision ? "Pending" : quote?.response || "Pending" });
+  const savedUploadDate = initial?.upload_date !== undefined ? initial.upload_date || "" : initialFile?.upload_date !== undefined ? initialFile.upload_date || "" : kitchenApprovalDate(initialFile?.uploaded_at) || "";
+  const [draft, setDraft] = useKitchenDraft(prefix, { source, pdf_options: initial?.pdf_options || [] as KitchenPdfOption[], final_attachment_id: initial?.final_attachment_id || "", upload_date: savedUploadDate, sent_status: revision ? "No" : quote?.sent_status === "No" ? "No" : quote?.sent_status === "Yes" || quote?.shared_date ? "Yes" : "No", shared_date: revision ? defaultDate : quote?.shared_date || defaultDate, response: revision ? "Pending" : quote?.response || "Pending" });
   const update = (key: "sent_status" | "shared_date" | "response" | "upload_date", value: string) => setDraft(previous => ({ ...previous, [key]: value }));
   // A working quotation follows the explicit final design. Recorded order chains
   // retain their original IDs until an authorized order change is confirmed.
@@ -57,16 +59,44 @@ function QuotationForm({ project, quote, seed, revision = false, disabled, comma
   const uploadDate = draft.upload_date ?? (finalFile?.upload_date || kitchenApprovalDate(finalFile?.uploaded_at) || "");
   const sharedDate = draft.sent_status === "Yes" ? draft.shared_date : "";
   const noPdfChoice = Boolean(project.permissions?.restricted && !project.permissions.can_choose_pdf);
-  const problem = !noPdfChoice && !draft.pdf_options.length ? "Upload at least one GI, SS or Mix quotation PDF." : !noPdfChoice && (!finalOption || !finalFile) ? "Select one finalized PDF and its kitchen type." : !noPdfChoice && !uploadDate ? "Enter the PDF upload date." : draft.response !== "Pending" && (draft.sent_status !== "Yes" || !sharedDate) ? "Record sent to customer and its date before a customer response." : null;
+  const dateDraft = !draft.pdf_options.length && !draft.final_attachment_id && draft.response === "Pending" && Boolean(uploadDate);
+  const problem = !noPdfChoice && !dateDraft && !draft.pdf_options.length ? "Enter the PDF record date or upload a quotation PDF." : !noPdfChoice && !dateDraft && (!finalOption || !finalFile) ? "Select one finalized PDF and its kitchen type." : !noPdfChoice && !uploadDate ? "Enter the PDF upload date." : draft.response !== "Pending" && (draft.sent_status !== "Yes" || !sharedDate) ? "Record sent to customer and its date before a customer response." : null;
+  const saveQuotation = async () => {
+    if (saving.current) return;
+    saving.current = true;
+    try {
+      const { source: _source, ...fields } = draft;
+      const identity = quote ? { version_id: quote.id } : { design_version_id: designId };
+      const payload = noPdfChoice ? {
+        ...identity,
+        upload_date: uploadDate || null,
+        sent_status: draft.sent_status,
+        shared_date: sharedDate || null,
+        response: draft.response,
+      } : {
+        ...fields,
+        ...identity,
+        design_version_id: designId,
+        final_attachment_id: draft.final_attachment_id || null,
+        upload_date: uploadDate || null,
+        shared_date: sharedDate || null,
+      };
+      const saved = await command(quote ? "quotation_update" : "quotation_receive", payload);
+      if (saved && revision) onRevisionSaved();
+    } finally {
+      saving.current = false;
+    }
+  };
   return <View style={{ gap: spacing.md }}>
     {!project.permissions?.restricted ? <Text style={type.bodyStrong}>Finalized design{displayedDesign ? ` · Design ${displayedDesign.number}` : ""}</Text> : null}
     {!project.permissions?.restricted && finalizedDesignFile ? <KitchenPdfFile project={project} file={finalizedDesignFile} selected testID="kitchen-quotation-final-design" /> : !project.permissions?.restricted ? <Text style={type.bodyMuted}>No finalized design PDF selected.</Text> : null}
     {quote && !boundOrder && savedDesign?.id !== designId ? <Text style={type.caption}>This quotation was saved against Design {savedDesign?.number ?? "unavailable"}. Saving quotation details applies the current finalized design{design ? `, Design ${design.number}` : ""}.</Text> : null}
     {boundOrder && !project.permissions?.restricted ? <Text style={type.caption}>This finalized quotation is used by an order. Its recorded PDF and kitchen type are preserved.</Text> : null}
     {stale ? <><Text style={type.bodyMuted}>This quotation changed while you were editing. Your entries are kept.</Text><Button label="Replace draft with latest quotation details" variant="secondary" onPress={() => resetDraftValue(prefix)} testID="kitchen-quotation-edit-reload" /></> : null}
-    {(["GI", "SS", "Mix"] as const).map(kitchenType => <KitchenPdfFiles key={kitchenType} project={project} attachmentIds={draft.pdf_options.filter(option => option.kitchen_type === kitchenType).map(option => option.attachment_id)} finalId={draft.final_attachment_id} onAdd={id => setDraft(previous => ({ ...previous, pdf_options: [...previous.pdf_options.filter(option => option.attachment_id !== id), { attachment_id: id, kitchen_type: kitchenType }], ...(project.permissions?.restricted ? { final_attachment_id: id, upload_date: kitchenToday() } : {}) }))} onSelect={id => setDraft(previous => { const file = project.attachments?.find(item => item.id === id); return { ...previous, final_attachment_id: id, upload_date: id === previous.final_attachment_id ? previous.upload_date : file?.upload_date || kitchenApprovalDate(file?.uploaded_at) || "" }; })} disabled={locked} selectionDisabled={boundOrder} label={kitchenType} testID={`kitchen-quotation-${kitchenType}-pdf`} draftKey={`${prefix}.pdf.${kitchenType}`} />)}
+    {(["GI", "SS", "Mix"] as const).map(kitchenType => <KitchenPdfFiles key={kitchenType} project={project} attachmentIds={draft.pdf_options.filter(option => option.kitchen_type === kitchenType).map(option => option.attachment_id)} finalId={draft.final_attachment_id} onAdd={id => setDraft(previous => ({ ...previous, pdf_options: [...previous.pdf_options.filter(option => option.attachment_id !== id), { attachment_id: id, kitchen_type: kitchenType }], ...(project.permissions?.restricted ? { final_attachment_id: id } : {}) }))} onSelect={id => setDraft(previous => ({ ...previous, final_attachment_id: id }))} disabled={locked} selectionDisabled={boundOrder} label={kitchenType} testID={`kitchen-quotation-${kitchenType}-pdf`} draftKey={`${prefix}.pdf.${kitchenType}`} />)}
     {!noPdfChoice ? <KitchenDetails items={[{ label: "Final kitchen type", value: finalOption?.kitchen_type || "Select one finalized PDF" }]} testID="kitchen-quotation-final-selection" /> : null}
-    {!project.permissions?.restricted ? <KitchenDateField label="PDF upload date" value={uploadDate} onChange={value => update("upload_date", value)} disabled={locked || !finalFile} defaultToToday={false} testID="kitchen-quotation-upload-date" /> : null}
+    <KitchenDateField label="PDF upload date" value={uploadDate} onChange={value => update("upload_date", value)} disabled={dateLocked} defaultToToday={false} testID="kitchen-quotation-upload-date" />
+    {quote ? <Button label="Save PDF upload date" variant="secondary" disabled={dateLocked || submission.busy || documentSubmission.busy || stale || uploadDate === savedUploadDate} onPress={() => command("quotation_update", { version_id: quote.id, upload_date: uploadDate || null })} testID="kitchen-quotation-upload-date-save" /> : null}
     <Choice label="Quotation sent to customer" value={draft.sent_status} values={["Yes", "No"]} onChange={value => update("sent_status", value)} disabled={locked} testID="kitchen-quotation-sent" />
     <KitchenDateField label="Quotation date sent to customer" value={draft.shared_date} onChange={value => update("shared_date", value)} disabled={locked} testID="kitchen-quotation-shared-date" />
     {draft.response === "Rejected" ? <Text style={type.caption}>Saved customer response: Rejected. Select a choice to change it.</Text> : null}
@@ -74,6 +104,6 @@ function QuotationForm({ project, quote, seed, revision = false, disabled, comma
     <Choice label="Customer response" value={draft.response} values={["Pending", "Approved", "Changes Required"]} onChange={value => update("response", value)} disabled={locked || revision} testID="kitchen-version-response" />
     {problem ? <Text accessibilityRole="alert" style={type.bodyMuted}>{problem}</Text> : null}
     {quote?.response === "Approved" && !project.permissions?.can_approve_exceptions ? <Text style={type.caption}>Only the owner can correct an approved quotation.</Text> : null}
-    {project.stage === "quotation" ? <Button label={"Save quotation details"} disabled={locked || documentSubmission.busy || stale || Boolean(requirement && !noPdfChoice) || Boolean(problem) || noPdfChoice && !quote} onPress={async () => { if (saving.current) return; saving.current = true; try { const { source: _source, ...fields } = draft; if (noPdfChoice && quote) { const saved = await command("quotation_update", { version_id: quote.id, sent_status: draft.sent_status, shared_date: sharedDate || null, response: draft.response }); if (saved && revision) onRevisionSaved(); return; } const saved = await command(quote ? "quotation_update" : "quotation_receive", { ...fields, design_version_id: designId, ...(quote ? { version_id: quote.id } : {}), upload_date: uploadDate || null, shared_date: sharedDate || null }); if (saved && revision) onRevisionSaved(); } finally { saving.current = false; } }} testID={quote ? "kitchen-quotation-edit-save" : "kitchen-quotation-receive"} /> : null}
+    {project.stage === "quotation" ? <Button label={"Save quotation details"} disabled={locked || documentSubmission.busy || stale || Boolean(requirement && !noPdfChoice) || Boolean(problem) || noPdfChoice && !quote && !dateDraft} onPress={saveQuotation} testID={quote ? "kitchen-quotation-edit-save" : "kitchen-quotation-receive"} /> : null}
   </View>;
 }

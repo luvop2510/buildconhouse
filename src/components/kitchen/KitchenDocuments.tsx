@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Platform, View } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
 import { Text } from "@/src/components/AppText";
@@ -13,6 +13,7 @@ import { spacing, type } from "@/src/theme/tokens";
 import { visibleKitchenDocuments } from "./KitchenDocumentScope";
 import { KitchenFileDrop } from "./KitchenFileDrop";
 import { KitchenPdfFile } from "./KitchenPdfFiles";
+import { KitchenDateField } from "./KitchenFilters";
 
 export function DocumentChoice({ project, value, onChange, disabled, label = "Project document" }: { project: KitchenProject; value: string; onChange: (value: string) => void; disabled?: boolean; label?: string }) {
   const [open, setOpen] = useState(false);
@@ -25,8 +26,13 @@ export function DocumentChoice({ project, value, onChange, disabled, label = "Pr
   </View>;
 }
 export function KitchenDocuments({ project, policy, disabled, onUpdated, onReload }: { project: KitchenProject; policy: KitchenPolicy | null; disabled: boolean; onUpdated: (value: KitchenProject) => void; onReload: () => void }) {
-  const { documentSubmission: submission } = useKitchenProject();
+  const { documentSubmission: submission, submission: recordSubmission, command, resetDraftValue, deletionReview } = useKitchenProject();
   const [picked, setPicked] = useKitchenDraft<DocumentPicker.DocumentPickerAsset | null>("documents.picked", null);
+  const [recordDate, setRecordDate] = useKitchenDraft<string | undefined>("documents.uploadDate", undefined);
+  const [uploadedFile, setUploadedFile] = useKitchenDraft<{ id: string; fingerprint: string } | null>("documents.uploaded", null);
+  const latestDate = useRef(recordDate);
+  latestDate.current = recordDate;
+  const uploadPending = useRef(false);
   const [savingFile, setSavingFile] = useState(false);
   const setTransferError = submission.setError;
   const [progress, setProgress] = useState(0);
@@ -36,24 +42,50 @@ export function KitchenDocuments({ project, policy, disabled, onUpdated, onReloa
   const files = policy?.files;
   const canUpload = !disabled;
   const pick = async () => {
-    try { const result = await DocumentPicker.getDocumentAsync({ type: "*/*", copyToCacheDirectory: true, multiple: false }); if (!result.canceled) { submission.clearFeedback(); setPicked(result.assets[0]); } }
+    try { const result = await DocumentPicker.getDocumentAsync({ type: "*/*", copyToCacheDirectory: true, multiple: false }); if (!result.canceled) { submission.clearFeedback(); setPicked(result.assets[0]); setUploadedFile(null); } }
     catch { submission.setError("The file picker could not open. Try again."); }
   };
-  const upload = () => {
-    if (!picked || !files) return;
+  const upload = async () => {
+    if (!picked || !files || uploadPending.current) return;
     if (!/\.(pdf|jpe?g|png|docx|xlsx)$/i.test(picked.name)) { submission.setError("Choose a PDF, JPG/JPEG, PNG, DOCX or XLSX file. The server also validates its content."); return; }
     const pdf = /\.pdf$/i.test(picked.name) || picked.mimeType === "application/pdf";
     const maximum = Math.min(files.max_bytes, pdf ? KITCHEN_MAX_PDF_BYTES : KITCHEN_MAX_FILE_BYTES);
     if (!picked.size || picked.size > maximum) { submission.setError(`Choose a nonempty ${pdf ? "PDF up to 10 MB" : "file up to 25 MB"} (${maximum.toLocaleString()} bytes).`); return; }
-    void submission.submit({ id: project.id, uri: picked.uri, name: picked.name, size: picked.size }, async key => {
-      if (picked.size! > (files.single_request_max_bytes || 768 * 1024)) return uploadKitchenFile(project, picked, key, setProgress, transfer_id => setUnfinished({ transfer_id, project_id: project.id }));
-      const form = new FormData(); form.append("expected_version", String(project.version)); form.append("idempotency_key", key);
-      if (Platform.OS === "web") {
-        if (!picked.file) throw new Error("The original selected file is unavailable. Choose it again.");
-        form.append("file", picked.file, picked.name);
-      } else form.append("file", { uri: picked.uri, type: picked.mimeType || "application/octet-stream", name: picked.name } as unknown as Blob);
-      return kitchenProjectsApi.upload(project.id, form);
-    }, value => { setPicked(null); setUnfinished(null); setProgress(0); onUpdated(value); });
+    const input = { id: project.id, uri: picked.uri, name: picked.name, size: picked.size };
+    const fingerprint = JSON.stringify(input);
+    let addedFileId = uploadedFile?.fingerprint === fingerprint ? uploadedFile.id : undefined;
+    uploadPending.current = true;
+    setSavingFile(true);
+    try {
+      if (!addedFileId) {
+        const accepted = await submission.submit(input, async key => {
+          if (picked.size! > (files.single_request_max_bytes || 768 * 1024)) return uploadKitchenFile(project, picked, key, setProgress, transfer_id => setUnfinished({ transfer_id, project_id: project.id }));
+          const form = new FormData(); form.append("expected_version", String(project.version)); form.append("idempotency_key", key);
+          if (Platform.OS === "web") {
+            if (!picked.file) throw new Error("The original selected file is unavailable. Choose it again.");
+            form.append("file", picked.file, picked.name);
+          } else form.append("file", { uri: picked.uri, type: picked.mimeType || "application/octet-stream", name: picked.name } as unknown as Blob);
+          return kitchenProjectsApi.upload(project.id, form);
+        }, value => {
+          onUpdated(value);
+          setUnfinished(null);
+          const uploadedEvent = [...(value.activity || [])].reverse().find(row => row.type === "attachment.added" && row.payload?.filename === picked.name);
+          const file = value.attachments?.find(row => row.id === uploadedEvent?.payload?.attachment_id)
+            || value.attachments?.find(row => !project.attachments?.some(previous => previous.id === row.id) && row.filename === picked.name)
+            || value.attachments?.filter(row => row.filename === picked.name && row.size_bytes === picked.size).at(-1);
+          addedFileId = file?.id;
+          if (file) setUploadedFile({ id: file.id, fingerprint });
+          else submission.setError("The file uploaded, but its saved entry could not be identified. Reload Kitchen and retry.");
+        });
+        if (!accepted || !addedFileId) return;
+      }
+      const submittedDate = latestDate.current;
+      if (pdf && submittedDate !== undefined) {
+        if (!await command("attachment_date", { attachment_id: addedFileId, upload_date: submittedDate || null })) return;
+      }
+      setPicked(null); setUploadedFile(null); setProgress(0);
+      if (latestDate.current === submittedDate) resetDraftValue("documents.uploadDate");
+    } finally { uploadPending.current = false; setSavingFile(false); }
   };
   return <View style={{ gap: spacing.lg }} testID="kitchen-documents-page"><KitchenPanel title="Private documents">
     {visibleAttachments.map(file => file.content_type === "application/pdf" ? <KitchenPdfFile key={file.id} project={project} file={file} testID={`kitchen-document-${file.id}`} /> : <View key={file.id} style={{ gap: spacing.sm }}><Text style={type.body}>{file.filename} · {Math.ceil(file.size_bytes / 1024)} KiB</Text><Button label={`Download ${file.filename}`} variant="secondary" disabled={savingFile} onPress={() => { setSavingFile(true); void (file.size_bytes > 768 * 1024 ? downloadKitchenFile(project.id, file, setProgress) : downloadApiFile(kitchenProjectsApi.attachmentPath(project.id, file.id), file.filename, "project document", KITCHEN_FLOOR_ID)).catch(error => submission.setError(error instanceof Error ? error.message : "File download failed. Retry the download.")).finally(() => { setSavingFile(false); setProgress(0); }); }} /></View>)}
@@ -61,10 +93,12 @@ export function KitchenDocuments({ project, policy, disabled, onUpdated, onReloa
   </KitchenPanel><KitchenPanel title="Add a document">
     <Text style={type.bodyMuted}>Files remain private. Sharing with the customer is recorded in the relevant stage.</Text>
     {!files ? <Alert tone="info" title="Upload settings unavailable" description="Ask the owner to complete Kitchen setup." /> : <Text style={type.caption}>PDF up to 10 MB (10,000,000 bytes); JPG/JPEG, PNG, DOCX or XLSX up to 25 MB (25,000,000 bytes). Larger files transfer in private, verified parts.</Text>}
-    {canUpload && files ? <><KitchenFileDrop disabled={submission.busy} onChoose={() => void pick()} onFile={file => { submission.clearFeedback(); setPicked(file); }} onError={submission.setError} /><Button label="Choose document" variant="secondary" disabled={submission.busy} onPress={() => void pick()} testID="kitchen-document-pick" />{picked ? <><Text style={type.body}>{picked.name}</Text><Button label="Upload selected document" loading={submission.busy} onPress={upload} testID="kitchen-document-upload" /></> : null}</> : null}
+    {project.permissions?.can_update !== false && !project.lifecycle_status ? <KitchenDateField label="PDF upload date" value={recordDate || ""} onChange={setRecordDate} defaultToToday={false} disabled={deletionReview} testID="kitchen-document-upload-date" /> : null}
+    {canUpload && files ? <><KitchenFileDrop disabled={submission.busy || savingFile} onChoose={() => void pick()} onFile={file => { submission.clearFeedback(); setPicked(file); setUploadedFile(null); }} onError={submission.setError} /><Button label="Choose document" variant="secondary" disabled={submission.busy || savingFile} onPress={() => void pick()} testID="kitchen-document-pick" />{picked ? <><Text style={type.body}>{picked.name}</Text><Button label={uploadedFile ? "Retry saving document date" : "Upload selected document"} loading={submission.busy || savingFile} onPress={upload} testID="kitchen-document-upload" /></> : null}</> : null}
     {unfinished && !submission.busy ? <Alert tone="info" title="Unfinished file transfer" description="Choose the same file and retry to resume safely, or discard its temporary parts. No file is attached until verification finishes." action={<Button label="Discard unfinished upload" variant="secondary" onPress={() => { void submission.submit({ project_id: unfinished.project_id, transfer_id: unfinished.transfer_id, discard: true }, () => kitchenProjectsApi.cancelTransfer(unfinished.project_id, unfinished.transfer_id), () => setUnfinished(null)); }} testID="kitchen-file-discard" />} /> : null}
   </KitchenPanel>
     {(submission.busy || savingFile) && progress > 0 ? <Text accessibilityLiveRegion="polite" style={type.body} testID="kitchen-file-progress">File transfer {progress}%{progress === 95 ? " · Verifying and saving…" : ""}</Text> : null}
     <ErrorNotice error={submission.error} stale={submission.stale} onReload={onReload} />
+    <ErrorNotice error={recordSubmission.error} stale={recordSubmission.stale} onReload={onReload} />
   </View>;
 }

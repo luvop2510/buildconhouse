@@ -365,3 +365,42 @@ console.log('Kitchen stage progress identifies the destination and clears after 
   assert.equal(view.state.dirty, false);
 }
 console.log('A section-limited handoff returns to the authorized queue without rendering a partial project.');
+
+for (const commandName of ['quotation_update', 'attachment_date']) {
+  const key = 'commercial.cycle.1.quotation.quote.edit';
+  const quote = { id: 'quote', final_attachment_id: 'pdf', upload_date: '2026-11-17', sent_status: 'No', response: 'Pending' };
+  const original = { ...initial, stage: 'quotation', quotation_versions: [quote], attachments: [{ id: 'pdf', upload_date: quote.upload_date }] };
+  const baseline = { source: JSON.stringify(quote), upload_date: quote.upload_date, sent_status: 'No', shared_date: '', response: 'Pending' };
+  const typed = { ...baseline, upload_date: commandName === 'quotation_update' ? '2026-10-27' : quote.upload_date, sent_status: 'Yes', shared_date: '2026-11-16' };
+  const view = await harness(source, original);
+  view.state.setDraftValue(key, baseline, typed);
+  view.render();
+  const payload = commandName === 'quotation_update' ? { version_id: quote.id, upload_date: '2026-10-27' } : { attachment_id: 'pdf', upload_date: '2026-10-27' };
+  const pending = view.state.command(commandName, payload);
+  const committed = { ...quote, upload_date: '2026-10-27' };
+  view.settle({ ...original, version: 8, quotation_versions: [committed], attachments: [{ id: 'pdf', upload_date: '2026-10-27' }] });
+  assert.equal(await pending, true);
+  const result = view.render();
+  assert.deepEqual(result.drafts[key], { ...typed, source: JSON.stringify(committed), upload_date: '2026-10-27' }, `${commandName}: PDF date save keeps unsaved quotation sent fields`);
+  assert.equal(result.dirty, true, `${commandName}: unsaved quotation business fields stay dirty`);
+}
+{
+  const key = 'commercial.cycle.1.quotation.quote.edit';
+  const quote = { id: 'quote', final_attachment_id: 'pdf', upload_date: '2026-11-17', response: 'Pending' };
+  const original = { ...initial, stage: 'quotation', quotation_versions: [quote] };
+  const baseline = { source: JSON.stringify(quote), upload_date: quote.upload_date, response: 'Pending' };
+  const first = { ...baseline, upload_date: '2026-10-27' };
+  const view = await harness(source, original);
+  view.state.setDraftValue(key, baseline, first); view.render();
+  const pending = view.state.command('quotation_update', { version_id: 'quote', upload_date: first.upload_date });
+  view.state.setDraftValue(key, baseline, { ...first, upload_date: '2026-10-28' });
+  const committed = { ...quote, upload_date: first.upload_date };
+  view.settle({ ...original, version: 8, quotation_versions: [committed] }); await pending;
+  assert.equal(view.render().drafts[key].upload_date, '2026-10-28', 'Date-only response retains a newer PDF date typed during saving');
+  assert.equal(view.state.dirty, true);
+  const next = view.state.command('quotation_update', { version_id: 'quote', upload_date: '2026-10-28' });
+  assert.equal(view.writes.at(-1).version, 8);
+  view.settle({ ...original, version: 9, quotation_versions: [{ ...quote, upload_date: '2026-10-28' }] }); await next;
+  assert.equal(view.render().dirty, false, 'Latest date becomes saved only after its backend acknowledgement');
+}
+console.log('PDF metadata acknowledgements preserve unrelated quotation drafts, rebase sources and retain newer date typing.');

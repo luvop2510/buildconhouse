@@ -138,7 +138,7 @@ class ProjectCommand(StrictModel):
     command: Literal["mark_lost", "edit_lead", "convert", "save_visit", "save_cad", "advance_stage", "move_stage", "assign", "metadata",
                      "design_present", "design_update", "design_share", "design_response", "design_revision", "design_handoff",
                      "quotation_receive", "quotation_update", "quotation_share", "quotation_response", "order_confirm", "order_confirmation", "order_update", "order_advance",
-                     "order_installment", "order_installment_edit", "order_installment_delete", "order_material_arrived", "installation_material_photos", "order_amend", "order_status", "order_document", "exception", "production_update", "production_document", "installation_update", "site_visit", "approval", "review_duplicate"]
+                     "order_installment", "order_installment_edit", "order_installment_delete", "order_material_arrived", "installation_material_photos", "order_amend", "order_status", "order_document", "exception", "production_update", "production_document", "installation_update", "site_visit", "approval", "review_duplicate", "attachment_date"]
     payload: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -279,7 +279,14 @@ class DocumentPayload(StrictModel):
         return value
 
 
+class AttachmentDate(StrictModel):
+    attachment_id: Identifier
+    upload_date: str | None
+    _date = field_validator("upload_date", mode="before")(date_only)
+
+
 class DesignPresentation(DocumentPayload):
+    upload_date: str | None = None
     attachment_ids: list[Identifier] = Field(default_factory=list, max_length=100)
     final_attachment_id: Identifier | None = None
     requirements: Text | None = None
@@ -291,10 +298,11 @@ class DesignPresentation(DocumentPayload):
     handoff_date: str | None = None
     handoff_status: Literal["Not recorded", "Yes", "No"] | None = None
     reason: Text | None = None
-    _dates = field_validator("presentation_date", "shared_date", "approval_date", "handoff_date", mode="before")(date_only)
+    _dates = field_validator("upload_date", "presentation_date", "shared_date", "approval_date", "handoff_date", mode="before")(date_only)
 
 
 class DesignUpdate(StrictModel):
+    upload_date: str | None = None
     finalize: StrictBool = False
     attachment_ids: list[Identifier] | None = Field(default=None, max_length=100)
     final_attachment_id: Identifier | None = None
@@ -311,7 +319,7 @@ class DesignUpdate(StrictModel):
     budget_discussion: Text | None = None
     revision_count: Annotated[StrictInt, Field(ge=0, le=100000)] | None = None
     reason: Annotated[str, Field(min_length=1, max_length=4000)]
-    _dates = field_validator("presentation_date", "shared_date", "handoff_date", "approval_date", mode="before")(date_only)
+    _dates = field_validator("upload_date", "presentation_date", "shared_date", "handoff_date", "approval_date", mode="before")(date_only)
 
 
 class VersionDate(StrictModel):

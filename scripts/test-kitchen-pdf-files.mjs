@@ -7,7 +7,7 @@ let state=[],cursor=0,drafts={},pickedAsset,error=null,uploaded=[],updated=[],ad
 const current={id:'project',version:4,attachments:[]};
 const uploadedFile={id:'pdf1',filename:'GI.pdf',size_bytes:1000,content_type:'application/pdf',uploaded_at:'2026-10-28T20:00:00Z'};
 const submission={busy:false,clearFeedback(){error=null;},setError(value){error=value;},async submit(_input,work,accept){try{accept(await work('receipt'));return true;}catch(failure){error=failure.message;return false;}}};
-const context={policy:{files:{max_bytes:25_000_000}},documentSubmission:submission,updateProject:value=>updated.push(value),reload:()=>{}};
+const context={submission,resetDraftValue:key=>{delete drafts[key];},command:async()=>true,policy:{files:{max_bytes:25_000_000}},documentSubmission:submission,updateProject:value=>updated.push(value),reload:()=>{}};
 const modules={
   react:{useState(initial){const i=cursor++;if(!(i in state))state[i]=initial;return[state[i],next=>{state[i]=typeof next==='function'?next(state[i]):next;}];},useRef(initial){const i=cursor++;return state[i]||=( {current:initial});},useEffect(work,deps){const i=cursor++;const previous=state[i];if(!previous||deps.some((value,index)=>value!==previous.deps[index])){previous?.cleanup?.();const effect={deps};state[i]=effect;effects.push(()=>{effect.cleanup=work();});}}},
   'react/jsx-runtime':{jsx:element,jsxs:element,Fragment:'fragment'},
@@ -16,7 +16,7 @@ const modules={
   '@/src/components/AppText':{Text:'text'},
   '@/src/api/kitchenProjects':{kitchenProjectsApi:{ownTransfer:async()=>({transfer:transferResult}),cancelTransfer:async(...args)=>{cancelled.push(args);await cancelWork();transferResult=null;return{discarded:true};}}},
   './shared':{ErrorNotice:'error',displayDate:value=>value},
-  './KitchenFilters':{KitchenOption:'option',KitchenSelect:'select'},
+  './KitchenFilters':{KitchenDateField:'date',KitchenOption:'option',KitchenSelect:'select'},
   './KitchenFileDrop':{KitchenFileDrop:'drop'},
   '@/src/api/client':{subscribeApiCacheInvalidation:()=>()=>{}},
   './KitchenPrimitives':{KitchenButton:'button',kitchenType:{}},
@@ -37,7 +37,7 @@ pickedAsset={name:'GI.pdf',size:1000,uri:'synthetic',mimeType:'application/pdf'}
 let view=render();await view.control('pdf-pick').props.onPress();view=render();await view.control('pdf-upload').props.onPress();
 for(let i=0;i<5;i++)await Promise.resolve();
 assert.equal(uploaded.length,1);assert.equal(uploaded[0][0].version,4);assert.deepEqual(added,['pdf1']);assert.deepEqual(selected,[],'An upload cannot silently finalize a PDF');assert.equal(updated[0].version,5,'The next command receives the acknowledged project version');
-props={...props,project:updated[0],attachmentIds:['pdf1']};view=render();assert.match(view.text,/Uploaded: 2026-10-29/,'Upload date uses the server timestamp in India');
+props={...props,project:updated[0],attachmentIds:['pdf1']};view=render();assert.equal(view.control('pdf-pdf1-date').props.value,'2026-10-29','Historical fallback uses the server timestamp in India');
 view.control('pdf-pdf1-final').props.onPress();assert.deepEqual(selected,['pdf1']);
 await view.control('pdf-pdf1-open').props.onPress();view=render();assert.match(view.text,/Allow this browser to open a PDF preview/,'Blocked previews give a useful retry error');
 props={...props,finalId:'pdf1',disabled:true};view=render();assert.equal(view.control('pdf-pick'),undefined);assert.equal(view.control('pdf-pdf1-final').props.disabled,true);assert.ok(view.control('pdf-pdf1-download'),'Historical PDFs remain downloadable');
@@ -148,3 +148,34 @@ assert.deepEqual(scopeExports.visibleKitchenDocuments({stage:'installation',perm
 assert.deepEqual(scopeExports.visibleKitchenDocuments({stage:'order',permissions:{restricted:true},attachments:stageFiles}),[]);
 assert.deepEqual(scopeExports.visibleKitchenDocuments({stage:'installation',permissions:{restricted:false},attachments:stageFiles}),stageFiles);
 console.log('Kitchen installation documents: restricted accounts see installation-stage files only; unrestricted accounts retain all files.');
+
+// The same card and upload-date path serves every Kitchen stage and PDF type.
+state=[];drafts={};uploadWork=undefined;submission.busy=false;
+const dateCommands=[];
+context.command=async(name,payload)=>{dateCommands.push([name,payload]);return true;};
+for(const stage of ['lead','visit','cad','design','quotation','order','production','installation','completed']) {
+  state=[];drafts={};
+  props={...props,project:{...current,stage,attachments:[{...uploadedFile,stage,upload_date:null}]},attachmentIds:['pdf1'],finalId:'pdf1',label:undefined,finalProduction:false,disabled:false,draftKey:`${stage}.pdf`};
+  view=render();
+  assert.equal(view.control('pdf-pdf1-date').props.value,'',`${stage}: explicit blank stays blank despite actual upload timestamp`);
+  view.control('pdf-pdf1-date').props.onChange('2026-10-27');view=render();
+  assert.equal(view.control('pdf-pdf1-date').props.value,'2026-10-27',`${stage}: historical date immediately updates`);
+  submission.busy=true;view=render();
+  assert.ok(!view.control('pdf-pdf1-date').props.disabled,`${stage}: an unrelated save leaves date entry editable`);
+  assert.equal(view.control('pdf-pdf1-date-save').props.disabled,true);
+  submission.busy=false;view=render();await view.control('pdf-pdf1-date-save').props.onPress();
+  assert.deepEqual(dateCommands.at(-1),['attachment_date',{attachment_id:'pdf1',upload_date:'2026-10-27'}]);
+}
+for(const label of [undefined,'GI','SS','Mix']) {
+  state=[];drafts={};
+  props={...props,project:{...current,stage:label?'quotation':'design'},attachmentIds:[],finalId:'',label,draftKey:`new.${label || 'design'}`,onAdd:id=>added.push(id)};
+  view=render();view.control('pdf-upload-date').props.onChange('2026-10-27');view=render();
+  pickedAsset={name:'GI.pdf',size:1000,uri:`record-date-${label}`,mimeType:'application/pdf'};
+  await view.control('pdf-pick').props.onPress();view=render();await view.control('pdf-upload').props.onPress();
+  assert.deepEqual(dateCommands.at(-1),['attachment_date',{attachment_id:'pdf1',upload_date:'2026-10-27'}],`${label || 'design'}: selected preupload date is persisted after byte acknowledgement`);
+  assert.equal(uploadResult.attachments[0].uploaded_at,'2026-10-28T20:00:00Z','Recording a historical PDF date preserves the actual upload timestamp');
+}
+state=[];drafts={};
+props={...props,project:{...current,stage:'order',production:{final_attachment_id:'pdf1'},attachments:[{...uploadedFile,upload_date:'2026-10-27'}]},attachmentIds:['pdf1'],label:undefined,finalProduction:true,draftKey:'production.replace',onAdd:async()=>true};
+view=render();assert.equal(view.control('pdf-upload-date').props.value,'2026-10-27','Replacing a final production PDF retains its existing record date by default');
+console.log('Kitchen PDF record dates: all nine stage cards, blank preservation, historical selection, unrelated saves, Design/GI/SS/Mix preupload dates and production replacement passed.');
