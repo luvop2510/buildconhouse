@@ -92,6 +92,18 @@ const query = (values: Record<string, string | number | undefined>) => {
 export function kitchenRequestKey() {
   return `kitchen:${globalThis.crypto?.randomUUID?.() || `${Date.now()}:${Math.random().toString(36).slice(2)}:${Math.random().toString(36).slice(2)}`}`;
 }
+export function kitchenCreateOutcomeUncertain(error: unknown) {
+  const failure = error as { status?: number; name?: string };
+  return failure?.name === "AbortError" || failure?.status === 408 || (failure?.status || 0) >= 500;
+}
+async function kitchenCreationStatus(key: string) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 3000);
+  try {
+    const result = await api.get<{ project: KitchenProject | null }>(`/kitchen-projects/creation-status${query({ key })}`, { ...options, signal: controller.signal });
+    return result.project;
+  } finally { clearTimeout(timer); }
+}
 export const kitchenProjectsApi = {
   followups: (id: string, stage?: KitchenStage, page = 1, signal?: AbortSignal) => api.get<KitchenPage<KitchenStageFollowup>>(`/kitchen-projects/${encodeURIComponent(id)}/follow-ups${query({ stage, page, limit: 30 })}`, { ...options, signal }),
   addFollowup: (id: string, body: { stage: KitchenStage; date: string; notes: string; interaction_type: "Visit" | "Call"; idempotency_key: string }) => api.post<KitchenStageFollowup>(`/kitchen-projects/${encodeURIComponent(id)}/follow-ups`, body, options),
@@ -112,7 +124,25 @@ export const kitchenProjectsApi = {
   duplicates: (customerId: string, signal?: AbortSignal) => api.get<{ rows: { id: string; reference: string; stage: KitchenStage }[] }>(`/kitchen-projects/duplicate-candidates?customer_id=${encodeURIComponent(customerId)}`, { ...options, signal }),
   list: (values: KitchenQuery, signal?: AbortSignal) => api.get<KitchenPage<KitchenProject>>(`/kitchen-projects${query(values)}`, { ...options, signal }),
   get: (id: string, signal?: AbortSignal) => api.get<KitchenProject>(`/kitchen-projects/${encodeURIComponent(id)}`, { ...options, signal }),
-  create: (body: KitchenCreate) => api.post<KitchenProject>("/kitchen-projects", body, options),
+  create: async (body: KitchenCreate, retry = false) => {
+    // Check the operation, never a customer's name/phone: matching contacts can
+    // represent distinct leads. An absent row is not proof a prior write stopped,
+    // so an explicit retry still sends the original body and operation key.
+    if (retry) {
+      const saved = await kitchenCreationStatus(body.idempotency_key);
+      if (saved) return saved;
+    }
+    try { return await api.post<KitchenProject>("/kitchen-projects", body, options); }
+    catch (error) {
+      // Identity/workspace aborts must not start a read under the new context.
+      if (!kitchenCreateOutcomeUncertain(error) || (error as { name?: string })?.name === "AbortError") throw error;
+      try {
+        const saved = await kitchenCreationStatus(body.idempotency_key);
+        if (saved) return saved;
+      } catch { /* Keep the original error and receipt for an explicit retry. */ }
+      throw error;
+    }
+  },
   command: async (id: string, expectedVersion: number, key: string, command: KitchenCommand, payload: Record<string, unknown>) => {
     try {
       return await api.post<KitchenProject>(`/kitchen-projects/${encodeURIComponent(id)}/commands`, { expected_version: expectedVersion, idempotency_key: key, command, payload }, options);

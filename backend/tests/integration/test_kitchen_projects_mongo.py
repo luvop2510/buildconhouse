@@ -281,7 +281,7 @@ async def reach_stage(env, target):
     return project
 
 
-def test_inline_lead_intake_uses_one_floor_local_contact_and_retries_without_duplication():
+def test_inline_lead_intake_keeps_distinct_contacts_and_retries_without_duplication():
     async def run():
         async with environment() as env:
             path = "/api/kitchen-projects"
@@ -304,17 +304,17 @@ def test_inline_lead_intake_uses_one_floor_local_contact_and_retries_without_dup
             second = await env["api"].post(path, json={**body, "customer": {"name": "Different typed name", "phone": "9888800123", "address": "Another inline site"},
                                                       "idempotency_key": str(uuid4())}, headers=headers(env))
             assert second.status_code == 200, second.text
-            assert second.json()["customer_id"] == project["customer_id"]
-            assert second.json()["customer"]["name"] == "New inline enquiry"
+            assert second.json()["customer_id"] != project["customer_id"]
+            assert second.json()["customer"]["name"] == "Different typed name"
             assert second.json()["duplicate_review"]["status"] == "pending"
-            assert await env["db"].customers.count_documents({"floor_id": "second-floor"}) == 2
+            assert await env["db"].customers.count_documents({"floor_id": "second-floor"}) == 3
             project = await accepted(env, project, "convert")
             assert project["stage"] == "visit" and project["customer"]["name"] == "New inline enquiry"
-            # The directory's pre-existing formatted number is reused too.
-            reused = await env["api"].post(path, json={**body, "customer": {"name": "Typed existing name", "phone": "+91 99000 00031", "address": "Another inline site"},
-                                                      "idempotency_key": str(uuid4())}, headers=headers(env))
+            # An explicit existing-customer selection reuses the directory identity.
+            reused = await env["api"].post(path, json={"customer_id": env["ids"]["customer"],
+                                                      "lead": body["lead"], "idempotency_key": str(uuid4())}, headers=headers(env))
             assert reused.status_code == 200 and reused.json()["customer_id"] == env["ids"]["customer"]
-            assert await env["db"].customers.count_documents({"floor_id": "second-floor"}) == 2
+            assert await env["db"].customers.count_documents({"floor_id": "second-floor"}) == 3
             # A contact in another department must never be linked across floors.
             scoped = await env["api"].post(path, json={**body, "customer": {"name": "Separate Kitchen contact", "phone": "9900000032", "address": "Another inline site"},
                                                       "idempotency_key": str(uuid4())}, headers=headers(env))
@@ -340,14 +340,12 @@ def test_stage_list_carries_latest_commercial_fields_without_exposing_history():
     asyncio.run(run())
 
 
-@pytest.mark.parametrize("source", ["inline", "existing"])
-def test_legacy_blank_customer_address_is_saved_through_http_and_retained_across_stages(source):
+def test_explicit_existing_legacy_blank_customer_address_is_saved_through_http_and_retained_across_stages():
     async def run():
         async with environment() as env:
             customer_id = env["ids"]["customer"]
             await env["db"].customers.update_one({"id": customer_id}, {"$unset": {"address": ""}})
-            fields = ({"customer": {"name": "Do not overwrite", "phone": "+91 99000 00031", "address": "Entered legacy address"}}
-                      if source == "inline" else {"customer_id": customer_id, "customer_address": "Entered legacy address"})
+            fields = {"customer_id": customer_id, "customer_address": "Entered legacy address"}
             body = {**fields, "idempotency_key": str(uuid4())}
             response = await env["api"].post("/api/kitchen-projects", json=body, headers=headers(env))
             assert response.status_code == 200, response.text
@@ -416,6 +414,80 @@ def test_worker_records_first_approved_design_handoff_without_approved_record_co
             assert correction.status_code == 403
             overwrite = await command(env, saved, "design_handoff", {"version_id": design_id, "date": "2026-10-21"}, actor="worker")
             assert overwrite.status_code == 422
+    asyncio.run(run())
+
+
+def test_new_customer_same_name_phone_remains_distinct_and_retries_reuse_only_its_operation():
+    async def run():
+        async with environment() as env:
+            original = await env["db"].customers.find_one({"id": env["ids"]["customer"]})
+            body = {"customer": {"name": original["name"], "phone": original["phone"], "address": "Explicitly separate new contact"},
+                    "idempotency_key": str(uuid4())}
+            first = await env["api"].post("/api/kitchen-projects", json=body, headers=headers(env))
+            assert first.status_code == 200, first.text
+            saved = first.json()
+            assert saved["customer_id"] != original["id"]
+            assert saved["customer"]["name"] == original["name"] and saved["customer"]["phone"] == original["phone"]
+            assert saved["customer"]["address"] == body["customer"]["address"]
+            assert await env["db"].customers.find_one({"id": original["id"]}) == original
+            replay = await env["api"].post("/api/kitchen-projects", json=body, headers=headers(env))
+            assert replay.status_code == 200 and replay.json()["replayed"]
+            assert replay.json()["customer_id"] == saved["customer_id"]
+            assert await env["db"].customers.count_documents({"floor_id": "second-floor"}) == 2
+            separate = await env["api"].post("/api/kitchen-projects", json={**body, "idempotency_key": str(uuid4())}, headers=headers(env))
+            assert separate.status_code == 200 and separate.json()["customer_id"] != saved["customer_id"]
+            assert separate.json()["duplicate_review"]["status"] == "pending"
+            assert await env["db"].customers.count_documents({"floor_id": "second-floor"}) == 3
+            explicit, _ = await create_project(env)
+            assert explicit["customer_id"] == original["id"]
+            assert await env["db"].customers.count_documents({"floor_id": "second-floor"}) == 3
+    asyncio.run(run())
+
+
+def test_lead_lost_response_reconciliation_uses_actor_operation_and_preserves_distinct_customers():
+    async def run():
+        async with environment() as env:
+            from services.mutation_admission import KEY, MutationAdmissionMiddleware
+            env["app"].add_middleware(MutationAdmissionMiddleware)
+            key = str(uuid4())
+            body = {"customer_id": env["ids"]["customer"], "idempotency_key": key,
+                    "lead": {"notes": "Synthetic interrupted acknowledgement"}}
+
+            class LostAcknowledgement(httpx.AsyncBaseTransport):
+                async def handle_async_request(self, request):
+                    response = await httpx.ASGITransport(app=env["app"]).handle_async_request(request)
+                    assert response.status_code == 200
+                    raise httpx.ReadError("Synthetic response loss after commit", request=request)
+
+            async with httpx.AsyncClient(transport=LostAcknowledgement(), base_url="http://acceptance") as api:
+                with pytest.raises(httpx.ReadError):
+                    await api.post("/api/kitchen-projects", json=body, headers=headers(env, "worker"))
+            assert await env["db"].kitchen_projects.count_documents({}) == 1
+            gate = await env["db"].settings.find_one({"_id": KEY})
+            assert not gate["writers"] and not gate["exclusive"]
+            policy = await env["db"].kitchen_configuration.find_one({"_id": "kitchen-policy"})
+            assert not policy["active_command_count"] and not policy["command_admissions"]
+            assert "active_create_token" not in policy
+            status = await env["api"].get("/api/kitchen-projects/creation-status", params={"key": key}, headers=headers(env, "worker"))
+            assert status.status_code == 200 and status.headers["cache-control"] == "no-store"
+            saved = status.json()["project"]
+            assert saved["replayed"] and saved["lead"]["notes"] == body["lead"]["notes"]
+            other_actor = await env["api"].get("/api/kitchen-projects/creation-status", params={"key": key}, headers=headers(env))
+            assert other_actor.status_code == 200 and other_actor.json() == {"project": None}
+            denied = await env["api"].get("/api/kitchen-projects/creation-status", params={"key": key}, headers=headers(env, "denied"))
+            assert denied.status_code == 403
+            retried = await env["api"].post("/api/kitchen-projects", json=body, headers=headers(env, "worker"))
+            assert retried.status_code == 200 and retried.json()["id"] == saved["id"] and retried.json()["replayed"]
+            fetched = await env["api"].get(f"/api/kitchen-projects/{saved['id']}", headers=headers(env, "worker"))
+            assert fetched.status_code == 200 and fetched.json()["id"] == saved["id"]
+            assert await env["db"].kitchen_projects.count_documents({}) == 1
+            # Explicit distinct identities remain separate even with matching names/phones.
+            customer = await env["db"].customers.find_one({"id": env["ids"]["customer"]})
+            second_customer = {**customer, "_id": str(uuid4()), "id": str(uuid4())}
+            await env["db"].customers.insert_one(second_customer)
+            second, _ = await create_project(env, customer_id=second_customer["id"])
+            assert second["id"] != saved["id"] and second["customer_id"] != saved["customer_id"]
+            assert await env["db"].kitchen_projects.count_documents({}) == 2
     asyncio.run(run())
 
 

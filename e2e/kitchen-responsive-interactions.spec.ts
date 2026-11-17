@@ -84,7 +84,7 @@ test('Kitchen customer details remain editable and persist after reopening the f
   await health.assertHealthy();
 });
 
-test('Lead records a new customer inline, carries identity forward and reuses their phone on retry', async ({ page, context }, info) => {
+test('Lead keeps a new customer identity through conversion and allows a separate same-phone customer', async ({ page, context }, info) => {
   const health = captureRuntimeHealth(page);
   await seedBrowser(page);
   await page.goto('/kitchen/stages/lead');
@@ -115,36 +115,31 @@ test('Lead records a new customer inline, carries identity forward and reuses th
   await (await projectControl(page, 'kitchen-convert')).click();
   const visit = await (await converted).json();
   expect(visit).toMatchObject({ id: project.id, customer_id: project.customer_id, stage: 'visit' });
-  const reused = await context.request.post('/api/kitchen-projects', { headers, data: { customer: { name: 'Do not overwrite this existing customer', phone: `+91 ${phone}`, address: 'Typed address must not overwrite the saved contact' }, idempotency_key: `inline-reuse-${Date.now()}-${Math.random()}`, lead: { site_location: 'Second synthetic location' } } });
-  expect(reused.ok(), await reused.text()).toBe(true);
-  expect(await reused.json()).toMatchObject({ customer_id: project.customer_id, customer: { name, address: 'Synthetic inline customer address' }, stage: 'lead', duplicate_review: { status: 'pending' } });
+  const separate = await context.request.post('/api/kitchen-projects', { headers, data: { customer: { name: 'Separate synthetic customer', phone: `+91 ${phone}`, address: 'Second synthetic address' }, idempotency_key: `inline-separate-${Date.now()}-${Math.random()}`, lead: { site_location: 'Second synthetic location' } } });
+  expect(separate.ok(), await separate.text()).toBe(true);
+  const second = await separate.json();
+  expect(second.customer_id).not.toBe(project.customer_id);
+  expect(second).toMatchObject({ customer: { name: 'Separate synthetic customer', address: 'Second synthetic address' }, stage: 'lead', duplicate_review: { status: 'pending' } });
   await health.assertHealthy();
 });
 
-for (const mode of ['phone', 'existing'] as const) {
-  test(`Lead saves an entered address for a legacy customer using ${mode} lookup`, async ({ page, context }, info) => {
+test('Lead saves an entered address for an explicitly selected legacy customer', async ({ page, context }, info) => {
     const health = captureRuntimeHealth(page);
     await seedBrowser(page);
     const phone = `9${String(Date.now() + Math.floor(Math.random() * 1000000)).slice(-9)}`;
-    const name = `Legacy address ${mode} ${info.project.name}`;
+    const name = `Legacy address ${info.project.name}`;
     const created = await context.request.post('/api/customers', { headers, data: { name, phone } });
     expect(created.ok(), await created.text()).toBe(true);
     const customer = await created.json();
     expect(customer.address).toBeFalsy();
     await page.goto('/kitchen/stages/lead');
     await page.getByTestId('kitchen-create').click();
-    if (mode === 'phone') {
-      await page.getByTestId('kitchen-customer-name').fill('Preserve the saved customer name');
-      await page.getByTestId('kitchen-customer-phone').fill(`+91 ${phone}`);
-      await page.getByTestId('kitchen-customer-address').fill('Saved legacy address, Rajkot');
-    } else {
-      await page.getByTestId('kitchen-existing-customer').click();
-      await page.getByTestId('kitchen-customer').fill(phone);
-      await page.getByTestId(`kitchen-customer-${customer.id}`).click();
-      await page.getByTestId('kitchen-existing-customer-address').fill('Saved legacy address, Rajkot');
-    }
-    await page.getByTestId(mode === 'phone' ? 'kitchen-new-customer' : 'kitchen-existing-customer').click();
-    await expect(page.getByTestId(mode === 'phone' ? 'kitchen-customer-address' : 'kitchen-existing-customer-address')).toHaveValue('Saved legacy address, Rajkot');
+    await page.getByTestId('kitchen-existing-customer').click();
+    await page.getByTestId('kitchen-customer').fill(phone);
+    await page.getByTestId(`kitchen-customer-${customer.id}`).click();
+    await page.getByTestId('kitchen-existing-customer-address').fill('Saved legacy address, Rajkot');
+    await page.getByTestId('kitchen-existing-customer').click();
+    await expect(page.getByTestId('kitchen-existing-customer-address')).toHaveValue('Saved legacy address, Rajkot');
     const saved = page.waitForResponse(response => new URL(response.url()).pathname === '/api/kitchen-projects' && response.request().method() === 'POST');
     await page.getByTestId('kitchen-create-submit').click();
     const response = await saved;
@@ -157,8 +152,7 @@ for (const mode of ['phone', 'existing'] as const) {
     const persisted = await context.request.get(`/api/customers/${customer.id}`, { headers });
     expect(await persisted.json()).toMatchObject({ name, phone, address: 'Saved legacy address, Rajkot' });
     await health.assertHealthy();
-  });
-}
+});
 
 test('retired view bookmarks use the compact list through width changes', async ({ page, context }, testInfo) => {
   const created = await context.request.post('/api/kitchen-projects', { headers, data: { customer_id: process.env.KITCHEN_E2E_CUSTOMER_ID, idempotency_key: `responsive-board-${Date.now()}-${Math.random()}`, lead: { site_location: 'Independent responsive board site' } } });

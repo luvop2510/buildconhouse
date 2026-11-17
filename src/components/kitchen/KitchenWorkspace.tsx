@@ -23,6 +23,7 @@ import { KitchenPolicyEditor } from "./KitchenPolicy";
 import { downloadApiFile } from "@/src/utils/downloadFile";
 import { KITCHEN_FLOOR_ID } from "@/src/constants/floors";
 import { KitchenWorkbookExport } from "./KitchenWorkbookExport";
+import { useKitchenLeadSubmission } from "./KitchenLeadSubmission";
 export { LeadFields } from "./KitchenLeadFields";
 
 const LIMIT = 25;
@@ -87,7 +88,7 @@ function Workspace({ stage = "lead", page: requestedPage }: WorkspaceProps) {
       <ProjectList key={page === "projects" ? page : stage} page={page} stage={stage} values={values} setValues={setValues} returnTo={returnTo} search={search} setSearch={setSearch} retry={retry} onRetry={() => setRetry(value => value + 1)} canExport={canExport} />
     </View>
     <Sheet scroll visible={createOpen && stage === "lead"} onClose={() => requestCreateClose.current ? requestCreateClose.current() : closeCreate()} title="Add lead" testID="kitchen-create-sheet">
-        {!createAccess ? <ErrorState title="Lead creation access required" /> : policyError ? <ErrorState title="Kitchen setup unavailable" subtitle={policyError} onRetry={() => setRetry(value => value + 1)} /> : !policy ? <LoadingState label="Checking Kitchen setup…" /> : <CreateLead onRegisterClose={handler => { requestCreateClose.current = handler; }} onClose={closeCreate} onCreated={project => { closeCreate(); if (project.access_handoff) { setIntakeNotice(`This lead is already saved and is now in ${STAGE_LABELS[project.stage]}.`); setRetry(value => value + 1); return; } router.push(url(`/kitchen/${project.id}/stages/lead`, { returnTo: path }) as any); }} />}
+        {!createAccess ? <ErrorState title="Lead creation access required" /> : policyError ? <ErrorState title="Kitchen setup unavailable" subtitle={policyError} onRetry={() => setRetry(value => value + 1)} /> : !policy ? <LoadingState label="Checking Kitchen setup…" /> : <CreateLead key={staff?.id || "signed-out"} onRegisterClose={handler => { requestCreateClose.current = handler; }} onClose={closeCreate} onCreated={project => { if (project.access_handoff) { setIntakeNotice(`This lead is already saved and is now in ${STAGE_LABELS[project.stage]}.`); setRetry(value => value + 1); closeCreate(); return; } router.push(url(`/kitchen/${project.id}/stages/${kitchenDisplayStage(project.stage)}`, { returnTo: path }) as any); closeCreate(); }} />}
     </Sheet>
     <Sheet scroll visible={settingsOpen} onClose={closeSettings} title="Department settings" testID="kitchen-settings-sheet">
       {!owner ? <ErrorState title="Owner access required" /> : policyError ? <ErrorState title="Settings unavailable" subtitle={policyError} onRetry={() => setRetry(value => value + 1)} /> : policy ? <KitchenPolicyEditor policy={policy} workers={workers} workerError={workerError || workersLoading} onSaved={value => { setPolicy(value); setRetry(current => current + 1); }} onReload={() => setRetry(value => value + 1)} /> : <LoadingState label="Loading settings…" />}
@@ -192,12 +193,24 @@ function CreateLead({ onClose, onRegisterClose, onCreated }: { onClose: () => vo
   const [customerError, setCustomerError] = useState<string | null>(null);
   const [retry, setRetry] = useState(0);
   const [lead, setLead] = useState<KitchenLead>(() => ({ status: "New", lead_date: kitchenToday() }));
-  const submission = useKitchenSubmission();
+  const submission = useKitchenLeadSubmission(staff?.id || "");
+  const locked = !submission.ready || submission.busy || submission.uncertain || submission.confirmed;
+  useEffect(() => {
+    const restored = submission.restored;
+    if (!restored) return;
+    const body = restored.body;
+    setAssignee(body.assigned_to || ""); setLead(body.lead);
+    setInitialLeadDate(body.lead.lead_date || kitchenToday());
+    setExistingMode(Boolean(body.customer_id)); setCustomer(body.customer_id ? restored.customerSnapshot : null);
+    setCustomerName(body.customer?.name || ""); setCustomerPhone(body.customer?.phone || "");
+    setCustomerAddress(body.customer_address || body.customer?.address || "");
+  }, [submission.restored]);
   const dirty = Boolean(assignee || customer || customerName || customerPhone || customerAddress || query || Object.entries(lead).some(([key, value]) => key === "status" ? value !== "New" : key === "lead_date" ? value !== initialLeadDate : Boolean(value)));
   const { allowLeave } = useKitchenExitGuard({ dirty, scope: "/kitchen/stages/lead" });
-  const reset = () => { setAssignee(""); setCustomer(null); setCustomerName(""); setCustomerPhone(""); setCustomerAddress(""); setInitialLeadDate(kitchenToday()); setLead({ status: "New", lead_date: kitchenToday() }); setQuery(""); setExistingMode(false); };
+  const reset = () => { submission.reset(); setAssignee(""); setCustomer(null); setCustomerName(""); setCustomerPhone(""); setCustomerAddress(""); setInitialLeadDate(kitchenToday()); setLead({ status: "New", lead_date: kitchenToday() }); setQuery(""); setExistingMode(false); };
   const close = () => {
-    if (submission.busy) return;
+    if (submission.isPending()) return;
+    if (submission.uncertain || submission.confirmed) { submission.setError("The previous lead may already be saved. Use Retry previous lead to confirm it before closing this form."); return; }
     const discard = () => { reset(); allowLeave(); onClose(); };
     if (!dirty) { onClose(); return; }
     if (Platform.OS === "web") { if (window.confirm("Discard this unsaved lead?")) discard(); }
@@ -229,14 +242,15 @@ function CreateLead({ onClose, onRegisterClose, onCreated }: { onClose: () => vo
     if (existingMode && !customer) { submission.setError("Select an existing customer or choose New customer."); return; }
     if (!name.trim() || !phone.trim() || !address.trim()) { submission.setError("Customer name, phone number and address are required."); return; }
     const body = { ...(assignee ? { assigned_to: assignee } : {}), ...(customer ? { customer_id: customer.id, ...(!customer.address?.trim() ? { customer_address: address.trim() } : {}) } : { customer: { name: name.trim(), phone: phone.trim(), address: address.trim() } }), lead };
-    void submission.submit(body, key => kitchenProjectsApi.create({ ...body, idempotency_key: key }), project => { allowLeave(); reset(); onCreated(project); });
+    void submission.submit(body, project => { allowLeave(); onCreated(project); reset(); }, customer);
   };
   return <View testID="kitchen-create-page" style={{ width: "100%", maxWidth: 760 }}>
     <View style={{ gap: 24 }}>
       <Text style={type.bodyMuted}>Enter the customer once. Their details follow this project through all eight stages.</Text>
-      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}><KitchenOption label="New customer" active={!existingMode} disabled={submission.busy} onPress={() => { if (existingMode) { setExistingMode(false); setCustomer(null); setCustomerAddress(""); } }} testID="kitchen-new-customer" /><KitchenOption label="Existing customer" active={existingMode} disabled={submission.busy} onPress={() => { if (!existingMode) { setExistingMode(true); setCustomerAddress(""); } }} testID="kitchen-existing-customer" /></View>
-      {!existingMode ? <><TextField label="Customer name (required)" value={customerName} onChangeText={setCustomerName} editable={!submission.busy} testID="kitchen-customer-name" /><TextField label="Phone number (required)" value={customerPhone} onChangeText={setCustomerPhone} keyboardType="phone-pad" editable={!submission.busy} testID="kitchen-customer-phone" /><TextField label="Address (required)" value={customerAddress} onChangeText={setCustomerAddress} editable={!submission.busy} multiline testID="kitchen-customer-address" /><Text style={type.caption}>An existing Kitchen customer with the same phone is reused automatically. A missing address is saved; existing contact details are preserved.</Text></> : null}
-      {existingMode ? customer ? <KitchenPanel title={customer.name}><Text style={type.body}>{formatPhone(customer.phone) || "No phone recorded"}</Text>{customer.address?.trim() ? <Text style={type.body}>Address: {customer.address}</Text> : <TextField label="Address (required)" value={customerAddress} onChangeText={setCustomerAddress} editable={!submission.busy} multiline helper="Saved to this customer's missing address when the lead is created." testID="kitchen-existing-customer-address" />}{customer.referrer_id ? <Text style={type.body}>Architect / Interior: {referrerLabel(customer)}</Text> : null}<Button label="Choose another customer" variant="secondary" disabled={submission.busy} onPress={() => { setCustomer(null); setCustomerAddress(""); }} /></KitchenPanel> : <>
+      {!submission.ready ? <View style={{ gap: spacing.sm }}>{submission.error ? <Button label="Retry lead recovery" variant="secondary" onPress={submission.retryRecovery} testID="kitchen-create-recovery-retry" /> : <LoadingState label="Checking previous lead submission…" />}</View> : null}
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}><KitchenOption label="New customer" active={!existingMode} disabled={locked} onPress={() => { if (existingMode) { setExistingMode(false); setCustomer(null); setCustomerAddress(""); } }} testID="kitchen-new-customer" /><KitchenOption label="Existing customer" active={existingMode} disabled={locked} onPress={() => { if (!existingMode) { setExistingMode(true); setCustomerAddress(""); } }} testID="kitchen-existing-customer" /></View>
+      {!existingMode ? <><TextField label="Customer name (required)" value={customerName} onChangeText={setCustomerName} editable={!locked} testID="kitchen-customer-name" /><TextField label="Phone number (required)" value={customerPhone} onChangeText={setCustomerPhone} keyboardType="phone-pad" editable={!locked} testID="kitchen-customer-phone" /><TextField label="Address (required)" value={customerAddress} onChangeText={setCustomerAddress} editable={!locked} multiline testID="kitchen-customer-address" /><Text style={type.caption}>New customer creates a separate customer record. Choose Existing customer to reuse a saved contact.</Text></> : null}
+      {existingMode ? customer ? <KitchenPanel title={customer.name}><Text style={type.body}>{formatPhone(customer.phone) || "No phone recorded"}</Text>{customer.address?.trim() ? <Text style={type.body}>Address: {customer.address}</Text> : <TextField label="Address (required)" value={customerAddress} onChangeText={setCustomerAddress} editable={!locked} multiline helper="Saved to this customer's missing address when the lead is created." testID="kitchen-existing-customer-address" />}{customer.referrer_id ? <Text style={type.body}>Architect / Interior: {referrerLabel(customer)}</Text> : null}<Button label="Choose another customer" variant="secondary" disabled={locked} onPress={() => { setCustomer(null); setCustomerAddress(""); }} /></KitchenPanel> : <>
         <SearchField placeholder="Search customer name or phone" accessibilityLabel="Choose customer" value={query} onChangeText={value => { setQuery(value); setCustomerPage(1); }} testID="kitchen-customer" />
         {loading ? <LoadingState label="Loading customers…" /> : customerError ? <ErrorState title="Customer directory unavailable" subtitle={customerError} onRetry={() => setRetry(value => value + 1)} /> : !customers?.rows.length ? <Text style={type.bodyMuted}>No customers match. Choose New customer to record this enquiry here.</Text> : <>
           {customers.rows.map(value => <Button key={value.id} label={`${value.name}${value.phone ? ` · ${formatPhone(value.phone)}` : ""}`} variant="secondary" testID={`kitchen-customer-${value.id}`} onPress={() => { setCustomer(value); setCustomerAddress(""); }} />)}
@@ -247,12 +261,13 @@ function CreateLead({ onClose, onRegisterClose, onCreated }: { onClose: () => vo
       {duplicateError ? <Alert tone="warning" title="Matching projects could not be checked" description="The server will check for possible duplicates when the lead is created. Any matches require owner review before conversion." /> : null}
       {customer && (!customer.name.trim() || !customer.phone?.trim()) ? <Alert tone="warning" title="Customer name and phone number required" description="Update the existing customer in the customer directory, then select it again." /> : null}
       <>
-      {staff?.role === "owner" ? <AssigneeChoice value={assignee} onChange={setAssignee} disabled={submission.busy} testID="kitchen-create-assignee" /> : null}
-      <LeadFields value={lead} onChange={setLead} disabled={submission.busy} prefix="kitchen-create-lead" />
+      {staff?.role === "owner" ? <AssigneeChoice value={assignee} onChange={setAssignee} disabled={locked} testID="kitchen-create-assignee" /> : null}
+      <LeadFields value={lead} onChange={setLead} disabled={locked} prefix="kitchen-create-lead" />
       <ErrorNotice error={submission.error} />
-      <Button label="Create lead" onPress={save} loading={submission.busy} disabled={!name.trim() || !phone.trim() || !address.trim() || (existingMode && !customer) || submission.busy} testID="kitchen-create-submit" />
+      {submission.uncertain ? <Alert tone="info" title="Confirm the previous lead" description="The request may already have saved. Retry checks the original submission and safely returns that lead. Your entries are kept until its outcome is confirmed." /> : null}
+      <Button label={submission.confirmed ? "Open saved lead" : submission.uncertain ? "Retry previous lead" : "Create lead"} onPress={save} loading={submission.busy} disabled={!name.trim() || !phone.trim() || !address.trim() || (existingMode && !customer) || !submission.ready || submission.busy} testID="kitchen-create-submit" />
       </>
-      <Button label="Cancel" variant="secondary" disabled={submission.busy} onPress={close} />
+      <Button label="Cancel" variant="secondary" disabled={locked} onPress={close} />
     </View>
   </View>;
 }

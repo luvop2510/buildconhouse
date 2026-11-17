@@ -1,3 +1,5 @@
+import './test-kitchen-create-recovery.mjs';
+import './test-kitchen-lead-submission.mjs';
 import './test-kitchen-stage-reconciliation.mjs';
 import './test-api-client-deadline.mjs';
 import './test-kitchen-visit-recovery.mjs';

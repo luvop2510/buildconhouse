@@ -5,6 +5,8 @@ import json
 import logging
 import os
 import asyncio
+import hashlib
+import time
 from contextlib import asynccontextmanager
 
 from typing import Literal
@@ -140,9 +142,30 @@ async def export_completed(search: str = Query("", max_length=250),
 
 @router.post("")
 async def create_project(body: CreateProject, user: UserPublic = Depends(get_current_user)):
-    result = await KitchenProjectService(db).create(user, body)
-    await _invalidate_projects()
+    operation = hashlib.sha256(f"{user.id}:second-floor:{body.idempotency_key}".encode()).hexdigest()[:16]
+    started = time.monotonic()
+    logger = logging.getLogger("forge.kitchen")
+    logger.info("Kitchen lead create received operation=%s", operation)
+    try:
+        result = await KitchenProjectService(db).create(user, body)
+        await _invalidate_projects()
+    except BaseException as error:
+        # An interrupted insert/cleanup can follow a committed write. Log only
+        # the confirmed facts; never expose a body, contact, key or exception text.
+        logger.warning("Kitchen lead create outcome=unconfirmed operation=%s elapsed_ms=%d error_type=%s status=%s",
+                       operation, round((time.monotonic() - started) * 1000), type(error).__name__,
+                       error.status_code if isinstance(error, HTTPException) else "unknown")
+        raise
+    logger.info("Kitchen lead create outcome=confirmed operation=%s elapsed_ms=%d replayed=%s",
+                operation, round((time.monotonic() - started) * 1000), bool(result.get("replayed")))
     return result
+
+
+@router.get("/creation-status")
+async def creation_status(response: Response, key: Annotated[CommandKey, Query()],
+                          user: UserPublic = Depends(get_current_user)):
+    response.headers["Cache-Control"] = "no-store"
+    return await KitchenProjectService(db).creation_status(user, key)
 
 
 @router.get("/{project_id}")

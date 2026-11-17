@@ -167,14 +167,20 @@ async def test_inline_lead_intake_creates_one_customer_and_preserves_identity_th
 
 
 @pytest.mark.asyncio
-async def test_inline_intake_reuses_phone_contact_without_overwriting_or_crossing_floors(setup):
+async def test_inline_intake_preserves_separate_same_phone_identity_without_overwriting_or_crossing_floors(setup):
     database, service, owner = setup
     original = copy.deepcopy(database.customers.rows[0])
     body = create_request(customer={"name": "Typed alternative", "phone": "9000000000", "address": "Another location"},
                           idempotency_key="inline-reuse")
     created = await service.create(owner, body)
-    assert created["customer_id"] == original["id"] and created["customer"]["name"] == original["name"]
-    assert database.customers.rows[0]["address"] == original["address"] and len(database.customers.rows) == 1
+    assert created["customer_id"] != original["id"] and created["customer"]["name"] == "Typed alternative"
+    assert created["customer"]["address"] == "Another location"
+    assert database.customers.rows[0] == original and len(database.customers.rows) == 2
+    replay = await service.create(owner, body)
+    assert replay["customer_id"] == created["customer_id"] and len(database.customers.rows) == 2
+    separate = await service.create(owner, create_request(customer=body.customer.model_dump(), idempotency_key="inline-distinct-operation"))
+    assert separate["customer_id"] != created["customer_id"] and len(database.customers.rows) == 3
+    assert separate["duplicate_review"]["status"] == "pending"
     database.customers.rows.append({"_id": "other-floor", "id": "other-floor", "name": "Sanitary customer",
                                     "phone": "9888800123", "floor_id": "first-floor"})
     other = await service.create(owner, create_request(customer={"name": "Kitchen customer", "phone": "9888800123", "address": "Kitchen site"},
@@ -201,7 +207,7 @@ async def test_inline_intake_retry_after_project_write_failure_reuses_created_cu
 
 
 @pytest.mark.asyncio
-async def test_inline_intake_validates_before_writes_and_refuses_ambiguous_contacts(setup):
+async def test_inline_intake_validates_before_writes_and_keeps_same_phone_contacts_distinct(setup):
     database, service, owner = setup
     staff = UserPublic(id="staff-a", full_name="Staff A", role="sales", custom_access=True, floor_ids=["second-floor"], active_floor_id="second-floor")
     body = create_request(customer={"name": "New enquiry", "phone": "9888800123", "address": "New site"}, idempotency_key="inline-permission")
@@ -211,11 +217,10 @@ async def test_inline_intake_validates_before_writes_and_refuses_ambiguous_conta
         await service.create(owner, body.model_copy(update={"lead": LeadFields(status="Lost")}))
     assert len(database.customers.rows) == 1 and not database.kitchen_projects.rows
     database.customers.rows.append({**database.customers.rows[0], "id": "existing-duplicate"})
-    with pytest.raises(HTTPException) as ambiguous:
-        await service.create(owner, create_request(customer={"name": "Any name", "phone": "9000000000", "address": "Another site"},
-                                                  idempotency_key="inline-ambiguous"))
-    assert ambiguous.value.status_code == 409 and "select" in ambiguous.value.detail
-    assert len(database.customers.rows) == 2 and not database.kitchen_projects.rows
+    created = await service.create(owner, create_request(customer={"name": "Any name", "phone": "9000000000", "address": "Another site"},
+                                                        idempotency_key="inline-ambiguous"))
+    assert created["customer_id"] not in {"customer-a", "existing-duplicate"}
+    assert len(database.customers.rows) == 3 and len(database.kitchen_projects.rows) == 1
 
 
 
@@ -239,8 +244,7 @@ async def test_intake_requires_address_before_any_customer_or_project_write(setu
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("address", [None, "", "  ", "absent"])
-@pytest.mark.parametrize("source", ["inline", "existing"])
-async def test_intake_fills_legacy_missing_address_and_replays_without_rewriting_contact(setup, address, source):
+async def test_intake_fills_explicit_existing_legacy_missing_address_and_replays_without_rewriting_contact(setup, address):
     database, service, owner = setup
     contact = database.customers.rows[0]
     if address == "absent":
@@ -248,8 +252,7 @@ async def test_intake_fills_legacy_missing_address_and_replays_without_rewriting
     else:
         contact["address"] = address
     original = copy.deepcopy(contact)
-    details = ({"customer": {"name": "Do not overwrite name", "phone": "9000000000", "address": "Typed address"}}
-               if source == "inline" else {"customer_id": contact["id"], "customer_address": "Typed address"})
+    details = {"customer_id": contact["id"], "customer_address": "Typed address"}
     body = create_request(**details, idempotency_key="missing-address-repair")
     result = await service.create(owner, body)
     replay = await service.create(owner, body)
@@ -271,7 +274,7 @@ async def test_intake_does_not_overwrite_address_changed_during_reservation(setu
         database.customers.rows[0]["address"] = "Concurrent address"
         return await update(query, changes)
     monkeypatch.setattr(database.customers, "update_one", concurrent_update)
-    body = create_request(customer={"name": "Typed name", "phone": "9000000000", "address": "Typed address"},
+    body = create_request(customer_id="customer-a", customer_address="Typed address",
                           idempotency_key="address-race")
     with pytest.raises(HTTPException) as changed:
         await service.create(owner, body)

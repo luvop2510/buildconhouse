@@ -232,3 +232,53 @@ test('Delete customer waits for a failed autosave, retries contention, and revie
     await health.assertHealthy();
   } finally { releaseSave(); }
 });
+
+test('Lead creation keeps its original operation after a committed response is interrupted and confirms it without another POST', async ({ page, context }, info) => {
+  const marker = randomUUID().replaceAll('-', '');
+  const name = `Kitchen lost lead response ${marker.slice(0, 10)}`;
+  const phone = `9${BigInt(`0x${marker.slice(0, 12)}`).toString().slice(-9).padStart(9, '0')}`;
+  let posts = 0, statusAvailable = false, committed: any;
+  // The real backend writes to the disposable Mongo. Only delivery of the
+  // response is interrupted, reproducing uncertainty after a successful commit.
+  await page.route('**/api/kitchen-projects', async route => {
+    if (route.request().method() !== 'POST') { await route.continue(); return; }
+    posts++;
+    const response = await route.fetch();
+    expect(response.ok(), await response.text()).toBe(true);
+    committed = await response.json();
+    await route.abort('connectionreset');
+  });
+  await page.route('**/api/kitchen-projects/creation-status?*', async route => {
+    if (!statusAvailable) { await route.abort('connectionreset'); return; }
+    await route.continue();
+  });
+  await page.goto('/kitchen/stages/lead');
+  await page.getByTestId('kitchen-create').click();
+  await page.getByTestId('kitchen-customer-name').fill(name);
+  await page.getByTestId('kitchen-customer-phone').fill(phone);
+  await page.getByTestId('kitchen-customer-address').fill('Synthetic interrupted lead acceptance address');
+  await page.getByTestId('kitchen-create-submit').evaluate((node: HTMLElement) => { node.click(); node.click(); });
+  await expect(page.getByTestId('kitchen-create-submit')).toContainText('Retry previous lead');
+  await expect(page.getByTestId('kitchen-create-submit')).toBeEnabled();
+  expect(posts).toBe(1);
+  await expect(page.getByTestId('kitchen-customer-name')).toHaveValue(name);
+  await expect(page.getByTestId('kitchen-customer-name')).not.toBeEditable();
+  await page.getByTestId('kitchen-create-sheet-close').click();
+  await expect(page.getByTestId('kitchen-create-sheet')).toBeVisible();
+  await expect(page.getByTestId('kitchen-create-sheet')).toContainText('Use Retry previous lead');
+  const independent = await context.request.get(`/api/kitchen-projects/${committed.id}`, { headers });
+  expect(await independent.json()).toMatchObject({ id: committed.id, customer: { name, phone } });
+  await page.screenshot({ path: info.outputPath('lead-interrupted-response-retained.png'), fullPage: true });
+  await page.reload();
+  await page.getByTestId('kitchen-create').click();
+  await expect(page.getByTestId('kitchen-customer-name')).toHaveValue(name);
+  await expect(page.getByTestId('kitchen-create-submit')).toContainText('Retry previous lead');
+  statusAvailable = true;
+  await page.getByTestId('kitchen-create-submit').click();
+  await expect(page).toHaveURL(current => current.pathname === `/kitchen/${committed.id}/stages/lead`);
+  expect(posts, 'A committed operation is recovered by its status read without a second create').toBe(1);
+  await page.reload();
+  await expect(page.getByTestId('kitchen-project-ready')).toBeAttached();
+  const list = await context.request.get(`/api/kitchen-projects?search=${encodeURIComponent(name)}`, { headers });
+  expect((await list.json()).rows.filter((row: any) => row.customer.name === name)).toHaveLength(1);
+});

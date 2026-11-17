@@ -551,6 +551,32 @@ class KitchenProjectService:
         async with self.admission(user, "create", scope=scope):
             return await self._create(user, body)
 
+    async def creation_status(self, user, key):
+        """Confirm one actor's interrupted intake without replaying a write.
+
+        An absent result is only a snapshot: the original request may still
+        commit later. Clients must retain its key and body for explicit retry.
+        This read needs no write admission, including when a live create is
+        still finishing or a crashed writer requires operator reconciliation.
+        """
+        async with bounded_read():
+            await access.require_capability(self.db, user, "create", stage="lead")
+            project_id = str(uuid5(NAMESPACE_URL, f"kitchen:{user.id}:{access.KITCHEN_FLOOR}:{key}"))
+            policy, project = await asyncio.gather(self.policy(), self.db.kitchen_projects.find_one(
+                {"id": project_id, "floor_id": access.KITCHEN_FLOOR}))
+            if not project:
+                return {"project": None}
+            receipt = next((row for row in project.get("command_receipts", [])
+                            if row.get("actor_id") == user.id and row.get("key") == key
+                            and row.get("command") == "create"), None)
+            if not receipt or project.get("created_by") != user.id:
+                raise HTTPException(409, "The lead creation receipt could not be verified; keep your entries and contact support")
+            if not access.project_visible(project, user, policy):
+                return {"project": {"id": project["id"], "stage": project["stage"], "version": project["version"],
+                                    "access_handoff": True, "replayed": True}}
+            await access.require_project(self.db, user, project, policy)
+            return {"project": await self.public(project, user, policy, replayed=True)}
+
     async def resolve_assignee(self, user, user_id):
         if not access.owner(user):
             raise HTTPException(403, "Only the owner can select Kitchen assignments")
@@ -569,38 +595,29 @@ class KitchenProjectService:
             raise HTTPException(422, "Select an active Kitchen architect or interior designer")
         return {"referrer_id": referrer["id"], "referrer_name": referrer["name"], "referrer_type": referrer["type"], "referrer_company": referrer.get("company")}
 
-    async def lead_customer(self, details):
-        """Resolve inline intake once without overwriting an existing contact.
+    async def lead_customer(self, details, *, project_id, creation_fingerprint):
+        """Create the selected new identity once for this intake operation.
 
-        Creation admission serializes Kitchen intake. The deterministic Mongo
-        identity also makes retry after a failed project write reuse the contact.
-        Older contacts may contain spacing or an Indian country-code prefix.
-        Ambiguous matches require explicit selection instead of guessing.
+        Names and phone numbers are duplicate-review evidence, not identity
+        keys. Only Existing customer explicitly reuses a saved contact. A retry
+        after an uncertain project insert still resolves this exact customer.
         """
         from models import CustomerPublic
-        digits = re.sub(r"\D", "", details.phone)
-        normalized = digits[2:] if len(digits) == 12 and digits.startswith("91") else digits
-        prefix = r"(?:9\D*1\D*)?" if len(normalized) == 10 else ""
-        pattern = r"^\D*" + prefix + r"\D*".join(normalized) + r"\D*$"
-        query = {"floor_id": access.KITCHEN_FLOOR, "kitchen_delete_token": {"$exists": False},
-                 "phone": {"$regex": pattern}}
         projection = CUSTOMER_PROJECTION
-        matches = await self.db.customers.find(query, projection).limit(2).to_list(2)
-        if len(matches) > 1:
-            raise HTTPException(409, "Several existing customers use this phone number; select the correct customer")
-        if matches:
-            return {key: value for key, value in matches[0].items() if key in projection and key != "_id"}
-        customer_id = str(uuid5(NAMESPACE_URL, f"kitchen-customer:{access.KITCHEN_FLOOR}:{normalized}"))
+        customer_id = str(uuid5(NAMESPACE_URL, f"kitchen-customer:{project_id}"))
         contact = CustomerPublic(id=customer_id, floor_id=access.KITCHEN_FLOOR, **details.model_dump()).model_dump()
         if not contact.get("email"):
             contact.pop("email", None)  # The sparse unique email index excludes absent fields.
-        contact.update(_id=customer_id, created_by_source="kitchen_lead")
+        contact.update(_id=customer_id, created_by_source="kitchen_lead",
+                       kitchen_creation_project_id=project_id, kitchen_creation_fingerprint=creation_fingerprint)
         try:
             await self.db.customers.insert_one(contact)
         except DuplicateKeyError:
-            existing = await self.db.customers.find_one({"id": customer_id, **query}, projection)
+            existing = await self.db.customers.find_one({"id": customer_id, "floor_id": access.KITCHEN_FLOOR,
+                "kitchen_delete_token": {"$exists": False}, "kitchen_creation_project_id": project_id,
+                "kitchen_creation_fingerprint": creation_fingerprint}, projection)
             if not existing:
-                raise HTTPException(409, "Customer details changed during intake; select the existing customer and retry")
+                raise HTTPException(409, "This creation key has different customer details or the contact is unavailable; keep the original submission or select the existing customer")
             contact = existing
         return {key: value for key, value in contact.items() if key in projection and key != "_id"}
 
@@ -640,7 +657,7 @@ class KitchenProjectService:
         if body.customer is not None and not str(body.customer.address or "").strip():
             raise HTTPException(422, "Customer address is required before creating a lead")
         reference_fields = await self.referrer_fields(lead.get("referrer_id"))
-        customer = (await self.lead_customer(body.customer) if body.customer is not None else
+        customer = (await self.lead_customer(body.customer, project_id=project_id, creation_fingerprint=digest) if body.customer is not None else
                     await self.db.customers.find_one({"id": body.customer_id, "floor_id": access.KITCHEN_FLOOR},
                                                     CUSTOMER_PROJECTION))
         if not customer:
