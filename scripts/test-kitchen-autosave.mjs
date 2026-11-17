@@ -6,7 +6,8 @@ const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.Modu
 function harness() {
   const hooks = [], effects = [], timers = new Map(), writes = [], errors = [];
   let index = 0, timerId = 0, result, settle, mounted = true;
-  const state = { drafts: { field: true }, submission: { busy: false, setError: message => errors.push(message) } };
+  const state = { drafts: { field: true }, deletionReview: false, writesPaused: () => state.deletionReview,
+    submission: { busy: false, setError: message => errors.push(message) } };
   let props = { draftKey: 'field', value: 'draft', saved: 'saved', enabled: true, save() {
     writes.push(props.value); state.submission.busy = true;
     return new Promise(resolve => { settle = accepted => { state.submission.busy = false; resolve(accepted); }; });
@@ -51,6 +52,10 @@ disabled.render({ enabled: true }); disabled.state.submission.busy = true; disab
 assert.equal(disabled.writes.length, 0, 'Busy admission is checked again at timer execution');
 disabled.state.submission.busy = false; disabled.render(); await disabled.fire(); assert.equal(disabled.writes.length, 1);
 const untouched = harness(); untouched.state.drafts = {}; untouched.render(); assert.equal(untouched.timers, 0, 'Untouched defaults cannot create writes'); assert.equal(untouched.result.status, 'pending', 'Displayed defaults that differ from the server are never called saved');
+const deletion = harness(); deletion.render(); deletion.state.deletionReview = true;
+await deletion.fire(); assert.equal(deletion.writes.length, 0, 'Opening deletion synchronously prevents a queued autosave');
+deletion.state.deletionReview = false; deletion.render(); await deletion.fire();
+assert.equal(deletion.writes.length, 1, 'Cancelling deletion resumes the retained draft');
 const unmounted = harness(); unmounted.render(); await unmounted.fire(); unmounted.unmount();
 await unmounted.settle(true, 'draft');
 const switched = harness(); switched.render(); await switched.fire();

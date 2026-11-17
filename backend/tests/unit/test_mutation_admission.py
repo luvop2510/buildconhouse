@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from services.mutation_admission import MutationAdmissionMiddleware, admission
+from services.mutation_admission import MutationAdmissionMiddleware, admission, http_operation
 
 
 class Gate:
@@ -41,6 +41,15 @@ async def test_cancelled_acquisition_releases_token_after_driver_settles(exclusi
     with pytest.raises(asyncio.CancelledError):
         await asyncio.wait_for(task, 1)
     assert not gate.tokens
+
+
+@pytest.mark.parametrize("path, expected", [
+    ("/api/kitchen-projects/private-customer-id/commands", "http:POST:kitchen-projects"),
+    ("/api/kitchen-customer-deletion/private-customer-id", "http:POST:kitchen-customer-deletion"),
+    ("/api/customer-private-name", "http:POST:other"),
+])
+def test_operation_diagnostics_omit_customer_ids_and_unknown_path_content(path, expected):
+    assert http_operation({"method": "POST", "path": path}) == expected
 
 
 @pytest.mark.asyncio

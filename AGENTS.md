@@ -1,5 +1,22 @@
 # AGENTS.md — BuildCon House ERP (forge2.0)
 
+## Current Railway backend — 2026-11-17
+
+The user explicitly selected **zapagenci's Projects → Buildcon House Backend**
+as the only Railway deployment target. The current production service is
+`buildconhouse`, project `67eb19e3-d20a-4cb4-b6f4-dd44995e8f82`, environment
+`05676591-819b-4412-b178-18aa3819ec74`, service
+`478090fe-16a2-4a9e-b584-f8a989f902bd`, public origin
+`https://buildconhouse-production-25f49287.up.railway.app`.
+See `docs/deployment/current-backend.json`. Check explicit project/environment/
+service IDs before every deployment; similar historical project names are unsafe.
+Vercel's canonical frontend is `https://buildconhouse.in`; verify its actual
+production `BACKEND_URL` and current alias deployment before claiming binding.
+Older Railway IDs/origins below are historical evidence, not current targets.
+Do not deploy to or modify the old account. Its potentially live writers still
+matter when reconciling shared database admission; never expire or force-clear
+an unknown writer merely because this current backend was restarted.
+
 ## Customer lookup, drivers, Godown and delegated deletion — 2026-11-16
 
 Universal search shows current workflow cards, not raw document timelines or

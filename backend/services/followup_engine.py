@@ -417,7 +417,7 @@ async def followup_worker() -> None:
 
 async def reconcile_followups_admitted() -> dict:
     from services.mutation_admission import admission, finish_on_cancel
-    async with admission(db):
+    async with admission(db, operation="background:followup-reconciliation"):
         return await finish_on_cancel(reconcile_followups())
 
 

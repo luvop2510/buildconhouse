@@ -1,0 +1,16 @@
+{
+  "selected_at": "2026-11-17",
+  "workspace_name": "zapagenci's Projects",
+  "workspace_id": "6924efc3-679c-44db-80fd-3068492a753b",
+  "project_name": "Buildcon House Backend",
+  "project_id": "67eb19e3-d20a-4cb4-b6f4-dd44995e8f82",
+  "environment_name": "production",
+  "environment_id": "05676591-819b-4412-b178-18aa3819ec74",
+  "service_name": "buildconhouse",
+  "service_id": "478090fe-16a2-4a9e-b584-f8a989f902bd",
+  "backend_origin": "https://buildconhouse-production-25f49287.up.railway.app",
+  "frontend_origin": "https://buildconhouse.in",
+  "vercel_project_id": "prj_RuZWSvov1AkP2UDmWaea6925wWlU",
+  "vercel_team_id": "team_TNMtYYjniBWtCj1l58NEFSPG",
+  "deployment_policy": "Deploy only to these explicit Railway IDs; old account references are historical."
+}

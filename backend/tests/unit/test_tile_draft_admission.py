@@ -18,7 +18,7 @@ from services import mutation_admission
 def test_admission_matches_tile_discard_and_preserves_other_routes(monkeypatch, method, path, exclusive):
     calls = []
     @asynccontextmanager
-    async def admitted(database, *, exclusive=False):
+    async def admitted(database, *, exclusive=False, operation="unclassified"):
         calls.append(exclusive)
         yield
     monkeypatch.setattr(mutation_admission, "admission", admitted)

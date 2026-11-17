@@ -149,6 +149,7 @@ async def test_delete_grant_does_not_bypass_other_current_stage_visibility(monke
 @pytest.mark.asyncio
 async def test_genuine_pending_write_blocks_deletion_until_failed_save_exits(monkeypatch):
     from fastapi import HTTPException
+    from services.mutation_admission import admission_status
     async with environment() as env:
         mount(env, monkeypatch)
         project, _ = await create_project(env)
@@ -167,6 +168,11 @@ async def test_genuine_pending_write_blocks_deletion_until_failed_save_exits(mon
         pending = asyncio.create_task(api.post("/api/test-save", headers=actor_headers))
         try:
             await asyncio.wait_for(entered.wait(), 3)
+            status = await admission_status(env["db"])
+            assert status["writer_count"] == 1
+            assert status["writers"][0]["operation"] == "http:POST:other"
+            assert status["writers"][0]["owner_known"] is True
+            assert status["writers"][0]["age_seconds"] is not None
             busy = await api.delete(path, headers=actor_headers, params=confirmation)
             assert busy.status_code == 409
             assert busy.json()["code"] == "mutation_admission_busy"
@@ -175,4 +181,75 @@ async def test_genuine_pending_write_blocks_deletion_until_failed_save_exits(mon
             finish.set()
             failed = await pending
         assert failed.status_code == 422
+        gate = await env["db"].settings.find_one({"_id": "customer-graph-mutation-admission:v1"})
+        assert gate["writers"] == [] and gate["writer_info"] == {}
         assert (await api.delete(path, headers=actor_headers, params=confirmation)).status_code == 200
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stage", ["lead", "visit", "cad", "design", "quotation", "order", "production", "installation", "completed"])
+async def test_delete_each_stage_preserves_other_customers_and_recovers_all_projects(monkeypatch, stage):
+    """Labelled stage fixtures test deletion eligibility, not stage advancement."""
+    from uuid import uuid4
+    async with environment() as env:
+        mount(env, monkeypatch)
+        project, _ = await create_project(env)
+        second, _ = await create_project(env)
+        database, api, actor = env["db"], env["api"], headers(env)
+        other_customer = str(uuid4())
+        await database.customers.insert_one({"id": other_customer, "name": "Unrelated Kitchen customer",
+                                             "phone": "9900000099", "floor_id": "second-floor", "address": "Synthetic"})
+        unrelated = {**deepcopy(await database.kitchen_projects.find_one({"id": project["id"]})),
+                     "_id": str(uuid4()), "id": str(uuid4()), "customer_id": other_customer,
+                     "customer": {"id": other_customer, "name": "Unrelated Kitchen customer", "phone": "9900000099", "address": "Synthetic"},
+                     "customer_phone_normalized": "9900000099",
+                     "project_reference": "KP-UNRELATED", "reference": "KP-UNRELATED"}
+        await database.kitchen_projects.insert_one(unrelated)
+        await database.kitchen_projects.update_one({"id": project["id"]}, {"$set": {
+            "stage": stage, "attachments": [{"id": "retained-pdf", "storage_key": "private/original.pdf"}]}})
+        before = await database.kitchen_projects.find_one({"id": project["id"]})
+        path = "/api/kitchen-customer-deletion/" + project["id"]
+        preview = await api.get(path, headers=actor)
+        assert preview.status_code == 200, preview.text
+        assert {row["id"] for row in preview.json()["projects"]} == {project["id"], second["id"]}
+        params = {"confirmation": preview.json()["confirmation"]}
+        deleted = await api.delete(path, headers=actor, params=params)
+        assert deleted.status_code == 200, deleted.text
+        assert deleted.json() == {"deleted": True, "customer_id": project["customer_id"], "recoverable": True}
+        assert (await api.delete(path, headers=actor, params=params)).json() == deleted.json()
+        for identity in (project["id"], second["id"]):
+            assert (await api.get("/api/kitchen-projects/" + identity, headers=actor)).status_code == 404
+        # Fresh HTTP reads model a reloaded browser's list, search and dashboard.
+        listed = await api.get("/api/kitchen-projects", headers=actor)
+        assert {row["id"] for row in listed.json()["rows"]} == {unrelated["id"]}
+        searched = await api.get("/api/customer-search", headers=actor, params={"search": "Kitchen acceptance customer"})
+        assert searched.status_code == 200 and searched.json()["total"] == 0
+        dashboard = await api.get("/api/kitchen-projects/dashboard", headers=actor)
+        assert dashboard.json()["total_projects"] == dashboard.json()["total_customers"] == 1
+        retained = await database.kitchen_projects.find_one({"id": project["id"]})
+        assert retained["stage"] == stage and retained["attachments"] == before["attachments"]
+        assert retained["version"] == before["version"] + 1 and retained["deleted_at"]
+        assert await database.kitchen_projects.find_one({"id": unrelated["id"]}) == unrelated
+        assert await database.customers.count_documents({"id": env["ids"]["other_customer"], "deleted_at": {"$exists": False}}) == 1
+        gate = await database.settings.find_one({"_id": "customer-graph-mutation-admission:v1"})
+        assert gate["writers"] == [] and gate["exclusive"] is None
+        assert gate.get("writer_info", {}) == {} and "exclusive_info" not in gate
+
+
+@pytest.mark.asyncio
+async def test_legacy_unknown_writer_is_reported_and_never_silently_cleared(monkeypatch):
+    from services.mutation_admission import KEY, admission_status
+    async with environment() as env:
+        mount(env, monkeypatch)
+        project, _ = await create_project(env)
+        database, api = env["db"], env["api"]
+        await database.settings.update_one({"_id": KEY}, {"$set": {"writers": ["legacy-unknown-owner"], "exclusive": None}})
+        before = await database.settings.find_one({"_id": KEY})
+        status = await admission_status(database)
+        assert status["writers"] == [{"fingerprint": "b4c9fe04a3fa", "owner_known": False, "age_seconds": None}]
+        path = "/api/kitchen-customer-deletion/" + project["id"]
+        preview = await api.get(path, headers=headers(env))
+        blocked = await api.delete(path, headers=headers(env), params={"confirmation": preview.json()["confirmation"]})
+        assert blocked.status_code == 409 and blocked.json()["code"] == "mutation_admission_busy"
+        assert await database.settings.find_one({"_id": KEY}) == before
+        assert await database.kitchen_customer_deletions.count_documents({}) == 0

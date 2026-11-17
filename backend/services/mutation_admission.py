@@ -7,10 +7,55 @@ A crash therefore blocks deletion safely until an operator reconciles admission.
 """
 from contextlib import asynccontextmanager
 import asyncio
+from datetime import datetime, timezone
+import hashlib
+import logging
+import os
 from uuid import uuid4
 from fastapi import HTTPException
 
 KEY = "customer-graph-mutation-admission:v1"
+PROCESS_ID = str(uuid4())
+logger = logging.getLogger("forge.mutation_admission")
+
+
+def token_fingerprint(token):
+    return hashlib.sha256(token.encode()).hexdigest()[:12]
+
+
+async def admission_status(database):
+    """Read-only diagnostics. Never infer abandonment from a token's age."""
+    gate = await database.settings.find_one({"_id": KEY}) or {}
+    now = datetime.now(timezone.utc)
+
+    def describe(token, metadata):
+        result = {"fingerprint": token_fingerprint(token), "owner_known": bool(metadata)}
+        for key in ("operation", "process_id", "deployment_id", "started_at"):
+            if key in metadata:
+                result[key] = metadata[key]
+        try:
+            result["age_seconds"] = max(0, int((now - datetime.fromisoformat(metadata["started_at"])).total_seconds()))
+        except (KeyError, TypeError, ValueError):
+            result["age_seconds"] = None
+        return result
+
+    info = gate.get("writer_info", {})
+    return {"sampled_at": now.isoformat(), "writer_count": len(gate.get("writers", [])),
+            "writers": [describe(token, info.get(token, {})) for token in gate.get("writers", [])],
+            "exclusive": describe(gate["exclusive"], gate.get("exclusive_info", {})) if gate.get("exclusive") else None}
+
+
+def http_operation(scope):
+    # Do not persist URLs, IDs, query strings, headers, bodies or customer data.
+    resource = scope.get("path", "").split("/")[2:3]
+    resource = resource[0] if resource else "other"
+    if resource not in {"kitchen-projects", "kitchen-customer-deletion", "customers", "quotations", "payments",
+                        "walkins", "purchase-orders", "godown-stock", "tile-orders", "settings", "auth",
+                        "products", "categories", "followups", "referrers", "uploads"}:
+        resource = "other"
+    method = scope.get("method", "")
+    method = method if method in {"POST", "PUT", "PATCH", "DELETE"} else "other"
+    return f"http:{method}:{resource}"
 
 
 class AdmissionBusy(HTTPException):
@@ -36,19 +81,22 @@ async def finish_on_cancel(operation):
 
 
 @asynccontextmanager
-async def admission(database, *, exclusive=False):
+async def admission(database, *, exclusive=False, operation="unclassified"):
     gate = database.settings
     await gate.update_one({"_id": KEY}, {"$setOnInsert": {"writers": [], "exclusive": None}}, upsert=True)
     token = str(uuid4())
+    metadata = {"operation": operation, "process_id": PROCESS_ID,
+                "deployment_id": os.environ.get("RAILWAY_DEPLOYMENT_ID", "local"),
+                "started_at": datetime.now(timezone.utc).isoformat()}
     query = {"_id": KEY, "exclusive": None}
-    update = {"$addToSet": {"writers": token}}
+    update = {"$addToSet": {"writers": token}, "$set": {f"writer_info.{token}": metadata}}
     release_query = {"_id": KEY, "writers": token}
-    release = {"$pull": {"writers": token}}
+    release = {"$pull": {"writers": token}, "$unset": {f"writer_info.{token}": ""}}
     if exclusive:
         query["writers"] = []
-        update = {"$set": {"exclusive": token}}
+        update = {"$set": {"exclusive": token, "exclusive_info": metadata}}
         release_query = {"_id": KEY, "exclusive": token}
-        release = {"$set": {"exclusive": None}}
+        release = {"$set": {"exclusive": None}, "$unset": {"exclusive_info": ""}}
 
     needs_release = False
     try:
@@ -67,7 +115,12 @@ async def admission(database, *, exclusive=False):
         yield
     finally:
         if needs_release:
-            await finish_on_cancel(gate.update_one(release_query, release))
+            try:
+                await finish_on_cancel(gate.update_one(release_query, release))
+            except Exception as error:
+                logger.error("Mutation token cleanup failed: fingerprint=%s process=%s operation=%s error_type=%s",
+                             token_fingerprint(token), PROCESS_ID, operation, type(error).__name__)
+                raise
 
 
 class MutationAdmissionMiddleware:
@@ -84,9 +137,13 @@ class MutationAdmissionMiddleware:
             r"/api/(?:categories/[^/]+|products/[^/]+(?:/variants)?|customers/[^/]+|kitchen-customer-deletion/[^/]+|walkins/[^/]+|payments/[^/]+|godown-stock/[^/]+(?:/movements/[^/]+)?|purchase-orders/[^/]+|quotations/(?:[^/]+|client-draft/[^/]+))", scope["path"],
         )))
         try:
-            async with admission(db, exclusive=exclusive):
+            async with admission(db, exclusive=exclusive, operation=http_operation(scope)):
                 await finish_on_cancel(self.app(scope, receive, send))
         except AdmissionBusy as error:
+            try:
+                logger.warning("Mutation admission blocked: operation=%s gate=%s", http_operation(scope), await admission_status(db))
+            except Exception:
+                logger.warning("Mutation admission blocked: operation=%s; gate diagnostics unavailable", http_operation(scope))
             await JSONResponse({"detail": error.detail, "code": "mutation_admission_busy"}, status_code=error.status_code)(scope, receive, send)
         except HTTPException as error:
             await JSONResponse({"detail": error.detail}, status_code=error.status_code)(scope, receive, send)

@@ -101,6 +101,51 @@ test('Delete customer reviews exact records, cancels safely and removes only aft
   await health.assertHealthy();
 });
 
+test('Delete customer from Design sends no opening autosave and persists deletion after reload', async ({ page, context }, info) => {
+  const health = captureRuntimeHealth(page);
+  let project = await create(context.request);
+  const siblingResponse = await context.request.post('/api/kitchen-projects', { headers, data: {
+    customer_id: project.customer_id, idempotency_key: randomUUID(), lead: { site_location: 'Synthetic sibling project' },
+  } });
+  expect(siblingResponse.ok(), await siblingResponse.text()).toBe(true);
+  const sibling = await siblingResponse.json();
+  for (const target_stage of ['visit', 'cad', 'design']) {
+    const advanced = await context.request.post(`/api/kitchen-projects/${project.id}/commands`, { headers, data: {
+      command: 'move_stage', payload: { target_stage }, expected_version: project.version, idempotency_key: randomUUID(),
+    } });
+    expect(advanced.ok(), await advanced.text()).toBe(true);
+    project = await advanced.json();
+  }
+  const writes: string[] = [];
+  page.on('request', request => {
+    if (request.method() === 'POST' && new URL(request.url()).pathname.startsWith(`/api/kitchen-projects/${project.id}/`)) {
+      writes.push(new URL(request.url()).pathname);
+    }
+  });
+  await page.goto(`/kitchen/${project.id}/stages/design`);
+  await expect(page.getByTestId('kitchen-project-ready')).toBeAttached();
+  await page.waitForTimeout(900); // Observe beyond the actual autosave debounce.
+  expect(writes).toEqual([]);
+  const dialog = await openDeletion(page);
+  await expect(dialog).toContainText(project.reference);
+  await expect(dialog).toContainText(sibling.reference);
+  await expect(dialog.getByTestId('kitchen-customer-delete-confirm')).toBeEnabled();
+  const response = page.waitForResponse(value => value.request().method() === 'DELETE' && value.url().includes(`/kitchen-customer-deletion/${project.id}`));
+  await dialog.getByTestId('kitchen-customer-delete-confirm').click();
+  expect((await response).status()).toBe(200);
+  await expect(page).toHaveURL(/\/kitchen$/);
+  await page.reload();
+  await expect(page.getByTestId('kitchen-dashboard')).toBeVisible();
+  for (const identity of [project.id, sibling.id]) {
+    expect((await context.request.get(`/api/kitchen-projects/${identity}`, { headers })).status()).toBe(404);
+  }
+  const list = await context.request.get(`/api/kitchen-projects?search=${encodeURIComponent(project.reference)}`, { headers });
+  expect((await list.json()).rows).toHaveLength(0);
+  expect(writes).toEqual([]);
+  await page.screenshot({ path: info.outputPath('design-customer-deleted-after-reload.png'), fullPage: true });
+  await health.assertHealthy();
+});
+
 test('Delete customer pauses a queued autosave and resumes it after cancel', async ({ page, context }) => {
   const health = captureRuntimeHealth(page);
   const project = await create(context.request);
