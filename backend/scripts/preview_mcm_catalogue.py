@@ -86,16 +86,16 @@ def read_source(source):
     return data, rows
 
 
-async def compare(database, rows):
+async def compare(database, rows, *, session=None):
     brands = await database.brands.find(
         {"$or": [{"name": BRAND_IDENTITY}, {"slug": BRAND_IDENTITY}]},
-        {"_id": 0, "id": 1, "name": 1, "slug": 1, "floor_id": 1},
-    ).to_list()
+        {"_id": 0, "id": 1, "name": 1, "slug": 1, "floor_id": 1}, session=session,
+    ).sort("id", 1).to_list()
     ground_brands = [brand for brand in brands if brand.get("floor_id") == FLOOR]
     brand = ground_brands[0] if len(ground_brands) == 1 else None
     scope = {"floor_id": FLOOR, "brand_id": {"$in": [brand["id"] for brand in ground_brands]}}
-    products = await database.products.find(scope, {"_id": 0}).to_list()
-    media = await database.product_media.find(scope, {"_id": 0}).to_list()
+    products = await database.products.find(scope, {"_id": 0}, session=session).sort("id", 1).to_list()
+    media = await database.product_media.find(scope, {"_id": 0}, session=session).sort("id", 1).to_list()
     by_identity, by_sku, by_name, media_by_product = (defaultdict(list) for _ in range(4))
     for product in products:
         key = identity(product.get("name"), product.get("size"), product.get("finish"))
@@ -108,9 +108,9 @@ async def compare(database, rows):
     aliases = []
     async for product in database.products.find(
         {"floor_id": FLOOR, "brand_id": {"$nin": [brand["id"] for brand in ground_brands]}},
-        {"_id": 0, "name": 1, "size": 1, "finish": 1, "sku": 1, "brand_id": 1},
-    ):
-        if name_key(product.get("name"), product.get("size")) in comparable_names or product["sku"].upper().startswith("MCM-"):
+        {"_id": 0, "name": 1, "size": 1, "finish": 1, "sku": 1, "brand_id": 1}, session=session,
+    ).sort("_id", 1):
+        if name_key(product.get("name"), product.get("size")) in comparable_names or (product.get("sku") or "").upper().startswith("MCM-"):
             aliases.append(product)
 
     seen = set()
