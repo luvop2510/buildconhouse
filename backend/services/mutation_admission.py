@@ -134,8 +134,15 @@ class MutationAdmissionMiddleware:
         from db import db
         from starlette.responses import JSONResponse
         exclusive = (scope["method"] == "POST" and scope["path"] == "/api/customers/floor-reset") or (scope["method"] == "DELETE" and bool(re.fullmatch(
-            r"/api/(?:categories/[^/]+|products/[^/]+(?:/variants)?|customers/[^/]+|kitchen-customer-deletion/[^/]+|walkins/[^/]+|payments/[^/]+|godown-stock/[^/]+(?:/movements/[^/]+)?|purchase-orders/[^/]+|quotations/(?:[^/]+|client-draft/[^/]+))", scope["path"],
+            r"/api/(?:categories/[^/]+|products/[^/]+(?:/variants)?|customers/[^/]+|walkins/[^/]+|payments/[^/]+|godown-stock/[^/]+(?:/movements/[^/]+)?|purchase-orders/[^/]+|quotations/(?:[^/]+|client-draft/[^/]+))", scope["path"],
         )))
+        # Kitchen uses recoverable tombstones and its transactional policy/
+        # customer/project fence. Keep shared global admission to exclude hard
+        # graph cleanup, without draining unrelated or abandoned global writers.
+        headers = dict(scope.get("headers", []))
+        if (exclusive and scope["method"] == "DELETE" and headers.get(b"x-floor-id") == b"second-floor"
+                and re.fullmatch(r"/api/customers/[^/]+", scope["path"])):
+            exclusive = False
         try:
             async with admission(db, exclusive=exclusive, operation=http_operation(scope)):
                 await finish_on_cancel(self.app(scope, receive, send))

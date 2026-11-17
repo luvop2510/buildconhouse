@@ -8,7 +8,7 @@ Set `WHATSAPP_ACCESS_TOKEN` and `WHATSAPP_PHONE_NUMBER_ID` in Railway's service
 environment using a registered WhatsApp Business sender. `WHATSAPP_GRAPH_VERSION`
 defaults to `v23.0`; configure the version supported by your Meta application.
 Set `WHATSAPP_APP_SECRET` and a random `WHATSAPP_VERIFY_TOKEN`, then register
-`https://forge20-production-a8b0.up.railway.app/api/whatsapp/webhook` with Meta
+`https://buildconhouse-production-25f49287.up.railway.app/api/whatsapp/webhook` with Meta
 and subscribe to messages. The webhook validates the exact raw-body HMAC.
 Do not put tokens into source, frontend variables, screenshots or chat.
 

@@ -1,5 +1,9 @@
 # Store submission and physical-device acceptance
 
+Current backend (17 November 2026): use `docs/deployment/current-backend.json`.
+Older Railway account/service references in this document describe historical
+backup or acceptance evidence and must not be used as deployment targets.
+
 5 October 2026. Prepared from current source and official store guidance. This
 document is a submission worksheet, not an attestation that forms were submitted.
 

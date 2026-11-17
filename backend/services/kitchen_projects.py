@@ -251,7 +251,7 @@ class KitchenProjectService:
         return policy
 
     @asynccontextmanager
-    async def admission(self, user, action):
+    async def admission(self, user, action, *, scope=None):
         """Pin one policy revision while an admitted command can commit.
 
         Configuration and admission write the same document atomically. No
@@ -259,32 +259,39 @@ class KitchenProjectService:
         conservative configuration block for maintenance reconciliation.
         """
         await access.require_capability(self.db, user, action)
+        async with self.write_scope(scope=scope, creating=action == "create") as policy:
+            yield policy
+
+    @asynccontextmanager
+    async def write_scope(self, *, scope, creating=False):
+        """Register an already-authorized write against Kitchen deletion."""
         policy = await self.policy(ensure=True)
         token = str(uuid4())
         field = "command_admissions." + token
         selector = {"_id": POLICY_ID, "version": policy["version"], "$or": [
             {"active_command_count": {"$exists": False}}, {"active_command_count": {"$lt": 64}}]}
-        updates = {"$inc": {"active_command_count": 1}, "$set": {field: timestamp()}}
-        if action == "create":
+        # Keep scope inside the already-private map: older deployed readers
+        # also omit command_admissions from every public policy response.
+        metadata = {"started_at": timestamp(), **scope} if scope else timestamp()
+        updates = {"$inc": {"active_command_count": 1}, "$set": {field: metadata}}
+        if creating:
             selector["active_create_token"] = {"$exists": False}
             updates["$set"]["active_create_token"] = token
-        admitted = await self.db.kitchen_configuration.update_one(selector, updates)
-        if not admitted.matched_count:
-            raise HTTPException(409, "Kitchen policy changed or command capacity is occupied; refresh and retry")
+        from services.mutation_admission import finish_on_cancel
         try:
+            # Cancellation may arrive after Mongo commits the reservation.
+            # Install cleanup before acquisition and let the driver settle.
+            admitted = await finish_on_cancel(self.db.kitchen_configuration.update_one(selector, updates))
+            if not admitted.matched_count:
+                raise HTTPException(409, "Kitchen policy changed or command capacity is occupied; refresh and retry")
             yield policy
         finally:
             # Finish exact-token release even if the request is cancelled.
             release = {"$inc": {"active_command_count": -1}, "$unset": {field: ""}}
-            if action == "create":
+            if creating:
                 release["$unset"]["active_create_token"] = ""
-            cleanup = asyncio.ensure_future(self.db.kitchen_configuration.update_one(
+            await finish_on_cancel(self.db.kitchen_configuration.update_one(
                 {"_id": POLICY_ID, field: {"$exists": True}}, release))
-            try:
-                await asyncio.shield(cleanup)
-            except asyncio.CancelledError:
-                await cleanup
-                raise
 
     async def public_policy(self, user):
         await access.require_capability(self.db, user, "view")
@@ -459,7 +466,7 @@ class KitchenProjectService:
         return await self.db.kitchen_projects.find(selector, {"_id": 0, "id": 1, "reference": 1, "stage": 1}).limit(10).to_list(10)
 
     async def attach(self, user, project_id, **kwargs):
-        async with self.admission(user, "update"):
+        async with self.admission(user, "update", scope={"project_id": project_id}):
             return await self._attach(user, project_id, **kwargs)
 
     async def _attach(self, user, project_id, *, expected_version, key, filename, content_type, data, storage, bucket, max_file_bytes=768 * 1024, prepared=None):
@@ -539,7 +546,9 @@ class KitchenProjectService:
         return data, metadata
 
     async def create(self, user, body):
-        async with self.admission(user, "create"):
+        scope = ({"customer_id": body.customer_id} if body.customer_id else
+                 {"phone": re.sub(r"\D", "", body.customer.phone)[-10:]})
+        async with self.admission(user, "create", scope=scope):
             return await self._create(user, body)
 
     async def resolve_assignee(self, user, user_id):
@@ -722,7 +731,7 @@ class KitchenProjectService:
         project_read = asyncio.ensure_future(self.db.kitchen_projects.find_one(
             {"id": project_id, "floor_id": access.KITCHEN_FLOOR}))
         try:
-            async with self.admission(user, "update") as policy:
+            async with self.admission(user, "update", scope={"project_id": project_id}) as policy:
                 return await self._command(user, project_id, body, policy, await project_read)
         finally:
             if not project_read.done():

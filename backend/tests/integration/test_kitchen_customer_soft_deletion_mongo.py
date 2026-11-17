@@ -149,6 +149,8 @@ async def test_delete_grant_does_not_bypass_other_current_stage_visibility(monke
 @pytest.mark.asyncio
 async def test_genuine_pending_write_blocks_deletion_until_failed_save_exits(monkeypatch):
     from fastapi import HTTPException
+    from models import UserPublic
+    from services.kitchen_projects import KitchenProjectService
     from services.mutation_admission import admission_status
     async with environment() as env:
         mount(env, monkeypatch)
@@ -157,9 +159,11 @@ async def test_genuine_pending_write_blocks_deletion_until_failed_save_exits(mon
 
         @env["app"].post("/api/test-save")
         async def failing_save():
-            entered.set()
-            await finish.wait()
-            raise HTTPException(422, "Synthetic failed save")
+            actor = UserPublic(id=env["ids"]["owner"], full_name="Owner", role="owner", active_floor_id="second-floor")
+            async with KitchenProjectService(env["db"]).admission(actor, "update", scope={"project_id": project["id"]}):
+                entered.set()
+                await finish.wait()
+                raise HTTPException(422, "Synthetic failed save")
 
         path = "/api/kitchen-customer-deletion/" + project["id"]
         api, actor_headers = env["api"], headers(env)
@@ -175,7 +179,7 @@ async def test_genuine_pending_write_blocks_deletion_until_failed_save_exits(mon
             assert status["writers"][0]["age_seconds"] is not None
             busy = await api.delete(path, headers=actor_headers, params=confirmation)
             assert busy.status_code == 409
-            assert busy.json()["code"] == "mutation_admission_busy"
+            assert "affecting this customer" in busy.json()["detail"]
             assert await env["db"].kitchen_customer_deletions.count_documents({}) == 0
         finally:
             finish.set()
@@ -237,7 +241,7 @@ async def test_delete_each_stage_preserves_other_customers_and_recovers_all_proj
 
 
 @pytest.mark.asyncio
-async def test_legacy_unknown_writer_is_reported_and_never_silently_cleared(monkeypatch):
+async def test_stranded_global_writer_does_not_block_transactionally_fenced_kitchen_delete(monkeypatch):
     from services.mutation_admission import KEY, admission_status
     async with environment() as env:
         mount(env, monkeypatch)
@@ -249,7 +253,172 @@ async def test_legacy_unknown_writer_is_reported_and_never_silently_cleared(monk
         assert status["writers"] == [{"fingerprint": "b4c9fe04a3fa", "owner_known": False, "age_seconds": None}]
         path = "/api/kitchen-customer-deletion/" + project["id"]
         preview = await api.get(path, headers=headers(env))
-        blocked = await api.delete(path, headers=headers(env), params={"confirmation": preview.json()["confirmation"]})
-        assert blocked.status_code == 409 and blocked.json()["code"] == "mutation_admission_busy"
-        assert await database.settings.find_one({"_id": KEY}) == before
-        assert await database.kitchen_customer_deletions.count_documents({}) == 0
+        deleted = await api.delete(path, headers=headers(env), params={"confirmation": preview.json()["confirmation"]})
+        assert deleted.status_code == 200, deleted.text
+        after = await database.settings.find_one({"_id": KEY})
+        assert after["writers"] == before["writers"] and after["exclusive"] is None
+        assert await database.kitchen_customer_deletions.count_documents({}) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("legacy", [False, True])
+async def test_scoped_unrelated_kitchen_writer_can_continue_but_unknown_legacy_writer_waits(monkeypatch, legacy):
+    from services.kitchen_projects import KitchenProjectService, POLICY_ID
+    from models import UserPublic
+    async with environment() as env:
+        mount(env, monkeypatch)
+        project, _ = await create_project(env)
+        actor = UserPublic(id=env["ids"]["owner"], full_name="Owner", role="owner", active_floor_id="second-floor")
+        path = "/api/kitchen-customer-deletion/" + project["id"]
+        preview = await env["api"].get(path, headers=headers(env))
+        params = {"confirmation": preview.json()["confirmation"]}
+        scope = {} if legacy else {"customer_id": "different-customer"}
+        async with KitchenProjectService(env["db"]).admission(actor, "update", scope=scope):
+            before = await env["db"].kitchen_configuration.find_one({"_id": POLICY_ID})
+            response = await env["api"].delete(path, headers=headers(env), params=params)
+            assert response.status_code == (409 if legacy else 200), response.text
+            after = await env["db"].kitchen_configuration.find_one({"_id": POLICY_ID})
+            assert after["active_command_count"] == before["active_command_count"] == 1
+            assert after["command_admissions"] == before["command_admissions"]
+        if legacy:
+            assert (await env["api"].delete(path, headers=headers(env), params=params)).status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_legacy_global_exclusive_still_prevents_kitchen_soft_delete(monkeypatch):
+    from services.mutation_admission import admission
+    async with environment() as env:
+        mount(env, monkeypatch)
+        project, _ = await create_project(env)
+        path = "/api/kitchen-customer-deletion/" + project["id"]
+        preview = await env["api"].get(path, headers=headers(env))
+        async with admission(env["db"], exclusive=True):
+            result = await env["api"].delete(path, headers=headers(env), params={"confirmation": preview.json()["confirmation"]})
+            assert result.status_code == 409 and result.json()["code"] == "mutation_admission_busy"
+        assert await env["db"].kitchen_customer_deletions.count_documents({}) == 0
+
+
+@pytest.mark.asyncio
+async def test_pending_customer_contact_edit_blocks_only_its_customer(monkeypatch):
+    from routes import customer_routes
+    async with environment() as env:
+        mount(env, monkeypatch)
+        project, _ = await create_project(env)
+        entered, finish = asyncio.Event(), asyncio.Event()
+        original = customer_routes._update_customer_fields
+        async def delayed(*args):
+            entered.set()
+            await finish.wait()
+            return await original(*args)
+        monkeypatch.setattr(customer_routes, "_update_customer_fields", delayed)
+        path = "/api/kitchen-customer-deletion/" + project["id"]
+        preview = await env["api"].get(path, headers=headers(env))
+        pending = asyncio.create_task(env["api"].patch("/api/customers/" + project["customer_id"],
+            headers=headers(env), json={"notes": "Preserve this acknowledged contact edit"}))
+        try:
+            await asyncio.wait_for(entered.wait(), 3)
+            busy = await env["api"].delete(path, headers=headers(env), params={"confirmation": preview.json()["confirmation"]})
+            assert busy.status_code == 409 and "affecting this customer" in busy.json()["detail"]
+        finally:
+            finish.set()
+            saved = await pending
+        assert saved.status_code == 200, saved.text
+        fresh = await env["api"].get(path, headers=headers(env))
+        assert (await env["api"].delete(path, headers=headers(env), params={"confirmation": fresh.json()["confirmation"]})).status_code == 200
+        retained = await env["db"].customers.find_one({"id": project["customer_id"]})
+        assert retained["notes"] == "Preserve this acknowledged contact edit" and retained["deleted_at"]
+
+
+@pytest.mark.asyncio
+async def test_deletion_transaction_fences_a_new_project_command(monkeypatch):
+    from contextlib import asynccontextmanager
+    from services import kitchen_customer_deletion as deletion
+    from services.kitchen_projects import KitchenProjectService
+    from tests.integration.test_kitchen_projects_mongo import command
+    async with environment() as env:
+        mount(env, monkeypatch)
+        project, _ = await create_project(env)
+        fenced, finish, attempted = asyncio.Event(), asyncio.Event(), asyncio.Event()
+        original_fence, original_admission = deletion.serialize_customer_writes, KitchenProjectService.admission
+        async def hold_fence(*args):
+            await original_fence(*args)
+            fenced.set()
+            await finish.wait()
+        @asynccontextmanager
+        async def admission(self, *args, **kwargs):
+            attempted.set()
+            async with original_admission(self, *args, **kwargs) as policy:
+                yield policy
+        monkeypatch.setattr(deletion, "serialize_customer_writes", hold_fence)
+        monkeypatch.setattr(KitchenProjectService, "admission", admission)
+        path = "/api/kitchen-customer-deletion/" + project["id"]
+        preview = await env["api"].get(path, headers=headers(env))
+        deleting = asyncio.create_task(env["api"].delete(path, headers=headers(env), params={"confirmation": preview.json()["confirmation"]}))
+        saving = None
+        try:
+            await asyncio.wait_for(fenced.wait(), 3)
+            saving = asyncio.create_task(command(env, project, "edit_lead", {"notes": "A late autosave must not revive the project"}))
+            await asyncio.wait_for(attempted.wait(), 3)
+        finally:
+            finish.set()
+            deleted = await deleting
+        assert deleted.status_code == 200, deleted.text
+        failed = await saving
+        assert failed.status_code in {404, 409}, failed.text
+        retained = await env["db"].kitchen_projects.find_one({"id": project["id"]})
+        assert retained["deleted_at"] and retained["lead"]["notes"] != "A late autosave must not revive the project"
+
+
+@pytest.mark.asyncio
+async def test_same_customer_creation_cannot_insert_after_deletion_snapshot(monkeypatch):
+    from services.kitchen_projects import KitchenProjectService
+    from uuid import uuid4
+    async with environment() as env:
+        mount(env, monkeypatch)
+        project, _ = await create_project(env)
+        entered, finish = asyncio.Event(), asyncio.Event()
+        original = KitchenProjectService.public
+        async def hold_create(self, row, *args, **kwargs):
+            result = await original(self, row, *args, **kwargs)
+            if row["id"] != project["id"]:
+                entered.set()
+                await finish.wait()
+            return result
+        monkeypatch.setattr(KitchenProjectService, "public", hold_create)
+        path = "/api/kitchen-customer-deletion/" + project["id"]
+        preview = await env["api"].get(path, headers=headers(env))
+        creating = asyncio.create_task(env["api"].post("/api/kitchen-projects", headers=headers(env), json={
+            "customer_id": project["customer_id"], "idempotency_key": str(uuid4()), "lead": {"site_location": "Pending new project"}}))
+        try:
+            await asyncio.wait_for(entered.wait(), 3)
+            busy = await env["api"].delete(path, headers=headers(env), params={"confirmation": preview.json()["confirmation"]})
+            assert busy.status_code == 409 and "affecting this customer" in busy.json()["detail"]
+        finally:
+            finish.set()
+            created = await creating
+        assert created.status_code == 200, created.text
+        stale = await env["api"].delete(path, headers=headers(env), params={"confirmation": preview.json()["confirmation"]})
+        assert stale.status_code == 409 and "changed" in stale.json()["detail"]
+        fresh = await env["api"].get(path, headers=headers(env))
+        assert len(fresh.json()["projects"]) == 2
+        assert (await env["api"].delete(path, headers=headers(env), params={"confirmation": fresh.json()["confirmation"]})).status_code == 200
+        assert await env["db"].kitchen_projects.count_documents({"deleted_at": {"$exists": False}}) == 0
+        late = await env["api"].post("/api/kitchen-projects", headers=headers(env), json={
+            "customer_id": project["customer_id"], "idempotency_key": str(uuid4()), "lead": {"site_location": "Must not resurrect"}})
+        assert late.status_code in {404, 409}, late.text
+
+
+@pytest.mark.asyncio
+async def test_generic_kitchen_customer_delete_uses_same_fence_with_stranded_global_token(monkeypatch):
+    from services.mutation_admission import KEY
+    async with environment() as env:
+        mount(env, monkeypatch)
+        project, _ = await create_project(env)
+        await env["db"].settings.update_one({"_id": KEY}, {"$addToSet": {"writers": "legacy-global-writer"}})
+        path = "/api/customers/" + project["customer_id"]
+        preview = await env["api"].get(path + "/deletion-preview", headers=headers(env))
+        assert preview.status_code == 200, preview.text
+        response = await env["api"].delete(path, headers=headers(env), params={"confirmation": preview.json()["confirmation"]})
+        assert response.status_code == 200, response.text
+        gate = await env["db"].settings.find_one({"_id": KEY})
+        assert gate["writers"] == ["legacy-global-writer"]

@@ -103,6 +103,8 @@ test('Delete customer reviews exact records, cancels safely and removes only aft
 
 test('Delete customer from Design sends no opening autosave and persists deletion after reload', async ({ page, context }, info) => {
   const health = captureRuntimeHealth(page);
+  const seeded = await context.request.post('/api/__acceptance__/stranded-global-writer', { headers });
+  expect(seeded.ok(), await seeded.text()).toBe(true);
   let project = await create(context.request);
   const siblingResponse = await context.request.post('/api/kitchen-projects', { headers, data: {
     customer_id: project.customer_id, idempotency_key: randomUUID(), lead: { site_location: 'Synthetic sibling project' },
@@ -142,6 +144,8 @@ test('Delete customer from Design sends no opening autosave and persists deletio
   const list = await context.request.get(`/api/kitchen-projects?search=${encodeURIComponent(project.reference)}`, { headers });
   expect((await list.json()).rows).toHaveLength(0);
   expect(writes).toEqual([]);
+  const gate = await context.request.get('/api/__acceptance__/stranded-global-writer', { headers });
+  expect((await gate.json()).stranded_present).toBe(true);
   await page.screenshot({ path: info.outputPath('design-customer-deleted-after-reload.png'), fullPage: true });
   await health.assertHealthy();
 });

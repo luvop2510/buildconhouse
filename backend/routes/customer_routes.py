@@ -328,6 +328,14 @@ async def update_customer(
     from services.kitchen_access import require_customer
     await require_customer(db, user, existing, "update")
 
+    if existing.get("floor_id") == "second-floor":
+        from services.kitchen_projects import KitchenProjectService
+        async with KitchenProjectService(db).write_scope(scope={"customer_id": customer_id}):
+            return await _update_customer_fields(customer_id, body, user, existing)
+    return await _update_customer_fields(customer_id, body, user, existing)
+
+
+async def _update_customer_fields(customer_id, body, user, existing):
     patch = body.model_dump(exclude_unset=True)
     if "referrer_id" in patch:
         patch.update(await _referrer_fields(patch["referrer_id"], user))
@@ -358,7 +366,12 @@ async def update_customer(
         patch.pop("email")
         update["$unset"] = {"email": ""}
     try:
-        await db.customers.update_one({"id": customer_id}, update)
+        selector = {"id": customer_id}
+        if existing.get("floor_id") == "second-floor":
+            selector["deleted_at"] = {"$exists": False}
+        result = await db.customers.update_one(selector, update)
+        if existing.get("floor_id") == "second-floor" and result.matched_count != 1:
+            raise HTTPException(404, "Customer not found")
     except DuplicateKeyError as exc:
         raise HTTPException(status_code=409, detail="Another customer already uses this email") from exc
     if patch.get("portal_enabled") is False:

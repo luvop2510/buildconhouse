@@ -1,5 +1,9 @@
 # Verify the source before a private backup
 
+Current backend (17 November 2026): use `docs/deployment/current-backend.json`.
+Older Railway account/service references in this document describe historical
+backup or acceptance evidence and must not be used as deployment targets.
+
 The Operations evidence workflow can export business data using the protected
 `production` environment. Its secrets were last updated on 28 September 2026;
 their presence alone does not prove that they identify the current Railway

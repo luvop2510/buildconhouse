@@ -66,7 +66,7 @@ class Collection:
 @pytest.fixture
 def env(monkeypatch):
     @asynccontextmanager
-    async def admission(self, user, action):
+    async def admission(self, user, action, **kwargs):
         yield {}
     monkeypatch.setattr("services.kitchen_projects.KitchenProjectService.admission", admission)
     project = {"id": "project-a", "customer_id": "customer-a", "floor_id": "second-floor", "stage": "lead", "version": 7}

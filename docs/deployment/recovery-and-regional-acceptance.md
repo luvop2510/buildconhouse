@@ -1,5 +1,9 @@
 # Recovery, rollback, alerting and regional acceptance
 
+Current backend (17 November 2026): use `docs/deployment/current-backend.json`.
+Older Railway account/service references in this document describe historical
+backup or acceptance evidence and must not be used as deployment targets.
+
 Implementation reviewed 5–6 October 2026. Owners, retention and service objectives
 need operator sign-off; proposals below are not claims that those settings exist.
 

@@ -12,7 +12,7 @@ Use Node 22+ and `npm ci`. Run `npx tsc --noEmit`, `npm run lint -- --max-warnin
 
 Run backend tests with the complete hermetic environment from CI, including `MONGO_URL=mongodb://localhost:27017`, a disposable test `DB_NAME`, and synthetic JWT/Supabase configuration. Never use production settings for unit tests. Run `backend/.venv/bin/python -m pytest backend/tests/unit -q` and the production requirements audit. Database integration tests require an isolated disposable database.
 
-Build the actual release export with `EXPO_NO_DOTENV=1 BACKEND_URL=https://forge20-production-a8b0.up.railway.app npm run build`, then `npm run test:mobile-budget`. Run these browser suites sequentially against this export; all APIs use deterministic intercepted fixtures and the audit server rejects unmatched API calls:
+Build the actual release export with `EXPO_NO_DOTENV=1 BACKEND_URL=https://buildconhouse-production-25f49287.up.railway.app npm run build`, then `npm run test:mobile-budget`. Run these browser suites sequentially against this export; all APIs use deterministic intercepted fixtures and the audit server rejects unmatched API calls:
 
 ```sh
 npm run test:e2e:audit
@@ -33,6 +33,6 @@ Verify the existing Railway project/service before changing it. As inspected on 
 
 Run `backend/scripts/predeploy_backend_gate.py` and `backend/scripts/run_migrations.py --dry-run` using authorized production configuration. These are read-only checks. Record the currently successful Railway deployment before promotion; verify the new deployment's commit metadata, successful readiness, and deployed browser/API smoke results. A configuration commit pin can differ from actual deployment metadata; inspect both.
 
-After promotion, run `node scripts/verify-backend-contract.mjs https://forge20-production-a8b0.up.railway.app`. It compares the deployed OpenAPI version and staff password schemas with the checked-out backend version/password policy. Healthy readiness with an incompatible schema fails this check. Its failure cases run in the required `test:service-health` CI contract. Version/schema compatibility supplements the exact-commit check; it does not replace deployment metadata verification.
+After promotion, run `node scripts/verify-backend-contract.mjs https://buildconhouse-production-25f49287.up.railway.app`. It compares the deployed OpenAPI version and staff password schemas with the checked-out backend version/password policy. Healthy readiness with an incompatible schema fails this check. Its failure cases run in the required `test:service-health` CI contract. Version/schema compatibility supplements the exact-commit check; it does not replace deployment metadata verification.
 
 For this review the previous successful deployment is `92692934-99ef-424d-86a0-aa02ed08fabd`, commit `8cb0eb7c8e1b89a416796ab6b5dffdd4b599412b`, reported rollback-capable by Railway. Preserve that reference until a replacement is verified. Roll back the known successful build for code-only failures; data restoration is a separate, explicitly reviewed operation.

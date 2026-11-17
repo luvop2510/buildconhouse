@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import re
 
 from fastapi import HTTPException
 from pymongo.read_concern import ReadConcern
@@ -19,6 +20,37 @@ from services.customer_delete_access import require_customer_delete
 from settings import settings
 
 LIMIT = 1000
+
+
+async def serialize_customer_writes(database, customer, projects, session):
+    """Fence Kitchen writers using the policy document they already reserve.
+
+    The transaction writes this document before tombstoning. A racing admission
+    or release causes a Mongo write conflict and a fresh transaction snapshot.
+    Legacy admissions have no scope: conservatively wait for those to settle.
+    Unrelated scoped Kitchen commands and other departments need not drain.
+    """
+    from services.kitchen_projects import POLICY_ID
+    policy = await database.kitchen_configuration.find_one({"_id": POLICY_ID}, session=session)
+    if not policy:
+        raise HTTPException(409, "Kitchen configuration changed; review deletion again")
+    admitted = policy.get("command_admissions", {})
+    project_ids = {row["id"] for row in projects}
+    phone = re.sub(r"\D", "", customer.get("phone") or "")[-10:]
+    busy = policy.get("active_command_count", 0) != len(admitted)
+    for scope in admitted.values():
+        if not isinstance(scope, dict) or not any(scope.get(key) for key in ("project_id", "customer_id", "phone")):
+            busy = True
+        elif (scope.get("project_id") in project_ids or scope.get("customer_id") == customer["id"]
+              or phone and scope.get("phone") == phone):
+            busy = True
+    if busy:
+        raise HTTPException(409, detail="A Kitchen save affecting this customer is still pending. Retry after it finishes.",
+                            headers={"X-Kitchen-Save-Pending": "1"})
+    result = await database.kitchen_configuration.update_one(
+        {"_id": POLICY_ID, "version": policy["version"]}, {"$inc": {"version": 1}}, session=session)
+    if result.matched_count != 1:
+        raise HTTPException(409, "Kitchen configuration changed; review deletion again")
 
 
 async def require_delete(database, user):
@@ -61,6 +93,8 @@ async def preview(database, user, project_id):
 
 async def remove(database, user, project_id, confirmation):
     await require_delete(database, user)
+    from services.kitchen_projects import KitchenProjectService
+    await KitchenProjectService(database).policy(ensure=True)
     async def commit(session):
         # A lost HTTP acknowledgement may be explicitly retried with the same
         # actor-bound confirmation, without deleting a newly created customer.
@@ -71,6 +105,7 @@ async def remove(database, user, project_id, confirmation):
         customer, projects = await deletion_plan(database, user, project_id, session=session)
         if not hmac.compare_digest(confirmation_for(user, customer, projects), confirmation):
             raise HTTPException(409, "Customer or projects changed. Review the deletion again.")
+        await serialize_customer_writes(database, customer, projects, session)
         # Read fresh delegation on every delete request, including retries.
         await require_delete(database, user)
         at = now_iso()

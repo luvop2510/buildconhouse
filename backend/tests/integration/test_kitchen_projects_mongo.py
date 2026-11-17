@@ -1734,6 +1734,8 @@ if __name__ == "__main__":
     @asynccontextmanager
     async def lifespan(app):
         # Test-only real local bytes; never contacts a configured cloud provider.
+        import auth
+        from fastapi import HTTPException
         from media_storage import factory
         import re
         directory = options.manifest.parent / "private-bytes"
@@ -1770,6 +1772,21 @@ if __name__ == "__main__":
         factory.get_media_storage = lambda: PilotPrivateStorage()
         async with environment() as env:
             await configure(env)  # Test-only browser/pilot identities, never production configuration.
+            from services.mutation_admission import KEY, MutationAdmissionMiddleware
+
+            @env["app"].post("/api/__acceptance__/stranded-global-writer")
+            async def seed_stranded_writer(user=Depends(auth.get_current_user)):
+                if user.role != "owner":
+                    raise HTTPException(403, "Synthetic owner required")
+                await env["db"].settings.update_one({"_id": KEY},
+                    {"$addToSet": {"writers": "synthetic-stranded-writer"}}, upsert=True)
+                return {"seeded": True}
+
+            @env["app"].get("/api/__acceptance__/stranded-global-writer")
+            async def inspect_stranded_writer():
+                gate = await env["db"].settings.find_one({"_id": KEY}) or {}
+                return {"stranded_present": "synthetic-stranded-writer" in gate.get("writers", [])}
+
             legacy, _ = await create_project(env, lead={"site_location": "Synthetic legacy site"})
             await env["db"].kitchen_projects.update_one({"id": legacy["id"]}, {"$set": {
                 "stage": "completed", "status": "Completed", "completion_date": None,
@@ -1778,7 +1795,7 @@ if __name__ == "__main__":
                 "known_design_revision_count": 0, "known_site_visit_count": 0, "lead.lead_date": None,
                 "installation": {"status": "Completed", "start_date": None, "completion_date": None, "notes": None},
                 "legacy_data": {"historical_counts_known": False}}})
-            app.mount("/", env["app"])
+            app.mount("/", MutationAdmissionMiddleware(env["app"]))
             payload = {"token": env["tokens"]["owner"], "second_token": env["tokens"]["owner_second"], "customer_id": env["ids"]["customer"],
                        "worker_id": env["ids"]["worker"], "manager_id": env["ids"]["manager"], "manager_token": env["tokens"]["manager"], "worker_token": env["tokens"]["worker"], "denied_token": env["tokens"]["denied"], "legacy_project_id": legacy["id"], "database": env["db"].name}
             options.manifest.write_text(json.dumps(payload))

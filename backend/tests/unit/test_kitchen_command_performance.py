@@ -9,6 +9,36 @@ from tests.unit.test_kitchen_projects import cmd, create_request, setup
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("creating", [False, True])
+async def test_cancelled_kitchen_reservation_cleans_counter_scope_and_create_token(setup, monkeypatch, creating):
+    database, service, owner = setup
+    await service.policy(ensure=True)
+    original = database.kitchen_configuration.update_one
+    acquiring, commit = asyncio.Event(), asyncio.Event()
+
+    async def delayed(query, changes):
+        if changes.get("$inc", {}).get("active_command_count") == 1:
+            acquiring.set()
+            await commit.wait()
+        return await original(query, changes)
+
+    monkeypatch.setattr(database.kitchen_configuration, "update_one", delayed)
+    async def request():
+        async with service.write_scope(scope={"customer_id": "customer-a"}, creating=creating):
+            pytest.fail("Cancelled acquisition must not enter the write")
+    task = asyncio.create_task(request())
+    await asyncio.wait_for(acquiring.wait(), 1)
+    task.cancel()
+    await asyncio.sleep(0)
+    commit.set()
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(task, 1)
+    row = database.kitchen_configuration.rows[0]
+    assert row["active_command_count"] == 0 and row["command_admissions"] == {}
+    assert "active_create_token" not in row
+
+
+@pytest.mark.asyncio
 async def test_stage_move_reads_policy_once_without_duplicate_insert(setup, monkeypatch):
     database, service, owner = setup
     project = await service.create(owner, create_request(customer_id="customer-a", idempotency_key="performance-create"))

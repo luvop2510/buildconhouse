@@ -72,7 +72,7 @@ class KitchenStageFollowups:
         # Use the existing policy admission as well as HTTP graph admission.
         # Deletion therefore cannot race a child insert, and a policy edit never
         # silently changes an admitted operation's authority.
-        async with KitchenProjectService(self.db).admission(user, "update"):
+        async with KitchenProjectService(self.db).admission(user, "update", scope={"project_id": project_id}):
             project = await self.project(user, project_id, "update")
             if body.stage not in access.semantic_stages(user, "update") or body.stage not in access.semantic_stages(user):
                 raise HTTPException(403, "Kitchen stage interaction is not permitted")
