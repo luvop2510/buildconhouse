@@ -343,11 +343,42 @@ def _family_sort_stages(sort, ranks, user_id):
     return stages, accumulators, order
 
 
+async def _order_cards(base, groups, order, arguments):
+    from services import catalog_service as catalog
+
+    limit = arguments["limit"]
+    # A cursor keeps the collection out of a single BSON document. Reuse the
+    # family grouping and order without fetching siblings for every card.
+    rows = await bounded(aggregate(base + groups + [
+        {"$sort": order},
+        {"$project": {"_id": 0, "_sort_name": 1, "_member_count": 1,
+                      **{f"sample.{key}": 1 for key in ("id", "sku", "price", "price_status", "images")}}},
+    ]), limit, "Catalog reorder cards")
+    if sum(row["_member_count"] for row in rows) > limit:
+        raise HTTPException(413, "This catalog view has too many products to reorder in one edit")
+    samples = [row["sample"] for row in rows]
+    if not samples:
+        return {"items": [], "total": 0}
+    media = await bounded(db.product_media.find({
+        "product_id": {"$in": [sample["id"] for sample in samples]},
+        "public_url": {"$type": "string"},
+        "role": {"$ne": "dimension"},
+        **floor_query(arguments.get("floor_ids")),
+    }, {"_id": 0}), MAX_CONTEXT_MEDIA, "Catalog reorder thumbnails")
+    snapshot = catalog._build_snapshot(samples, media, [], [], [])
+    return {"items": [
+        catalog.order_card(row["sample"], row.get("_sort_name"), snapshot) for row in rows
+    ], "total": len(rows)}
+
+
 async def families(arguments):
     filters = {key: arguments.get(key) for key in ("brand_id", "category_id", "subcategory", "series", "finish", "colour", "size")}
     base = listing_pipeline(filters, floor_ids=arguments.get("floor_ids"), q=arguments.get("q"), family_kind=True)
     sort = arguments.get("sort")
     stages, accumulators, order = _family_sort_stages(sort, arguments.get("ranked_product_ids") or [], arguments.get("user_id"))
+    if arguments.get("order_summary"):
+        base += [{"$limit": arguments["limit"] + 1}]
+        accumulators["_member_count"] = {"$sum": 1}
     groups = [*stages, {"$sort": source_sort()}, {"$group": {
         "_id": _catalog_family_group_key(), "sample": {"$first": "$$ROOT"}, **accumulators,
     }}, {"$set": {"_sort_name": {"$cond": [
@@ -361,6 +392,8 @@ async def families(arguments):
                       "sample._placement.source_order": 1, "_sort_name": 1, "sample.listing_id": 1, "sample.id": 1})
     else:
         order.update({"_sort_name": 1, "sample.id": 1})
+    if arguments.get("order_summary"):
+        return await _order_cards(base, groups, order, arguments)
     result = await aggregate(base + groups + [{"$facet": {"total": [{"$count": "value"}], "items": [{"$sort": order}, {"$skip": arguments["skip"]}, {"$limit": arguments["limit"]}]}}]).to_list(1)
     result = result[0] if result else {}; selected = result.get("items", [])
     if not selected: return {"total": result.get("total", [{}])[0].get("value", 0) if result.get("total") else 0, "items": []}
@@ -469,7 +502,7 @@ async def recent(arguments):
 
 async def call(name, function, args, kwargs):
     bound = inspect.signature(function).bind(*args, **kwargs); bound.apply_defaults(); arguments = dict(bound.arguments)
-    if "limit" in arguments:
+    if "limit" in arguments and not arguments.get("order_summary"):
         from services.pagination import normalize_pagination
         _, arguments["limit"] = normalize_pagination(0, arguments["limit"])
     if name == "list_products_page": return await list_page(arguments)

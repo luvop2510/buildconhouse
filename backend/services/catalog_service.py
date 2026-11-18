@@ -20,6 +20,7 @@ from contextvars import ContextVar
 from functools import wraps
 from bson import BSON
 from datetime import datetime
+from fastapi import HTTPException
 from time import monotonic
 from typing import Optional
 
@@ -1199,6 +1200,22 @@ async def hierarchy_rows(floor_ids: Optional[list[str]] = None) -> tuple[list[di
     )
 
 
+def order_card(product: dict, name: str, snapshot: CatalogSnapshot) -> dict:
+    """The editor needs one selected SKU, a thumbnail and no variant payload."""
+    product_id = product["id"]
+    sku = product.get("sku") or product_id
+    image = _primary_product_image(snapshot, product_id)
+    return {
+        "id": product_id,
+        "sku": sku,
+        "name": name or sku,
+        "price": float(product.get("price") or 0),
+        "price_unknown": product.get("price_status") == "unspecified",
+        # Legacy products sometimes store large inline photos.
+        "image": image if isinstance(image, str) and image.startswith(("https://", "http://")) else None,
+    }
+
+
 async def list_family_groups(
     *, brand_id: Optional[str], category_id: Optional[str], subcategory: Optional[str],
     series: Optional[str], q: Optional[str], limit: int, skip: int,
@@ -1206,6 +1223,7 @@ async def list_family_groups(
     finish: Optional[str] = None, colour: Optional[str] = None, size: Optional[str] = None,
     sort: Optional[str] = None, user_id: Optional[str] = None,
     ranked_product_ids: tuple[str, ...] | list[str] = (),
+    order_summary: bool = False,
 ) -> dict:
     snapshot = await get_catalog_snapshot()
     pattern = _compile_search(q)
@@ -1220,6 +1238,8 @@ async def list_family_groups(
     ]
     products.sort(key=lambda row: _source_sort_key(row, snapshot))
     products = _unique_listings(products)
+    if order_summary and len(products) > limit:
+        raise HTTPException(413, "This catalog view has too many products to reorder in one edit")
     groups: dict[tuple[str, str | None, str | None, str | None], dict] = {}
     for product in products:
         # ``family_key`` is supplier-owned text, not a global database key;
@@ -1279,6 +1299,11 @@ async def list_family_groups(
         return fallback
 
     ordered = sorted(groups.values(), key=order_key)
+    if order_summary:
+        return {"total": len(ordered), "items": [
+            order_card(group["variants"][0], group["family_name"], snapshot)
+            for group in ordered
+        ]}
     page = []
     for raw_group in ordered[skip:skip + limit]:
         group = copy.deepcopy({**raw_group, "variants": [

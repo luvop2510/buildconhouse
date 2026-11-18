@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from services.mutation_admission import MutationAdmissionMiddleware, admission, http_operation
+from services.mutation_admission import MutationAdmissionMiddleware, admission, drain_mutation_admission, http_operation
 
 
 class Gate:
@@ -79,4 +79,35 @@ async def test_cancelled_request_retains_token_until_handler_finishes(monkeypatc
     finished.set()
     with pytest.raises(asyncio.CancelledError):
         await asyncio.wait_for(task, 1)
+    assert not gate.tokens
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cancel_drain", [False, True])
+async def test_shutdown_deadline_or_cancellation_does_not_release_an_active_writer(cancel_drain):
+    gate = Gate()
+    gate.commit.set()
+    entered = asyncio.Event()
+    finish = asyncio.Event()
+
+    async def write():
+        async with admission(SimpleNamespace(settings=gate)):
+            entered.set()
+            await finish.wait()
+
+    writer = asyncio.create_task(write())
+    try:
+        await asyncio.wait_for(entered.wait(), 1)
+        if cancel_drain:
+            draining = asyncio.create_task(drain_mutation_admission(1))
+            await asyncio.sleep(0)
+            draining.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await draining
+        else:
+            await drain_mutation_admission(0)
+        assert gate.tokens and not writer.done()
+    finally:
+        finish.set()
+        await asyncio.wait_for(writer, 1)
     assert not gate.tokens

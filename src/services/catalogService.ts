@@ -39,7 +39,8 @@ export type CatalogQuery = {
 export type CatalogPage<T> = { total: number; items: T[]; order_version?: number };
 export type CatalogRequestOptions = { floorId?: string; signal?: AbortSignal };
 export type CatalogOrderScope = { floorId: string; brandId: string | null; categoryId: string | null };
-export type CatalogProductOrder = { version: number; can_reorder: boolean };
+export type CatalogOrderProduct = { id: string; sku: string; name: string; price: number; price_unknown?: boolean; image?: string | null };
+export type CatalogProductOrder = { version: number; can_reorder: boolean; products?: CatalogOrderProduct[] };
 
 export function supportsCatalogOrdering(floorId: string): boolean {
   return floorId === "first-floor" || floorId === "ground-floor";
@@ -89,16 +90,19 @@ export async function fetchCatalogPage<T>(
   return cachedGet<CatalogPage<T>>(`${endpoint}?${params.toString()}`, sharedOrder ? 0 : PAGE_TTL_MS, options);
 }
 
-function catalogOrderPath(scope: CatalogOrderScope): string {
+function catalogOrderPath(scope: CatalogOrderScope, includeProducts = false): string {
   const params = new URLSearchParams();
   if (scope.brandId) params.set("brand_id", scope.brandId);
   if (scope.categoryId) params.set("category_id", scope.categoryId);
+  if (includeProducts) params.set("include_products", "true");
   const query = params.toString();
   return query ? `/catalog/product-order?${query}` : "/catalog/product-order";
 }
 
-export function getCatalogProductOrder(scope: CatalogOrderScope, signal?: AbortSignal) {
-  return api.get<CatalogProductOrder>(catalogOrderPath(scope), { floorId: scope.floorId, signal, cacheMs: 0 });
+export function getCatalogProductOrder(scope: CatalogOrderScope, { signal, includeProducts }: {
+  signal?: AbortSignal; includeProducts?: boolean;
+} = {}) {
+  return api.get<CatalogProductOrder>(catalogOrderPath(scope, includeProducts), { floorId: scope.floorId, signal, cacheMs: 0 });
 }
 
 export function saveCatalogProductOrder(scope: CatalogOrderScope, version: number, productIds: string[]) {

@@ -383,6 +383,7 @@ async def get_catalog_product_order(
     response: Response,
     brand_id: str | None = Query(None, min_length=1, max_length=200),
     category_id: str | None = Query(None, min_length=1, max_length=200),
+    include_products: bool = Query(False),
     user: UserPublic = Depends(get_current_user),
 ):
     response.headers["Cache-Control"] = "no-store"
@@ -390,7 +391,22 @@ async def get_catalog_product_order(
     await product_order.require_catalog_scope(db, scope)
     order, allowed = await asyncio.gather(product_order.read_order(db, scope),
         product_order.can_reorder_products(db, user, scope["floor_id"]))
-    return {"version": order.get("version", 0), "can_reorder": allowed}
+    version = order.get("version", 0)
+    result = {"version": version, "can_reorder": allowed}
+    if include_products and allowed:
+        snapshot = await catalog_service.list_family_groups(
+            brand_id=scope["brand_id"], category_id=scope["category_id"], floor_ids=[scope["floor_id"]],
+            subcategory=None, series=None, q=None, limit=product_order.MAX_ORDER_PRODUCTS, skip=0,
+            sort="custom" if version else "popular", user_id=user.id,
+            ranked_product_ids=order.get("product_ids", []), order_summary=True,
+        )
+        cards = snapshot["items"]
+        # Keep the all-products response comfortably within the web proxy's
+        # body budget even if legacy product names or image URLs are large.
+        if len(json.dumps(cards, ensure_ascii=False, separators=(",", ":")).encode()) > 3 * 1024 * 1024:
+            raise HTTPException(413, "This catalog view is too large to open in one edit")
+        result["products"] = cards
+    return result
 
 
 @router.put(product_order.ORDER_PATH)

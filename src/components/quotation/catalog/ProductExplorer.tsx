@@ -26,7 +26,7 @@ import type { Product, ProductVariant } from "../helpers/types";
 import { catalogPriceUnknown } from "../helpers/catalogSource";
 import { catalogProductQuantity, roomProductQuantities } from "../helpers/catalogMetrics";
 import { isNearScrollEnd } from "@/src/utils/scrollEnd";
-import { catalogGridRows, catalogReferences, catalogItemKey, supportsCatalogOrdering } from "@/src/services/catalogService";
+import { catalogGridRows, catalogReferences, catalogItemKey, supportsCatalogOrdering, type CatalogOrderProduct } from "@/src/services/catalogService";
 import { CatalogReorderList } from "./CatalogReorderList";
 import { useCatalogProductOrder } from "./useCatalogProductOrder";
 
@@ -348,10 +348,10 @@ export function ProductExplorer({ showCompactFilters = true, scrollHeader }: { s
   );
 }
 
-function renderReorderCard(product: Product) {
+function renderReorderCard(product: CatalogOrderProduct) {
   const web = Platform.OS === "web";
   return <View style={web ? styles.reorderGridCard : styles.reorderCard}>
-    <ProductImage source={product.images} style={styles.reorderImage} contentFit="contain" fallbackLabel={product.sku} disableSkeleton />
+    <ProductImage source={product.image} style={styles.reorderImage} contentFit="contain" fallbackLabel={product.sku} disableSkeleton />
     <View style={styles.reorderCardText}>
       <Text numberOfLines={2} style={styles.cardName}>{product.name}</Text>
       <Text numberOfLines={1} style={styles.cardSku}>{product.sku}</Text>
