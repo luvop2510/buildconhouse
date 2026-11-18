@@ -84,6 +84,37 @@ for (const path of ["../src/api/client.ts", "../src/api/client.web.ts"]) {
 
 console.log("API client cancellation/context contracts and 16 mutation/read race scenarios passed");
 
+for (const path of ["../src/api/client.ts", "../src/api/client.web.ts"]) {
+  const transports = [];
+  const module = { exports: {} };
+  const storage = { secureGet: async () => null, getItem: async () => "first-floor" };
+  const code = ts.transpileModule(read(path), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+  vm.runInNewContext(code, {
+    module, exports: module.exports, require: () => ({ storage, browserStorage: storage }),
+    __DEV__: true, process: { env: {} }, document: { cookie: "" }, AbortController, DOMException, setTimeout, clearTimeout,
+    fetch: (url, options) => new Promise(resolve => transports.push({ url, floor: options.headers["X-Floor-Id"], resolve })),
+  });
+  const dispatch = () => new Promise(resolve => setImmediate(resolve));
+  const { api } = module.exports;
+  module.exports.setRequestFloorId("first-floor");
+  const target = api.delete("/quotations/example", { floorId: "first-floor" });
+  assert.strictEqual(api.delete("/quotations/example"), target);
+  const otherFloor = api.delete("/quotations/example", { floorId: "ground-floor" });
+  const otherRecord = api.delete("/quotations/other", { floorId: "first-floor" });
+  await dispatch();
+  assert.equal(transports.length, 3, "only requests for the exact record and floor are coalesced");
+  transports[0].resolve({ ok: false, status: 503, text: async () => '{"detail":"Interrupted deletion"}' });
+  transports[1].resolve({ ok: true, text: async () => '{"ok":true}' });
+  transports[2].resolve({ ok: true, text: async () => '{"ok":true}' });
+  await assert.rejects(target, /Interrupted deletion/);
+  await Promise.all([otherFloor, otherRecord]);
+  const retry = api.delete("/quotations/example");
+  await dispatch();
+  assert.equal(transports.length, 4, "the next explicit confirmation can retry the failed request");
+  transports[3].resolve({ ok: true, text: async () => '{"ok":true}' });
+  assert.equal((await retry).ok, true);
+}
+
 // Slow device storage must never resurrect a previous identity or workspace.
 for (const path of ["../src/api/client.ts", "../src/api/client.web.ts"]) {
   function controlledClient() {

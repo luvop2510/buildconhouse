@@ -202,9 +202,12 @@ def test_owner_can_delete_directly_and_reset_floor_over_http(monkeypatch):
         app.include_router(customer_routes.router, prefix='/api')
         app.include_router(quotation_routes.router, prefix='/api')
         try:
+            await db.users.insert_one({'id': owner.id, 'role': 'owner', 'active': True, 'floor_ids': []})
             await db.customers.insert_many([{'id':'one','floor_id':FLOOR,'name':'One'}, {'id':'two','floor_id':FLOOR,'name':'Two'}])
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as http:
-                response = await http.delete('/api/customers/one')
+                preview = await http.get('/api/customers/one/deletion-preview')
+                assert preview.status_code == 200, preview.text
+                response = await http.delete('/api/customers/one', params={'confirmation': preview.json()['confirmation']})
                 assert response.status_code == 200, response.text
                 request = str(uuid4())
                 response = await http.post('/api/customers/floor-reset', json={'request_id':request})

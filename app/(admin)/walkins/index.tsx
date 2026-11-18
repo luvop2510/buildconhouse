@@ -16,6 +16,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { walkinsApi, type WalkIn, type WalkInCursor, type WalkInsDashboard } from "@/src/api/walkins";
 import { toast } from "@/src/components/Toast";
+import { useDeletionConfirmation } from "@/src/components/useDeletionConfirmation";
 import { Button, Chip, EmptyState, ErrorState, LoadingState, PageHeader, SearchField, StatTile } from "@/src/components/ui";
 import { WalkInCard } from "@/src/components/walkins/WalkInCard";
 import { setSelectedFloorId, useFloorAccess } from "@/src/hooks/use-floor-access";
@@ -56,11 +57,10 @@ export default function WalkInsScreen({
     ? hasGrantAccess(staff.access_grants, record.floor_id, "walkins", "delete")
     : ["owner", "admin", "manager"].includes(staff.role));
   const deleting = useRef(new Set<string>());
-  const [pendingDeletes, setPendingDeletes] = useState(new Map<string, object>());
   const [summaryError, setSummaryError] = useState(false);
   const [summaryRevision, setSummaryRevision] = useState(0);
   const [savingSelections, setSavingSelections] = useState<string[]>([]);
-  const selectionWrites = useRef(new Map<string, { scope: object; previousStatus: WalkIn["status"] }>());
+  const selectionWrites = useRef(new Map<string, { scope: object; previousStatus: WalkIn["status"]; settled: Promise<void> }>());
   const refreshList = useRef<((background?: boolean) => Promise<void>) | null>(null);
   const activeRead = useRef<{ query: object; controller: AbortController; append: boolean } | null>(null);
   const mounted = useRef(true);
@@ -90,7 +90,7 @@ export default function WalkInsScreen({
   const scopeRef = useRef({ key: scopeKey });
   if (scopeRef.current.key !== scopeKey) scopeRef.current = { key: scopeKey };
   const activeScope = scopeRef.current;
-  const items = confirmedItems.filter(item => pendingDeletes.get(item.id) !== activeScope);
+  const items = confirmedItems;
   const queryKey = JSON.stringify([scopeKey, quotationFollowup, status, summaryView, sourceFilter, searchQuery]);
   const queryRef = useRef({ key: queryKey });
   if (queryRef.current.key !== queryKey) queryRef.current = { key: queryKey };
@@ -119,23 +119,27 @@ export default function WalkInsScreen({
 
   const deleteWalkin = async (record: WalkIn) => {
     if (!mounted.current || scopeRef.current !== activeScope || !canDelete(record)
-        || deleting.current.has(record.id) || selectionWrites.current.has(record.id)) return;
+        || deleting.current.has(record.id)) return false;
     deleting.current.add(record.id);
-    setPendingDeletes(previous => new Map(previous).set(record.id, activeScope));
     try {
+      const pendingSelection = selectionWrites.current.get(record.id);
+      if (pendingSelection) await pendingSelection.settled;
+      if (!mounted.current || scopeRef.current !== activeScope) return false;
       await walkinsApi.remove(record.id, record.floor_id);
       if (mounted.current && scopeRef.current === activeScope) {
         reconcileListRead();
         setItems(current => current.filter(item => item.id !== record.id));
         setSummaryRevision(value => value + 1);
       }
+      return true;
     } catch (error: any) {
-      if (mounted.current && scopeRef.current === activeScope) toast.error(`${error?.detail || "Could not confirm deletion"}. The walk-in has been restored; refresh to check or try again.`);
+      if (mounted.current && scopeRef.current === activeScope) toast.error(error?.detail || "Could not confirm deletion. Refresh to check or try again.");
+      return false;
     } finally {
       deleting.current.delete(record.id);
-      if (mounted.current) setPendingDeletes(previous => { const next = new Map(previous); next.delete(record.id); return next; });
     }
   };
+  const walkInDeletion = useDeletionConfirmation(activeScope, "confirm-delete-walkin-list", deleteWalkin);
 
   useEffect(() => {
     mounted.current = true;
@@ -256,7 +260,9 @@ export default function WalkInsScreen({
   };
   const scheduleSelection = async (w: WalkIn) => {
     if (w.floor_id !== "ground-floor" || !mounted.current || scopeRef.current !== activeScope || selectionWrites.current.has(w.id) || deleting.current.has(w.id)) return;
-    const pending = { scope: activeScope, previousStatus: w.status };
+    let finish = () => {};
+    const settled = new Promise<void>(resolve => { finish = resolve; });
+    const pending = { scope: activeScope, previousStatus: w.status, settled };
     selectionWrites.current.set(w.id, pending);
     setSavingSelections(current => [...current, w.id]);
     const optimistic = { ...w, status: "selection_scheduled" as const };
@@ -275,6 +281,7 @@ export default function WalkInsScreen({
       toast.error(e?.detail || "Could not save selection schedule. Previous status restored.");
     } finally {
       selectionWrites.current.delete(w.id);
+      finish();
       if (mounted.current) setSavingSelections(current => current.filter(id => id !== w.id));
     }
   };
@@ -336,6 +343,7 @@ export default function WalkInsScreen({
 
   return (
     <SafeAreaView style={{ flex: 1 }} edges={isPhone ? [] : ["top"]}>
+      {walkInDeletion.dialog}
       {!isPhone ? pageHeader : null}
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: isPhone ? spacing.lg : spacing.xl, paddingBottom: isPhone ? spacing.xl : spacing.xxxl, gap: spacing.lg }}>
         {isPhone ? pageHeader : null}
@@ -393,7 +401,7 @@ export default function WalkInsScreen({
               onPress={() => router.push(`/(admin)/walkins/${w.id}?floor_id=${w.floor_id}` as any)}
               onCall={() => callCustomer(w)}
               onWhatsApp={canUpdate(w) ? () => { void whatsAppCustomer(w); } : undefined}
-              onDelete={canDelete(w) ? () => { void deleteWalkin(w); } : undefined}
+              onDelete={canDelete(w) ? () => walkInDeletion.prompt(w, `Delete ${w.customer_name}’s walk-in?`, w.number) : undefined}
               onScheduleSelection={canUpdate(w) && w.floor_id === "ground-floor" ? () => scheduleSelection(w) : undefined}
               onVisitShowroom={!quotationFollowup && canUpdate(w) ? () => visitShowroom(w) : undefined}
               quotationFollowup={quotationFollowup}

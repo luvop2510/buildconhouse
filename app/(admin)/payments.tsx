@@ -18,6 +18,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { api } from "@/src/api/client";
 import { useBp } from "@/src/design/responsive";
 import { toast } from "@/src/components/Toast";
+import { useDeletionConfirmation } from "@/src/components/useDeletionConfirmation";
 import { useFloorAccess } from "@/src/hooks/use-floor-access";
 import { useAuth } from "@/src/state/auth";
 import { hasGrantAccess } from "@/src/team-delegation";
@@ -619,8 +620,8 @@ export default function PaymentsScreen() {
   const canDeletePayment = (floor: string) => ["first-floor", "ground-floor"].includes(floor) && !!staff && (staff.custom_access
     ? hasGrantAccess(staff.access_grants, floor, "payments", "delete")
     : ["owner", "admin", "manager"].includes(staff.role));
-  const deletePayment = async (id: string, floor: string) => {
-    if (!canDeletePayment(floor) || deletingPayment.current.has(id)) return;
+  const deletePayment = async ({ id, floor_id: floor }: HistoryRow) => {
+    if (!canDeletePayment(floor) || deletingPayment.current.has(id)) return false;
     deletingPayment.current.add(id);
     try {
       await api.delete(`/payments/${encodeURIComponent(id)}`, { floorId: floor });
@@ -629,10 +630,13 @@ export default function PaymentsScreen() {
         void loadStats();
         if (selectedOrderRef.current) void refreshCollections(selectedOrderRef.current);
       }
+      return true;
     } catch (error: any) {
       if (activeFloorRef.current === selectedFloorId) toast.error(error?.detail || "Could not reverse payment");
+      return false;
     } finally { deletingPayment.current.delete(id); }
   };
+  const paymentDeletion = useDeletionConfirmation(selectedFloorId, "confirm-delete-payment", deletePayment);
 
   // A single effect handles every page, including Previous back to page one.
   // Invalidate old reads immediately when filters, workspace or tab change.
@@ -726,6 +730,7 @@ export default function PaymentsScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }} edges={isPhone ? [] : ["top"]}>
+      {paymentDeletion.dialog}
       {!isPhone ? workspaceHeading : null}
       {tab === "collections" ? (
       <ScrollView testID="payments-collections-scroll" ref={collectionsScrollRef} style={{ flex: 1, minHeight: 0 }} keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: isPhone ? spacing.lg : spacing.xl, gap: spacing.lg, paddingBottom: isPhone ? spacing.xl : spacing.xxxl }}>
@@ -1066,7 +1071,7 @@ export default function PaymentsScreen() {
           onOpenCustomer={(id) => router.push(`/(admin)/customers/${id}` as any)}
           onOpenOrder={(row) => void openHistoryQuotation(row)}
           canDelete={canDeletePayment}
-          onDelete={(row) => { void deletePayment(row.id, row.floor_id); }}
+          onDelete={(row) => paymentDeletion.prompt(row, "Delete payment?", `${row.customer_name || row.invoice_number || "Payment"} · ${money(row.amount)}`)}
         />
       )}
 

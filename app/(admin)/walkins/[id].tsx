@@ -13,6 +13,7 @@ import { LeadScopeSheet } from "@/src/components/leads/LeadScopeSheet";
 import { walkinsApi, type WalkIn } from "@/src/api/walkins";
 import { setSelectedFloorId, useFloorAccess } from "@/src/hooks/use-floor-access";
 import { toast } from "@/src/components/Toast";
+import { useDeletionConfirmation } from "@/src/components/useDeletionConfirmation";
 import { useAuth } from "@/src/state/auth";
 import { hasGrantAccess } from "@/src/team-delegation";
 import { useModuleAccess } from "@/src/hooks/use-permissions";
@@ -184,17 +185,20 @@ function WalkInWorkspace() {
     ? hasGrantAccess(staff.access_grants, w.floor_id, "walkins", "delete")
     : ["owner", "admin", "manager"].includes(staff.role));
   const deleteWalkin = async () => {
-    if (!w || !canDelete || busy || deleting.current || pendingCommand.current) return;
+    if (!w || !canDelete || busy || deleting.current || pendingCommand.current) return false;
     deleting.current = true;
     pendingCommand.current = true;
     setBusy(true);
     try {
       await walkinsApi.remove(w.id, w.floor_id);
       if (mounted.current) router.replace("/(admin)/walkins" as any);
+      return true;
     } catch (error: any) {
       if (mounted.current) toast.error(error?.detail || "Could not delete walk-in");
+      return false;
     } finally { deleting.current = false; pendingCommand.current = false; if (mounted.current) setBusy(false); }
   };
+  const walkInDeletion = useDeletionConfirmation(w?.id, "confirm-delete-walkin-detail", deleteWalkin, busy && !deleting.current);
 
   const filteredAssignees = assignees.filter((a) => a.full_name.toLowerCase().includes(spSearch.trim().toLowerCase()));
 
@@ -209,6 +213,7 @@ function WalkInWorkspace() {
 
   return (
     <SafeAreaView style={{ flex: 1 }} edges={isPhone ? [] : ["top"]}>
+      {walkInDeletion.dialog}
       <ScrollView contentContainerStyle={{ padding: isPhone ? spacing.lg : spacing.xl, paddingBottom: isPhone ? 132 : spacing.xxl, gap: spacing.md }}>
         <PageHeader title={w.customer_name} overline={w.number} back={() => router.back()} embedded />
         <Card variant="outlined" padding={spacing.lg} style={{ gap: spacing.sm }}>
@@ -236,7 +241,7 @@ function WalkInWorkspace() {
         />
 
         <View style={{ flexDirection: "row", gap: spacing.sm, flexWrap: "wrap" }}>
-          {canDelete ? <Button label="Delete walk-in" icon="trash-2" variant="danger" size="sm" loading={busy} onPress={() => { void deleteWalkin(); }} testID="walkin-detail-delete" /> : null}
+          {canDelete ? <Button label="Delete walk-in" icon="trash-2" variant="danger" size="sm" onPress={() => walkInDeletion.prompt(undefined, `Delete ${w.customer_name}’s walk-in?`, w.number)} testID="walkin-detail-delete" /> : null}
           <Button label="Call" icon="phone" variant="secondary" size="sm" onPress={() => w.customer_phone && openUrl(`tel:${w.customer_phone}`)} />
           {canUpdate && !w.showroom_followup_id && !w.showroom_transferred_at && w.status !== "lost" ? <Button label={w.showroom_followup_id ? "View Visit Showroom" : "Visit Showroom"} icon="home" size="sm" loading={busy} onPress={visitShowroom} testID="walkin-visit-showroom" /> : null}
           {canUpdate ? <Button label="WhatsApp" icon="message-circle" variant="secondary" size="sm" onPress={whatsApp} /> : null}

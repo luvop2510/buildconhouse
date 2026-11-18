@@ -17,10 +17,11 @@ import {
 import { TempPasswordDialog, TempPasswordResult } from "@/src/components/TempPasswordDialog";
 import { toast } from "@/src/components/Toast";
 import { ReferrerField } from "@/src/components/customer/ReferrerField";
+import { CustomerDataDeletionDialog } from "@/src/components/customer/CustomerDataDeletionDialog";
 import { useBp } from "@/src/design/responsive";
 import { useAuth } from "@/src/state/auth";
 import { useFloorAccess } from "@/src/hooks/use-floor-access";
-import { useActionAccess } from "@/src/hooks/use-permissions";
+import { useCustomerDeleteAccess } from "@/src/hooks/use-customer-delete-access";
 import { colors, radius, spacing, type } from "@/src/theme/tokens";
 
 type Tier = "retail" | "trade" | "vip";
@@ -46,21 +47,11 @@ export default function EditCustomer() {
   const context = contextRef.current;
   const activeRef = useRef(false);
   const loadedContextRef = useRef<typeof context | null>(null);
+  const loadedCustomerName = useRef("");
   const loadAbortRef = useRef<AbortController | null>(null);
-  const deletingCustomer = useRef(false);
   const isCurrent = useCallback(() => activeRef.current && contextRef.current === context, [context]);
-  const canDeleteCustomers = useActionAccess("customers", "delete", staff?.role === "owner") && staff?.role === "owner";
-
-  const deleteCustomer = async () => {
-    if (!id || !selectedFloorId || !isCurrent() || deletingCustomer.current) return;
-    deletingCustomer.current = true;
-    try {
-      await api.delete(`/customers/${encodeURIComponent(id)}`, { floorId: selectedFloorId });
-      if (isCurrent()) router.replace("/(admin)/customers" as any);
-    } catch (error: any) {
-      if (isCurrent()) toast.error(error?.detail || "Could not delete customer data");
-    } finally { deletingCustomer.current = false; }
-  };
+  const canDeleteCustomers = useCustomerDeleteAccess();
+  const [deleteTarget, setDeleteTarget] = useState<typeof context | null>(null);
 
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState(false);
@@ -99,6 +90,7 @@ export default function EditCustomer() {
     try {
       const c = await api.get<Customer>(`/customers/${id}`, { floorId: selectedFloorId, signal: controller.signal });
       if (!current()) return;
+      loadedCustomerName.current = c.name || c.company || "Customer";
       setName(c.name || "");
 
       setEmail(c.email || "");
@@ -123,7 +115,7 @@ export default function EditCustomer() {
   const canUsePortalActions = portalEnabled && !!email.trim();
 
   const save = async (silent = false) => {
-    if (!isCurrent() || loadedContextRef.current !== context || !loaded) return false;
+    if (!isCurrent() || loadedContextRef.current !== context || !loaded || deleteTarget === context) return false;
     if (!name.trim()) { setError("Name is required"); if (!silent) toast.error("Enter a customer name"); return false; }
     if (portalEnabled && !email.trim()) { setError("Add an email to enable portal access"); toast.error("Email required for portal access"); return false; }
     setSaving(true);
@@ -173,7 +165,7 @@ export default function EditCustomer() {
   };
 
   const resetPassword = async () => {
-    if (!isCurrent() || loadedContextRef.current !== context || !loaded) return;
+    if (!isCurrent() || loadedContextRef.current !== context || !loaded || deleteTarget === context) return;
     setResetting(true);
     try {
       const res = await api.post<TempPasswordResult>(`/customers/${id}/reset-password`, undefined, { floorId: selectedFloorId });
@@ -209,14 +201,19 @@ export default function EditCustomer() {
         back={() => router.back()}
         actions={canDeleteCustomers ? (
           <Button
-            label={["first-floor", "ground-floor"].includes(selectedFloorId) ? "Delete customer data" : "Manage customer data"}
-            icon={["first-floor", "ground-floor"].includes(selectedFloorId) ? "trash-2" : "settings"}
+            label="Delete customer data"
+            icon="trash-2"
             variant="secondary"
             size="sm"
-            onPress={() => { if (["first-floor", "ground-floor"].includes(selectedFloorId)) void deleteCustomer(); else router.push("/(admin)/customers" as any); }}
+            onPress={() => { if (isCurrent()) setDeleteTarget(context); }}
             testID="delete-customer-edit"
           />
         ) : undefined}
+      />
+      <CustomerDataDeletionDialog
+        customer={id && canDeleteCustomers && deleteTarget === context ? { id, name: loadedCustomerName.current } : null}
+        onClose={() => setDeleteTarget(null)} waitForSave={saving || inviting || resetting}
+        onDeleted={() => { if (isCurrent()) router.replace("/(admin)/customers" as any); }}
       />
           <TextField
             label="Name *"

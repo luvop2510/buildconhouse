@@ -7,7 +7,7 @@
 import { api, clearApiResponseCache } from "@/src/api/client";
 
 export const CATALOG_PAGE_SIZE = 50;
-export type CatalogSort = "source" | "popular" | "recent" | "price_asc" | "price_desc" | "name" | "custom";
+export type CatalogSort = "source" | "popular" | "recent" | "price_asc" | "price_desc" | "name" | "custom" | "default";
 export type CatalogEntry = {
   entry_id: string; source_catalog: string; sheet_name: string;
   sheet_order: number; row_number: number; source_order: number;
@@ -38,8 +38,12 @@ export type CatalogQuery = {
 
 export type CatalogPage<T> = { total: number; items: T[]; order_version?: number };
 export type CatalogRequestOptions = { floorId?: string; signal?: AbortSignal };
-export type CatalogOrderScope = { floorId: string; brandId: string; categoryId: string };
+export type CatalogOrderScope = { floorId: string; brandId: string | null; categoryId: string | null };
 export type CatalogProductOrder = { version: number; can_reorder: boolean };
+
+export function supportsCatalogOrdering(floorId: string): boolean {
+  return floorId === "first-floor" || floorId === "ground-floor";
+}
 
 const PAGE_TTL_MS = 60_000;
 const REFERENCE_TTL_MS = 5 * 60_000;
@@ -81,11 +85,16 @@ export async function fetchCatalogPage<T>(
 ): Promise<CatalogPage<T>> {
   const params = stableParams(query, skip, limit);
   const endpoint = query.mode === "families" ? "/products/families" : "/products";
-  return cachedGet<CatalogPage<T>>(`${endpoint}?${params.toString()}`, query.sort === "custom" ? 0 : PAGE_TTL_MS, options);
+  const sharedOrder = query.sort === "custom" || query.sort === "default";
+  return cachedGet<CatalogPage<T>>(`${endpoint}?${params.toString()}`, sharedOrder ? 0 : PAGE_TTL_MS, options);
 }
 
 function catalogOrderPath(scope: CatalogOrderScope): string {
-  return `/catalog/product-order?${new URLSearchParams({ brand_id: scope.brandId, category_id: scope.categoryId })}`;
+  const params = new URLSearchParams();
+  if (scope.brandId) params.set("brand_id", scope.brandId);
+  if (scope.categoryId) params.set("category_id", scope.categoryId);
+  const query = params.toString();
+  return query ? `/catalog/product-order?${query}` : "/catalog/product-order";
 }
 
 export function getCatalogProductOrder(scope: CatalogOrderScope, signal?: AbortSignal) {

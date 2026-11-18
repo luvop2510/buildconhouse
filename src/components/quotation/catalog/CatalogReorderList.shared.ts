@@ -6,6 +6,7 @@ export type CatalogReorderListProps = {
   products: Product[];
   onReorder: (products: Product[]) => void;
   renderCard: (product: Product) => ReactNode;
+  columns: number;
   disabled?: boolean;
 };
 

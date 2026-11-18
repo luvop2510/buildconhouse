@@ -907,7 +907,7 @@ export function Stepper({
 // ───────────────────────────────────────────────────────────────────────────
 export function ConfirmDialog({
   visible, onClose, onConfirm, title, description,
-  confirmLabel = "Confirm", cancelLabel = "Cancel", tone = "brand", loading,
+  confirmLabel = "Confirm", cancelLabel = "Cancel", tone = "brand", loading, disabled, error,
   testID,
 }: {
   visible: boolean;
@@ -919,6 +919,8 @@ export function ConfirmDialog({
   cancelLabel?: string;
   tone?: "brand" | "danger" | "warning" | "success";
   loading?: boolean;
+  disabled?: boolean;
+  error?: string;
   testID?: string;
 }) {
   const toneMap = {
@@ -946,6 +948,7 @@ export function ConfirmDialog({
             variant={toneMap.variant}
             onPress={onConfirm}
             loading={loading}
+            disabled={disabled}
             size="md"
             testID={testID ? `${testID}-confirm` : undefined}
           />
@@ -960,6 +963,7 @@ export function ConfirmDialog({
         }}>
           <Feather name={toneMap.icon as any} size={iconSize.hero} color={toneMap.fg} />
         </View>
+        {error ? <Text accessibilityRole="alert" style={[type.body, { color: colors.error }]}>{error}</Text> : null}
       </View>
     </_Sheet>
   );

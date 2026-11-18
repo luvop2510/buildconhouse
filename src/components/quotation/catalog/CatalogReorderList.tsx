@@ -1,6 +1,6 @@
 import Feather from "@expo/vector-icons/Feather";
 import { AccessibilityInfo, Pressable, StyleSheet, View } from "react-native";
-import DraggableFlatList, { type RenderItemParams } from "react-native-draggable-flatlist";
+import DraggableFlatList, { ScaleDecorator, type RenderItemParams } from "react-native-draggable-flatlist";
 
 import { catalogItemKey } from "@/src/services/catalogService";
 import { colors, radius, spacing } from "@/src/theme/tokens";
@@ -24,11 +24,11 @@ export function CatalogReorderList({ products, onReorder, renderCard, disabled }
       ...(index >= 0 && index < products.length - 1 ? [{ name: "moveDown", label: "Move down" }] : []),
     ];
     return (
-      <View style={[styles.row, isActive && styles.active]} testID={`catalog-reorder-row-${item.id}`}>
+      <ScaleDecorator activeScale={1.025}>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={`Reorder ${item.name}`}
-          accessibilityHint="Hold the handle to drag. Use accessibility actions to move up or down."
+          accessibilityHint="Hold the card to drag. Use accessibility actions to move up or down."
           accessibilityActions={actions}
           onAccessibilityAction={({ nativeEvent }) => {
             if (nativeEvent.actionName === "moveUp") move(index, index - 1);
@@ -36,14 +36,14 @@ export function CatalogReorderList({ products, onReorder, renderCard, disabled }
           }}
           disabled={disabled}
           onLongPress={drag}
-          delayLongPress={160}
-          style={styles.handle}
+          delayLongPress={260}
+          style={[styles.row, isActive && styles.active]}
           testID={`catalog-drag-${item.id}`}
         >
           <Feather name="menu" color={colors.onSurfaceSecondary} size={17} />
+          <View style={styles.card} pointerEvents="none">{renderCard(item)}</View>
         </Pressable>
-        <View style={styles.card}>{renderCard(item)}</View>
-      </View>
+      </ScaleDecorator>
     );
   };
 
@@ -73,6 +73,5 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: colors.border, padding: spacing.s4,
   },
   active: { borderColor: colors.brand, backgroundColor: colors.brandTint },
-  handle: { width: 44, minHeight: 44, alignItems: "center", justifyContent: "center", borderRadius: radius.sm, backgroundColor: colors.surfaceTertiary },
   card: { flex: 1, minWidth: 0 },
 });

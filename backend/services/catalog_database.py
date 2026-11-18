@@ -318,7 +318,7 @@ async def ordered_scope_members(scope):
                     "product_ids": {"$push": "$id"}}},
     ]).to_list(MAX_ORDER_PRODUCTS + 1)
     if sum(len(row["product_ids"]) for row in rows) > MAX_ORDER_PRODUCTS:
-        raise HTTPException(413, "This category has too many products to reorder in one edit")
+        raise HTTPException(413, "This catalog view has too many products to reorder in one edit")
     return {row["sample_id"]: row["product_ids"] for row in rows}
 
 

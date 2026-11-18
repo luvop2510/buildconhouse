@@ -33,6 +33,7 @@ import type { CatalogEntry } from "@/src/services/catalogService";
 import { catalogProductDetailPath } from "@/src/components/quotation/helpers/catalogSource";
 import { LazyProductEditor as ProductEditor } from "@/src/components/catalog/LazyProductEditor";
 import { toast } from "@/src/components/Toast";
+import { useDeletionConfirmation } from "@/src/components/useDeletionConfirmation";
 import { api } from "@/src/api/client";
 import { useFloorAccess } from "@/src/hooks/use-floor-access";
 import { useAuth } from "@/src/state/auth";
@@ -133,23 +134,25 @@ function ProductDetailWorkspace({ floorId }: { floorId: string }) {
   const [editorTab, setEditorTab] = useState<"General" | "Pricing" | "Media">("General");
 
   const [p, setP] = useState<Product | null>(null);
-  const deleteProduct = async () => {
-    if (!p || deletingProduct.current) return;
+  const deleteProduct = async (productId: string) => {
+    if (!canDeleteProduct || p?.id !== productId || deletingProduct.current) return false;
     deletingProduct.current = true;
     setDeletePending(true);
     setDeleteError("");
-    const productId = p.id;
     const request = loadRequestRef.current;
     try {
       await api.delete(`/products/${encodeURIComponent(productId)}`, { floorId });
       if (request === loadRequestRef.current) router.replace("/(admin)/catalog" as any);
+      return true;
     } catch (error: any) {
       if (request === loadRequestRef.current) setDeleteError(typeof error?.detail === "string" ? error.detail : "Could not delete product. Please try again.");
+      return false;
     } finally {
       deletingProduct.current = false;
       if (request === loadRequestRef.current) setDeletePending(false);
     }
   };
+  const productDeletion = useDeletionConfirmation(p?.id, "confirm-delete-catalog-product", deleteProduct, false, deleteError);
   const [siblings, setSiblings] = useState<Product[]>([]);
   const [alternates, setAlternates] = useState<Product[]>([]);
   const [brandName, setBrandName] = useState<string>("");
@@ -816,12 +819,13 @@ function ProductDetailWorkspace({ floorId }: { floorId: string }) {
             accessibilityLabel="Edit product" testID="manage-images-btn"
           />
         ) : null}
-        {canDeleteProduct ? <IconButton icon="trash-2" onPress={() => { void deleteProduct(); }} size={36} tone="surface" disabled={deletePending} accessibilityLabel="Delete product" testID="delete-catalog-product" /> : null}
+        {canDeleteProduct ? <IconButton icon="trash-2" onPress={() => productDeletion.prompt(p.id, `Delete ${p.name}?`, p.sku)} size={36} tone="surface" disabled={deletePending} accessibilityLabel="Delete product" testID="delete-catalog-product" /> : null}
         <IconButton icon="share-2" onPress={shareProduct} size={36} tone="surface" accessibilityLabel="Share" testID="share-product-top" />
       </SafeAreaView>
 
       {deletePending ? <View accessibilityRole="progressbar" accessibilityLabel="Deleting product" accessibilityState={{ busy: true }} testID="delete-catalog-progress" style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm }}><ActivityIndicator size="small" color={colors.brand} /><Text style={type.body}>Deleting product…</Text></View> : null}
-      {deleteError ? <View accessibilityRole="alert" style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: spacing.sm, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm }}><Text style={type.body}>{deleteError}</Text><Button label="Try again" size="sm" variant="secondary" onPress={() => { void deleteProduct(); }} testID="retry-delete-catalog-product" /></View> : null}
+      {deleteError ? <View accessibilityRole="alert" style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: spacing.sm, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm }}><Text style={type.body}>{deleteError}</Text><Button label="Try again" size="sm" variant="secondary" onPress={() => productDeletion.prompt(p.id, `Delete ${p.name}?`, p.sku)} testID="retry-delete-catalog-product" /></View> : null}
+      {productDeletion.dialog}
 
       <ScrollView
         contentContainerStyle={{ paddingBottom: isPhone ? bottomBarHeight + insets.bottom + spacing.lg : spacing.xxxl }}

@@ -1,4 +1,4 @@
-"""Persist shared product order for one floor, brand and category."""
+"""Persist shared product order for a floor-scoped catalog selection."""
 from __future__ import annotations
 
 from typing import Annotated
@@ -32,39 +32,46 @@ class CatalogProductOrderUpdate(BaseModel):
         return product_ids
 
 
-def scope_key(floor_id: str, brand_id: str, category_id: str) -> dict[str, str]:
+def scope_key(floor_id: str, brand_id: str | None, category_id: str | None) -> dict:
     # MongoDB's built-in unique _id index protects the very first save as well.
+    # Null means All Brands or All Products. Retain the original category IDs.
     return {"floor_id": floor_id, "brand_id": brand_id, "category_id": category_id}
 
 
-def selected_scope(floor_ids, brand_id, category_id) -> dict[str, str] | None:
+def selected_scope(floor_ids, brand_id, category_id) -> dict | None:
     def single(value):
         if isinstance(value, (list, tuple)):
-            return value[0] if len(value) == 1 else None
+            return value[0] if value else None
         return value
 
+    if any(isinstance(value, (list, tuple)) and len(value) > 1 for value in (brand_id, category_id)):
+        return None
     brand, category = single(brand_id), single(category_id)
-    if floor_ids and len(floor_ids) == 1 and floor_ids[0] in CATALOG_FLOORS and brand and category:
+    if floor_ids and len(floor_ids) == 1 and floor_ids[0] in CATALOG_FLOORS:
         return scope_key(floor_ids[0], brand, category)
     return None
 
 
-async def read_order(database, scope: dict[str, str]) -> dict:
+async def read_order(database, scope: dict) -> dict:
     return await database.catalog_product_orders.find_one(
         {"_id": scope}, {"_id": 0, "version": 1, "product_ids": 1},
     ) or {}
 
 
-async def require_catalog_scope(database, scope: dict[str, str]) -> None:
+async def require_catalog_scope(database, scope: dict) -> None:
     floor_id = scope["floor_id"]
-    brand = await database.brands.find_one(
-        {"id": scope["brand_id"], "floor_id": floor_id}, {"_id": 0, "name": 1, "slug": 1},
-    )
-    category = await database.categories.find_one(
-        {"id": scope["category_id"], "floor_id": floor_id}, {"_id": 0, "id": 1},
-    )
-    if not brand or removed_brand_document(brand) or not category:
-        raise HTTPException(404, "Catalog brand or category not found on this floor")
+    if scope["brand_id"] is not None:
+        brand = await database.brands.find_one(
+            {"id": scope["brand_id"], "floor_id": floor_id}, {"_id": 0, "name": 1, "slug": 1},
+        )
+        if not brand or removed_brand_document(brand):
+            raise HTTPException(404, "Catalog brand not found on this floor")
+    if scope["category_id"] is not None:
+        category = await database.categories.find_one(
+            {"id": scope["category_id"], "floor_id": floor_id}, {"_id": 0, "id": 1},
+        )
+        if not category:
+            raise HTTPException(404, "Catalog category not found on this floor")
 
 
 async def can_reorder_products(database, user, floor_id: str) -> bool:
@@ -91,7 +98,7 @@ async def can_reorder_products(database, user, floor_id: str) -> bool:
                for grant in grants for resource in ("catalog", REORDER_RESOURCE))
 
 
-async def save_order(database, scope: dict[str, str], body: CatalogProductOrderUpdate, actor_id: str) -> int:
+async def save_order(database, scope: dict, body: CatalogProductOrderUpdate, actor_id: str) -> int:
     from services.catalog_database import ordered_scope_members
 
     current = await read_order(database, scope)
@@ -100,7 +107,7 @@ async def save_order(database, scope: dict[str, str], body: CatalogProductOrderU
 
     cards = await ordered_scope_members(scope)
     if set(body.product_ids) != cards.keys():
-        raise HTTPException(409, "The products in this category changed. Reload the catalog before saving again.")
+        raise HTTPException(409, "The products in this catalog view changed. Reload the catalog before saving again.")
 
     # Rank all underlying member IDs together. A card keeps its position if
     # its leading finish is replaced or removed from the supplier catalog.

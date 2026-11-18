@@ -15,6 +15,10 @@ for (const [path, exports] of [['../src/components/tiles/tileQuantityUnit.ts', t
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText, { exports });
 }
+const autosaveExports = {};
+vm.runInNewContext(ts.transpileModule(readFileSync(new URL('../src/components/quotation/helpers/autosave.ts', import.meta.url), 'utf8'), {
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+}).outputText, { exports: autosaveExports });
 
 const source = readFileSync(new URL('../app/(admin)/tiles/index.tsx', import.meta.url), 'utf8');
 const marker = '  return (\n    <SafeAreaView';
@@ -29,7 +33,7 @@ function screen({ canDelete = true } = {}) {
   let index = 0, dirty = false, state, ready = false, completed = false, actor = 'owner';
   const same = (a, b) => a && b && a.length === b.length && a.every((value, i) => Object.is(value, b[i]));
   const react = {
-    useState(initial) { const slot = index++; hooks[slot] ||= { value: initial }; return [hooks[slot].value, value => { const next = typeof value === 'function' ? value(hooks[slot].value) : value; if (!Object.is(next, hooks[slot].value)) { hooks[slot].value = next; dirty = true; } }]; },
+    useState(initial) { const slot = index++; hooks[slot] ||= { value: typeof initial === 'function' ? initial() : initial }; return [hooks[slot].value, value => { const next = typeof value === 'function' ? value(hooks[slot].value) : value; if (!Object.is(next, hooks[slot].value)) { hooks[slot].value = next; dirty = true; } }]; },
     useRef(initial) { return hooks[index++] ||= { current: initial }; },
     useCallback(callback, deps) { const slot = index++; if (!same(hooks[slot]?.deps, deps)) hooks[slot] = { value: callback, deps }; return hooks[slot].value; },
     useEffect(callback, deps) { const slot = index++; if (!same(hooks[slot]?.deps, deps)) { const cleanup = hooks[slot]?.cleanup; hooks[slot] = { deps }; effects.push(() => { cleanup?.(); hooks[slot].cleanup = callback(); }); } },
@@ -161,7 +165,7 @@ function builder({ drafts = new Map(), accountId = 'owner', docType = 'tiles_quo
   let index = 0, dirty = false, state, params = initialParams, nextTimer = 1;
   const same = (a, b) => a && b && a.length === b.length && a.every((value, i) => Object.is(value, b[i]));
   const react = {
-    useState(initial) { const slot = index++; hooks[slot] ||= { value: initial }; return [hooks[slot].value, value => { const next = typeof value === 'function' ? value(hooks[slot].value) : value; if (!Object.is(next, hooks[slot].value)) { hooks[slot].value = next; dirty = true; } }]; },
+    useState(initial) { const slot = index++; hooks[slot] ||= { value: typeof initial === 'function' ? initial() : initial }; return [hooks[slot].value, value => { const next = typeof value === 'function' ? value(hooks[slot].value) : value; if (!Object.is(next, hooks[slot].value)) { hooks[slot].value = next; dirty = true; } }]; },
     useRef(initial) { return hooks[index++] ||= { current: initial }; },
     useCallback(callback, deps) { const slot = index++; if (!same(hooks[slot]?.deps, deps)) hooks[slot] = { value: callback, deps }; return hooks[slot].value; },
     useMemo(callback, deps) { const slot = index++; if (!same(hooks[slot]?.deps, deps)) hooks[slot] = { value: callback(), deps }; return hooks[slot].value; },
@@ -184,7 +188,7 @@ function builder({ drafts = new Map(), accountId = 'owner', docType = 'tiles_quo
     'expo-router': { useRouter: () => router, useLocalSearchParams: () => params },
     '@/src/api/client': { api: { get: (url, options) => { if (url === '/customers') return Promise.resolve([]); return request('GET')(url, undefined, options); }, post: request('POST'), patch: request('PATCH'), delete: (url, options) => request('DELETE')(url, undefined, options) } },
     '@/src/components/Toast': { toast: { error() {}, show() {}, success() {} } },
-    '@/src/components/quotation/helpers/autosave': { enqueueQuotationPersist(queue, run) { const next = queue.current.then(run, run); queue.current = next; return next; } },
+    '@/src/components/quotation/helpers/autosave': autosaveExports,
     '@/src/components/quotation/helpers/media': { productImageList: product => product.images || [] },
     '@/src/components/quotation/helpers/totals': { computeQuotationTotals: () => ({ subtotal: 0, grandTotal: 0, transportation: 0 }) },
     '@/src/theme/tokens': { font: {}, colors: {}, radius: {}, spacing: {}, type: new Proxy({}, { get: () => ({}) }) },

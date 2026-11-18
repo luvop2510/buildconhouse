@@ -28,6 +28,7 @@ import { Alert, Chip, EmptyState, IconButton, PriceTag, ScreenTitle, SegmentedCo
 import { CATALOG_PAGE_SIZE as PAGE_SIZE, catalogGridRows, catalogPageProgress, catalogItemKey, catalogReferences, fetchCatalogPage, mergeCatalogPage, type CatalogEntry } from "@/src/services/catalogService";
 import { api, subscribeCatalogMutations } from "@/src/api/client";
 import { toast } from "@/src/components/Toast";
+import { useDeletionConfirmation } from "@/src/components/useDeletionConfirmation";
 import { useBreakpoint } from "@/src/hooks/use-breakpoint";
 import { useFloorAccess } from "@/src/hooks/use-floor-access";
 import { colors, money, PRODUCT_IMAGE_ASPECT_RATIO, radius, spacing, type } from "@/src/theme/tokens";
@@ -377,15 +378,20 @@ export default function Catalog() {
   const filterError = [referenceError, hierarchyError].filter(Boolean).join(" ");
   const filtersLoading = referencesLoading || hierarchyLoading;
   const retryFilters = () => setFilterRevision((revision) => revision + 1);
-  const deleteCategory = (id: string) => {
-    if (categoryDeleting.current) return;
+  const deleteCategory = async (id: string) => {
+    if (!canDeleteCategory || categoryDeleting.current) return false;
     categoryDeleting.current = true;
     setDeletingCategoryId(id);
-    void api.delete(`/categories/${encodeURIComponent(id)}`, { floorId: selectedFloorId }).then(() => {
+    try {
+      await api.delete(`/categories/${encodeURIComponent(id)}`, { floorId: selectedFloorId });
       setCatValues(current => current.filter(value => value !== id));
-    }).catch((error: any) => toast.error(typeof error?.detail === "string" ? error.detail : "Could not delete category. Please try again."))
-      .finally(() => { categoryDeleting.current = false; setDeletingCategoryId(null); });
+      return true;
+    } catch (error: any) {
+      toast.error(typeof error?.detail === "string" ? error.detail : "Could not delete category. Please try again.");
+      return false;
+    } finally { categoryDeleting.current = false; setDeletingCategoryId(null); }
   };
+  const categoryDeletion = useDeletionConfirmation(selectedFloorId, "confirm-delete-category", deleteCategory);
 
   const countLabel = (count: number) => mode === "families"
     ? count === 1 ? "family" : "families"
@@ -510,7 +516,7 @@ export default function Catalog() {
             onPress={() => { setCat(c.id); }}
             testID={`cat-${c.id}`}
           />
-          {canDeleteCategory ? <IconButton icon="trash-2" size={36} tone="ghost" accessibilityLabel={`Delete category ${c.name}`} testID={`delete-category-${c.id}`} onPress={() => deleteCategory(c.id)} /> : null}
+          {canDeleteCategory ? <IconButton icon="trash-2" size={36} tone="ghost" accessibilityLabel={`Delete category ${c.name}`} testID={`delete-category-${c.id}`} onPress={() => categoryDeletion.prompt(c.id, `Delete ${c.name}?`)} /> : null}
         </View>)}
       </ScrollView>
       <Pressable accessibilityRole="button" accessibilityLabel="Scroll categories right"
@@ -624,10 +630,11 @@ export default function Catalog() {
           {categories.map(category => <View key={category.id} style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
             <Text style={[type.body, { flex: 1 }]}>{category.name}</Text>
             <Button label={`Delete ${category.name}`} variant="secondary" size="sm" testID={`manage-delete-category-${category.id}`}
-              loading={deletingCategoryId === category.id} disabled={!!deletingCategoryId && deletingCategoryId !== category.id} onPress={() => deleteCategory(category.id)} />
+              loading={deletingCategoryId === category.id} disabled={!!deletingCategoryId && deletingCategoryId !== category.id} onPress={() => categoryDeletion.prompt(category.id, `Delete ${category.name}?`)} />
           </View>)}
         </View>
       </BottomSheet>
+      {categoryDeletion.dialog}
 
       <FiltersSheet
         visible={filtersOpen}

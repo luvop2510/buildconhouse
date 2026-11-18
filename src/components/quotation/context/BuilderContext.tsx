@@ -31,11 +31,11 @@ import { draftNeedsCopy, type BuilderDraft } from "../helpers/draftRecovery";
 import { useFloorAccess } from "@/src/hooks/use-floor-access";
 import type { HistoryApi } from "@/src/hooks/useHistory";
 import { playAddProductSound } from "@/src/services/soundService";
-import { catalogPageProgress, catalogReferences, CATALOG_PAGE_SIZE, clearCatalogCache, fetchCatalogPage, mergeCatalogPage, type CatalogSort } from "@/src/services/catalogService";
+import { catalogPageProgress, catalogReferences, CATALOG_PAGE_SIZE, clearCatalogCache, fetchCatalogPage, mergeCatalogPage, supportsCatalogOrdering, type CatalogSort } from "@/src/services/catalogService";
 import { downloadApiFile } from "@/src/utils/downloadFile";
 
 import { computeTotals, computeLineBreakdown, type LineBreakdown } from "../helpers/pricing";
-import { enqueueQuotationPersist } from "../helpers/autosave";
+import { QuotationMutations } from "../helpers/autosave";
 import { productImageList } from "../helpers/media";
 import { moveQuotationLine, reorderQuotationRoom } from "../helpers/reorder";
 import { cloneRoomProducts, hasReservedStock, matchesSavedRoomSnapshot, previewQuantityIncrease, quotationRoom, quotationRoomLines, validQuantityIncrease, type SavedRoomSnapshot } from "../helpers/roomProducts";
@@ -52,7 +52,7 @@ import {
 import { catalogPriceUnknown, catalogProductDetailPath } from "../helpers/catalogSource";
 
 
-export type BuilderCatalogSort = Exclude<CatalogSort, "source">;
+export type BuilderCatalogSort = Exclude<CatalogSort, "source" | "default">;
 const BUILDER_CATALOG_SORTS = new Set<unknown>(["popular", "recent", "price_asc", "price_desc", "name", "custom"]);
 
 type CatalogFamily = {
@@ -374,9 +374,14 @@ export function BuilderProvider({ onFinalize, onStartNew, initialProductId, init
   const selectedCategoryIds = useMemo(() => selectedCategoryId ? [selectedCategoryId] : [], [selectedCategoryId]);
   const [selectedSizes, setSelectedSizes] = useState<string[]>([]);
   const [sortOverride, setSortKey] = useState<BuilderCatalogSort | null>(null);
-  const hasCatalogOrderScope = Boolean(selectedBrandId && selectedCategoryId);
-  const sortKey = sortOverride && (sortOverride !== "custom" || hasCatalogOrderScope)
-    ? sortOverride : hasCatalogOrderScope ? "custom" : "popular";
+  const hasCatalogOrderScope = supportsCatalogOrdering(activeFloorId);
+  const requestedCatalogSort = sortOverride && (sortOverride !== "custom" || hasCatalogOrderScope)
+    ? sortOverride : hasCatalogOrderScope ? "default" : "popular";
+  const catalogOrderScopeKey = JSON.stringify([activeFloorId, selectedBrandId, selectedCategoryId]);
+  const [configuredOrderScope, setConfiguredOrderScope] = useState<string | null>(null);
+  const sortKey = requestedCatalogSort === "default"
+    ? configuredOrderScope === catalogOrderScopeKey ? "custom" : "popular"
+    : requestedCatalogSort;
   const [categoriesForRail, setCategoriesForRail] = useState<Category[]>([]);
   const [categoriesLoading, setCategoriesLoading] = useState(false);
   const [categoriesError, setCategoriesError] = useState<string | null>(null);
@@ -395,6 +400,7 @@ export function BuilderProvider({ onFinalize, onStartNew, initialProductId, init
   const lastSavedStateRef = useRef<BuilderState | null>(null);
   const documentGeneration = useRef(0);
   const restoreRequest = useRef(0);
+  const recentRequest = useRef(0);
   const draftEpoch = useRef(builderDraftEpoch());
   const [recoveryDraft, setRecoveryDraft] = useState<BuilderDraft | null>(null);
   const [recoveryReady, setRecoveryReady] = useState(false);
@@ -426,12 +432,17 @@ export function BuilderProvider({ onFinalize, onStartNew, initialProductId, init
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const [workflowBusy, setWorkflowBusy] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Autosave requests must be serialized. Without a queue, a slow PATCH from
-  // an earlier edit can finish after a newer edit and overwrite the server
-  // with stale quotation state.
-  const persistQueue = useRef<Promise<string | null>>(Promise.resolve(null));
   const persistedIdRef = useRef<string | null>(null);
   const serverSavedAtRef = useRef<string | null>(null);
+  const [mutations] = useState(() => new QuotationMutations());
+  const createdQuotationKeys = useRef(new Map<string, string>());
+  const workspace = JSON.stringify([accountId, activeFloorId]);
+  const currentWorkspace = useRef(workspace);
+  currentWorkspace.current = workspace;
+  const quotationMutationKey = useCallback((id = persistedIdRef.current) => {
+    const key = JSON.stringify([workspace, id, id ? null : clientDraftId.current]);
+    return createdQuotationKeys.current.get(key) ?? key;
+  }, [workspace]);
 
   // Sheets
   const [discountSheet, setDiscountSheet] = useState<DiscountSheetState>(null);
@@ -555,9 +566,10 @@ export function BuilderProvider({ onFinalize, onStartNew, initialProductId, init
     setRecentQuotations([]);
     const timer = setTimeout(() => {
       if (!activeFloorId) return;
+      const request = ++recentRequest.current;
       api.get<RecentQuotation[]>("/quotations/recent?limit=10", {
         floorId: activeFloorId, signal: controller.signal, cacheMs: 0,
-      }).then(setRecentQuotations).catch((error: any) => {
+      }).then(items => { if (!controller.signal.aborted && request === recentRequest.current) setRecentQuotations(items); }).catch((error: any) => {
         if (error?.name !== "AbortError") console.warn("Failed to load recent quotations", error);
       });
     }, 250);
@@ -628,7 +640,7 @@ export function BuilderProvider({ onFinalize, onStartNew, initialProductId, init
   const productRequestGeneration = useRef(0);
   const nextProductOffset = useRef(0);
   const browsingOrderVersion = useRef<number | undefined>(undefined);
-  const productQueryScope = JSON.stringify([activeFloorId, q, selectedBrandIds, selectedCategoryIds, selectedSizes, sortKey, productRetry]);
+  const productQueryScope = JSON.stringify([activeFloorId, q, selectedBrandIds, selectedCategoryIds, selectedSizes, requestedCatalogSort, productRetry]);
   const currentProductScope = useRef(productQueryScope);
   currentProductScope.current = productQueryScope;
   const productMounted = useRef(true);
@@ -655,10 +667,13 @@ export function BuilderProvider({ onFinalize, onStartNew, initialProductId, init
       const safety = setTimeout(() => { if (!cancelled && productMounted.current && productQueryScope === currentProductScope.current) { setProductLoading(false); setProductError("Product search is taking longer than expected. Please retry."); controller.abort(); } }, 12000);
       try {
         const res = await fetchCatalogPage<CatalogFamily>({
-          mode: "families", q, brandIds: selectedBrandIds, categoryIds: selectedCategoryIds, sizes: selectedSizes, sort: sortKey,
+          mode: "families", q, brandIds: selectedBrandIds, categoryIds: selectedCategoryIds, sizes: selectedSizes, sort: requestedCatalogSort,
         }, 0, CATALOG_PAGE_SIZE, { floorId: activeFloorId, signal: controller.signal });
         if (cancelled || !productMounted.current || productQueryScope !== currentProductScope.current || generation !== productRequestGeneration.current) return;
         browsingOrderVersion.current = res.order_version;
+        if (requestedCatalogSort === "default") {
+          setConfiguredOrderScope(res.order_version ? catalogOrderScopeKey : null);
+        }
         const items = (res.items || []).map(familyCardToProduct).filter((item): item is Product => item !== null);
         setProducts(items);
         setProductTotal(res.total || 0);
@@ -681,7 +696,7 @@ export function BuilderProvider({ onFinalize, onStartNew, initialProductId, init
       loadMoreController.current?.abort();
       clearTimeout(t);
     };
-  }, [q, selectedBrandIds, selectedCategoryIds, selectedSizes, sortKey, activeFloorId, productRetry, productQueryScope]);
+  }, [q, selectedBrandIds, selectedCategoryIds, selectedSizes, requestedCatalogSort, catalogOrderScopeKey, activeFloorId, productRetry, productQueryScope]);
 
   // ---------- Infinite scroll — fetch the next page and append ----------
   const loadMoreProducts = useCallback(() => {
@@ -696,10 +711,10 @@ export function BuilderProvider({ onFinalize, onStartNew, initialProductId, init
     (async () => {
       try {
         const res = await fetchCatalogPage<CatalogFamily>({
-          mode: "families", q, brandIds: selectedBrandIds, categoryIds: selectedCategoryIds, sizes: selectedSizes, sort: sortKey,
+          mode: "families", q, brandIds: selectedBrandIds, categoryIds: selectedCategoryIds, sizes: selectedSizes, sort: requestedCatalogSort,
         }, skipAt, CATALOG_PAGE_SIZE, { floorId: activeFloorId, signal: controller.signal });
         if (controller.signal.aborted || !productMounted.current || productQueryScope !== currentProductScope.current || generation !== productRequestGeneration.current) return;
-        if (sortKey === "custom" && browsingOrderVersion.current !== res.order_version) {
+        if (browsingOrderVersion.current !== res.order_version) {
           retryProducts();
           return;
         }
@@ -719,11 +734,12 @@ export function BuilderProvider({ onFinalize, onStartNew, initialProductId, init
         }
       }
     })();
-  }, [productLoading, productHasMore, q, selectedBrandIds, selectedCategoryIds, selectedSizes, sortKey, activeFloorId, productQueryScope, retryProducts]);
+  }, [productLoading, productHasMore, q, selectedBrandIds, selectedCategoryIds, selectedSizes, requestedCatalogSort, activeFloorId, productQueryScope, retryProducts]);
 
   // ---------- Autosave ----------
   const persistSnapshot = useCallback(async (snapshot: BuilderState, roomOperation = false): Promise<string | null> => {
     const generation = documentGeneration.current;
+    const mutationKey = quotationMutationKey();
     const run = async (): Promise<string | null> => {
       if (generation !== documentGeneration.current || !snapshot.customerId) return null;
       if (lastSavedStateRef.current === snapshot && persistedIdRef.current) return persistedIdRef.current;
@@ -777,6 +793,7 @@ export function BuilderProvider({ onFinalize, onStartNew, initialProductId, init
           setQuotationId(created.id);
           setQuotationNumber(created.number);
           setQuotationStatus(created.status || "draft");
+          createdQuotationKeys.current.set(JSON.stringify([workspace, created.id, null]), mutationKey);
           persistedIdRef.current = created.id;
           persistedId = created.id;
           if (created.create_replayed && canUpdateQuotation) {
@@ -821,13 +838,13 @@ export function BuilderProvider({ onFinalize, onStartNew, initialProductId, init
         return null;
       }
     };
-    return enqueueQuotationPersist(persistQueue, run);
-  }, [initialQuotationId, selectedBrandId, selectedCategoryId, selectedBrandIds, selectedCategoryIds, selectedSizes, sortOverride, activeFloorId, accountId, canCreateQuotation, canUpdateQuotation, onFinalize]);
+    return mutations.save(mutationKey, run);
+  }, [initialQuotationId, selectedBrandId, selectedCategoryId, selectedBrandIds, selectedCategoryIds, selectedSizes, sortOverride, activeFloorId, accountId, canCreateQuotation, canUpdateQuotation, onFinalize, mutations, quotationMutationKey, workspace]);
 
   const persist = useCallback(() => persistSnapshot(s), [persistSnapshot, s]);
 
   useEffect(() => {
-    if (lastSavedStateRef.current === s || roomProductSaveRef.current) return;
+    if (lastSavedStateRef.current === s || roomProductSaveRef.current || mutations.isDeleting(quotationMutationKey())) return;
     setSaveState("idle");
     // Local draft recovery still runs for create-only staff. Defer the one
     // server POST until Finish/Save, because later PATCH needs an Edit grant.
@@ -836,7 +853,7 @@ export function BuilderProvider({ onFinalize, onStartNew, initialProductId, init
     const timer = setTimeout(() => { if (!roomProductSaveRef.current) void persist(); }, 900);
     saveTimer.current = timer;
     return () => clearTimeout(timer);
-  }, [s, quotationId, persist, canUpdateQuotation]);
+  }, [s, quotationId, persist, canUpdateQuotation, mutations, quotationMutationKey]);
 
   // Recovery is account/floor scoped on web and native, and never replaces
   // a document without an explicit choice. Only unacknowledged edits remain.
@@ -854,12 +871,12 @@ export function BuilderProvider({ onFinalize, onStartNew, initialProductId, init
   }, [accountId, activeFloorId, initialQuotationId, recoveryCheckAttempt]);
 
   useEffect(() => {
-    if (!recoveryReady || recoveryDraft || !accountId || !activeFloorId || lastSavedStateRef.current === s) return;
+    if (!recoveryReady || recoveryDraft || !accountId || !activeFloorId || lastSavedStateRef.current === s || mutations.isDeleting(quotationMutationKey())) return;
     if (!s.customerId && !s.lines.length && !s.header.projectName && !s.notes) return;
     // Register each edit immediately so Back/reload cannot cancel a debounce.
     void writeBuilderDraft({ version: 1, accountId, floorId: activeFloorId, at: Date.now(),
       quotationId, quotationNumber, clientDraftId: clientDraftId.current || undefined, serverSavedAt: serverSavedAtRef.current, state: s }, draftEpoch.current);
-  }, [s, quotationId, quotationNumber, accountId, activeFloorId, recoveryReady, recoveryDraft]);
+  }, [s, quotationId, quotationNumber, accountId, activeFloorId, recoveryReady, recoveryDraft, mutations, quotationMutationKey]);
 
   const dismissRecovery = useCallback(() => {
     setRecoveryError(null);
@@ -930,11 +947,12 @@ export function BuilderProvider({ onFinalize, onStartNew, initialProductId, init
 
   // ---------- Restore an existing quotation ----------
   const refreshRecentQuotations = useCallback(async () => {
+    const request = ++recentRequest.current;
     try {
       const rq = await api.get<RecentQuotation[]>("/quotations/recent?limit=10", { floorId: activeFloorId });
-      setRecentQuotations(rq);
+      if (request === recentRequest.current && currentWorkspace.current === workspace) setRecentQuotations(rq);
     } catch {}
-  }, [activeFloorId]);
+  }, [activeFloorId, workspace]);
 
   const restoreQuotation = useCallback(async (id: string, announce = true, initial = false) => {
     if (!canUpdateQuotation) { toast.error("You don't have access to edit saved quotations"); return; }
@@ -1038,30 +1056,37 @@ export function BuilderProvider({ onFinalize, onStartNew, initialProductId, init
 
   const deleteQuotation = useCallback(async (id = quotationId) => {
     if (!id) return false;
-    try {
-      await api.delete(`/quotations/${id}`, { floorId: activeFloorId });
-      setRecentQuotations((current) => current.filter((q) => q.id !== id));
-      if (id === quotationId) {
-        documentGeneration.current += 1;
-        restoreRequest.current += 1;
-        lastSavedStateRef.current = INITIAL_BUILDER_STATE;
-        void removeBuilderDraft(accountId, activeFloorId);
-        history.reset();
-        setQuotationId(null);
-        persistedIdRef.current = null;
-        setQuotationNumber(null);
-        setQuotationStatus("draft");
-        clientDraftId.current = randomUUID();
-        setSaveState("idle");
-        setSavedAt(null);
+    if (id === persistedIdRef.current && saveTimer.current) clearTimeout(saveTimer.current);
+    return mutations.remove(quotationMutationKey(id), async () => {
+      if (currentWorkspace.current !== workspace) return false;
+      try {
+        await api.delete(`/quotations/${encodeURIComponent(id)}`, { floorId: activeFloorId });
+        if (currentWorkspace.current !== workspace) return true;
+        recentRequest.current += 1;
+        setRecentQuotations((current) => current.filter((q) => q.id !== id));
+        if (id === persistedIdRef.current) {
+          documentGeneration.current += 1;
+          restoreRequest.current += 1;
+          lastSavedStateRef.current = INITIAL_BUILDER_STATE;
+          serverSavedAtRef.current = null;
+          void removeBuilderDraft(accountId, activeFloorId);
+          history.reset();
+          setQuotationId(null);
+          persistedIdRef.current = null;
+          setQuotationNumber(null);
+          setQuotationStatus("draft");
+          clientDraftId.current = randomUUID();
+          setSaveState("idle");
+          setSavedAt(null);
+        }
+        toast.success("Quotation deleted");
+        return true;
+      } catch (e: any) {
+        if (currentWorkspace.current === workspace) toast.error(e?.detail || "Could not delete quotation");
+        return false;
       }
-      toast.success("Quotation deleted");
-      return true;
-    } catch (e: any) {
-      toast.error(e?.detail || "Could not delete quotation");
-      return false;
-    }
-  }, [history, quotationId, activeFloorId, accountId]);
+    });
+  }, [history, quotationId, activeFloorId, accountId, mutations, quotationMutationKey, workspace]);
 
   const startNewQuotation = useCallback(() => {
     if (!canCreateQuotation) { toast.error("You don't have access to create quotations"); return; }
@@ -1134,7 +1159,8 @@ export function BuilderProvider({ onFinalize, onStartNew, initialProductId, init
 
   // ---------- Mutations ----------
   const setCustomer = useCallback((id: string) => {
-    if (id === history.state.customerId) return;
+    const mutationKey = quotationMutationKey();
+    if (id === history.state.customerId || mutations.isDeleting(mutationKey)) return;
     Haptics.selectionAsync();
     const customer = customers.find((item) => item.id === id);
     history.apply((cur) => ({
@@ -1156,7 +1182,7 @@ export function BuilderProvider({ onFinalize, onStartNew, initialProductId, init
     // history right away — products/rooms/notes are untouched, as required.
     if (quotationId) {
       const generation = documentGeneration.current;
-      void enqueueQuotationPersist(persistQueue, async () => {
+      void mutations.save(mutationKey, async () => {
         if (generation !== documentGeneration.current) return null;
         try {
           const saved = await api.patch<{ updated_at?: string; status?: string }>(`/quotations/${quotationId}`, {
@@ -1174,7 +1200,7 @@ export function BuilderProvider({ onFinalize, onStartNew, initialProductId, init
         }
       });
     }
-  }, [history, quotationId, customers, activeFloorId]);
+  }, [history, quotationId, customers, activeFloorId, mutations, quotationMutationKey]);
 
   const createCustomer = useCallback(async (data: { name: string; phone?: string; project?: string; address?: string }) => {
     try {

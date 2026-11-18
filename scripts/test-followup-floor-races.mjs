@@ -48,6 +48,7 @@ function fixture(floor = 'first-floor') {
     '@/src/theme/tokens': { colors: {}, spacing: {}, type: new Proxy({}, { get: () => ({}) }), radius: {}, elevation: {} },
     '@/src/api/client': { api: { get: request, post: request, patch: request, delete: request } },
     '@/src/utils/filters': filters,
+    '@/src/components/useDeletionConfirmation': { useDeletionConfirmation: () => ({}) },
     '@/src/components/Toast': { toast: { success: text => notices.push(text), error: text => notices.push(text) } },
   };
   const exports = {};
@@ -193,19 +194,19 @@ test('opening call outcome initializes before the first choice and Lost reason',
 });
 
 const view = id => ({ id, name: `View ${id}`, filters: {} });
-test('saved view deletion is immediate, coalesces duplicate taps and rolls back visibly on failure', async () => {
+test('saved view deletion coalesces taps and stays visible until confirmed', async () => {
   const h = fixture();
   h.state.setSavedViews([view('one'), view('two')]); await h.settle();
   const action = h.state.deleteSavedView;
   const pending = action('one'); const duplicate = action('one');
   await h.settle();
-  assert.deepEqual(Array.from(h.state.visibleSavedViews, row => row.id), ['two'], 'optimistic removal before response');
+  assert.deepEqual(Array.from(h.state.visibleSavedViews, row => row.id), ['one', 'two'], 'unconfirmed changes stay visible');
   const writes = h.requests.filter(row => row.path === '/followups/saved-views/one');
   assert.equal(writes.length, 1, 'same-frame duplicate taps issue one delete');
   h.state.setSavedViews(rows => [view('new'), ...rows]); await h.settle();
   writes[0].reject({ detail: 'Fixture unavailable' }); await Promise.all([pending, duplicate]); await h.settle();
-  assert.deepEqual(Array.from(h.state.visibleSavedViews, row => row.id), ['new', 'one', 'two'], 'rollback preserves newer rows and original order');
-  assert.match(h.notices.at(-1), /restored/i);
+  assert.deepEqual(Array.from(h.state.visibleSavedViews, row => row.id), ['new', 'one', 'two'], 'failure preserves newer rows and original order');
+  assert.match(h.notices.at(-1), /could not confirm deletion/i);
   const retry = h.state.deleteSavedView('one');
   h.requests.at(-1).resolve({ ok: true }); await retry; await h.settle();
   assert.deepEqual(Array.from(h.state.visibleSavedViews, row => row.id), ['new', 'two']);
@@ -323,18 +324,18 @@ test('bulk optimistic completion reconciles successes and restores only failed r
   h.unmount();
 });
 
-test('follow-up deletion hides immediately, admits one write and restores a failed deletion', async () => {
+test('follow-up deletion admits one write and stays visible until confirmed', async () => {
   const h = await loadedInbox();
   h.state.setDeleteTarget(followup()); await h.settle();
   const remove = h.state.deleteFollowup;
   const pending = remove(); const duplicate = remove(); await h.settle();
-  assert.equal(h.state.rawItems.length, 0);
+  assert.equal(h.state.rawItems.length, 1);
   assert.equal(h.state.confirmedItems.length, 1, 'confirmed list survives until acknowledgement');
   const writes = h.requests.filter(row => row.path === '/followups/one');
   assert.equal(writes.length, 1);
   writes[0].reject(new Error('unavailable')); await Promise.all([pending, duplicate]); await h.settle();
   assert.equal(h.state.rawItems[0].id, 'one');
-  assert.match(h.notices.at(-1), /restored/);
+  assert.match(h.notices.at(-1), /could not confirm deletion/i);
   assert.equal(h.state.pendingDeleteIds.size, 0);
   h.unmount();
 });

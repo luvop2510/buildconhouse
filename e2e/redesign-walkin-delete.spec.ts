@@ -9,8 +9,8 @@ for (const floor of ['first-floor', 'ground-floor', 'second-floor', 'third-floor
       visited_at:'2026-10-11T10:00:00Z', created_at:'2026-10-11T10:00:00Z', updated_at:'2026-10-11T10:00:00Z' };
     await page.route('**/api/walkins/config/sources', route => route.fulfill({ json: { sources: ['Walk-in'] } }));
     await page.route('**/api/walkins/dashboard**', route => route.fulfill({ json: { total:1, today_walkins:1, this_week:1, pending_followups:0, selections_scheduled:0, converted:0, lost:0, conversion_rate:0, avg_conversion_days:0 } }));
-    await page.route(/\/api\/walkins\/page(?:\?.*)?$/, route => route.fulfill({ json:{items:[row],next_cursor:null} }));
     let deletes = 0;
+    await page.route(/\/api\/walkins\/page(?:\?.*)?$/, route => route.fulfill({ json:{items:deletes ? [] : [row],next_cursor:null} }));
     await page.route('**/api/walkins/walkin-one', route => {
       expect(route.request().method()).toBe('DELETE');
       expect(route.request().headers()['x-floor-id']).toBe(floor);
@@ -22,9 +22,14 @@ for (const floor of ['first-floor', 'ground-floor', 'second-floor', 'third-floor
     if (['first-floor','ground-floor'].includes(floor)) {
       await expect(page.getByTestId('walkin-card-walkin-one')).toBeVisible();
       await button.click();
+      expect(deletes).toBe(0);
+      await page.getByTestId('confirm-delete-walkin-list-confirm').click();
       await expect(page.getByTestId('walkin-card-walkin-one')).toHaveCount(0);
       expect(deletes).toBe(1);
       await expect(page).toHaveURL(/\/walkins$/);
+      await page.reload();
+      await expect(page.getByText('No walk-ins yet')).toBeVisible();
+      await expect(page.getByTestId('walkin-card-walkin-one')).toHaveCount(0);
     } else {
       if (floor === 'second-floor') await expect(page.getByRole('heading', { name:'Kitchen dashboard' })).toBeVisible();
       else await expect(page.getByTestId('walkin-card-walkin-one')).toBeVisible();

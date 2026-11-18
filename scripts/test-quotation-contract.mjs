@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 
 import { computeQuotationTotals } from "../src/components/quotation/helpers/totals.ts";
 import { godownQuotationPrice } from "../src/components/quotation/helpers/godown.ts";
-import { enqueueQuotationPersist } from "../src/components/quotation/helpers/autosave.ts";
+import { enqueueQuotationPersist, QuotationMutations } from "../src/components/quotation/helpers/autosave.ts";
 
 const totals = computeQuotationTotals([
   { qty: 2, unitPrice: 2170 },
@@ -31,6 +31,32 @@ await Promise.all([enqueueQuotationPersist(queue, slow), enqueueQuotationPersist
 assert.deepEqual(order, ["first", "second"]);
 
 console.log("shared quotation totals/autosave contract: 3 assertions passed");
+
+for (const writeFails of [false, true]) {
+  const mutations = new QuotationMutations();
+  let settleActive;
+  const activeSave = new Promise((resolve, reject) => { settleActive = writeFails ? reject : resolve; });
+  const calls = [];
+  const active = mutations.save("this-quotation", () => { calls.push("save"); return activeSave; });
+  // The failure is observed independently of the deletion waiting for it.
+  const observedActive = active.catch(() => null);
+  await Promise.resolve();
+  const queued = mutations.save("this-quotation", async () => { calls.push("queued"); return null; });
+  const unrelated = mutations.save("other-quotation", async () => { calls.push("other save"); return "other"; });
+  const remove = mutations.remove("this-quotation", async () => { calls.push("delete"); return true; });
+  assert.strictEqual(mutations.remove("this-quotation", async () => { throw Error("Duplicate delete"); }), remove);
+  assert.equal(await mutations.save("this-quotation", async () => { throw Error("Late autosave"); }), null);
+  assert.equal(await unrelated, "other");
+  assert.deepEqual(calls, ["save", "other save"]);
+  settleActive(writeFails ? Error("Interrupted save") : "this-quotation");
+  await observedActive;
+  assert.equal(await queued, null);
+  assert.equal(await remove, true);
+  assert.deepEqual(calls, ["save", "other save", "delete"]);
+  assert.equal(mutations.isDeleting("this-quotation"), false);
+  await assert.rejects(mutations.remove("this-quotation", async () => { throw Error("Connection lost"); }), /Connection lost/);
+  assert.equal(await mutations.remove("this-quotation", async () => true), true);
+}
 
 // Keep unavailable or unpriced physical lots out of quotation creation.
 const lot = { id: 'stock', product_id: 'godown:stock', available_qty: 3, unit_price: 1200,

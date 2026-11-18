@@ -28,6 +28,7 @@ const TOKEN_KIND_KEY = "forge.jwt.kind"; // "staff" | "customer"
 const REQUEST_TIMEOUT_MS = 30_000;
 type SharedGet = { key: string; promise: Promise<unknown>; controller: AbortController; consumers: number; settled: boolean };
 const inflightGets = new Map<string, SharedGet>();
+const inflightDeletes = new Map<string, Promise<unknown>>();
 const responseCache = new Map<string, { expiresAt: number; value: unknown }>();
 const MAX_RESPONSE_CACHE_ENTRIES = 64;
 type CacheInvalidation = "identity" | "workspace" | "mutation";
@@ -341,6 +342,17 @@ async function mutate<T>(method: string, path: string, body?: unknown, opts?: Re
   }
 }
 
+function deleteOnce<T>(path: string, opts?: RequestOptions): Promise<T> {
+  // Screen-owned signals retain their own cancellation and lifecycle guards.
+  if (opts?.signal) return mutate<T>("DELETE", path, undefined, opts);
+  const key = JSON.stringify([requestContextVersion, opts?.floorId ?? floorCache, path]);
+  const existing = inflightDeletes.get(key);
+  if (existing) return existing as Promise<T>;
+  const operation = mutate<T>("DELETE", path, undefined, opts).finally(() => { inflightDeletes.delete(key); });
+  inflightDeletes.set(key, operation);
+  return operation;
+}
+
 export const api = {
   get: <T>(p: string, opts?: RequestOptions) => {
     if (opts?.signal?.aborted) return Promise.reject(new DOMException("Request cancelled by this view.", "AbortError"));
@@ -376,7 +388,7 @@ export const api = {
   post: <T>(p: string, b?: any, opts?: RequestOptions) => { return mutate<T>("POST", p, b, opts); },
   put: <T>(p: string, b?: any, opts?: RequestOptions) => { return mutate<T>("PUT", p, b, opts); },
   patch: <T>(p: string, b?: any, opts?: RequestOptions) => { return mutate<T>("PATCH", p, b, opts); },
-  delete: <T>(p: string, opts?: RequestOptions) => { return mutate<T>("DELETE", p, undefined, opts); },
+  delete: deleteOnce,
   upload: <T>(p: string, form: FormData, opts?: RequestOptions) => mutate<T>("POST", p, form, opts),
   // Build a URL for a browser-download endpoint (PDF/xlsx). Browser
   // navigations can't send an Authorization header, so this mints a

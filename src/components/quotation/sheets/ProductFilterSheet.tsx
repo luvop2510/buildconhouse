@@ -3,6 +3,7 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from "reac
 import { Text } from "@/src/components/AppText";
 import { Overlay } from "@/src/design/Overlay";
 import { colors } from "@/src/theme/tokens";
+import { supportsCatalogOrdering } from "@/src/services/catalogService";
 import { useBuilder } from "../context/BuilderContext";
 
 export const PRODUCT_SORT_OPTIONS = [
@@ -25,7 +26,7 @@ export function ProductFilterSheet({ open, onClose, facets }: {
   return <Overlay open={open} onClose={onClose} title="Filters and sort" presentation="drawer" scroll={false}
     testID="quotation-product-filters" footer={<>
       <Pressable accessibilityRole="button" testID="explorer-filter-reset" style={styles.reset} onPress={() => {
-        b.setSelectedBrandId(null); b.setSelectedCategoryId(null); b.setSelectedSizes([]); b.setSortKey("popular");
+        b.setSelectedBrandId(null); b.setSelectedCategoryId(null); b.setSelectedSizes([]); b.setSortKey(null);
       }}><Text style={styles.resetLabel}>Reset</Text></Pressable>
       <Pressable accessibilityRole="button" testID="explorer-filter-done" style={styles.apply} onPress={onClose}>
         <Text style={styles.applyLabel}>Show products</Text><Feather name="arrow-right" size={16} color={colors.onBrand} />
@@ -56,7 +57,7 @@ export function ProductFilterSheet({ open, onClose, facets }: {
       </View> : null}
       <View style={styles.section} testID="mobile-sort-selector">
         <Text accessibilityRole="header" style={styles.title}>Sort by</Text>
-        {PRODUCT_SORT_OPTIONS.filter(option => option.k !== "custom" || (b.selectedBrandId && b.selectedCategoryId)).map(option => <Choice key={option.k} label={option.label} active={b.sortKey === option.k}
+        {PRODUCT_SORT_OPTIONS.filter(option => option.k !== "custom" || supportsCatalogOrdering(b.activeFloorId)).map(option => <Choice key={option.k} label={option.label} active={b.sortKey === option.k}
           onPress={() => b.setSortKey(option.k)} testID={`sort-${option.k}`} />)}
       </View>
     </ScrollView>

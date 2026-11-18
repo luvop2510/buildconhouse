@@ -24,7 +24,7 @@ from services.activity_log import log_event
 from services.pagination import MAX_PAGE_LIMIT, normalize_pagination
 
 router = APIRouter(tags=["catalog"])
-FamilySort = Literal["source", "popular", "recent", "price_asc", "price_desc", "name", "custom"]
+FamilySort = Literal["source", "popular", "recent", "price_asc", "price_desc", "name", "custom", "default"]
 
 
 async def _validate_diagram_media_urls(product_id: str, updates: dict) -> None:
@@ -347,8 +347,9 @@ async def list_families(
     brands = brand_ids if isinstance(brand_ids, list) else brand_id
     categories = category_ids if isinstance(category_ids, list) else category_id
     floors = floor_scope_ids(user)
-    scope = product_order.selected_scope(floors, brands, categories) if sort == "custom" else None
+    scope = product_order.selected_scope(floors, brands, categories) if sort in {"custom", "default"} else None
     order = await product_order.read_order(db, scope) if scope else {}
+    version = order.get("version", 0)
     result = await catalog_service.list_family_groups(
         brand_id=brands,
         category_id=categories,
@@ -361,27 +362,27 @@ async def list_families(
         limit=limit,
         skip=skip,
         floor_ids=floors,
-        sort=sort,
+        sort=("custom" if version else "popular") if sort == "default" else sort,
         user_id=user.id,
         ranked_product_ids=order.get("product_ids", []),
     )
     if scope:
-        result["order_version"] = order.get("version", 0)
+        result["order_version"] = version
     return result
 
 
-def _product_order_scope(user: UserPublic, brand_id: str, category_id: str) -> dict[str, str]:
+def _product_order_scope(user: UserPublic, brand_id: str | None, category_id: str | None) -> dict:
     scope = product_order.selected_scope(floor_scope_ids(user), brand_id, category_id)
     if not scope:
-        raise HTTPException(400, "Select one catalog floor, brand and category")
+        raise HTTPException(400, "Select a supported quotation catalog floor")
     return scope
 
 
 @router.get(product_order.ORDER_PATH)
 async def get_catalog_product_order(
     response: Response,
-    brand_id: str = Query(min_length=1, max_length=200),
-    category_id: str = Query(min_length=1, max_length=200),
+    brand_id: str | None = Query(None, min_length=1, max_length=200),
+    category_id: str | None = Query(None, min_length=1, max_length=200),
     user: UserPublic = Depends(get_current_user),
 ):
     response.headers["Cache-Control"] = "no-store"
@@ -396,8 +397,8 @@ async def get_catalog_product_order(
 async def update_catalog_product_order(
     body: product_order.CatalogProductOrderUpdate,
     response: Response,
-    brand_id: str = Query(min_length=1, max_length=200),
-    category_id: str = Query(min_length=1, max_length=200),
+    brand_id: str | None = Query(None, min_length=1, max_length=200),
+    category_id: str | None = Query(None, min_length=1, max_length=200),
     user: UserPublic = Depends(get_current_user),
 ):
     response.headers["Cache-Control"] = "no-store"

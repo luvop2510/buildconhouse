@@ -12,6 +12,9 @@ class Gate:
         self.commit = asyncio.Event()
         self.tokens = set()
 
+    def with_options(self, **kwargs):
+        return self
+
     async def update_one(self, query, update, **kwargs):
         if "$setOnInsert" in update:
             return

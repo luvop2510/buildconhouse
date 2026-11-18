@@ -25,7 +25,7 @@ async function loadOrderProducts(scope: CatalogOrderScope, version: number, sign
   let skip = 0;
   do {
     const page = await fetchCatalogPage<CatalogFamily>({
-      mode: "families", sort: "custom", brandIds: [scope.brandId], categoryIds: [scope.categoryId],
+      mode: "families", sort: "default", brandId: scope.brandId, categoryId: scope.categoryId,
     }, skip, CATALOG_PAGE_SIZE, { floorId: scope.floorId, signal });
     if ((total !== undefined && page.total !== total)
         || (page.order_version !== undefined && page.order_version !== version)

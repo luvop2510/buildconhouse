@@ -27,7 +27,7 @@ def _product(product_id, name, position, *, family=None, second_category=False):
                 "source_order": position, "source_catalog": "grohe-2026", "mrp": position * 100}]
     if second_category:
         entries.append({"entry_id": f"{product_id}-lever", "category_id": LEVER, "name": name,
-                        "source_order": position, "source_catalog": "grohe-2026", "mrp": position * 100})
+                        "source_order": position + 100, "source_catalog": "grohe-2026", "mrp": position * 100})
     return {"id": product_id, "sku": product_id, "name": name, "active": True,
             "price": position * 100, "floor_id": FLOOR, "brand_id": BRAND, "category_id": SHOWER,
             "family_key": family, "family_name": name, "catalog_entries": entries}
@@ -46,7 +46,10 @@ def test_shared_product_order_across_sessions_sorts_categories_and_membership(mo
                 monkeypatch.setattr(catalog_service, "_SNAPSHOT_ROW_LIMITS", {
                     **catalog_service._SNAPSHOT_ROW_LIMITS, "products": 1,
                 })
-            await database.brands.insert_one({"id": BRAND, "name": "Grohe", "floor_id": FLOOR})
+            await database.brands.insert_many([
+                {"id": BRAND, "name": "Grohe", "floor_id": FLOOR},
+                {"id": "other", "name": "Other Brand", "floor_id": FLOOR},
+            ])
             await database.categories.insert_many([
                 {"id": category, "name": name, "floor_id": FLOOR}
                 for category, name in [(SHOWER, "Shower"), (LEVER, "Single Lever")]
@@ -58,6 +61,9 @@ def test_shared_product_order_across_sessions_sorts_categories_and_membership(mo
                            second_category=index in {1, 5})
                   for index, (product_id, name) in enumerate(zip(first, names, strict=True), 1)],
                 _product("tempesta-variant", "Tempesta 100 Chrome", 6, family="tempesta-base"),
+                {**_product("other-one", "Other Brand Shower", 12), "brand_id": "other"},
+                {**_product("other-two", "Other Brand Mixer", 13), "brand_id": "other"},
+                {**_product("lever-only", "Mixer Exclusive", 14), "category_id": LEVER, "catalog_entries": []},
             ])
             await database.product_usage.insert_many([
                 {"product_id": "tempesta-variant", "user_id": "viewer", "count": 4, "last_used_at": "2026-11-15T04:00:00Z"},
@@ -97,17 +103,17 @@ def test_shared_product_order_across_sessions_sorts_categories_and_membership(mo
                 catalog_manager = await identity("catalog-manager")
                 params = {"brand_id": BRAND, "category_id": SHOWER}
 
-                async def products(actor, sort="custom", category=SHOWER, *, skip=0, limit=10, version=None):
-                    response = await api.get(FAMILIES, params={"brand_ids": BRAND, "category_ids": category,
-                                               "sort": sort, "skip": skip, "limit": limit}, headers=actor)
+                async def products(actor, sort="custom", category=SHOWER, *, brand=BRAND, skip=0, limit=10, version=None):
+                    filters = {key: value for key, value in {"brand_ids": brand, "category_ids": category}.items() if value is not None}
+                    response = await api.get(FAMILIES, params={**filters, "sort": sort, "skip": skip, "limit": limit}, headers=actor)
                     assert response.status_code == 200, response.text
                     body = response.json()
                     if version is not None:
                         assert body["order_version"] == version
                     return [row["sample_product_id"] for row in body["items"]]
 
-                async def save(actor, order, expected):
-                    return await api.put(PRODUCT_ORDER, params=params, headers=actor,
+                async def save(actor, order, expected, scope=params):
+                    return await api.put(PRODUCT_ORDER, params=scope, headers=actor,
                                          json={"expected_version": expected, "product_ids": order})
 
                 for actor, can_reorder in [(owner, True), (delegate, True), (catalog_manager, True), (viewer, False), (manager, False)]:
@@ -138,6 +144,29 @@ def test_shared_product_order_across_sessions_sorts_categories_and_membership(mo
                 assert (await products(refreshed, sort="recent"))[:2] == ["tempesta-210", "tempesta-100"]
                 assert await products(refreshed, version=1) == moved
                 assert await products(refreshed, category=LEVER, version=0) == other_order
+                assert await products(refreshed, sort="default", version=1) == moved
+
+                # A SKU listed in more than one category appears once in the
+                # brand-wide view, which keeps its own independent sequence.
+                brand_scope = {"brand_id": BRAND}
+                brand_cards = await products(owner, category=None, version=0)
+                assert len(brand_cards) == len(set(brand_cards)) == 6
+                brand_order = list(reversed(brand_cards))
+                assert (await save(viewer, brand_order, 0, brand_scope)).status_code == 403
+                assert (await save(owner, brand_order, 0, brand_scope)).status_code == 200
+                assert await products(refreshed, sort="default", category=None, version=1) == brand_order
+                assert await products(refreshed, sort="default", version=1) == moved
+                assert await products(refreshed, category=LEVER, version=0) == other_order
+
+                global_cards = await products(owner, brand=None, category=None, version=0)
+                assert set(global_cards) == {*brand_cards, "other-one", "other-two"}
+                global_order = list(reversed(global_cards))
+                assert (await save(owner, global_order, 0, {})).status_code == 200
+                assert await products(refreshed, sort="default", brand=None, category=None, version=1) == global_order
+                assert await products(refreshed, sort="default", category=None, version=1) == brand_order
+                assert (await save(delegate, ["other-two", "other-one"], 0, {"brand_id": "other"})).status_code == 200
+                assert await products(refreshed, sort="default", brand="other", category=None, version=1) == ["other-two", "other-one"]
+                assert await products(refreshed, sort="default", brand=None, category=None, version=1) == global_order
 
                 # A less expensive finish must not move the family ahead of
                 # cards whose displayed representative price is lower.
@@ -165,7 +194,7 @@ def test_shared_product_order_across_sessions_sorts_categories_and_membership(mo
                 assert (await save(owner, committed, 2)).status_code == 409
                 assert (await api.get(PRODUCT_ORDER, params=params, headers=await identity("owner", "ground-floor"))).status_code == 404
                 assert await database.quotations.find_one({"id": quotation["id"]}) == quotation
-                assert await database.catalog_product_orders.count_documents({}) == 1
+                assert await database.catalog_product_orders.count_documents({}) == 4
         finally:
             await client.drop_database(database.name)
             client.close()

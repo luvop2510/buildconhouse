@@ -19,6 +19,7 @@ import { tileOrdersApi, type PurchaseOrderDetail } from "@/src/api/tileOrders";
 import { api } from "@/src/api/client";
 import { Alert } from "@/src/components/ui";
 import { toast } from "@/src/components/Toast";
+import { useDeletionConfirmation } from "@/src/components/useDeletionConfirmation";
 import {
   ActionBar, BackLink, Button, ButtonGroup, CenteredState, PageHeader, PageShell,
   OperationStatus, Section, Stat, StatRow, Toolbar,
@@ -83,19 +84,22 @@ export default function BrandOrderDetailScreen() {
   }, [scope]);
 
   const deletePurchase = async () => {
-    if (!poId || !canDelete || submitBusy.current) return;
+    if (!poId || !canDelete || submitBusy.current) return false;
     submitBusy.current = true;
     setSubmitting(true);
     try {
       await api.delete(`/purchase-orders/${encodeURIComponent(poId)}`, { floorId: "ground-floor" });
       if (scope.active && activeScope.current === scope) router.replace("/(admin)/tiles/orders?tab=brands" as any);
+      return true;
     } catch (e: any) {
       if (scope.active && activeScope.current === scope) toast.error(e?.detail || "Could not delete purchase");
+      return false;
     } finally {
       submitBusy.current = false;
       if (scope.active && activeScope.current === scope) setSubmitting(false);
     }
   };
+  const purchaseDeletion = useDeletionConfirmation(scope, "confirm-delete-tile-purchase-order", deletePurchase, submitting);
 
   const load = useCallback(async () => {
     if (!poId || !scope.active || activeScope.current !== scope) return;
@@ -391,11 +395,12 @@ export default function BrandOrderDetailScreen() {
         eyebrow={order.number}
         title={order.customer_name}
         subtitle={`${order.brand_name || "Unassigned brand"} · release material to BuildCon`}
-        actions={<ButtonGroup><StatusPill status={order.overall_status} />{canDelete ? <Button label="Delete purchase" variant="danger" disabled={submitting} onPress={deletePurchase} testID="delete-tile-purchase-order" /> : null}<ExcelExportButton resource="orders" floorId="ground-floor" page="Tiles release order" section="Release products" filename={`${order.number}-release`} scopeKey={poId} testID="tile-release-export" rows={[
+        actions={<ButtonGroup><StatusPill status={order.overall_status} />{canDelete ? <Button label="Delete purchase" variant="danger" onPress={() => purchaseDeletion.prompt(undefined, `Delete purchase ${order.number}?`)} testID="delete-tile-purchase-order" /> : null}<ExcelExportButton resource="orders" floorId="ground-floor" page="Tiles release order" section="Release products" filename={`${order.number}-release`} scopeKey={poId} testID="tile-release-export" rows={[
           ["Order", "Customer", "Brand", "Product", "SKU", "Unit", "Ordered", "Released", "Remaining"],
           ...order.items.map(item => [order.number, order.customer_name, order.brand_name, item.name, item.sku, item.quantity_unit || "Box", item.qty, item.boxes_ready, item.boxes_pending]),
         ]} /></ButtonGroup>}
       />
+      {purchaseDeletion.dialog}
 
       {loading ? <OperationStatus label="Updating release quantities…" /> : null}
       {loadError ? <Alert tone="error" title={loadError} /> : null}

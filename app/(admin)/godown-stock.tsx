@@ -20,6 +20,7 @@ import { useFloorAccess } from "@/src/hooks/use-floor-access";
 import { useAuth } from "@/src/state/auth";
 import { useActionAccess } from "@/src/hooks/use-permissions";
 import { toast } from "@/src/components/Toast";
+import { useDeletionConfirmation } from "@/src/components/useDeletionConfirmation";
 import { useBp } from "@/src/design/responsive";
 import { colors, radius, spacing, type } from "@/src/theme/tokens";
 import { downloadSectionExcel } from "@/src/utils/sectionExcel";
@@ -131,15 +132,18 @@ export default function GodownStockScreen() {
     return () => clearTimeout(timer);
   }, [q, brand, selectedFloorId, load]);
   const deleteStock = async (lot: GodownLot) => {
-    if (!canDeleteStock || !selectedFloorId || deletingStock.current.has(lot.id)) return;
+    if (!canDeleteStock || !selectedFloorId || deletingStock.current.has(lot.id)) return false;
     deletingStock.current.add(lot.id);
     try {
       await api.delete(`/godown-stock/${encodeURIComponent(lot.id)}`, { floorId: selectedFloorId });
       if (isCurrentFloor()) void load();
+      return true;
     } catch (error: any) {
       if (isCurrentFloor()) toast.error(error?.detail || "Could not delete stock");
+      return false;
     } finally { deletingStock.current.delete(lot.id); }
   };
+  const stockDeletion = useDeletionConfirmation(selectedFloorId, "confirm-delete-godown-stock", deleteStock);
   const loadMore = async () => {
     if (!selectedFloorId || !isCurrentFloor()) return;
     const current = dataRef.current;
@@ -255,7 +259,8 @@ export default function GodownStockScreen() {
     <Text testID="godown-results" accessibilityLiveRegion="polite" style={styles.result}>{!currentQuery ? "Searching stock…" : `${data?.available_lot_count ?? lots.filter(lot => !lot.quantity_missing && lot.available_qty > 0).length} available · ${data?.zero_lot_count ?? lots.filter(lot => !lot.quantity_missing && lot.available_qty <= 0).length} zero-stock lots · ${data?.unknown_quantity_count ?? lots.filter(lot => lot.quantity_missing).length} quantities not recorded · showing ${Math.min(visibleCount, lots.length)} of ${data?.total_lots ?? lots.length}`}</Text>
     {exporting ? <Text accessibilityLiveRegion="polite" style={type.body}>Preparing the complete filtered export…</Text> : null}
     <View style={styles.exportActions}><Pressable accessibilityRole="button" accessibilityLabel="Export filtered godown inventory to Excel" testID="godown-export-inventory" disabled={!canExport} onPress={() => void exportStock("inventory")} style={[styles.exportButton, !canExport && { opacity: .45 }]}><Feather name="download" size={15} color={colors.brand} /><Text style={styles.detailsText}>Inventory .xlsx</Text></Pressable><Pressable accessibilityRole="button" accessibilityLabel="Export godown stock movements to Excel" testID="godown-export-movements" disabled={!canExport} onPress={() => void exportStock("movements")} style={[styles.exportButton, !canExport && { opacity: .45 }]}><Feather name="download" size={15} color={colors.brand} /><Text style={styles.detailsText}>Movements .xlsx</Text></Pressable></View>
-    <View style={[styles.grid, !isPhone && styles.gridWide]}>{lots.slice(0, visibleCount).map(lot => <LotCard key={`${selectedFloorId}:${lot.id}`} floorId={selectedFloorId || undefined} lot={lot} compact={isPhone} width={isPhone ? "100%" : isDesktop ? "31.9%" : "48.8%"} canEditPricing={canEditPricing} onDelete={canDeleteStock ? () => { void deleteStock(lot); } : undefined} onUpdated={updated => { if (!isCurrentFloor()) return; setData(current => mergeStockUpdate(current, updated)); }} onViewDetails={() => { if (lot.product_id) router.push(`/(admin)/catalog/${encodeURIComponent(lot.product_id)}` as any); }} onAdd={(variantIndex) => router.push(`/(admin)/quotations/new?godownStockId=${encodeURIComponent(lot.id)}${variantIndex === null ? "" : `&godownVariant=${variantIndex}`}` as any)} onTransfer={() => { setTransferMatch(null); setTransferLot(lot); }} />)}</View>
+    <View style={[styles.grid, !isPhone && styles.gridWide]}>{lots.slice(0, visibleCount).map(lot => <LotCard key={`${selectedFloorId}:${lot.id}`} floorId={selectedFloorId || undefined} lot={lot} compact={isPhone} width={isPhone ? "100%" : isDesktop ? "31.9%" : "48.8%"} canEditPricing={canEditPricing} onDelete={canDeleteStock ? () => stockDeletion.prompt(lot, `Delete stock for ${lot.name}?`, lot.sku) : undefined} onUpdated={updated => { if (!isCurrentFloor()) return; setData(current => mergeStockUpdate(current, updated)); }} onViewDetails={() => { if (lot.product_id) router.push(`/(admin)/catalog/${encodeURIComponent(lot.product_id)}` as any); }} onAdd={(variantIndex) => router.push(`/(admin)/quotations/new?godownStockId=${encodeURIComponent(lot.id)}${variantIndex === null ? "" : `&godownVariant=${variantIndex}`}` as any)} onTransfer={() => { setTransferMatch(null); setTransferLot(lot); }} />)}</View>
+    {stockDeletion.dialog}
     {pageError ? <Text accessibilityRole="alert" style={type.body}>{pageError}</Text> : null}
     {currentQuery && (data?.next_offset != null || visibleCount < lots.length) ? <Pressable accessibilityRole="button" accessibilityLabel="Load more godown stock" testID="godown-load-more" disabled={loadingMore || loading} onPress={() => void loadMore()} style={styles.details}><Text style={styles.detailsText}>{loadingMore ? "Loading more stock…" : `Load more (${(data?.total_lots ?? lots.length) - Math.min(visibleCount, lots.length)} remaining)`}</Text></Pressable> : null}
     {!lots.length && !loading && currentQuery ? <View style={styles.empty}><Feather name="archive" size={28} color={colors.onSurfaceMuted} /><Text style={type.titleMd}>No matching stock</Text><Text style={type.bodyMuted}>Try another brand or search term.</Text></View> : null}
@@ -324,20 +329,29 @@ function LotCard({ lot, floorId, width, compact, canEditPricing, onDelete, onUpd
   }, [lot.id, floorId]);
   const deleteMovement = async (movementId: string) => {
     const controller = lifecycle.current;
-    if (!onDelete || !floorId || !controller || controller.signal.aborted || deletingMovementRef.current) return;
+    if (!onDelete || !floorId || !controller || controller.signal.aborted || deletingMovementRef.current) return false;
     deletingMovementRef.current = true; setDeletingMovement(movementId);
     try {
       await api.delete(`/godown-stock/${encodeURIComponent(lot.id)}/movements/${encodeURIComponent(movementId)}`, { floorId });
-      if (controller.signal.aborted) return;
-      const current = await getGodownLot(lot.id, controller.signal, floorId);
-      if (!controller.signal.aborted) onUpdated(current);
+      if (!controller.signal.aborted) {
+        historyGeneration.current += 1;
+        setHistory(previous => previous && { ...previous, stock_movements: (previous.stock_movements || []).filter(row => row.id !== movementId) });
+        void getGodownLot(lot.id, controller.signal, floorId).then(current => {
+          if (!controller.signal.aborted) onUpdated(current);
+        }).catch(() => {
+          if (!controller.signal.aborted) toast.error("Movement deleted. Refresh to see the updated balance.");
+        });
+      }
+      return true;
     } catch (e: any) {
       if (!controller.signal.aborted) toast.error(e?.detail || "Could not delete stock movement");
+      return false;
     } finally {
       deletingMovementRef.current = false;
       if (!controller.signal.aborted) setDeletingMovement(null);
     }
   };
+  const movementDeletion = useDeletionConfirmation(`${floorId}:${lot.id}`, "confirm-delete-stock-movement", deleteMovement, savingPrice || savingCount);
   useEffect(() => { if (showHistory && !history && !historyError && lot.history_loaded === false) void loadHistory(); }, [showHistory, history, historyError, lot.history_loaded, loadHistory]);
   const variants = lot.price_variants || [];
   const selectedPrice = variantIndex === null ? lot.unit_price : variants[variantIndex]?.price;
@@ -421,6 +435,7 @@ function LotCard({ lot, floorId, width, compact, canEditPricing, onDelete, onUpd
     finally { committing.current = false; if (!controller.signal.aborted) setSavingPrice(false); }
   };
   return <View testID={`godown-lot-${lot.id}`} style={[styles.card, compact && styles.cardCompact, { width }]}>
+    {movementDeletion.dialog}
     <View style={styles.cardHead}><ProductImage source={lot.image || null} style={compact ? [styles.image, styles.imageCompact] : styles.image} fallbackLabel={lot.sku} statusMessages={stockPhotoMessages} accessibilityLabel={`${lot.name} product image`} /><View style={{ flex: 1, minWidth: 0, gap: 3 }}><Text style={styles.brand}>{lot.brand_name || "Unbranded"}</Text><Text style={type.titleMd} numberOfLines={2}>{lot.name}</Text><Text style={type.caption}>{lot.sku}{lot.finish ? ` · ${lot.finish}` : ""}{lot.size ? ` · ${lot.size}` : ""}</Text></View></View>
     <View style={styles.availability}><Feather name={lot.available_qty > 0 ? "check-circle" : "archive"} size={15} color={lot.available_qty > 0 ? colors.success : colors.onSurfaceMuted} /><Text style={styles.available}>{lot.quantity_missing ? "Quantity not recorded" : lot.available_qty > 0 ? `${lot.available_qty} in stock` : "Out of stock · 0 units"} · {lot.stock_value == null ? "Value not recorded" : `${money(lot.stock_value)} stock value`}</Text></View>
     <Text style={type.caption}>{lot.quantity_missing ? "Record quantity before using this stock" : `${lot.transferable_qty ?? lot.available_qty} available to transfer`}</Text>
@@ -465,7 +480,7 @@ function LotCard({ lot, floorId, width, compact, canEditPricing, onDelete, onUpd
       {lot.transferred_by_name ? <Text style={type.caption}>Recorded by {lot.transferred_by_name}</Text> : null}
       <Text style={[styles.provenanceTitle, { marginTop: 8 }]}>Stock cycle</Text><Text style={type.caption}>{lot.quantity_missing ? "Quantity not recorded" : `${lot.quantity_counts?.length ? "Counted opening balance" : "Received"} ${lot.qty_received} · Allocated ${lot.qty_received - lot.available_qty} · Available ${lot.available_qty}`}</Text>
       {(lot.quantity_counts || []).map(count => <Text key={count.id} style={type.caption}>Counted {count.qty} stock units on {count.counted_on} · {count.actor_name} · {count.reason}</Text>)}
-      {(history?.stock_movements || lot.stock_movements || []).map(movement => <View key={movement.id} style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}><Text style={type.caption}>{movement.occurred_on} · {movement.kind === "receipt" ? "Received" : "Removed"} {movement.qty} · {movement.actor_name} · {movement.reason}</Text>{onDelete ? <Pressable accessibilityRole="button" accessibilityLabel="Delete stock movement" testID={`delete-stock-movement-${movement.id}`} disabled={!!deletingMovement} onPress={() => { void deleteMovement(movement.id); }}><Text style={styles.detailsText}>{deletingMovement === movement.id ? "Deleting…" : "Delete"}</Text></Pressable> : null}</View>)}
+      {(history?.stock_movements || lot.stock_movements || []).map(movement => <View key={movement.id} style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}><Text style={type.caption}>{movement.occurred_on} · {movement.kind === "receipt" ? "Received" : "Removed"} {movement.qty} · {movement.actor_name} · {movement.reason}</Text>{onDelete ? <Pressable accessibilityRole="button" accessibilityLabel="Delete stock movement" testID={`delete-stock-movement-${movement.id}`} disabled={!!deletingMovement} onPress={() => movementDeletion.prompt(movement.id, "Delete stock movement?", `${lot.name} · ${movement.occurred_on}`)}><Text style={styles.detailsText}>{deletingMovement === movement.id ? "Deleting…" : "Delete"}</Text></Pressable> : null}</View>)}
       {loadingHistory ? <Text accessibilityLiveRegion="polite" style={type.body}>Loading stock movements…</Text> : null}
       {historyError ? <View><Text accessibilityRole="alert" style={type.body}>{historyError}</Text><Pressable accessibilityRole="button" accessibilityLabel={`Retry stock history for ${lot.name}`} onPress={() => void loadHistory(history?.next_offset ?? 0)} style={styles.details}><Text style={styles.detailsText}>Retry stock history</Text></Pressable></View> : null}
       {(history?.allocations || lot.allocations || []).map(allocation => <Text key={allocation.id} style={type.caption}>{fmt(allocation.allocated_at)} · {allocation.qty} to {allocation.quotation_number || allocation.quotation_id || "quotation"}{allocation.customer_name ? ` for ${allocation.customer_name}` : ""}{allocation.allocated_by_name ? ` · ${allocation.allocated_by_name}` : ""}</Text>)}

@@ -23,6 +23,7 @@ import { Overlay } from "@/src/design/Overlay";
 import { useBp } from "@/src/design/responsive";
 import { Badge, Button, Card, ErrorState, LoadingState } from "@/src/components/ui";
 import { toast } from "@/src/components/Toast";
+import { useDeletionConfirmation } from "@/src/components/useDeletionConfirmation";
 import { api } from "@/src/api/client";
 import { colors, money, radius, spacing, type } from "@/src/theme/tokens";
 import {
@@ -322,16 +323,19 @@ export default function PurchaseOrderDetail() {
   const canDeletePurchase = useActionAccess("purchases", "delete", !!staff && ["owner", "admin", "manager"].includes(staff.role))
     && !!po && po.floor_id === selectedFloorId && ["first-floor", "ground-floor"].includes(po.floor_id);
   const deletePurchase = async () => {
-    if (!po || !canDeletePurchase || deletingPurchase.current) return;
+    if (!po || !canDeletePurchase || deletingPurchase.current || attachmentPending.current || busy || po.id !== id) return false;
     const floor = po.floor_id;
     deletingPurchase.current = true;
     try {
       await api.delete(`/purchase-orders/${encodeURIComponent(po.id)}`, { floorId: floor });
       if (activeFloor.current === floor) router.replace("/(admin)/purchases" as any);
+      return true;
     } catch (error: any) {
       if (activeFloor.current === floor) toast.error(error?.detail || "Could not delete purchase");
+      return false;
     } finally { deletingPurchase.current = false; }
   };
+  const purchaseDeletion = useDeletionConfirmation(`${selectedFloorId}:${id}`, "confirm-delete-purchase-order", deletePurchase, busy || attachmentPending.current);
 
   const applyGeneratedChalan = useCallback((chalan: Chalan, stage: ChalanOrderStage, items: GenerateChalanPayload["items"]) => {
     setPo((current) => {
@@ -569,13 +573,14 @@ export default function PurchaseOrderDetail() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }} edges={isPhone ? [] : ["top"]}>
+      {purchaseDeletion.dialog}
       <View style={[styles.topbar, isPhone && styles.topbarPhone]}>
         <Pressable testID="back-btn" onPress={() => router.back()} style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
           <Feather name="chevron-left" size={18} color={colors.onSurface} />
           <Text style={{ fontSize: 14, fontWeight: "500" }}>Purchases</Text>
         </Pressable>
         <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
-          {canDeletePurchase ? <Button label="Delete purchase" icon="trash-2" variant="danger" size="sm" onPress={() => { void deletePurchase(); }} testID="delete-purchase-order" /> : null}
+          {canDeletePurchase ? <Button label="Delete purchase" icon="trash-2" variant="danger" size="sm" onPress={() => purchaseDeletion.prompt(undefined, `Delete purchase ${po.number}?`)} testID="delete-purchase-order" /> : null}
           {po.status !== "draft" && po.status !== "cancelled" && po.status !== "packed" && po.status !== "ready_for_dispatch" ? (
             <Button label="Receive" icon="package" variant="secondary" size="sm" onPress={() => setReceiveOpen(true)} testID="receive-btn" />
           ) : null}

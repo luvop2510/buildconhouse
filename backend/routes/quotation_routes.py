@@ -1449,31 +1449,37 @@ async def delete_quotation(
     user: UserPublic = Depends(require_min_role("manager")),
 ):
     # A quotation deletion never removes the customer or another quotation.
-    existing = await get_floor_scoped_or_404(
-        db.quotations, quotation_id, user, not_found="Quotation not found", projection={"_id": 0},
-    )
     from db import client
     from services.customer_deletion import plan_deletion, apply_plan
     from pymongo.read_concern import ReadConcern
     from pymongo.write_concern import WriteConcern
+    receipt_id = "quotation-deletion:" + quotation_id
 
     async def operation(session):
-        current = await db.quotations.find_one({"id": quotation_id, "floor_id": existing["floor_id"]}, session=session)
-        if not current:
-            raise HTTPException(404, "Quotation not found")
+        receipt = await db.settings.find_one({"_id": receipt_id}, session=session)
+        if receipt:
+            allowed = accessible_floor_ids(user)
+            if (receipt.get("actor_id") != user.id or receipt.get("request_floor_id") != user.active_floor_id
+                    or (allowed is not None and receipt.get("floor_id") not in allowed)):
+                raise HTTPException(404, "Quotation not found")
+            return receipt["result"]
+        current = await get_floor_scoped_or_404(db.quotations, quotation_id, user,
+            not_found="Quotation not found", session=session)
         po_count = await db.purchase_orders.count_documents({"quotation_id": quotation_id, "floor_id": current["floor_id"]}, session=session)
         paid_count = await db.payments.count_documents({"quotation_id": quotation_id, "floor_id": current["floor_id"], "status": "completed"}, session=session)
         if po_count or paid_count or current.get("status") in {"ordered", "won"}:
             raise HTTPException(409, "This quotation has an order or completed payment. To remove all of this customer's data, the owner can use Delete customer data on the Customers page.")
         plan = await plan_deletion(db, quotation=current, session=session)
-        # Retain private object keys after commit until storage cleanup succeeds.
-        if plan["files"]:
-            await db.settings.insert_one({"id": "quotation-deletion:" + quotation_id,
-                "kind": "customer_deletion_receipt", "completed_at": now_iso(),
-                "pending_private_files": plan["files"]}, session=session)
         deleted = await apply_plan(db, plan, session)
-        return {"ok": True, "quotation_id": quotation_id, "doc_type": current.get("doc_type", "standard"),
-                "deleted": {**deleted, "pending_payments": deleted.get("payments", 0)}}
+        result = {"ok": True, "quotation_id": quotation_id, "doc_type": current.get("doc_type", "standard"),
+                  "deleted": {**deleted, "pending_payments": deleted.get("payments", 0)}}
+        # A retry after a lost response can replay the same acknowledgement.
+        # Retain owned file references until background cleanup succeeds.
+        await db.settings.insert_one({"_id": receipt_id, "id": receipt_id,
+            "kind": "customer_deletion_receipt", "completed_at": now_iso(), "actor_id": user.id,
+            "floor_id": current["floor_id"], "request_floor_id": user.active_floor_id,
+            "pending_private_files": plan["files"], "result": result}, session=session)
+        return result
 
     async with await client.start_session() as session:
         return await session.with_transaction(operation, read_concern=ReadConcern("snapshot"), write_concern=WriteConcern("majority"))

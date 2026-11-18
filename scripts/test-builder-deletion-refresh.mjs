@@ -32,6 +32,7 @@ function fixture(kind) {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
   }).outputText, {
     exports, AbortController, activeFloorId: 'first-floor',
+    recentRequest: { current: 0 },
     api: { get: pending },
     setRecentQuotations: value => { recent = value; },
     setCustomers: value => { customers = value; },

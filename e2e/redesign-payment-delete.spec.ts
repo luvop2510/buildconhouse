@@ -21,6 +21,8 @@ for (const floor of ['first-floor','ground-floor','third-floor']) {
     if (floor === 'third-floor') await expect(page.getByTestId('delete-payment-payment-one')).toHaveCount(0);
     else {
       await page.getByTestId('delete-payment-payment-one').click();
+      expect(deleted).toBe(false);
+      await page.getByTestId('confirm-delete-payment-confirm').click();
       await expect(page.getByTestId('history-row-payment-one')).toHaveCount(0);
       await expect(page).toHaveURL(/\/payments$/);
       expect(deleted).toBe(true);
