@@ -758,9 +758,14 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
     started_at = monotonic()
     b = branding or {}
     floor_id = quotation.get("floor_id") or customer.get("floor_id")
-    standard = (quotation.get("doc_type") or "standard") == "standard"
+    doc_type = quotation.get("doc_type") or "standard"
+    standard = doc_type == "standard"
     product_quotation = standard and floor_id != "second-floor" and quotation.get("_po_final") is None
-    compact_ground_meta = product_quotation and floor_id == "ground-floor"
+    # The staff builder uses first-floor for Sanitary Bathroom. Ground also
+    # has standard records, and the portal uses this template for tile quotes.
+    wide_customer_meta = quotation.get("_po_final") is None and (
+        (standard and floor_id in ("first-floor", "ground-floor")) or doc_type == "tiles_quotation"
+    )
     items = quotation.get("items") or []
     media_urls = [
         url for item in items
@@ -847,18 +852,19 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
     story.extend([Spacer(1, 3 * mm), HRFlowable(width="100%", thickness=1.25, color=BLUE), Spacer(1, 2.5 * mm)])
     reference = pdf_reference_label(quotation)
     address = quotation.get("address_snapshot") or customer.get("address") or ""
-    labels = ["REFERENCE", "", "ADDRESS", ""] if compact_ground_meta else ["REFERENCE", "ATTENDED BY", "PREPARED BY", "ADDRESS"]
-    details = [reference, "", address, ""] if compact_ground_meta else [
-        reference, quotation.get("attended_by") or "",
-        quotation.get("prepared_by") or b.get("footer_company_name") or "Buildcon House", address,
-    ]
+    if wide_customer_meta:
+        labels = ["REFERENCE", "", "ADDRESS", ""]
+        details = [reference, "", address, ""]
+    else:
+        labels = ["REFERENCE", "ATTENDED BY", "PREPARED BY", "ADDRESS"]
+        details = [reference, quotation.get("attended_by") or "",
+                   quotation.get("prepared_by") or b.get("footer_company_name") or "Buildcon House", address]
     meta = [
         [Paragraph("CUSTOMER NAME", styles["label"]), Paragraph("CONTACT NO.", styles["label"]), Paragraph("SELECTION / QUOTATION DATE", styles["label"]), Paragraph("QUOTATION NO.", styles["label"])],
         [Paragraph(_escape(customer.get("name") or quotation.get("customer_name")), styles["body"]), Paragraph(_escape(format_department_phone(quotation.get("phone_snapshot") or customer.get("phone"), floor_id)), styles["body"]), Paragraph(created, styles["body"]), Paragraph(_escape(quotation.get("number")), styles["body"])],
         [Paragraph(label, styles["label"]) if label else "" for label in labels],
         [Paragraph(_escape(value), styles["body"]) if value else "" for value in details],
     ]
-    meta_row_heights = [None] * 4
     meta_style = [
         ("LINEBELOW", (0, 1), (-1, 1), 0.4, LINE),
         ("LINEBELOW", (0, 3), (-1, 3), 0.4, LINE),
@@ -866,11 +872,14 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
         ("LEFTPADDING", (0, 0), (-1, -1), 3), ("RIGHTPADDING", (0, 0), (-1, -1), 3),
         ("TOPPADDING", (0, 0), (-1, -1), 1), ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
     ]
-    if compact_ground_meta:
-        # Reclaim the two staff fields' space for Reference and Address.
+    if wide_customer_meta:
+        # Give each value two columns and align the first lines when they wrap.
         for row in (2, 3):
             meta_style.extend([("SPAN", (0, row), (1, row)), ("SPAN", (2, row), (3, row))])
-    meta_table = Table(meta, colWidths=[_pw(66.75) * mm] * 4, rowHeights=meta_row_heights, minRowHeights=[7 * mm, 8 * mm, 7 * mm, 8 * mm])
+        meta_style.extend([("VALIGN", (0, 3), (-1, 3), "TOP"),
+                           ("TOPPADDING", (0, 3), (-1, 3), 4), ("BOTTOMPADDING", (0, 3), (-1, 3), 4)])
+    meta_table = Table(meta, colWidths=[_pw(66.75) * mm] * 4,
+                       minRowHeights=[7 * mm, 8 * mm, 7 * mm, 8 * mm], splitInRow=int(wide_customer_meta))
     meta_table.setStyle(TableStyle(meta_style))
     story.extend([meta_table, Spacer(1, 2 * mm)])
     story.append(Paragraph("Dear Sir/Madam, thank you for your interest in our products. We are pleased to offer our most competitive rates for premium tiles and sanitaryware, prepared as per your selection.", styles["body"]))

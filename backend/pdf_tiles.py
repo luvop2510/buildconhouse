@@ -1,8 +1,8 @@
 """Ground Floor → Tiles document PDFs — faithful replicas of the two official
 printed forms supplied by the business (Selection / Tile Quotation):
 
-* Page 1 — logo + title, a 4x2 CUSTOMER NAME/CONTACT NO./.../ADDRESS form
-  grid, an intro line, (Quotation only) a PRICE SUMMARY box, the OUR BRAND
+* Page 1 — logo + title, a customer information grid, an intro line,
+  (Quotation only) a PRICE SUMMARY box, the OUR BRAND
   PARTNERS grid, 12 Terms & Conditions, a contact line and a customer
   signature box.
 * Page 2+ — PRODUCT DETAILS: a single flowing product grid (SR NO / PRODUCT
@@ -230,7 +230,7 @@ def _header_block(main_title: str, subtitle: str, styles: dict) -> Table:
     return table
 
 
-def _meta_grid(quotation: dict, customer: dict, styles: dict) -> Table:
+def _meta_grid(quotation: dict, customer: dict, styles: dict, *, include_staff: bool = True) -> Table:
     """Customer and document details shared by the two tile documents."""
     created = _parse_doc_date(quotation).strftime("%d-%b-%y")
     row1_labels = ["CUSTOMER NAME", "CONTACT NO.", "SELECTION / QUOTATION DATE", "QUOTATION NO."]
@@ -240,16 +240,21 @@ def _meta_grid(quotation: dict, customer: dict, styles: dict) -> Table:
         quotation.get("doc_date") or created,
         quotation.get("doc_number") or quotation.get("number") or "",
     ]
-    row2_labels = ["REFERENCE", "ATTENDED BY", "PREPARED BY", "ADDRESS"]
-    row2_values = [pdf_reference_label(quotation), quotation.get("attended_by") or "", quotation.get("prepared_by") or "", quotation.get("address_snapshot") or customer.get("address") or ""]
+    reference = pdf_reference_label(quotation)
+    address = quotation.get("address_snapshot") or customer.get("address") or ""
+    if include_staff:
+        row2_labels = ["REFERENCE", "ATTENDED BY", "PREPARED BY", "ADDRESS"]
+        row2_values = [reference, quotation.get("attended_by") or "", quotation.get("prepared_by") or "", address]
+    else:
+        row2_labels = ["REFERENCE", "", "ADDRESS", ""]
+        row2_values = [reference, "", address, ""]
     data = [
         [Paragraph(label, styles["metaLabel"]) for label in row1_labels],
         [Paragraph(_escape(value) or "&nbsp;", styles["metaValue"]) for value in row1_values],
         [Paragraph(label, styles["metaLabel"]) for label in row2_labels],
         [Paragraph(_escape(value) or "&nbsp;", styles["metaValue"]) for value in row2_values],
     ]
-    table = Table(data, colWidths=[PAGE_W_MM / 4 * mm] * 4, minRowHeights=[7 * mm, 8 * mm, 7 * mm, 8 * mm])
-    table.setStyle(TableStyle([
+    grid_style = [
         # A single explicit grid avoids the disconnected, partial form rules
         # seen in printed selections. ReportLab draws continuous straight
         # horizontal and vertical strokes around every field.
@@ -258,7 +263,15 @@ def _meta_grid(quotation: dict, customer: dict, styles: dict) -> Table:
         ("VALIGN", (0, 0), (-1, -1), "BOTTOM"),
         ("LEFTPADDING", (0, 0), (-1, -1), 3), ("RIGHTPADDING", (0, 0), (-1, -1), 3),
         ("TOPPADDING", (0, 0), (-1, -1), 1), ("BOTTOMPADDING", (0, 0), (-1, -1), 1.5),
-    ]))
+    ]
+    if not include_staff:
+        for row in (2, 3):
+            grid_style.extend([("SPAN", (0, row), (1, row)), ("SPAN", (2, row), (3, row))])
+        grid_style.extend([("VALIGN", (0, 3), (-1, 3), "TOP"),
+                           ("TOPPADDING", (0, 3), (-1, 3), 4), ("BOTTOMPADDING", (0, 3), (-1, 3), 4)])
+    table = Table(data, colWidths=[PAGE_W_MM / 4 * mm] * 4,
+                  minRowHeights=[7 * mm, 8 * mm, 7 * mm, 8 * mm], splitInRow=int(not include_staff))
+    table.setStyle(TableStyle(grid_style))
     return table
 
 
@@ -507,7 +520,7 @@ def build_tiles_quotation_pdf(quotation: dict, customer: dict, branding: dict | 
             _header_block("PRODUCT QUOTATION", "Tiles &amp; Sanitaryware Solutions", styles),
             Spacer(1, 2 * mm),
             HRFlowable(width="100%", thickness=1.1, color=INK, spaceAfter=2.5 * mm),
-            _meta_grid(quotation, customer, styles),
+            _meta_grid(quotation, customer, styles, include_staff=False),
             Spacer(1, 2.5 * mm),
             Paragraph(
                 "Dear Sir/Madam, thank you for your interest in our products. We are pleased to offer our most competitive "

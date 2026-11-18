@@ -117,10 +117,10 @@ def test_diagonal_ink_remains_visible_in_rendered_summary_and_continuations(docu
 
 @pytest.mark.parametrize("floor,remove_attribution", [
     ("ground-floor", True),
-    ("first-floor", False),
+    ("first-floor", True),
     ("second-floor", False),
 ])
-def test_only_ground_standard_quotation_omits_both_staff_fields(floor, remove_attribution):
+def test_standard_quotation_staff_fields_follow_department(floor, remove_attribution):
     quote = {
         "floor_id": floor, "doc_type": "standard", "number": "FQ-PROOF-001",
         "created_at": "2026-11-18T10:00:00Z",
@@ -137,6 +137,31 @@ def test_only_ground_standard_quotation_omits_both_staff_fields(floor, remove_at
         assert text in cover
     assert ("990-995-57-55" if floor == "second-floor" else "9909955755") in cover
     assert "BASIN-1" in pages[1].extract_text()
+
+
+@pytest.mark.parametrize("builder, floor, doc_type", [
+    (pdf_generator.build_quotation_pdf, "first-floor", None),
+    (pdf_generator.build_quotation_pdf, "ground-floor", "standard"),
+    (pdf_tiles.build_tiles_quotation_pdf, "ground-floor", "tiles_quotation"),
+], ids=["sanitary-legacy", "ground-standard", "ground-tiles"])
+def test_product_quotation_wraps_reference_and_address_in_wide_columns(builder, floor, doc_type):
+    reference = "ReferenceStart Design & Build Studio, " + "Riverside Projects and Partners " * 5 + "ReferenceEnd"
+    address = "AddressStart Building 14, " + "Near the Riverside Commercial Complex, " * 3 + "AddressEnd"
+    quotation = {
+        "number": "FQ-WRAP", "floor_id": floor, "doc_type": doc_type,
+        "attended_by": "Attendance Fixture", "prepared_by": "Preparation Fixture",
+        "reference_source": reference, "address_snapshot": address,
+        "subtotal": 1250, "grand_total": 1250,
+        "items": [{"name": "Fixture Product", "qty": 1, "unit_price": 1250, "net_amount": 1250}],
+    }
+    pages = PdfReader(BytesIO(builder(quotation, {"name": "Wrap Customer"}))).pages
+    cover = pages[0].extract_text()
+    assert " ".join(reference.split()) in " ".join(cover.split())
+    assert " ".join(address.split()) in " ".join(cover.split())
+    assert all(text not in cover for text in ("ATTENDED BY", "PREPARED BY", "Attendance Fixture", "Preparation Fixture"))
+    assert all(text in cover for text in ("Wrap Customer", "1,250.00", "TERMS & CONDITIONS", "CUSTOMER SIGNATURE"))
+    assert len(pages) == 2
+    assert "Fixture Product" in pages[1].extract_text()
 
 
 @pytest.mark.parametrize("floor,builder,font_size,gray", [
