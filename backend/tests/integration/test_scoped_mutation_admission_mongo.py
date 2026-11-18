@@ -10,6 +10,7 @@ from fastapi import FastAPI, Header, HTTPException
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo.errors import AutoReconnect
 
+from routes import quotation_routes
 from services.mutation_admission import KEY, SCOPED_EXCLUSIVE, AdmissionUnavailable, MutationAdmissionMiddleware, admission, admission_status
 from tests.integration.test_tile_release_godown_mongo import tile_replica
 
@@ -155,7 +156,6 @@ async def test_timeout_fences_a_mongo_claim_that_arrives_after_cleanup(database,
 async def test_committed_quotation_deletion_replays_only_to_same_actor_and_floor(database, monkeypatch):
     import db
     from models import UserPublic
-    from routes import quotation_routes
 
     monkeypatch.setattr(db, "client", database.client)
     monkeypatch.setattr(quotation_routes, "db", database)
