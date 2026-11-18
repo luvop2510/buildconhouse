@@ -244,6 +244,7 @@ test('critical quotation room actions preserve the room name in a narrow desktop
   const room = page.getByTestId('room-name-Master Bath');
   await expect(room).toBeVisible();
   expect((await room.boundingBox())!.width).toBeGreaterThan(140);
+  await page.getByTestId('room-actions-Master Bath').click();
   for (const action of ['room-rename-Master Bath', 'room-discount-Master Bath', 'room-dup-Master Bath', 'room-delete-Master Bath']) {
     const box = await page.getByTestId(action).boundingBox();
     expect(box!.width).toBeGreaterThanOrEqual(44);

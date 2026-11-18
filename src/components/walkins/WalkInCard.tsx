@@ -1,4 +1,4 @@
-import { formatPhone } from "@/src/utils/phone";
+import { formatDepartmentPhone } from "@/src/utils/phone";
 // Walk-in card — Phase 4 (2026-07-30). Same visual language as
 // components/tiles cards: Card + IconButton + Button.
 import { useEffect, useRef, useState } from "react";
@@ -69,7 +69,7 @@ export function WalkInCard({
         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: spacing.sm }}>
           <View style={{ flex: 1, gap: spacing.xs, minWidth: 0 }}>
             <Text style={type.bodyStrong}>{w.customer_name}</Text>
-            <Text style={type.bodyMuted}>{formatPhone(w.customer_phone) || "No phone"} · {w.number}</Text>
+            <Text style={type.bodyMuted}>{formatDepartmentPhone(w.customer_phone, w.floor_id) || "No phone"} · {w.number}</Text>
           </View>
           <View style={{ backgroundColor: tone.bg, borderRadius: radius.pill, paddingHorizontal: spacing.sm, paddingVertical: 3 }}>
             <Text style={[type.captionStrong, { color: tone.fg }]}>{STATUS_LABEL[w.status] || "New"}</Text>

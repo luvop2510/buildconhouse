@@ -744,7 +744,8 @@ def test_customer_metadata_prints_at_readable_size_and_wraps_without_overlap(bui
     spans = []
     page.extract_text(visitor_text=lambda text, _cm, _tm, _font, size: spans.append((text, size)))
     assert any("Sample Customer" in text and size >= 11 for text, size in spans)
-    assert any(pdf_generator.format_phone(doc["phone_snapshot"]) in text and size >= 11 for text, size in spans)
+    expected_phone = "+91 900-000-00-00" if builder is pdf_generator.build_quotation_pdf else "+91 9000000000"
+    assert any(expected_phone in text and size >= 11 for text, size in spans)
     if builder is pdf_generator.build_quotation_pdf:
         assert any("Architecture" in text and size >= 11 for text, size in spans)
     else:

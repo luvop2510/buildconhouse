@@ -164,6 +164,11 @@ jobs:
         env:
           TILE_WORKFLOW_TEST_MONGO_URL: mongodb://127.0.0.1:28124
         run: python -m pytest tests/integration/test_customer_search_mongo.py tests/integration/test_kitchen_customer_soft_deletion_mongo.py tests/integration/test_customer_delete_permissions_mongo.py tests/integration/test_dispatch_drivers_mongo.py tests/integration/test_tile_release_godown_mongo.py -v
+      - name: Verify quotation send, downloads and follow-up postponement transactions
+        env:
+          KITCHEN_TEST_MONGO_URL: mongodb://127.0.0.1:28124
+          WORKFLOW_TEST_MONGO_URL: mongodb://127.0.0.1:28124/?replicaSet=deletion_qa
+        run: python -m pytest tests/integration/test_quotation_send_mongo.py tests/integration/test_followup_postponement_mongo.py -v
       - name: Remove run-owned customer deletion replica
         if: always()
         run: docker rm -f customer-deletion-mongo || true

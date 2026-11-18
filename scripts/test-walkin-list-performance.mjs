@@ -46,7 +46,7 @@ function fixture() {
     '@/src/hooks/use-permissions': { useModuleAccess: () => () => true },
     '@/src/utils/walkinSummary': { walkinSummaryFilters: view => view ? { summary: view } : {} },
     '@/src/theme/tokens': { colors: {}, spacing: {}, type: {} },
-    '@/src/utils/phone': { formatPhone: value => value },
+    '@/src/utils/phone': { formatDepartmentPhone: value => value },
     '@/src/components/Toast': { toast: { success: message => notices.push({ success: message }), error: message => notices.push({ error: message }) } },
     '@/src/api/walkins': { walkinsApi: { remove: request('remove'), list: request('export'), page: (params, cursor, options) => request('list')(params, options, cursor).then(result => Array.isArray(result) ? { items: result, next_cursor: null } : result), dashboard: request('dashboard'), update: request('update'), listSources: async () => ({ sources: [] }) } },
   };

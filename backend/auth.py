@@ -489,7 +489,7 @@ ROLE_HIERARCHY = {
 # renamed/added here, both screens update with zero frontend changes.
 ROLE_LABELS: dict[str, str] = {
     "owner": "Owner", "admin": "Admin", "manager": "Manager", "accounts": "Accounts",
-    "purchase": "Purchase", "sales": "Sales", "warehouse": "Warehouse", "worker": "Worker",
+    "purchase": "Purchase", "sales": "Sales", "warehouse": "Warehouse", "worker": "Employee",
 }
 
 ROLE_CAPABILITIES: dict[str, list[str]] = {

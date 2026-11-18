@@ -129,7 +129,8 @@ function overlayFixture() {
   };
   const previous = { isConnected: true, focus() { document.activeElement = this; } };
   const returnFocusRef = { current: previous };
-  const input = { focus() { document.activeElement = this; }, getClientRects: () => [{}], getAttribute: () => null };
+  const input = { focus() { document.activeElement = this; }, getClientRects: () => [{}], getAttribute: () => null,
+    matches: () => false };
   const panel = { contains: target => target === input || target === panel,
     querySelectorAll: () => [input], focus() { document.activeElement = this; } };
   const document = { body: { children: [] }, activeElement: previous,

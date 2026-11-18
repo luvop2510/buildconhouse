@@ -36,7 +36,7 @@ class ObservedFollowups(_FakeFollowups):
         return await super().insert_one(doc, session=session)
 
     async def update_one(self, query, update, session=None):
-        if "status" not in query:
+        if update.get("$set", {}).get("auto_resolved"):
             self.events.append(("resolve", query["id"]))
         return await super().update_one(query, update, session=session)
 

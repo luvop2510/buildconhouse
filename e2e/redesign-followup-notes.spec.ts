@@ -77,17 +77,17 @@ test('critical retired quotation follow-up uses the shared Lost reason workflow 
     return route.fulfill({ json: { ...lead, status: 'done' } });
   });
   await page.getByTestId((page.viewportSize()?.width || 0) < 768 ? 'contact-retained-customer' : 'call-retained-customer').click();
-  const dialog = page.getByRole('dialog', { name: 'Log Call Outcome', exact: true });
+  const dialog = page.getByRole('dialog', { name: 'Record contact outcome', exact: true });
   await page.getByTestId('outcome-lost').click();
   await expect(page.getByTestId('save-call-outcome')).toBeDisabled();
   expect(writes).toHaveLength(0);
   await page.getByTestId('outcome-notes').fill('Client chose another vendor');
   await page.getByTestId('save-call-outcome').click();
   await expect(dialog).toHaveCount(0);
-  expect(writes).toEqual([{ outcome: 'lost', notes: 'Client chose another vendor' }]);
+  expect(writes).toEqual([{ outcome: 'lost', notes: 'Client chose another vendor', request_key: expect.any(String) }]);
 });
 
-test('critical a routine call has no note field and only Lost requests a reason', async ({ page }) => {
+test('critical contact outcomes accept notes and Lost requires a reason', async ({ page }) => {
   await mockSession(page, '/followups');
   await page.route('**/api/followups/assignees?**', r => r.fulfill({ json: [{ id: 'eligible-worker', full_name: 'Eligible worker', role: 'sales', floor_ids: ['first-floor'] }] }));
   await page.route('**/api/followups/config/assignees', r => r.fulfill({ json: [] }));
@@ -105,21 +105,22 @@ test('critical a routine call has no note field and only Lost requests a reason'
   await page.goto('/followups');
   const phone = (page.viewportSize()?.width || 0) < 768;
   await page.getByTestId(phone ? 'contact-note-required' : 'call-note-required').click();
-  const dialog = page.getByRole('dialog', { name: 'Log Call Outcome', exact: true });
+  const dialog = page.getByRole('dialog', { name: 'Record contact outcome', exact: true });
   await expect(dialog).toBeVisible();
   await page.getByTestId('outcome-interested').click();
-  await expect(page.getByTestId('outcome-notes')).toHaveCount(0);
+  await expect(page.getByRole('textbox', { name: 'Contact notes' })).toBeVisible();
   await expect(page.getByTestId('save-call-outcome')).toBeEnabled();
   await page.getByTestId('outcome-lost').click();
   await expect(page.getByTestId('outcome-notes')).toBeVisible();
   await expect(page.getByTestId('save-call-outcome')).toBeDisabled();
   await page.getByTestId('outcome-notes').fill('Cannot afford this service');
   await page.getByTestId('outcome-no_answer').click();
-  await expect(page.getByTestId('outcome-notes')).toHaveCount(0);
+  await page.getByTestId('outcome-notes').fill('Called again after lunch');
+  await expect(page.getByRole('textbox', { name: 'Contact notes' })).toBeVisible();
   await page.getByTestId('save-call-outcome').click();
   await expect(dialog).toHaveCount(0);
   expect(contacts).toEqual([{ channel: 'call' }]);
-  expect(outcomes).toEqual([{ outcome: 'no_answer' }]);
+  expect(outcomes).toEqual([{ outcome: 'no_answer', notes: 'Called again after lunch', request_key: expect.any(String) }]);
 });
 
 test('critical walk-in notes are read-only until marking the customer lost', async ({ page }) => {

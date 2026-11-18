@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 import pytest
 
@@ -21,18 +22,21 @@ class _Followups:
     def __init__(self):
         self.row = {
             "id": "followup-1", "floor_id": "first-floor", "customer_id": "customer-1",
-            "customer_name": "Client", "category": "sales", "assigned_to": "selected-worker", "assigned_to_name": "Selected worker", "due_at": "2026-01-01T00:00:00+00:00",
+            "customer_name": "Client", "category": "sales", "status": "open", "assigned_to": "selected-worker", "assigned_to_name": "Selected worker", "due_at": "2026-01-01T00:00:00+00:00",
         }
         self.updated: dict | None = None
         self.inserted: list[dict] = []
+        self.call_history: list[dict] = []
 
     async def find_one(self, *_args, **_kwargs):
-        return {**self.row, **(self.updated or {})}
+        return {**self.row, **(self.updated or {}), "call_history": list(self.call_history)}
 
     async def update_one(self, _query, patch, **_kwargs):
         self.updated = patch["$set"]
+        self.call_history.append(patch["$push"]["call_history"])
+        return SimpleNamespace(matched_count=1)
 
-    async def insert_one(self, row):
+    async def insert_one(self, row, **_kwargs):
         self.inserted.append(row)
 
 
@@ -53,7 +57,24 @@ class _Users:
         return None
 
 
+class _FakeSession:
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        pass
+
+    async def with_transaction(self, command):
+        return await command(self)
+
+
+async def _start_session():
+    return _FakeSession()
+
+
 def _install(monkeypatch):
+    from db import client
+    monkeypatch.setattr(client, "start_session", _start_session)
     store = _Followups()
     monkeypatch.setattr(followups, "db", type("Db", (), {"followups": store, "users": _Users()})())
     return store
@@ -113,3 +134,18 @@ def test_rejected_customer_is_lost_with_required_reason(monkeypatch):
     assert store.updated["completed_outcome"] == "lost"
     assert store.updated["notes"] == "We cannot work with the requested scope"
     assert store.inserted == []
+
+
+def test_contacted_preserves_existing_notes_and_records_contact_history(monkeypatch):
+    store = _install(monkeypatch)
+    store.row["notes"] = "Original notes"
+    actor = _user()
+    body = FollowupCallOutcomePayload(outcome="contacted", notes=" Confirmed receipt ", request_key="contact-123")
+    first = asyncio.run(followups.log_call("followup-1", body, actor))
+    replay = asyncio.run(followups.log_call("followup-1", body, actor))
+    assert first == replay
+    assert first["status"] == "done"
+    assert first["notes"] == "Original notes"
+    assert len(store.call_history) == 1
+    assert store.call_history[0]["notes"] == "Confirmed receipt"
+    assert store.call_history[0]["actor_id"] == actor.id

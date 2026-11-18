@@ -94,8 +94,10 @@ test('literal server search and status filters reset pagination and reject obsol
   assert.deepEqual(Array.from(fixture.state.items, row => row.id), ['search-match']);
   await oldLoad(); assert.equal(fixture.requests.length, 3);
   fixture.state.setStatusFilter('draft'); fixture.render();
-  assert.equal(params(fixture.requests[3]).get('status'), 'draft,pending_approval,sent');
+  assert.equal(params(fixture.requests[3]).get('status'), 'draft');
   assert.equal(params(fixture.requests[3]).get('skip'), '0');
+  fixture.state.setStatusFilter('sent'); fixture.render();
+  assert.equal(params(fixture.requests[4]).get('status'), 'sent');
 });
 
 test('lifecycle, account, access loss and unmount fence old page callbacks', async () => {

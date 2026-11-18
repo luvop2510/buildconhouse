@@ -38,7 +38,7 @@ for (const floorId of ['first-floor', 'ground-floor']) test(`critical ${floorId}
   const card = page.getByTestId('followup-sanitary-draft');
   await expect(card).toContainText('Quotation draft created 7 day(s) ago; no order placed');
   await expect(card).toContainText('Salesperson: Assigned salesperson');
-  await expect(card).toContainText('Today');
+  await expect(card).toContainText('Due today');
   await expect(page.getByTestId('followups-salesperson-all')).toBeVisible();
   await expect(page.getByTestId('followups-filters-toggle')).toHaveAttribute('aria-expanded', 'true');
   await expect(page.getByTestId('followups-owner')).toHaveCount(0);

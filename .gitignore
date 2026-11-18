@@ -102,6 +102,7 @@ backend/backups/
 .superpowers/
 .env*
 .playwright-cli/
+test-results/
 output/playwright/
 output/pdf/
 # Generated release evidence and native bundles are local artifacts.

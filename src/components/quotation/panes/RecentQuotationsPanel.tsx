@@ -10,6 +10,8 @@ import { api } from "@/src/api/client";
 
 import { colors, money, radius, spacing } from "@/src/theme/tokens";
 import { color as ds, statusTone } from "@/src/design/tokens";
+import { quotationDestination } from "@/src/utils/quotationNavigation";
+import { quotationDisplayStatus } from "@/src/utils/quotationStatus";
 import { ConfirmDialog } from "@/src/components/ds";
 import { useAuth } from "@/src/state/auth";
 import { useActionAccess } from "@/src/hooks/use-permissions";
@@ -77,10 +79,11 @@ export function RecentQuotationsPanel() {
       </Pressable> : quotations.length === 0 && (view === "recent" || selected) ? <Text style={styles.empty}>No quotations yet</Text> : null}
       {quotations.slice(0, 8).map((q) => {
         const active = b.quotationId === q.id;
+        const status = q.customer_outcome || quotationDisplayStatus(active ? b.quotationStatus : q.status);
         return (
           <Pressable
             key={q.id}
-            onPress={() => b.restoreQuotation(q.id)}
+            onPress={() => { if (!active) router.replace(quotationDestination(q, true) as any); }}
             style={[styles.row, active && styles.rowActive]}
             testID={`rail-recent-${q.number}`}
           >
@@ -93,7 +96,7 @@ export function RecentQuotationsPanel() {
             </View>
             <View style={{ alignItems: "flex-end", gap: 2 }}>
               <Text style={styles.amt} numberOfLines={1}>{money(q.grand_total || 0)}</Text>
-              <Text style={styles.status}>{statusTone[q.customer_outcome || q.status]?.label || q.status}</Text>
+              <Text style={styles.status}>{statusTone[status]?.label || status}</Text>
               {canDeleteQuotations ? (
                 <Pressable
                   hitSlop={6}

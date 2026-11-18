@@ -44,7 +44,7 @@ export function ReferencesEditor({ item, initialKind, floorId, onSaved, onClose 
       {([ ["name", "Name (required)"], ["company", "Company / studio (optional)"], ["phone", "Phone (required)"], ["email", "Email (optional)"], ["address", "Address (optional)"] ] as const).map(([key, label]) => <TextField
         key={key} label={label} value={draft[key]} onChangeText={value => setDraft(current => ({ ...current, [key]: value }))}
         editable={!saving} maxLength={key === "address" ? 1000 : key === "company" ? 250 : key === "phone" ? 100 : 200}
-        keyboardType={key === "phone" ? "phone-pad" : key === "email" ? "email-address" : "default"}
+        keyboardType={key === "phone" ? "phone-pad" : key === "email" ? "email-address" : "default"} phoneFloorId={floorId}
         autoCapitalize={key === "email" ? "none" : "sentences"} testID={`reference-${key}`}
       />)}
       <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.s12 }}><Text style={[type.body, { flex: 1 }]}>Available across all floors</Text><Switch accessibilityLabel="Available across all floors" value={shared} disabled={saving || !item} onValueChange={setShared} /></View>

@@ -8,18 +8,18 @@ Tests ONLY the newly added/changed Purchases endpoints as per review request:
 4. TRANSFER TO EXISTING CUSTOMER — POST /api/purchases/items/{item_id}/transfer
 
 Test credentials: owner@forge.app / [legacy credential removed]
-Backend URL: Uses REACT_APP_BACKEND_URL from frontend/.env (empty = same-origin)
+Backend URL: Uses REACT_APP_BACKEND_URL from the root .env, with a local fallback.
 """
 import os
 import sys
 import requests
 import json
+from pathlib import Path
 from typing import Optional, Dict, Any
 
-# Backend URL configuration - read from frontend/.env
 def get_backend_url():
-    """Read REACT_APP_BACKEND_URL from frontend/.env"""
-    env_path = "/app/frontend/.env"
+    """Read REACT_APP_BACKEND_URL from the root .env."""
+    env_path = Path(__file__).resolve().with_name(".env")
     backend_url = ""
     if os.path.exists(env_path):
         with open(env_path, 'r') as f:

@@ -6,6 +6,8 @@ import { Text } from "@/src/components/AppText";
 import { api } from "@/src/api/client";
 import type { Customer } from "@/src/components/quotation/helpers/types";
 import { type } from "@/src/theme/tokens";
+import { KITCHEN_FLOOR_ID } from "@/src/constants/floors";
+import { formatDepartmentPhone } from "@/src/utils/phone";
 
 type Source = { source_kind: "customer" | "walkin" | "followup"; source_id: string; name: string; phone: string; address?: string; floor_id: string };
 export function ExistingTileCustomer({ onPick, onLookupActive }: { onPick: (customer: Customer) => void; onLookupActive: (active: boolean, owner: object) => void }) {
@@ -47,7 +49,7 @@ export function ExistingTileCustomer({ onPick, onLookupActive }: { onPick: (cust
         {error ? <Button label="Retry" onPress={() => setAttempt(n => n + 1)} /> : null}
         <ScrollView keyboardShouldPersistTaps="handled" style={{ maxHeight: 360 }}>
           {rows.map(row => <View key={`${row.source_kind}:${row.source_id}`} style={{ gap: 4, paddingVertical: 8 }}>
-            <Text style={type.bodyStrong}>{row.name}</Text><Text style={type.caption}>{[row.phone, row.address, row.floor_id, row.source_kind].filter(Boolean).join(" · ")}</Text>
+            <Text style={type.bodyStrong}>{row.name}</Text><Text style={type.caption}>{[row.floor_id === KITCHEN_FLOOR_ID ? row.phone : formatDepartmentPhone(row.phone, row.floor_id), row.address, row.floor_id, row.source_kind].filter(Boolean).join(" · ")}</Text>
             <Button label={`Use ${row.name}`} disabled={busy} onPress={() => void choose(row)} testID={`tiles-existing-${row.source_kind}-${row.source_id}`} />
           </View>)}
         </ScrollView>

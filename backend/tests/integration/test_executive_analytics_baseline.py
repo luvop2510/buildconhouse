@@ -19,7 +19,7 @@ def _env_value(key: str) -> str | None:
     val = os.environ.get(key)
     if val:
         return val.strip()
-    frontend_env = Path("/app/frontend/.env")
+    frontend_env = Path(__file__).resolve().parents[3] / ".env"
     if frontend_env.exists():
         for line in frontend_env.read_text().splitlines():
             if not line or line.strip().startswith("#") or "=" not in line:

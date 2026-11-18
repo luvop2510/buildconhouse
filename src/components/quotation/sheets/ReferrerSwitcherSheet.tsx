@@ -1,4 +1,4 @@
-import { validPhone } from "@/src/utils/phone";
+import { formatDepartmentPhone, validPhone } from "@/src/utils/phone";
 import { referrerCode } from "@/src/utils/referrer";
 // Referrer switcher — searchable list of architects/interior designers +
 // inline "create new" form. Opens from the topbar's "Referred By" field.
@@ -86,7 +86,7 @@ export function ReferrerSwitcherSheet() {
               autoFocus
             />
             <Text style={type.overline}>Phone *</Text>
-            <TextInput testID="new-referrer-phone" accessibilityLabel="Phone (required)" value={phone} onChangeText={setPhone} keyboardType="phone-pad" placeholder="990-995-57-55" style={styles.input} />
+            <TextInput testID="new-referrer-phone" accessibilityLabel="Phone (required)" value={phone} onChangeText={setPhone} keyboardType="phone-pad" placeholder={formatDepartmentPhone("9909955755", b.activeFloorId)} style={styles.input} />
             <TextInput accessibilityLabel="Address (optional)" value={address} onChangeText={setAddress} placeholder="Address (optional)" style={styles.input} />
             <TextInput accessibilityLabel="Interior / studio name" value={company} onChangeText={setCompany} placeholder="Company / studio (optional)" style={styles.input} />
           </View>

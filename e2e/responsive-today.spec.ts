@@ -28,6 +28,12 @@ for (const role of ['owner','manager','worker']) test(`Today shows the correct $
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
   await health.assertHealthy();
   await page.screenshot({path:info.outputPath(`today-${role}.png`),fullPage:true});
+  if (role === 'worker') {
+    const more = page.getByTestId('bottom-nav-more');
+    if (await more.isVisible()) await more.click();
+    await expect(page.getByText('Employee', { exact: true })).toBeVisible();
+    await expect(page.getByText('Worker', { exact: true })).toHaveCount(0);
+  }
 });
 
 test('a non-owner bookmarked sales page returns to safe Today before any analysis read', async ({page}) => {
@@ -117,4 +123,54 @@ test('Kitchen Today opens assigned work from visible navigation', async ({page},
   await page.getByTestId('today-task-kitchen_projects-assigned-cad').click();
   await expect(page).toHaveURL(/\/kitchen\/assigned-cad\/stages\/cad$/);
   await health.assertHealthy();
+});
+
+test('customer work groups by saved identity and keeps every task actionable', async ({ page }, info) => {
+  await mockSession(page, '/dashboard', false);
+  const fixture = todayFixture();
+  const sample = { ...fixture.tasks[0], title: 'Harsha Joshi', customer_name: 'Harsha Joshi' };
+  const data = {
+    ...fixture,
+    task_summary: { ...fixture.task_summary, open: 3 },
+    tasks: [
+      { ...sample, id: 'client-a-call', customer_id: 'client-a', reference: 'Guest bathroom' },
+      { ...sample, id: 'client-a-quote', customer_id: 'client-a', reference: 'Master bathroom', resource: 'quotations', status: 'sent' },
+      { ...sample, id: 'client-b-call', customer_id: 'client-b', reference: 'Showroom visit' },
+    ],
+  };
+  await mockTodayOverview(page, data);
+  await page.route('**/api/dashboard/today', route => route.fulfill({ json: data }));
+  await page.goto('/dashboard');
+  await expect(page.getByRole('heading', { name: 'Harsha Joshi', exact: true })).toHaveCount(2);
+  await expect(page.getByTestId('today-task-followups-client-a-call')).toContainText('Guest bathroom');
+  await expect(page.getByTestId('today-task-quotations-client-a-quote')).toContainText('Pending');
+  await expect(page.getByTestId('today-task-followups-client-b-call')).toContainText('Showroom visit');
+  await expect(page.getByTestId('today-task-summary')).toContainText('3');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+  await page.screenshot({ path: info.outputPath('today-customer-groups.png'), fullPage: true });
+  await page.route('**/api/followups/client-a-call', route => route.fulfill({ status: 404, json: { detail: 'Follow-up unavailable' } }));
+  const directOpen = page.waitForRequest(request => new URL(request.url()).pathname === '/api/followups/client-a-call');
+  await page.getByTestId('today-task-followups-client-a-call').click();
+  await directOpen;
+  await expect(page).toHaveURL(/\/followups(?:\?.*)?$/);
+});
+
+test('Today search formats mobile displays by each result’s department', async ({ page }) => {
+  await mockSession(page, '/dashboard', false);
+  const fixture = todayFixture();
+  await mockTodayOverview(page, fixture);
+  await page.route('**/api/dashboard/today', route => route.fulfill({ json: fixture }));
+  await page.route('**/api/customer-search?**', route => route.fulfill({ json: {
+    rows: [
+      { kind: 'customer', id: 'mobile-ground', floor_id: 'ground-floor', name: 'Ground sample', phone: '990-995-57-55' },
+      { kind: 'customer', id: 'mobile-kitchen', floor_id: 'second-floor', name: 'Kitchen sample', phone: '990-995-57-55' },
+      { kind: 'customer', id: 'mobile-furniture', floor_id: 'third-floor', name: 'Furniture sample', phone: '+91 (990) 995-57-55' },
+    ],
+    total: 3, page: 1, limit: 20,
+  } }));
+  await page.goto('/dashboard');
+  await page.getByTestId('home-customer-search-input').fill('sample');
+  await expect(page.getByTestId('home-customer-result-customer-mobile-ground')).toContainText('9909955755');
+  await expect(page.getByTestId('home-customer-result-customer-mobile-kitchen')).toContainText('990-995-57-55');
+  await expect(page.getByTestId('home-customer-result-customer-mobile-furniture')).toContainText('+91 9909955755');
 });

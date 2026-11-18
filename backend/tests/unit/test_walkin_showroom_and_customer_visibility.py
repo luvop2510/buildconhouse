@@ -52,11 +52,11 @@ class Store:
         return Cursor([])
     def __init__(self, rows=()):
         self.rows = list(rows)
-    async def find_one(self, query, *_):
+    async def find_one(self, query, *_, session=None):
         return next((dict(row) for row in self.rows if match(row, query)), None)
     def find(self, query, *_):
         return Cursor([dict(row) for row in self.rows if match(row, query)])
-    async def update_one(self, query, update, upsert=False):
+    async def update_one(self, query, update, upsert=False, *, session=None):
         row = next((row for row in self.rows if match(row, query)), None)
         if row is None and upsert:
             row = dict(update["$setOnInsert"])
@@ -64,7 +64,7 @@ class Store:
             return SimpleNamespace(modified_count=0)
         if row is not None:
             row.update(update.get("$set", {}))
-        return SimpleNamespace(modified_count=int(row is not None))
+        return SimpleNamespace(modified_count=int(row is not None), matched_count=int(row is not None))
     async def update_many(self, query, update):
         for row in self.rows:
             if match(row, query): row.update(update["$set"])
@@ -219,13 +219,16 @@ def test_confirmed_customer_directory_includes_legacy_tile_order(monkeypatch):
 
 
 def test_showroom_pending_callback_keeps_origin_and_walkin_link(monkeypatch):
+    from tests.unit.test_followup_outcomes import _FakeSession
+    import db as connection
+    monkeypatch.setattr(connection, "client", SimpleNamespace(start_session=AsyncMock(return_value=_FakeSession())))
     from datetime import datetime, timedelta, timezone
     from models import FollowupCallOutcomePayload
     row = {"id": "showroom-1", "floor_id": "first-floor", "customer_id": "lead-1", "customer_name": "Lead",
-           "category": "walk_in", "origin": "visit_showroom", "walkin_id": "walkin-1", "due_at": "2026-01-01T00:00:00Z", "assigned_to": "selected-worker"}
+           "category": "walk_in", "status": "open", "origin": "visit_showroom", "walkin_id": "walkin-1", "due_at": "2026-01-01T00:00:00Z", "assigned_to": "selected-worker"}
     store = Store([row])
     inserted = []
-    async def insert_one(document): inserted.append(document)
+    async def insert_one(document, *, session=None): inserted.append(document)
     store.insert_one = insert_one
     monkeypatch.setattr(followup_routes, "db", SimpleNamespace(followups=store, users=SimpleNamespace(find_one=AsyncMock(return_value=None))))
     monkeypatch.setattr(followup_routes.lead_scope, "validate_assignments", AsyncMock(return_value=[{"floor_id": "first-floor", "user_id": "selected-worker", "user_name": "Selected worker"}]))

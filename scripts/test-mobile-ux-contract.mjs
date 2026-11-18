@@ -131,7 +131,7 @@ assert.match(notebook, /testID="notebook-list"/);
 assert.doesNotMatch(notebook, /<DataTable/);
 
 const quotationDetail = read("../app/(admin)/quotations/[id]/index.tsx");
-assert.match(quotationDetail, /isPhone \? \(\s*<IconButton icon="download"/);
+assert.match(quotationDetail, /flexWrap: "wrap", gap: spacing.sm[\s\S]*?Download PDF[\s\S]*?Download Excel/);
 assert.match(quotationDetail, /linkedPoRowPhone/);
 
 const customerDetail = read("../app/(admin)/customers/[id].tsx");

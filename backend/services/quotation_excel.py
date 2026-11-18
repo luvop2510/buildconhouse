@@ -6,7 +6,6 @@ original. ZIP parts outside the changing worksheets are copied byte for byte.
 """
 from __future__ import annotations
 
-from collections import OrderedDict
 from copy import deepcopy
 from datetime import datetime
 from io import BytesIO
@@ -23,7 +22,9 @@ from PIL import Image, ImageOps
 
 from models import QuotationLineItem, RoomDiscountCfg
 from services.pdf_image_loader import prefetch_urls, remote_image_bytes
+from services.phone_format import PLAIN_INDIAN_MOBILE_FLOORS, format_department_phone
 from services.pricing import _resolve_line_rows
+from services.quotation_item_order import ordered_room_items
 
 TEMPLATE = Path(__file__).with_name("quotation_template.xlsx")
 S = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
@@ -150,9 +151,8 @@ def build_quotation_excel(doc: dict, customer: dict) -> bytes:
     items = [QuotationLineItem(**raw) for raw in raw_items]
     prices = _resolve_line_rows(items, doc.get("project_discount_pct") or 0, doc.get("category_discounts") or {},
         {key: RoomDiscountCfg(**value) for key, value in (doc.get("room_discounts") or {}).items()})
-    rooms: OrderedDict[str, list[tuple[dict, dict]]] = OrderedDict()
-    for raw, price in zip(raw_items, prices, strict=True):
-        rooms.setdefault(str(raw.get("room") or "Other"), []).append((raw, price))
+    rooms = {room: [(raw, prices[position]) for position, raw in entries]
+             for room, entries in ordered_room_items(raw_items, doc.get("rooms")).items()}
     if len(rooms) > 100:
         raise ValueError("Quotation Excel supports up to 100 rooms")
     if not rooms:
@@ -196,6 +196,10 @@ def build_quotation_excel(doc: dict, customer: dict) -> bytes:
     for name in workbook.findall(f"{{{S}}}definedNames/{{{S}}}definedName"):
         if name.get("name") == "_xlnm.Print_Area":
             name.text = f"'Sheet1 (3)'!$A$1:$M${41 + extra_rooms}"
+    if not final and doc.get("number"):
+        _set(summary, "A5", f"Quotation {doc['number']}")
+    if not final and doc.get("floor_id") in {"first-floor", "ground-floor"}:
+        _set(summary, f"A{23 + extra_rooms}", "Note · Prices include GST at 18% unless stated otherwise.")
     _set(summary, "D7", str(doc.get("customer_name") or customer.get("name") or ""))
     stamp = str(doc.get("created_at") or "")
     date = datetime.fromisoformat(stamp.replace("Z", "+00:00")) if stamp else datetime.now(ZoneInfo("Asia/Kolkata"))
@@ -203,7 +207,9 @@ def build_quotation_excel(doc: dict, customer: dict) -> bytes:
         date = date.astimezone(ZoneInfo("Asia/Kolkata"))
     _set(summary, "D8", (date.date() - datetime(1899, 12, 30).date()).days)
     phone = doc.get("phone_snapshot") if doc.get("phone_snapshot") is not None else customer.get("phone")
-    _set(summary, "D9", str(phone or ""))
+    floor_id = doc.get("floor_id") or customer.get("floor_id")
+    phone_display = format_department_phone(phone, floor_id) if floor_id in PLAIN_INDIAN_MOBILE_FLOORS else str(phone or "")
+    _set(summary, "D9", phone_display)
     _set(summary, "D10", str(doc.get("referrer_name") or customer.get("referrer_name") or ""))
     brands = list(dict.fromkeys(str(raw.get("brand_name")) for raw in raw_items if raw.get("brand_name")))
     _set(summary, "A11", ", ".join(brands) or "Quotation")

@@ -12,15 +12,17 @@
 //
 // Presentation components remain stateless and pluggable.
 // -----------------------------------------------------------------------------
+import { randomUUID } from "expo-crypto";
 import * as Haptics from "expo-haptics";
 import { useFocusEffect } from "expo-router";
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { Platform } from "react-native";
+import { ActivityIndicator, Platform, View } from "react-native";
 import { TextInput } from "@/src/components/AppText";
 
 import { QuotationPriceReviewSheet, type CatalogPriceReview } from "../QuotationPriceReviewSheet";
 import { api, subscribeCatalogMutations } from "@/src/api/client";
 import { toast } from "@/src/components/Toast";
+import { ErrorState } from "@/src/components/ui";
 import { useHistory, useUndoRedoShortcuts } from "@/src/hooks/useHistory";
 import { useActionAccess } from "@/src/hooks/use-permissions";
 import { useAuth } from "@/src/state/auth";
@@ -35,7 +37,8 @@ import { downloadApiFile } from "@/src/utils/downloadFile";
 import { computeTotals, computeLineBreakdown, type LineBreakdown } from "../helpers/pricing";
 import { enqueueQuotationPersist } from "../helpers/autosave";
 import { productImageList } from "../helpers/media";
-import { applyQuotationRowOrder, moveQuotationLine } from "../helpers/reorder";
+import { moveQuotationLine, reorderQuotationRoom } from "../helpers/reorder";
+import { cloneRoomProducts, hasReservedStock, matchesSavedRoomSnapshot, previewQuantityIncrease, quotationRoom, quotationRoomLines, validQuantityIncrease, type SavedRoomSnapshot } from "../helpers/roomProducts";
 import { restoreSingleCatalogChoice } from "../helpers/catalogFilters";
 import { suggestedProductArea } from "../helpers/areas";
 import { godownQuotationPrice } from "../helpers/godown";
@@ -191,7 +194,6 @@ export type BuilderApi = {
   // V4 recent-quotation panel
   recentQuotations: RecentQuotation[];
   refreshRecentQuotations: () => Promise<void>;
-  restoreQuotation: (id: string) => Promise<void>;
   deleteQuotation: (id?: string | null) => Promise<boolean>;
   startNewQuotation: () => void;
 
@@ -211,6 +213,8 @@ export type BuilderApi = {
   // Autosave
   quotationId: string | null;
   quotationNumber: string | null;
+  quotationStatus: string;
+  refreshQuotationStatus: () => Promise<void>;
   customerCompleted: boolean;
   customerOutcome: "won" | "lost" | null;
   saveState: SaveState;
@@ -247,8 +251,9 @@ export type BuilderApi = {
   addRoom: (name: string) => void;
   renameRoom: (from: string, to: string) => void;
   duplicateRoom: (name: string) => void;
+  saveRoomProducts: (room: string, action: { increase: number } | { destination: string }) => Promise<string | null>;
+  roomProductSaveBusy: boolean;
   deleteRoom: (name: string) => void;
-  toggleCollapse: (name: string) => void;
   setActiveRoom: (name: string) => void;
   onRoomDragEnd: (payload: { data: string[] }) => void;
   onLinesDragEnd: (payload: { data: BuilderRow[] }) => void;
@@ -299,8 +304,9 @@ export function useBuilder(): BuilderApi {
 // -----------------------------------------------------------------------------
 // Provider
 // -----------------------------------------------------------------------------
-export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEntryId, initialGodownStockId, initialGodownVariant, initialQuotationId, children }: {
+export function BuilderProvider({ onFinalize, onStartNew, initialProductId, initialCatalogEntryId, initialGodownStockId, initialGodownVariant, initialQuotationId, children }: {
   onFinalize?: (quotationId: string) => void;
+  onStartNew?: () => void;
   /** Seed the new quotation with this product on mount — used when
    *  navigating here from Catalog's "Add to quotation" CTA (product detail
    *  page / product cards) so that action actually adds the product instead
@@ -392,11 +398,21 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
   const [recoveryCheckAttempt, setRecoveryCheckAttempt] = useState(0);
   const retryRecoveryCheck = useCallback(() => setRecoveryCheckAttempt(value => value + 1), []);
   const restoredInitialQuotationRef = useRef<string | null>(null);
-  useUndoRedoShortcuts(history as any, true);
+  const [initialReady, setInitialReady] = useState(!initialQuotationId);
+  const allowCreateCopy = useRef(false);
+  const [openingError, setOpeningError] = useState<string | null>(null);
+  const [openingAttempt, setOpeningAttempt] = useState(0);
+  const [roomProductSaveBusy, setRoomProductSaveBusy] = useState(false);
+  const roomProductSaveRef = useRef(false);
+  const roomProductIntent = useRef<{ base: BuilderState; room: string; action: number | string; snapshot: BuilderState } | null>(null);
+  useUndoRedoShortcuts(history as any, !roomProductSaveBusy);
 
   // Autosave metadata (not undoable)
   const [quotationId, setQuotationId] = useState<string | null>(null);
   const [quotationNumber, setQuotationNumber] = useState<string | null>(null);
+  const [quotationStatus, setQuotationStatus] = useState("draft");
+  const clientDraftId = useRef<string | null>(null);
+  if (!clientDraftId.current) clientDraftId.current = randomUUID();
   const [completionSnapshot, setCompletionSnapshot] = useState<{ id: string; customerId: string; floorId: string; completed: boolean } | null>(null);
   const [outcomeSnapshot, setOutcomeSnapshot] = useState<{ id: string; floorId: string; outcome: "won" | "lost" } | null>(null);
   const customerOutcome = outcomeSnapshot?.id === quotationId && outcomeSnapshot?.floorId === activeFloorId ? outcomeSnapshot.outcome : null;
@@ -691,78 +707,120 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
   }, [productLoading, productHasMore, q, selectedBrandIds, selectedCategoryIds, selectedSizes, sortKey, activeFloorId, productQueryScope]);
 
   // ---------- Autosave ----------
-  const persist = useCallback(async (): Promise<string | null> => {
+  const persistSnapshot = useCallback(async (snapshot: BuilderState, roomOperation = false): Promise<string | null> => {
     const generation = documentGeneration.current;
     const run = async (): Promise<string | null> => {
-      if (generation !== documentGeneration.current || !s.customerId) return null;
-      if (lastSavedStateRef.current === s && persistedIdRef.current) return persistedIdRef.current;
+      if (generation !== documentGeneration.current || !snapshot.customerId) return null;
+      if (lastSavedStateRef.current === snapshot && persistedIdRef.current) return persistedIdRef.current;
       const payload = {
-        customer_id: s.customerId,
-        items: s.lines,
-        rooms: s.rooms,
-        notes: s.notes,
-        project_name: s.header.projectName || null,
-        phone_snapshot: s.header.phone || null,
-        address_snapshot: s.header.address.trim() || null,
-        reference_source: s.header.referenceSource || null,
-        referrer_type: s.header.referrerType,
-        referrer_id: s.header.referrerId,
+        customer_id: snapshot.customerId,
+        items: snapshot.lines,
+        rooms: snapshot.rooms,
+        notes: snapshot.notes,
+        project_name: snapshot.header.projectName || null,
+        phone_snapshot: snapshot.header.phone || null,
+        address_snapshot: snapshot.header.address.trim() || null,
+        reference_source: snapshot.header.referenceSource || null,
+        referrer_type: snapshot.header.referrerType,
+        referrer_id: snapshot.header.referrerId,
         ui_state: {
-          activeRoom: s.activeRoom,
-          collapsedRooms: s.collapsedRooms,
+          activeRoom: snapshot.activeRoom,
+          collapsedRooms: snapshot.collapsedRooms,
           selectedBrandId, selectedCategoryId, selectedBrandIds, selectedCategoryIds, selectedSizes, sortKey,
         },
-        project_discount_pct: s.projectDiscount,
-        category_discounts: s.categoryDiscounts,
-        room_discounts: s.roomDiscounts,
+        project_discount_pct: snapshot.projectDiscount,
+        category_discounts: snapshot.categoryDiscounts,
+        room_discounts: snapshot.roomDiscounts,
       };
+      const patch = { ...payload, silent: true, collapsed_rooms: Object.keys(snapshot.collapsedRooms).filter((key) => snapshot.collapsedRooms[key]) };
       try {
         setSaveState("saving");
-        let persistedId = persistedIdRef.current || quotationId;
+        let persistedId = persistedIdRef.current;
+        if (initialQuotationId && !persistedId && !allowCreateCopy.current) throw new Error("Open the saved quotation before editing it.");
         if (!persistedId) {
-          if (!canCreateQuotation) { toast.error("You don't have access to create quotations"); setSaveState("idle"); return null; }
-          const created = await api.post<{ id: string; number: string; updated_at?: string }>("/quotations", payload, { floorId: activeFloorId });
+          if (!canCreateQuotation) throw new Error("You don't have access to create quotations");
+          const key = snapshot.lines.some(hasReservedStock) ? null : clientDraftId.current;
+          if (key) {
+            // Retain the same create identity across a lost response or reload.
+            await writeBuilderDraft({ version: 1, accountId, floorId: activeFloorId, at: Date.now(),
+              quotationId: null, quotationNumber: null, clientDraftId: key, serverSavedAt: null, state: snapshot }, draftEpoch.current);
+            if (generation !== documentGeneration.current) return null;
+          }
+          const created = await api.post<{ id: string; number: string; status?: string; updated_at?: string;
+            create_replayed?: boolean; create_original_updated_at?: string }>("/quotations",
+            key ? { ...payload, client_draft_id: key } : payload, { floorId: activeFloorId });
           if (generation !== documentGeneration.current) return null;
+          if (created.create_replayed && (!created.create_original_updated_at || created.updated_at !== created.create_original_updated_at || created.status !== "draft")) {
+            const recovered: BuilderDraft = { version: 1, accountId, floorId: activeFloorId, at: Date.now(),
+              quotationId: created.id, quotationNumber: created.number, serverSavedAt: created.create_original_updated_at || null, state: snapshot };
+            await writeBuilderDraft(recovered, draftEpoch.current);
+            if (generation !== documentGeneration.current) return null;
+            setRecoveryDraft(recovered);
+            throw new Error("The saved quotation changed. Review your recovered draft before continuing.");
+          }
           serverSavedAtRef.current = created.updated_at || null;
           setQuotationId(created.id);
           setQuotationNumber(created.number);
+          setQuotationStatus(created.status || "draft");
           persistedIdRef.current = created.id;
           persistedId = created.id;
+          if (created.create_replayed && canUpdateQuotation) {
+            // A replay can recover an older version of the same local draft.
+            const updated = await api.patch<{ updated_at?: string; status?: string }>(`/quotations/${persistedId}`,
+              { ...patch, expected_updated_at: serverSavedAtRef.current || undefined }, { floorId: activeFloorId });
+            if (generation !== documentGeneration.current) return null;
+            serverSavedAtRef.current = updated.updated_at || null;
+            if (updated.status) setQuotationStatus(updated.status);
+          }
         } else {
-          if (!canUpdateQuotation) { toast.error("You don't have access to edit this quotation"); setSaveState("idle"); return null; }
-          const upd: any = { ...payload, silent: true, collapsed_rooms: Object.keys(s.collapsedRooms).filter((k) => s.collapsedRooms[k]) };
-          const updated = await api.patch<{ updated_at?: string }>(`/quotations/${persistedId}`, upd, { floorId: activeFloorId });
+          if (!canUpdateQuotation) throw new Error("You don't have access to edit this quotation");
+          const expected = serverSavedAtRef.current || undefined;
+          let updated: { updated_at?: string; status?: string };
+          try {
+            updated = await api.patch(`/quotations/${persistedId}`, { ...patch, expected_updated_at: expected }, { floorId: activeFloorId });
+          } catch (failure: any) {
+            if (!expected || failure?.status !== 409) throw failure;
+            // A previous attempt may have committed before its response was
+            // interrupted. Recognize an exact saved snapshot before retrying.
+            const saved = await api.get<SavedRoomSnapshot>(`/quotations/${persistedId}`, { floorId: activeFloorId });
+            if (!matchesSavedRoomSnapshot(snapshot, saved)) throw failure;
+            updated = saved;
+          }
           if (generation !== documentGeneration.current) return null;
           serverSavedAtRef.current = updated.updated_at || null;
+          if (updated.status) setQuotationStatus(updated.status);
         }
-        lastSavedStateRef.current = s;
-        setSaveState(stateRef.current === s ? "saved" : "idle");
+        lastSavedStateRef.current = snapshot;
+        setSaveState(roomOperation || stateRef.current === snapshot ? "saved" : "idle");
         setSavedAt(new Date());
-        if (stateRef.current === s) void removeBuilderDraft(accountId, activeFloorId);
-        // Create-only staff submit a complete local draft once. Viewing the
-        // resulting document cannot accidentally enqueue a denied PATCH.
+        if (roomOperation || stateRef.current === snapshot) void removeBuilderDraft(accountId, activeFloorId);
+        // Create-only staff submit a complete local draft once.
         if (!canUpdateQuotation) onFinalize?.(persistedId);
         return persistedId;
       } catch (e: any) {
         if (generation !== documentGeneration.current) return null;
         setSaveState("error");
-        toast.error(e?.detail || "Save failed");
+        const message = typeof e?.detail === "string" ? e.detail : e instanceof Error ? e.message : "Save failed";
+        if (roomOperation) throw new Error(message);
+        toast.error(message);
         return null;
       }
     };
     return enqueueQuotationPersist(persistQueue, run);
-  }, [s, quotationId, selectedBrandId, selectedCategoryId, selectedBrandIds, selectedCategoryIds, selectedSizes, sortKey, activeFloorId, accountId, canCreateQuotation, canUpdateQuotation, onFinalize]);
+  }, [initialQuotationId, selectedBrandId, selectedCategoryId, selectedBrandIds, selectedCategoryIds, selectedSizes, sortKey, activeFloorId, accountId, canCreateQuotation, canUpdateQuotation, onFinalize]);
+
+  const persist = useCallback(() => persistSnapshot(s), [persistSnapshot, s]);
 
   useEffect(() => {
-    if (lastSavedStateRef.current === s) return;
+    if (lastSavedStateRef.current === s || roomProductSaveRef.current) return;
     setSaveState("idle");
     // Local draft recovery still runs for create-only staff. Defer the one
     // server POST until Finish/Save, because later PATCH needs an Edit grant.
     if (!canUpdateQuotation || !s.customerId) return;
     if (s.lines.length === 0 && !quotationId && s.projectDiscount === 0 && Object.keys(s.categoryDiscounts).length === 0 && Object.keys(s.roomDiscounts).length === 0) return;
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => { persist(); }, 900);
-    return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
+    const timer = setTimeout(() => { if (!roomProductSaveRef.current) void persist(); }, 900);
+    saveTimer.current = timer;
+    return () => clearTimeout(timer);
   }, [s, quotationId, persist, canUpdateQuotation]);
 
   // Recovery is account/floor scoped on web and native, and never replaces
@@ -785,7 +843,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
     if (!s.customerId && !s.lines.length && !s.header.projectName && !s.notes) return;
     // Register each edit immediately so Back/reload cannot cancel a debounce.
     void writeBuilderDraft({ version: 1, accountId, floorId: activeFloorId, at: Date.now(),
-      quotationId, quotationNumber, serverSavedAt: serverSavedAtRef.current, state: s }, draftEpoch.current);
+      quotationId, quotationNumber, clientDraftId: clientDraftId.current || undefined, serverSavedAt: serverSavedAtRef.current, state: s }, draftEpoch.current);
   }, [s, quotationId, quotationNumber, accountId, activeFloorId, recoveryReady, recoveryDraft]);
 
   const dismissRecovery = useCallback(() => {
@@ -814,12 +872,14 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
         return;
       }
       let copy = false;
+      let recoveredStatus = "draft";
       let recoveredOutcome: "won" | "lost" | null = null;
       if (draft.quotationId) {
         try {
           const server = await api.get<{ updated_at?: string; status?: string; customer_outcome?: "won" | "lost" | null }>(`/quotations/${draft.quotationId}`, { floorId: activeFloorId });
           copy = draftNeedsCopy(draft, server);
           recoveredOutcome = server.customer_outcome || null;
+          recoveredStatus = server.status || "draft";
         } catch (error: any) {
           // An unavailable/deleted source cannot authorize overwriting it.
           // Restore locally as a separate draft, preserving every entered line.
@@ -836,7 +896,11 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
       serverSavedAtRef.current = copy ? null : draft.serverSavedAt;
       setQuotationId(copy ? null : draft.quotationId);
       setQuotationNumber(copy ? null : draft.quotationNumber);
+      setQuotationStatus(copy ? "draft" : recoveredStatus);
+      allowCreateCopy.current = copy;
+      clientDraftId.current = copy || !draft.clientDraftId ? randomUUID() : draft.clientDraftId;
       setOutcomeSnapshot(!copy && draft.quotationId && recoveredOutcome ? { id: draft.quotationId, floorId: activeFloorId, outcome: recoveredOutcome } : null);
+      history.reset();
       history.replace(draft.state);
       setSaveState("idle");
       setSavedAt(null);
@@ -857,18 +921,20 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
     } catch {}
   }, [activeFloorId]);
 
-  const restoreQuotation = useCallback(async (id: string, announce = true) => {
+  const restoreQuotation = useCallback(async (id: string, announce = true, initial = false) => {
     if (!canUpdateQuotation) { toast.error("You don't have access to edit saved quotations"); return; }
     const request = ++restoreRequest.current;
     try {
       const doc = await api.get<any>(`/quotations/${id}?with_completion=true`, { floorId: activeFloorId });
       if (request !== restoreRequest.current) return;
+      if (doc.id !== id) throw new Error("Unexpected quotation data.");
       setOutcomeSnapshot(doc.customer_outcome === "won" || doc.customer_outcome === "lost" ? { id: doc.id, floorId: activeFloorId, outcome: doc.customer_outcome } : null);
       documentGeneration.current += 1;
       if (saveTimer.current) clearTimeout(saveTimer.current);
       const collapsed: Record<string, boolean> = {};
       for (const r of doc.collapsed_rooms || []) collapsed[r] = true;
       const ui: any = doc.ui_state || {};
+      const rooms: string[] = doc.rooms?.length ? doc.rooms : [DEFAULT_ROOMS[0]];
       const restored: BuilderState = {
         customerId: doc.customer_id,
         header: {
@@ -881,6 +947,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
           referrerName: doc.referrer_name || "",
         },
         lines: (doc.items || []).map((it: any) => ({
+          ...it,
           id: it.id, product_id: it.product_id, sku: it.sku, name: it.name,
           image: it.image, category_id: it.category_id, room: it.room, area: it.area ?? null,
           qty: it.qty, unit_price: it.unit_price, mrp: it.mrp ?? null,
@@ -899,9 +966,9 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
           godown_transferred_at: it.godown_transferred_at ?? null,
           godown_allocated_at: it.godown_allocated_at ?? null,
         })),
-        rooms: doc.rooms && doc.rooms.length ? doc.rooms : [DEFAULT_ROOMS[0]],
+        rooms,
         collapsedRooms: collapsed,
-        activeRoom: ui.activeRoom || (doc.rooms?.[0] || DEFAULT_ROOMS[0]),
+        activeRoom: rooms.includes(ui.activeRoom) ? ui.activeRoom : rooms[0],
         notes: doc.notes || "",
         projectDiscount: doc.project_discount_pct || 0,
         categoryDiscounts: doc.category_discounts || {},
@@ -909,10 +976,13 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
       };
       lastSavedStateRef.current = restored;
       serverSavedAtRef.current = doc.updated_at || null;
+      history.reset();
       history.replace(restored);
       setQuotationId(doc.id);
       persistedIdRef.current = doc.id;
       setQuotationNumber(doc.number);
+      setQuotationStatus(doc.status || "draft");
+      if (initial) setInitialReady(true);
       setCompletionSnapshot({ id: doc.id, customerId: doc.customer_id, floorId: activeFloorId, completed: doc.purchase_completion_status === "completed" });
       setSaveState("saved");
       setSavedAt(new Date(doc.updated_at || Date.now()));
@@ -923,7 +993,10 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
       if (ui.sortKey) setSortKey(ui.sortKey);
       if (announce) toast.success(`Restored ${doc.number}`);
     } catch (e: any) {
-      toast.error(e?.detail || "Could not restore quotation");
+      if (request !== restoreRequest.current) return;
+      const message = typeof e?.detail === "string" ? e.detail : "Could not open the saved quotation.";
+      if (initial) setOpeningError(message);
+      else toast.error(message);
     }
   }, [history, activeFloorId, canUpdateQuotation]);
 
@@ -933,8 +1006,20 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
   useEffect(() => {
     if (!initialQuotationId || !activeFloorId || restoredInitialQuotationRef.current === initialQuotationId) return;
     restoredInitialQuotationRef.current = initialQuotationId;
-    void restoreQuotation(initialQuotationId);
-  }, [initialQuotationId, activeFloorId, restoreQuotation]);
+    void restoreQuotation(initialQuotationId, false, true);
+  }, [initialQuotationId, activeFloorId, restoreQuotation, openingAttempt]);
+
+  const refreshQuotationStatus = useCallback(async () => {
+    if (!quotationId) return;
+    const generation = documentGeneration.current;
+    try {
+      const saved = await api.get<{ status?: string; updated_at?: string }>(`/quotations/${quotationId}`, { floorId: activeFloorId });
+      if (generation !== documentGeneration.current || quotationId !== persistedIdRef.current) return;
+      if (saved.status) setQuotationStatus(saved.status);
+    } catch {
+      // Delivery is already recorded. A later refresh or save updates the badge.
+    }
+  }, [quotationId, activeFloorId]);
 
   const deleteQuotation = useCallback(async (id = quotationId) => {
     if (!id) return false;
@@ -946,10 +1031,12 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
         restoreRequest.current += 1;
         lastSavedStateRef.current = INITIAL_BUILDER_STATE;
         void removeBuilderDraft(accountId, activeFloorId);
-        history.replace(INITIAL_BUILDER_STATE);
+        history.reset();
         setQuotationId(null);
         persistedIdRef.current = null;
         setQuotationNumber(null);
+        setQuotationStatus("draft");
+        clientDraftId.current = randomUUID();
         setSaveState("idle");
         setSavedAt(null);
       }
@@ -963,20 +1050,26 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
 
   const startNewQuotation = useCallback(() => {
     if (!canCreateQuotation) { toast.error("You don't have access to create quotations"); return; }
+    if (initialQuotationId && onStartNew) {
+      onStartNew();
+      return;
+    }
     documentGeneration.current += 1;
     restoreRequest.current += 1;
     lastSavedStateRef.current = INITIAL_BUILDER_STATE;
     serverSavedAtRef.current = null;
     void removeBuilderDraft(accountId, activeFloorId);
-    history.replace(INITIAL_BUILDER_STATE);
+    history.reset();
     setQuotationId(null);
     persistedIdRef.current = null;
     setQuotationNumber(null);
+    setQuotationStatus("draft");
+    clientDraftId.current = randomUUID();
     setSaveState("idle");
     setSavedAt(null);
     selectBrandId(null); selectCategoryId(null); setSelectedSizes([]);
     setQ("");
-  }, [history, accountId, activeFloorId, canCreateQuotation]);
+  }, [history, accountId, activeFloorId, canCreateQuotation, initialQuotationId, onStartNew]);
 
   // Product modal helpers
   const openProductModal = useCallback((p: Product) => setProductModal(p), []);
@@ -1015,27 +1108,13 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
   const pickerList: Product[] = pickerTab === "recent" ? recent : pickerTab === "frequent" ? frequent : products;
 
   const flatRows: BuilderRow[] = useMemo(() => {
-    const rows: BuilderRow[] = [];
-    // Build the room groups once. Besides avoiding an O(rooms × lines) series
-    // of filters while a quotation grows, this keeps legacy/orphaned lines
-    // visible rather than silently dropping them from the right panel.
-    const linesByRoom = new Map<string, Line[]>(s.rooms.map((room) => [room, []] as [string, Line[]]));
-    const fallbackRoom = s.rooms[0];
-    for (const line of s.lines) {
-      const targetRoom = linesByRoom.has(line.room || "") ? line.room! : fallbackRoom;
-      if (targetRoom) linesByRoom.get(targetRoom)?.push(line);
-    }
-    for (const room of s.rooms) {
-      const roomLines = linesByRoom.get(room) || [];
-      const roomSub = roomLines.reduce((sum, l) => {
-        return sum + (lineBreakdownById[l.id]?.net || 0);
-      }, 0);
-      const collapsed = !!s.collapsedRooms[room];
-      const roomDiscount = s.roomDiscounts[room] || null;
-      rows.push({ kind: "room-header", id: `hdr-${room}`, roomName: room, itemCount: roomLines.length, subtotal: roomSub, collapsed, roomDiscount });
-      if (!collapsed) for (const l of roomLines) rows.push({ kind: "line", id: l.id, line: l });
-    }
-    return rows;
+    const room = s.activeRoom;
+    const roomLines = quotationRoomLines(s, room);
+    const subtotal = roomLines.reduce((sum, line) => sum + (lineBreakdownById[line.id]?.net || 0), 0);
+    return [
+      { kind: "room-header", id: `hdr-${room}`, roomName: room, itemCount: roomLines.length, subtotal, roomDiscount: s.roomDiscounts[room] || null },
+      ...roomLines.map((line): BuilderRow => ({ kind: "line", id: line.id, line })),
+    ];
   }, [s, lineBreakdownById]);
 
   // ---------- Mutations ----------
@@ -1061,11 +1140,24 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
     // switch is never lost and the change is visible in activity/version
     // history right away — products/rooms/notes are untouched, as required.
     if (quotationId) {
-      api.patch(`/quotations/${quotationId}`, {
-        customer_id: id, address_snapshot: customer?.address || null, silent: false,
-      }, { floorId: activeFloorId })
-        .then(() => { setSaveState("saved"); setSavedAt(new Date()); toast.success("Customer updated"); })
-        .catch((e: any) => toast.error(e?.detail || "Could not change customer"));
+      const generation = documentGeneration.current;
+      void enqueueQuotationPersist(persistQueue, async () => {
+        if (generation !== documentGeneration.current) return null;
+        try {
+          const saved = await api.patch<{ updated_at?: string; status?: string }>(`/quotations/${quotationId}`, {
+            customer_id: id, address_snapshot: customer?.address || null, silent: false,
+            expected_updated_at: serverSavedAtRef.current || undefined,
+          }, { floorId: activeFloorId });
+          if (generation !== documentGeneration.current) return null;
+          serverSavedAtRef.current = saved.updated_at || serverSavedAtRef.current;
+          if (saved.status) setQuotationStatus(saved.status);
+          toast.success("Customer updated");
+          return quotationId;
+        } catch (e: any) {
+          if (generation === documentGeneration.current) toast.error(e?.detail || "Could not change customer");
+          return null;
+        }
+      });
     }
   }, [history, quotationId, customers, activeFloorId]);
 
@@ -1334,7 +1426,12 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
   }, [history]);
 
   const moveLine = useCallback((id: string, direction: -1 | 1) => {
-    history.apply(cur => ({ ...cur, lines: moveQuotationLine(cur.lines, id, direction) }));
+    history.apply(cur => {
+      const lines = moveQuotationLine(cur.lines, id, direction, line => quotationRoom(line, cur.rooms));
+      if (lines === cur.lines) return cur;
+      const order = quotationRoomLines({ ...cur, lines }, cur.activeRoom).map(line => line.id);
+      return reorderQuotationRoom(cur, cur.activeRoom, order);
+    });
   }, [history]);
 
   const moveRoom = useCallback((room: string, direction: -1 | 1) => {
@@ -1366,24 +1463,71 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
       const lines = cur.lines.map((l) => (l.room === from ? { ...l, room: trimmed } : l));
       const collapsed = { ...cur.collapsedRooms };
       if (collapsed[from]) { collapsed[trimmed] = true; delete collapsed[from]; }
+      const discounts = { ...cur.roomDiscounts };
+      if (discounts[from]) { discounts[trimmed] = discounts[from]; delete discounts[from]; }
       const activeRoom = cur.activeRoom === from ? trimmed : cur.activeRoom;
-      return { ...cur, rooms, lines, collapsedRooms: collapsed, activeRoom };
+      return { ...cur, rooms, lines, collapsedRooms: collapsed, activeRoom, roomDiscounts: discounts };
     });
   }, [history]);
 
   const duplicateRoom = useCallback((name: string) => {
+    if (quotationRoomLines(stateRef.current, name).some(hasReservedStock)) {
+      toast.error("Products reserved from Godown cannot be copied to another room.");
+      return;
+    }
     history.apply((cur) => {
       let copyName = `${name} (copy)`; let i = 2;
       while (cur.rooms.includes(copyName)) copyName = `${name} (copy ${i++})`;
-      const sourceLines = cur.lines.filter((line) => line.room === name);
-      const idMap = new Map(sourceLines.map((line, index) => [line.id, `${line.product_id}-${Date.now()}-room-copy-${index}`]));
-      const clones = sourceLines.map((line) => ({
-        ...line, id: idMap.get(line.id)!, room: copyName,
-        included_for_line_id: line.included_for_line_id ? idMap.get(line.included_for_line_id) ?? null : null,
-      }));
+      const clones = cloneRoomProducts(quotationRoomLines(cur, name), copyName, randomUUID);
       return { ...cur, rooms: [...cur.rooms, copyName], lines: [...cur.lines, ...clones], activeRoom: copyName };
     });
   }, [history]);
+
+  const saveRoomProducts = useCallback(async (room: string, action: { increase: number } | { destination: string }) => {
+    if (roomProductSaveRef.current) throw new Error("Wait for the current room change to finish.");
+    const current = stateRef.current;
+    if (current.activeRoom !== room) throw new Error("Select the source room again.");
+    if (!current.customerId) throw new Error("Select a customer before saving this change.");
+    const source = quotationRoomLines(current, room);
+    const actionValue = "increase" in action ? action.increase : action.destination;
+    let intent = roomProductIntent.current;
+    if (intent?.base !== current || intent.room !== room || intent.action !== actionValue) {
+      let lines: Line[];
+      if ("increase" in action) {
+        const preview = previewQuantityIncrease(source, action.increase);
+        if (!preview || !validQuantityIncrease(preview)) throw new Error("These quantities cannot be increased together.");
+        const quantities = new Map(preview.map(({ line, quantity }) => [line.id, quantity]));
+        lines = current.lines.map(line => {
+          const quantity = quantities.get(line.id);
+          return quantity === undefined ? line : { ...line, qty: quantity };
+        });
+      } else {
+        if (action.destination === room || !current.rooms.includes(action.destination) || quotationRoomLines(current, action.destination).length) {
+          throw new Error("Choose an empty room to copy these products.");
+        }
+        const copies = cloneRoomProducts(source, action.destination, randomUUID);
+        if (!copies.length) throw new Error("There are no eligible products to copy.");
+        lines = [...current.lines, ...copies];
+      }
+      intent = { base: current, room, action: actionValue, snapshot: { ...current, lines } };
+      roomProductIntent.current = intent;
+    }
+    roomProductSaveRef.current = true;
+    setRoomProductSaveBusy(true);
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    try {
+      const { base, snapshot } = intent;
+      const saved = await persistSnapshot(snapshot, true);
+      if (saved) {
+        history.apply(latest => latest === base ? snapshot : latest);
+        roomProductIntent.current = null;
+      }
+      return saved;
+    } finally {
+      roomProductSaveRef.current = false;
+      setRoomProductSaveBusy(false);
+    }
+  }, [history, persistSnapshot]);
 
   const deleteRoom = useCallback((name: string) => {
     if (history.state.rooms.length <= 1) {
@@ -1394,19 +1538,16 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
     history.apply((cur) => {
       if (cur.rooms.length <= 1) return cur;
       const rooms = cur.rooms.filter((r) => r !== name);
-      const lines = cur.lines.filter((l) => l.room !== name);
+      const lines = cur.lines.filter(line => line.room !== name);
       const activeRoom = cur.activeRoom === name ? (rooms[0] || DEFAULT_ROOMS[0]) : cur.activeRoom;
       const { [name]: _dropped, ...collapsed } = cur.collapsedRooms;
-      return { ...cur, rooms, lines, activeRoom, collapsedRooms: collapsed };
+      const { [name]: _discount, ...roomDiscounts } = cur.roomDiscounts;
+      return { ...cur, rooms, lines, activeRoom, collapsedRooms: collapsed, roomDiscounts };
     });
   }, [history]);
 
-  const toggleCollapse = useCallback((name: string) =>
-    history.apply((cur) => ({ ...cur, collapsedRooms: { ...cur.collapsedRooms, [name]: !cur.collapsedRooms[name] } }), { skipHistory: true }),
-  [history]);
-
   const setActiveRoom = useCallback((name: string) =>
-    history.apply((cur) => (cur.activeRoom === name ? cur : { ...cur, activeRoom: name }), { skipHistory: true }),
+    history.apply((cur) => (!cur.rooms.includes(name) || cur.activeRoom === name ? cur : { ...cur, activeRoom: name }), { skipHistory: true }),
   [history]);
 
   const setProjectDiscount = useCallback((n: number) =>
@@ -1452,8 +1593,10 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
   [history]);
 
   const onLinesDragEnd = useCallback(({ data }: { data: BuilderRow[] }) => {
-    history.apply((cur) => applyQuotationRowOrder(cur, data));
-  }, [history]);
+    const room = s.activeRoom;
+    const orderedIds = data.filter(row => row.kind === "line").map(row => row.id);
+    history.apply(cur => cur.activeRoom === room ? reorderQuotationRoom(cur, room, orderedIds) : cur);
+  }, [history, s.activeRoom]);
 
   // Swap alternates
   const openSwap = useCallback(async (l: Line) => {
@@ -1661,14 +1804,14 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
     setProjectName, setPhone, setAddress, setReferenceSource,
     productModal, openProductModal, closeProductModal, patchProduct,
     customProductSheetOpen, setCustomProductSheetOpen,
-    recentQuotations, refreshRecentQuotations, restoreQuotation, deleteQuotation, startNewQuotation,
+    recentQuotations, refreshRecentQuotations, deleteQuotation, startNewQuotation,
     totals, usedCategoryIds, flatRows, lineBreakdownById, recoveryDraft, recoveryBusy, recoveryError, recoveryCheckError, retryRecoveryCheck, restoreLocalDraft, dismissRecovery,
-    quotationId, quotationNumber, customerCompleted, customerOutcome, saveState, savedAt, saveLabel, persist, finalize,
+    quotationId, quotationNumber, quotationStatus, refreshQuotationStatus, customerCompleted, customerOutcome, saveState, savedAt, saveLabel, persist, finalize,
     workflowBusy, generateOfficialQuotation, generateQuotationExcel, generateProductPpt, placeOrder,
     setCustomer, createCustomer, importCustomerFromGround, customerSwitcherOpen, setCustomerSwitcherOpen,
     setReferrer, clearReferrer, createReferrer, referrerSwitcherOpen, setReferrerSwitcherOpen,
     addFromProduct, updateLine, removeLine, cancelLine, duplicateLine, moveLineToNextRoom, moveLine, moveRoom,
-    addRoom, renameRoom, duplicateRoom, deleteRoom, toggleCollapse, setActiveRoom, onRoomDragEnd, onLinesDragEnd,
+    addRoom, renameRoom, duplicateRoom, deleteRoom, setActiveRoom, onRoomDragEnd, onLinesDragEnd, saveRoomProducts, roomProductSaveBusy,
     setProjectDiscount, setCategoryDiscount, setRoomDiscount, setNotes,
     swapItems, swapLoading, openSwap, commitSwap, closeSwap,
     discountSheet, setDiscountSheet,
@@ -1690,14 +1833,14 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
     setProjectName, setPhone, setAddress, setReferenceSource,
     productModal, openProductModal, closeProductModal, patchProduct,
     customProductSheetOpen, setCustomProductSheetOpen,
-    recentQuotations, refreshRecentQuotations, restoreQuotation, deleteQuotation, startNewQuotation,
+    recentQuotations, refreshRecentQuotations, deleteQuotation, startNewQuotation,
     totals, usedCategoryIds, flatRows, lineBreakdownById, recoveryDraft, recoveryBusy, recoveryError, recoveryCheckError, retryRecoveryCheck, restoreLocalDraft, dismissRecovery,
-    quotationId, quotationNumber, customerCompleted, customerOutcome, saveState, savedAt, saveLabel, persist, finalize,
+    quotationId, quotationNumber, quotationStatus, refreshQuotationStatus, customerCompleted, customerOutcome, saveState, savedAt, saveLabel, persist, finalize,
     workflowBusy, generateOfficialQuotation, generateQuotationExcel, generateProductPpt, placeOrder,
     setCustomer, createCustomer, importCustomerFromGround, customerSwitcherOpen, setCustomerSwitcherOpen,
     setReferrer, clearReferrer, createReferrer, referrerSwitcherOpen, setReferrerSwitcherOpen,
     addFromProduct, updateLine, removeLine, cancelLine, duplicateLine, moveLineToNextRoom, moveLine, moveRoom,
-    addRoom, renameRoom, duplicateRoom, deleteRoom, toggleCollapse, setActiveRoom, onRoomDragEnd, onLinesDragEnd,
+    addRoom, renameRoom, duplicateRoom, deleteRoom, setActiveRoom, onRoomDragEnd, onLinesDragEnd, saveRoomProducts, roomProductSaveBusy,
     setProjectDiscount, setCategoryDiscount, setRoomDiscount, setNotes,
     swapItems, swapLoading, openSwap, commitSwap, closeSwap,
     discountSheet, setDiscountSheet,
@@ -1709,6 +1852,15 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
     inlineRenameRoom, setInlineRenameRoom, inlineRenameValue, setInlineRenameValue,
     assistantFocus, setAssistantFocus, assistantOpenMobile, setAssistantOpenMobile,
   ]);
+
+  if (!initialReady) {
+    if (openingError) return <ErrorState title="Could not open quotation" subtitle={openingError} onRetry={() => {
+      restoredInitialQuotationRef.current = null;
+      setOpeningError(null);
+      setOpeningAttempt(value => value + 1);
+    }} />;
+    return <View accessibilityLabel="Opening saved quotation" style={{ flex: 1, alignItems: "center", justifyContent: "center" }}><ActivityIndicator /></View>;
+  }
 
   return <Ctx.Provider value={value}>{children}<QuotationPriceReviewSheet review={pendingPriceReview?.review || null} busy={workflowBusy} onClose={() => { if (!workflowBusy) setPendingPriceReview(null); }} onChoose={choice => { if (pendingPriceReview) void confirmOrder(pendingPriceReview.id, choice, pendingPriceReview.review.token); }} /></Ctx.Provider>;
 }

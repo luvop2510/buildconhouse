@@ -3,6 +3,7 @@ caller's active floor. It previously ran four raw, unscoped queries, so the
 insights panel always showed global (in practice, 100% first-floor) numbers
 regardless of which floor was selected."""
 from __future__ import annotations
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import asyncio
@@ -91,18 +92,22 @@ class _FakeFollowups:
     async def find_one(self, *_args, **_kwargs):
         return dict(self._existing)
 
-    async def insert_one(self, doc):
+    async def insert_one(self, doc, **_kwargs):
         self.inserted.append(doc)
 
     async def update_one(self, *_args, **_kwargs):
-        pass
+        return SimpleNamespace(matched_count=1)
 
 
 def test_log_call_reschedule_inherits_source_followup_floor(monkeypatch):
+    from db import client
     from models import FollowupCallOutcomePayload
+    from tests.unit.test_followup_outcomes import _start_session
+
+    monkeypatch.setattr(client, "start_session", _start_session)
 
     fake_followups = _FakeFollowups({
-        "id": "f-1", "customer_id": "cust-1", "customer_name": "Test Customer",
+        "id": "f-1", "customer_id": "cust-1", "customer_name": "Test Customer", "status": "open",
         "assigned_to": "selected-worker",
         "floor_id": "ground-floor",
     })
@@ -267,7 +272,7 @@ def test_followup_detail_scopes_every_related_record_to_followups_floor(monkeypa
     assert detail["customer"]["floor_id"] == "ground-floor"
     for collection in (fake_db.customers, fake_db.quotations):
         assert collection.queries[-1]["floor_id"] == "ground-floor"
-    assert fake_db.quotations.queries[-1]["status"] == {"$in": ["draft", "sent", "pending_approval", "approved", "selection"]}
+    assert fake_db.quotations.queries[-1]["status"] == {"$in": ["sent", "pending_approval"]}
     assert fake_db.payments.queries == fake_db.purchase_orders.queries == []
     assert detail['payments'] == detail['purchases'] == []
     assert captured_timeline['entity_type'] == 'followup' and captured_timeline['entity_id'] == 'f-ground'

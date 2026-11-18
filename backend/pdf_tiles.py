@@ -17,7 +17,7 @@ pdf_generator so there is exactly one implementation of those in the codebase.
 """
 from __future__ import annotations
 from services.product_display import tile_product_name
-from services.phone_format import format_phone
+from services.phone_format import format_department_phone
 from services.referrer_identity import pdf_reference_label
 
 import functools
@@ -36,7 +36,8 @@ from reportlab.platypus import (
 
 from pdf_generator import (
     LOGO_PATH, LOGO_RATIO, _draw_footer, _draw_room_watermark, _escape, _img, _money, _currency_symbol, _SingleLineParagraph,
-    PORTRAIT_A4, quotation_pdf_filename, _po_final_payment_table, brand_partners_table, prefetch_product_images,
+    PORTRAIT_A4, QUOTATION_SERIAL_GREY, QUOTATION_WATERMARK_INK_STRENGTH, WATERMARK_INK_STRENGTH,
+    quotation_pdf_filename, _po_final_payment_table, brand_partners_table, prefetch_product_images,
 )
 
 INK = colors.HexColor("#111111")
@@ -90,12 +91,13 @@ def _rupee(value: float) -> str:
     return _money(value)
 
 
-def _draw_tiles_page_chrome(cv, doc, branding: dict | None = None) -> None:
+def _draw_tiles_page_chrome(cv, doc, branding: dict | None = None, *, product_quotation: bool = False) -> None:
     """Keep the cover clean and watermark the product-details pages."""
     if doc.page > 1:
-        _draw_room_watermark(cv, doc, branding)
+        strength = QUOTATION_WATERMARK_INK_STRENGTH if product_quotation else WATERMARK_INK_STRENGTH
+        _draw_room_watermark(cv, doc, branding, ink_strength=strength)
     if doc.page == 1:
-        _draw_footer(cv, doc, branding)
+        _draw_footer(cv, doc, branding, floor_id="ground-floor")
 
 
 DEFAULT_ADDRESS = "Nr. Gujarat Housing Board, Kataria Motors, 2nd 150ft Ring Road, Rajkot-360005"
@@ -234,7 +236,7 @@ def _meta_grid(quotation: dict, customer: dict, styles: dict) -> Table:
     row1_labels = ["CUSTOMER NAME", "CONTACT NO.", "SELECTION / QUOTATION DATE", "QUOTATION NO."]
     row1_values = [
         quotation.get("customer_name") or customer.get("name") or "",
-        format_phone(quotation.get("phone_snapshot") or customer.get("phone") or ""),
+        format_department_phone(quotation.get("phone_snapshot") or customer.get("phone"), "ground-floor"),
         quotation.get("doc_date") or created,
         quotation.get("doc_number") or quotation.get("number") or "",
     ]
@@ -280,7 +282,7 @@ def _brand_terms_signature_block(styles: dict, branding: dict, *, density: str =
         if compact else styles["term"]
     )
     email = branding.get("footer_email") or DEFAULT_EMAIL
-    mobile = format_phone(branding.get("footer_phone") or DEFAULT_MOBILE)
+    mobile = format_department_phone(branding.get("footer_phone") or DEFAULT_MOBILE, "ground-floor")
     flow: list = [
         Paragraph("OUR BRAND PARTNERS", styles["sectionTitle"]),
         Spacer(1, partner_gap * mm),
@@ -467,6 +469,10 @@ def build_tiles_quotation_pdf(quotation: dict, customer: dict, branding: dict | 
         author=b.get("footer_company_name") or "Buildcon House",
     )
     styles = _tiles_styles()
+    product_quotation = quotation.get("_po_final") is None
+    serial_style = styles["cell"]
+    if product_quotation:
+        serial_style = ParagraphStyle("quoteSerial", parent=serial_style, fontSize=10, textColor=QUOTATION_SERIAL_GREY)
     items = quotation.get("items") or []
 
     quantity_totals = {
@@ -537,7 +543,7 @@ def build_tiles_quotation_pdf(quotation: dict, customer: dict, branding: dict | 
         quantity_unit = _quantity_unit(item.get("quantity_unit"))
         rate_sqft_text = "" if quantity_unit == "Pieces" or item.get("price_basis") == "box" else _fmt_rate_sqft(item.get("rate_sqft"))
         rows.append([
-            Paragraph(str(index), styles["cell"]),
+            Paragraph(str(index), serial_style),
             _img(
                 item.get("image"), image_bytes=image_bytes, force_landscape=True,
                 width_mm=QUOTATION_PRODUCT_IMAGE_WIDTH_MM,
@@ -572,8 +578,9 @@ def build_tiles_quotation_pdf(quotation: dict, customer: dict, branding: dict | 
         ("LEFTPADDING", (0, 0), (-1, -1), 2), ("RIGHTPADDING", (0, 0), (-1, -1), 2),
         ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
     ]
-    for r in range(2, len(rows), 2):
-        style_cmds.append(("BACKGROUND", (0, r), (0, r), ZEBRA))
+    if not product_quotation:
+        for r in range(2, len(rows), 2):
+            style_cmds.append(("BACKGROUND", (0, r), (0, r), ZEBRA))
     table = Table(
         rows,
         colWidths=_QUO_COLS,
@@ -596,7 +603,7 @@ def build_tiles_quotation_pdf(quotation: dict, customer: dict, branding: dict | 
 
     doc.build(
         story,
-        onFirstPage=functools.partial(_draw_tiles_page_chrome, branding=b),
-        onLaterPages=functools.partial(_draw_tiles_page_chrome, branding=b),
+        onFirstPage=functools.partial(_draw_tiles_page_chrome, branding=b, product_quotation=product_quotation),
+        onLaterPages=functools.partial(_draw_tiles_page_chrome, branding=b, product_quotation=product_quotation),
     )
     return buf.getvalue()

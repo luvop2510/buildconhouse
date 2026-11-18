@@ -207,7 +207,7 @@ async def profile_history(db, q, floors):
         if conditions:
             match["items"] = {"$elemMatch": {"$and": conditions}}
         docs = await _bounded(db.quotations.find(match, {"_id": 0, "id": 1, "number": 1, "customer_id": 1, "customer_name": 1, "referrer_id": 1, "referrer_name": 1, "floor_id": 1, "status": 1, "grand_total": 1, "created_at": 1}), "Quotation history", MAX_RECORDS)
-        return [{"id": doc["id"], "order_id": doc["id"] if doc.get("status") in {"ordered", "won"} else None, "number": doc.get("number") or doc["id"], "source": "catalog", "floor_id": doc["floor_id"], "customer_id": doc.get("customer_id"), "customer_name": doc.get("customer_name"), "architect_id": doc.get("referrer_id"), "architect_name": doc.get("referrer_name"), "date": stamp(doc.get("created_at")), "status": doc.get("status") or "Unavailable", "quotation_amount": money(doc.get("grand_total")), "currency": "INR"} for doc in docs]
+        return [{"id": doc["id"], "order_id": doc["id"] if doc.get("status") in {"ordered", "won"} else None, "number": doc.get("number") or doc["id"], "source": "catalog", "floor_id": doc["floor_id"], "customer_id": doc.get("customer_id"), "customer_name": doc.get("customer_name"), "architect_id": doc.get("referrer_id"), "architect_name": doc.get("referrer_name"), "date": stamp(doc.get("created_at")), "status": "Pending" if doc.get("status") == "sent" else doc.get("status") or "Unavailable", "quotation_amount": money(doc.get("grand_total")), "currency": "INR"} for doc in docs]
     async def kitchen():
         if "second-floor" not in selected_floors or q.source not in {None, "kitchen"} or any((q.company_id, q.product_id, q.category, q.size, q.finish, q.series)):
             return [], [], []

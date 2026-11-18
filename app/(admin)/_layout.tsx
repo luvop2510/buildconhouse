@@ -9,7 +9,8 @@ import Feather from "@expo/vector-icons/Feather";
 import { Slot, useRouter, useSegments, useLocalSearchParams, usePathname } from "expo-router";
 import React, { useEffect, useState } from "react";
 import { Platform, Pressable, ScrollView, StyleSheet, View, type ViewStyle } from "react-native";
-import { Text } from "@/src/components/AppText";
+import { DepartmentPhoneFloor, Text } from "@/src/components/AppText";
+import { roleLabels } from "@/src/theme/tokens";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import {
@@ -73,11 +74,6 @@ function isNavActive(item: NavItem, segments: string[]): boolean {
   }
   return segments.includes(item.match);
 }
-
-const roleLabel: Record<string, string> = {
-  owner: "Owner", admin: "Admin", manager: "Manager", sales: "Sales",
-  purchase: "Purchase", warehouse: "Warehouse", accounts: "Accounts", worker: "Worker",
-};
 
 function Wordmark({ compact }: { compact?: boolean }) {
   if (compact) {
@@ -362,7 +358,7 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
                 {staff?.full_name}
               </Text>
               <Text numberOfLines={1} style={{ fontFamily: font.regular, fontSize: 11.5, color: color.inkSoft }}>
-                {roleLabel[staff?.role || ""] || staff?.role}
+                {roleLabels[staff?.role || ""] || staff?.role}
               </Text>
             </View> : null}
             {!collapsed ? <Feather name="more-horizontal" size={15} color={color.inkFaint} /> : null}
@@ -434,7 +430,7 @@ function PhoneBar() {
       </WorkspaceLink>)}
       <Hairline />
       <View style={[styles.moreRow, { height: 'auto', minHeight: 56 }]}><Avatar name={staff?.full_name} />
-        <View style={{ flex: 1 }}><Text style={styles.moreLabel}>{staff?.full_name}</Text><Text style={{ color: color.inkMid }}>{roleLabel[staff?.role || '']}</Text></View>
+        <View style={{ flex: 1 }}><Text style={styles.moreLabel}>{staff?.full_name}</Text><Text style={{ color: color.inkMid }}>{roleLabels[staff?.role || '']}</Text></View>
       </View>
       <Pressable accessibilityRole="button" accessibilityLabel="My account" style={styles.moreRow}
         onPress={() => { setMoreOpen(false); router.push('/(admin)/settings'); }}>
@@ -536,7 +532,7 @@ function FloorAccessGate({ children }: { children: React.ReactNode }) {
     </View>;
   }
   if (retiredWorkspaceRoute) return null;
-  return <>{children}</>;
+  return <DepartmentPhoneFloor.Provider value={selectedFloorId}>{children}</DepartmentPhoneFloor.Provider>;
 }
 
 function CustomAccessRouteGate({ children }: { children: React.ReactNode }) {

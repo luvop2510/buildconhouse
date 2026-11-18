@@ -1,5 +1,5 @@
 import { RankedBars } from '@/src/components/salesAnalytics/SalesGraphs';
-import { formatPhone } from "@/src/utils/phone";
+import { formatDepartmentPhone } from "@/src/utils/phone";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Platform, Pressable, View, useWindowDimensions } from "react-native";
 
@@ -163,7 +163,7 @@ function DirectoryRow({ row: { contact, performance, historical }, compact, show
     {details?<View style={{gap:spacing.s4}}>
       <Text style={[type.bodySm,Platform.OS==='web'?{overflowWrap:'anywhere'} as never:null]}>{referrerCode(contact.id,contact.type,contact.name)}</Text>
       <Text style={type.bodySm}>{scope}</Text>
-      {contact.phone?<Text style={type.bodySm}>{formatPhone(contact.phone)}</Text>:null}
+      {contact.phone?<Text style={type.bodySm}>{formatDepartmentPhone(contact.phone, floorId === "all" ? contact.floor_id : floorId)}</Text>:null}
       {contact.email?<Text style={type.bodySm}>{contact.email}</Text>:null}
       {contact.address?<Text style={type.bodySm}>{contact.address}</Text>:null}
     </View>:null}

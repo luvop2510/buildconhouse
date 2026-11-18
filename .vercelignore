@@ -1,6 +1,5 @@
-# The canonical web app lives at the repository root.  Keep operational
-# backend material and the preserved legacy frontend checkout out of Vercel
-# uploads; the deployed web API is the small root-level /api proxy.
+# Vercel builds the web app and API proxy from the repository root.
+# Exclude backend files and any local copies of the former frontend checkout.
 backend/
 frontend/
 
@@ -13,6 +12,7 @@ __pycache__/
 dist/
 output/
 outputs/
+test-results/
 tmp/
 template-inspect/
 test_reports/

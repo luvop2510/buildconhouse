@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
-import { formatPhone, validPhone } from '../src/utils/phone.ts';
+import { formatDepartmentPhone, formatPhone, validPhone } from '../src/utils/phone.ts';
 import { referrerCode, referrerLabel } from '../src/utils/referrer.ts';
 
 for (const value of ['9909955755', '990-995-57-55', '(990) 995 5755']) assert.equal(formatPhone(value), '990-995-57-55');
@@ -14,6 +14,12 @@ assert.equal(formatPhone('9909955755 ext 2'), '9909955755 ext 2');
 assert.equal(validPhone('990-995-57-55'), true);
 assert.equal(validPhone('+91 9909955755'), true);
 for (const value of ['', '123', '9909955755abc', '1234567890123']) assert.equal(validPhone(value), false);
+for (const floor of ['first-floor', 'ground-floor', 'third-floor']) {
+  assert.equal(formatDepartmentPhone('990-995-57-55', floor), '9909955755');
+  assert.equal(formatDepartmentPhone('+91 990-995-57-55', floor), '+91 9909955755');
+  assert.equal(formatDepartmentPhone('+44 20 7946 0958', floor), '+44 20 7946 0958');
+}
+assert.equal(formatDepartmentPhone('9909955755', 'second-floor'), '990-995-57-55');
 assert.equal(referrerCode('4d2a6042-78a7-453b-a7be-97d60ed4571d', 'architect', 'Nikita Shah'), 'ARC-NIKITA-4D2A6042');
 assert.equal(referrerLabel({ referrer_id: '4d2a6042-78a7-453b-a7be-97d60ed4571d', referrer_name: 'Nikita Shah', referrer_type: 'architect' }), 'Nikita Shah · ARC-NIKITA-4D2A6042');
 
@@ -22,12 +28,12 @@ const source = readFileSync(new URL('../src/components/AppText.tsx', import.meta
 const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
 let state = [], slot = 0;
 const modules = {
-  react: { forwardRef: fn => fn, useEffect: () => {}, useRef: value => ({ current: value }), useState: value => { const index = slot++; state[index] ??= value; return [state[index], next => state[index] = next]; } },
+  react: { createContext: value => ({ value }), useContext: context => context.value, forwardRef: fn => fn, useEffect: () => {}, useRef: value => ({ current: value }), useState: value => { const index = slot++; state[index] ??= value; return [state[index], next => state[index] = next]; } },
   'react-native': { Platform: { OS: 'web' }, StyleSheet: { flatten: value => value }, Text: 'Text', TextInput: 'TextInput' },
   'react/jsx-runtime': { jsx: (type, props) => ({ type, props }) },
   './appTextFamily': { appTextFamily: () => 'system-ui' },
   '@/src/hooks/use-input-active': { reportInputFocus: () => {} },
-  '@/src/utils/phone': { formatPhone },
+  '@/src/utils/phone': { formatDepartmentPhone },
 };
 const exports = {};
 vm.runInNewContext(compiled, { exports, require: name => { assert.ok(modules[name], name); return modules[name]; }, Symbol });
@@ -44,5 +50,6 @@ render().onChangeText('+91 9909955755');
 assert.equal(draft, '+91 9909955755', 'paste preserves the input payload and country prefix');
 render().onBlur({});
 assert.equal(render().value, '+91 990-995-57-55');
+assert.equal(render({ phoneFloorId: 'ground-floor' }).value, '+91 9909955755');
 assert.equal(render({ keyboardType: 'default', value: '9909955755' }).value, '9909955755', 'non-contact numeric fields stay untouched');
 console.log('Phone display/input and named reference codes passed.');

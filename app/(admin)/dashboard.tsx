@@ -5,16 +5,18 @@ import { Pressable, RefreshControl, ScrollView, View } from "react-native";
 
 import { api } from "@/src/api/client";
 import { IconButton as RefreshButton } from "@/src/components/ui";
+import { Text } from "@/src/components/AppText";
 import { toast } from "@/src/components/Toast";
 import { Button, Hairline, IconButton, Money, Skeleton, Surface, Txt } from "@/src/design/components";
 import { useBp } from "@/src/design/responsive";
-import { color, radius, space } from "@/src/design/tokens";
+import { color, radius, space, text } from "@/src/design/tokens";
 import { useAuth } from "@/src/state/auth";
 import { useActionAccess } from "@/src/hooks/use-permissions";
 import { useFloorAccess } from "@/src/hooks/use-floor-access";
 import { KITCHEN_FLOOR_ID } from "@/src/constants/floors";
 import type { TodayData, TodayOverview, TodayTask } from "@/src/api/today";
 import { HomeCustomerSearch } from "@/src/components/HomeCustomerSearch";
+import { quotationDisplayStatus } from "@/src/utils/quotationStatus";
 import { TodaySummary, WorkflowDistribution } from "@/src/components/today/TodayGraphics";
 
 const DEPARTMENTS: Record<string, string> = {
@@ -30,24 +32,47 @@ const dateLabel = (value: string) => new Intl.DateTimeFormat("en-IN", {
   timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "numeric", minute: "2-digit",
 }).format(new Date(value));
 
-function TaskRow({ task, open, complete }: { task: TodayTask; open: () => void; complete?: () => void }) {
+type TaskGroup = { key: string; customerName?: string; tasks: TodayTask[] };
+
+function groupTasks(tasks: TodayTask[]): TaskGroup[] {
+  const groups = new Map<string, TaskGroup>();
+  for (const task of tasks) {
+    const key = task.customer_id ? `customer:${task.customer_id}` : `${task.resource}:${task.id}`;
+    const group = groups.get(key) ?? { key, tasks: [] };
+    if (task.customer_id && !group.customerName) group.customerName = task.customer_name || undefined;
+    group.tasks.push(task);
+    groups.set(key, group);
+  }
+  return [...groups.values()];
+}
+
+function TaskRow({ task, customerName, open, complete }: {
+  task: TodayTask; customerName?: string; open: () => void; complete?: () => void;
+}) {
+  const department = DEPARTMENTS[task.resource] || task.resource.replace(/_/g, " ");
+  const quotation = task.resource === "quotations" || (task.resource === "tiles" && task.doc_type === "tiles_quotation");
+  const status = quotation ? quotationDisplayStatus(task.status) : task.status;
+  const statusLabel = quotation && status === "pending" ? "Pending" : status;
+  const reference = task.reference && task.reference !== customerName ? task.reference : null;
+  const displayTitle = customerName ? reference || department : task.title;
+  const actionTitle = customerName ? [customerName, department, reference].filter(Boolean).join(", ") : task.title;
   return <View style={{ flexDirection: "row", alignItems: "center", gap: space.x2 }}>
-    <Pressable accessibilityRole="button" accessibilityLabel={`${task.title}. ${task.status}. Open task`}
+    <Pressable accessibilityRole="button" accessibilityLabel={`${actionTitle}. ${statusLabel}. Open task`}
       testID={`today-task-${task.resource}-${task.id}`} onPress={open}
       style={({ pressed, hovered }: any) => ({ flex: 1, minWidth: 0, minHeight: 64, paddingVertical: space.x2,
         paddingHorizontal: space.x2, borderRadius: radius.md, gap: space.x1, backgroundColor: pressed || hovered ? color.hoverWash : "transparent" })}>
-      <Txt v="rowTitle">{task.title}</Txt>
-      <Txt v="sub" tone="soft">{DEPARTMENTS[task.resource] || task.resource.replace(/_/g, " ")} · {task.status}</Txt>
+      <Txt v={customerName ? "bodyMid" : "rowTitle"}>{displayTitle}</Txt>
+      <Txt v="sub" tone="soft">{displayTitle === department ? statusLabel : `${department} · ${statusLabel}`}</Txt>
       {task.due_at ? <Txt v="caption" tone="soft">{dateLabel(task.due_at)}</Txt> : null}
       {task.assignee_name ? <Txt v="caption" tone="soft">Assigned to {task.assignee_name}</Txt> : null}
       {task.progress != null ? <View style={{ gap: space.x1 }}>
         <Txt v="caption" tone="soft">{task.progress}% recorded progress</Txt>
-        <View accessibilityRole="progressbar" accessibilityLabel={`${task.title} progress`} accessibilityValue={{ min: 0, max: 100, now: task.progress }} style={{ height: 4, borderRadius: 2, backgroundColor: color.sunkenDeep }}>
+        <View accessibilityRole="progressbar" accessibilityLabel={`${actionTitle} progress`} accessibilityValue={{ min: 0, max: 100, now: task.progress }} style={{ height: 4, borderRadius: 2, backgroundColor: color.sunkenDeep }}>
           <View style={{ height: 4, borderRadius: 2, backgroundColor: color.focus, width: `${Math.max(0, Math.min(100, task.progress))}%` }} />
         </View>
       </View> : null}
     </Pressable>
-    {complete ? <IconButton icon="check" label={`Mark ${task.title} done`} size={44} onPress={complete} /> : <Feather name="chevron-right" size={16} color={color.inkSoft} accessible={false} />}
+    {complete ? <IconButton icon="check" label={`Mark ${actionTitle} done`} size={44} onPress={complete} /> : <Feather name="chevron-right" size={16} color={color.inkSoft} accessible={false} />}
   </View>;
 }
 
@@ -140,6 +165,7 @@ export default function Today() {
   const floorName = data?.floor_name || floors?.find(floor => floor.id === selectedFloorId)?.name || "Your floor";
   const summary = data?.task_summary;
   const visibleTasks = queue?.slice(0, 16) || [];
+  const taskGroups = groupTasks(visibleTasks);
   const openTask = (task: TodayTask) => {
     const destination = DESTINATIONS[task.resource];
     if (!destination) return;
@@ -147,6 +173,7 @@ export default function Today() {
     const target = task.resource === "quotations" ? `/(admin)/quotations/${id}`
       : task.resource === "tiles" && [`/tiles/quotation?id=${id}`, `/tiles/selection?id=${id}`].includes(task.href) ? `/(admin)${task.href}`
       : task.resource === "walkins" ? `/(admin)/walkins/${id}`
+      : task.resource === "followups" ? `/(admin)/followups?id=${id}`
       : task.resource === "kitchen_projects" && /^(lead|visit|cad|design|quotation|order|production|installation|completed)$/.test(task.status)
         ? `/(admin)/kitchen/${id}/stages/${task.status}` : destination;
     router.push(target as never);
@@ -171,7 +198,16 @@ export default function Today() {
           <Txt v="heading">Scheduled work & tasks</Txt>
           <Txt v="sub" tone="soft">{assignedKitchenWork ? "Your assigned Kitchen tasks and recorded progress" : data?.full_floor_access ? "Current work across this floor’s departments" : "Tasks and progress for your departments"}</Txt>
           {pendingIds.length ? <View accessibilityLiveRegion="polite"><Txt v="sub" tone="soft">Saving {pendingIds.length} follow-up{pendingIds.length === 1 ? "" : "s"}…</Txt></View> : null}
-          {loading ? <View accessibilityLabel="Loading floor tasks" style={{ gap: space.x4 }}><Skeleton h={64} /><Skeleton h={64} /><Skeleton h={64} /></View> : visibleTasks.length ? visibleTasks.map((task, i) => <View key={`${task.resource}:${task.id}`}>{i ? <Hairline /> : null}<TaskRow task={task} open={() => openTask(task)} complete={task.resource === "followups" && canUpdateFollowups ? () => complete(task) : undefined} /></View>) : <View style={{ paddingVertical: space.x6, gap: space.x2 }}><Txt v="bodyMid">{error ? "Tasks are unavailable." : assignedKitchenWork ? "No open Kitchen tasks assigned to you." : "No open tasks recorded."}</Txt><Txt v="sub" tone="soft">{error ? "Retry to load your work." : assignedKitchenWork ? "Tasks appear here when the owner assigns the current stage to you." : "Scheduled work will appear here when it is recorded in your departments."}</Txt></View>}
+          {loading ? <View accessibilityLabel="Loading floor tasks" style={{ gap: space.x4 }}><Skeleton h={64} /><Skeleton h={64} /><Skeleton h={64} /></View> : taskGroups.length ? taskGroups.map((group, index) => (
+            <View key={group.key}>
+              {index ? <Hairline /> : null}
+              {group.customerName ? <Text accessibilityRole="header" aria-level={3} style={[text.rowTitle, { paddingHorizontal: space.x2, paddingTop: space.x2 }]}>{group.customerName}</Text> : null}
+              <View style={group.customerName ? { paddingLeft: space.x2 } : undefined}>
+                {group.tasks.map(task => <TaskRow key={`${task.resource}:${task.id}`} task={task} customerName={group.customerName}
+                  open={() => openTask(task)} complete={task.resource === "followups" && canUpdateFollowups ? () => complete(task) : undefined} />)}
+              </View>
+            </View>
+          )) : <View style={{ paddingVertical: space.x6, gap: space.x2 }}><Txt v="bodyMid">{error ? "Tasks are unavailable." : assignedKitchenWork ? "No open Kitchen tasks assigned to you." : "No open tasks recorded."}</Txt><Txt v="sub" tone="soft">{error ? "Retry to load your work." : assignedKitchenWork ? "Tasks appear here when the owner assigns the current stage to you." : "Scheduled work will appear here when it is recorded in your departments."}</Txt></View>}
           {(queue && queue.length > visibleTasks.length) || data?.truncated ? <Txt v="sub" tone="soft">Showing the next {visibleTasks.length} tasks. Open a department below for its complete list.</Txt> : null}
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space.x2 }}>{data?.resources.filter(resource => DESTINATIONS[resource]).map(resource => <Button key={resource} label={`Open ${DEPARTMENTS[resource] || resource.replace(/_/g, " ")}`} variant="ghost" size="sm" onPress={() => router.push(DESTINATIONS[resource] as never)} />)}</View>
         </Surface></View>

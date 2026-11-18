@@ -1,4 +1,4 @@
-import { formatPhone } from "@/src/utils/phone";
+import { formatDepartmentPhone } from "@/src/utils/phone";
 import { referrerLabel } from "@/src/utils/referrer";
 // ═══════════════════════════════════════════════════════════════════════════
 // Follow-ups · Sales Command Center — Design System V2.
@@ -22,8 +22,8 @@ import { useBp } from "@/src/design/responsive";
 import { Menu } from "@/src/design/navigationControls";
 import { ActivityTimeline, TimelineEvent } from "@/src/components/ActivityTimeline";
 import {
-  Avatar, Badge, Button, Card, Chip, ConfirmDialog, Dropdown, EmptyState, FilterBar,
-  FormField, HeroCard, HoverCard, IconButton, Panel, PageHeader, SearchField,
+  Alert, Avatar, Badge, Button, Card, Chip, ConfirmDialog, Dropdown, EmptyState, FilterBar,
+  FormField, HeroCard, HoverCard, IconButton, Panel, PageHeader, SearchField, TextField,
   SegmentedControl, Sheet, Skeleton, SkeletonList, StatTile, MobileFilterSection,
 } from "@/src/components/ds";
 import { toast } from "@/src/components/Toast";
@@ -35,6 +35,9 @@ import { MANAGER_ROLES } from "./followup-assignments";
 import { LeadScopeFields, type LeadPartner } from "@/src/components/leads/LeadScopeFields";
 import { LeadScopeSheet } from "@/src/components/leads/LeadScopeSheet";
 import { newLeadRequestKey, type LeadScope } from "@/src/api/leads";
+import { FollowupDateInput } from "@/src/components/followups/FollowupDateInput";
+import { PostponeFollowupSheet } from "@/src/components/followups/PostponeFollowupSheet";
+import { addCalendarDays, followupCalendarDay, followupDateLabel, followupDaysFromToday, isCalendarDay } from "@/src/components/followups/followupDates";
 
 type FeatherName = keyof typeof Feather.glyphMap;
 
@@ -81,6 +84,9 @@ type Followup = {
   due_at: string;
   status: "open" | "snoozed" | "done" | "dismissed";
   snoozed_until?: string | null;
+  date_only_due?: boolean;
+  postponement_history?: { previous_due_at: string; new_due_at: string; reason: string; actor_name?: string; changed_at: string }[];
+  call_history?: { outcome: string; notes?: string | null; response?: string | null; actor_name?: string; recorded_at: string; attempt_id: string }[];
   is_automated: boolean;
   auto_resolved: boolean;
   resolution_note?: string | null;
@@ -202,12 +208,6 @@ const CATEGORY_OPTIONS = [
 // ─────────────────────────────────────────────────────────────────────────────
 // Small formatters
 // ─────────────────────────────────────────────────────────────────────────────
-function startOfDay(d: Date): Date { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; }
-function dateShort(iso?: string | null): string {
-  if (!iso) return "—";
-  try { return new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short" }); }
-  catch { return "—"; }
-}
 function timeAgo(iso?: string | null): string {
   if (!iso) return "Never contacted";
   const d = new Date(iso).getTime();
@@ -220,26 +220,20 @@ function timeAgo(iso?: string | null): string {
   return `Contacted ${Math.floor(h / 24)}d ago`;
 }
 function dueLabel(f: Followup): string {
-  if (f.status === "done") return f.completed_at ? `Completed ${dateShort(f.completed_at)}` : "Completed";
+  if (f.status === "done") return f.completed_at ? `Completed ${followupDateLabel(f.completed_at)}` : "Completed";
   if (f.status === "dismissed") return "Dismissed";
-  if (f.status === "snoozed" && f.snoozed_until) {
-    const d = new Date(f.snoozed_until);
-    return `Snoozed till ${d.toLocaleDateString("en-IN", { day: "numeric", month: "short" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })}`;
+  if (f.status === "snoozed" && f.snoozed_until) return `Snoozed until ${followupDateLabel(f.snoozed_until, true)}`;
+  const days = followupDaysFromToday(f.due_at);
+  if (!Number.isFinite(days)) return "—";
+  if (days < 0) return `Overdue · ${followupDateLabel(f.due_at)}`;
+  if (days === 0) {
+    const time = new Date(f.due_at).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "numeric", minute: "2-digit" });
+    return f.date_only_due ? "Due today" : `Due today · ${time}`;
   }
-  const d = new Date(f.due_at);
-  if (Number.isNaN(d.getTime())) return "—";
-  const days = Math.round((startOfDay(d).getTime() - startOfDay(new Date()).getTime()) / 86400000);
-  const time = d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" });
-  if (days < 0) return `Overdue ${Math.abs(days)}d`;
-  if (days === 0) return `Today · ${time}`;
-  if (days === 1) return `Tomorrow · ${time}`;
-  if (days <= 7) return `${d.toLocaleDateString("en-IN", { weekday: "short" })} · ${time}`;
-  return dateShort(f.due_at);
+  return `Pending · ${followupDateLabel(f.due_at, !f.date_only_due)}`;
 }
 function isSameDay(aIso: string, b: Date): boolean {
-  const a = new Date(aIso);
-  const day = (date: Date) => new Date(date.getTime() + 330 * 60_000).toISOString().slice(0, 10);
-  return Number.isFinite(a.getTime()) && day(a) === day(b);
+  return followupCalendarDay(aIso) === followupCalendarDay(b);
 }
 function greeting(): string {
   const h = new Date().getHours();
@@ -292,6 +286,7 @@ function FollowupsWorkspace() {
   const routeParams = useLocalSearchParams<{ workspace?: string; showroom_followup?: string; id?: string }>();
   const { staff } = useAuth();
   const canDeleteFollowups = useActionAccess("followups", "delete", !!staff && MANAGER_ROLES.includes(staff.role));
+  const canUpdateFollowups = useActionAccess("followups", "update");
   const canCreateTileSelection = useActionAccess("tiles", "create");
   const { selectedFloorId, floors } = useFloorAccess();
   const router = useRouter();
@@ -364,7 +359,7 @@ function FollowupsWorkspace() {
   const [scopeLeadIds, setScopeLeadIds] = useState<string[]>([]);
   const [callOutcomeFor, setCallOutcomeFor] = useState<Followup | null>(null);
   const [lossActionFor, setLossActionFor] = useState<Followup | null>(null);
-  const [customSnoozeFor, setCustomSnoozeFor] = useState<Followup | null>(null);
+  const [postponeFor, setPostponeFor] = useState<Followup | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Followup | null>(null);
   const [deleting, setDeleting] = useState(false);
 
@@ -686,24 +681,28 @@ function FollowupsWorkspace() {
     () => api.post<Followup>(`/followups/${f.id}/complete`, {}, { floorId: selectedFloorId }), "Marked complete",
   ), [optimisticAction, selectedFloorId]);
 
-  const snoozeFollowup = useCallback((f: Followup, preset: "15m" | "1h" | "tomorrow" | "next_week") => optimisticAction(f,
+  const snoozeFollowup = useCallback((f: Followup, preset: "15m" | "1h") => optimisticAction(f,
     { status: "snoozed", bucket: "snoozed" },
     () => api.post<Followup>(`/followups/${f.id}/snooze`, { preset }, { floorId: selectedFloorId }), "Snoozed",
   ), [optimisticAction, selectedFloorId]);
 
-  const customSnooze = useCallback((f: Followup, untilIso: string) => {
-    setCustomSnoozeFor(null);
-    return optimisticAction(f, { status: "snoozed", bucket: "snoozed", snoozed_until: untilIso },
-      () => api.post<Followup>(`/followups/${f.id}/snooze`, { until: untilIso }, { floorId: selectedFloorId }), "Snoozed");
-  }, [optimisticAction, selectedFloorId]);
+  const openPostpone = useCallback((f: Followup) => {
+    if (!canUpdateFollowups || (f.status !== "open" && f.status !== "snoozed")) return;
+    setCustomerPreviewOpen(false);
+    setPostponeFor(f);
+  }, [canUpdateFollowups]);
 
-  const pushDue = useCallback((f: Followup, days: number) => {
-    const dueIso = new Date(Date.now() + days * 86400000).toISOString();
-    const bucket: Bucket = days === 1 ? "tomorrow" : days <= 7 ? "this_week" : "later";
-    return optimisticAction(f, { due_at: dueIso, bucket },
-      () => api.patch<Followup>(`/followups/${f.id}`, { due_at: dueIso }, { floorId: selectedFloorId }),
-      `Pushed ${days} day${days === 1 ? "" : "s"}`);
-  }, [optimisticAction, selectedFloorId]);
+  const postponeFollowup = useCallback(async (f: Followup, date: string, reason: string) => {
+    const updated = await api.post<Followup>(`/followups/${encodeURIComponent(f.id)}/postpone`, {
+      new_due_date: date,
+      expected_due_at: f.due_at,
+      reason,
+    }, { floorId: selectedFloorId });
+    if (!mounted.current) return;
+    patchLocal(f.id, updated);
+    toast.success("Follow-up postponed");
+    void refreshStatsQuiet();
+  }, [patchLocal, refreshStatsQuiet, selectedFloorId]);
 
   const assignFollowup = useCallback((f: Followup, _userId?: string) => { setScopeLeadIds([]); setScopeLead(f); }, []);
 
@@ -740,25 +739,29 @@ function FollowupsWorkspace() {
     })();
   }, [clearSelectedDetail, deleteTarget, refreshStatsQuiet, selectedFloorId]);
 
-  const logCallOutcome = useCallback(async (f: Followup, outcome: string, notes?: string, nextFollowupAt?: string, response?: string, interestedFloorIds?: string[], assignments?: LeadScope["assignments"]) => {
-    if ((outcome === "lost" || outcome === "rejected") && !notes?.trim()) { toast.error("A lost reason is required"); return; }
-    try {
-      await api.post(`/followups/${f.id}/log-call`, {
-        outcome,
-        notes: outcome === "lost" || outcome === "rejected" ? notes : undefined,
-        next_followup_at: nextFollowupAt || undefined,
-        response: response?.trim() || undefined,
-        interested_floor_ids: interestedFloorIds,
-        assignments,
-      }, { floorId: selectedFloorId });
-      if (!mounted.current) return;
-      toast.success("Call logged");
-      setCallOutcomeFor(null);
-      setLossActionFor(null);
-      await loadList();
-      refreshStatsQuiet();
-    } catch (e: any) { toast.error(e?.detail || "Could not log call"); }
-  }, [loadList, refreshStatsQuiet, selectedFloorId]);
+  const openRecordOutcome = useCallback((f: Followup) => {
+    setCustomerPreviewOpen(false);
+    setCallOutcomeFor(f);
+  }, []);
+
+  const logCallOutcome = useCallback(async (f: Followup, outcome: string, requestKey: string, notes?: string, nextFollowupAt?: string, response?: string, interestedFloorIds?: string[], assignments?: LeadScope["assignments"]) => {
+    const updated = await api.post<Followup>(`/followups/${encodeURIComponent(f.id)}/log-call`, {
+      outcome,
+      request_key: requestKey,
+      notes: notes?.trim() || undefined,
+      next_followup_at: nextFollowupAt || undefined,
+      response: response?.trim() || undefined,
+      interested_floor_ids: interestedFloorIds,
+      assignments,
+    }, { floorId: selectedFloorId });
+    if (!mounted.current) return;
+    patchLocal(f.id, { ...updated, bucket: updated.status === "done" || updated.status === "dismissed" ? "completed" : f.bucket });
+    toast.success("Contact outcome recorded");
+    setCallOutcomeFor(null);
+    setLossActionFor(null);
+    void loadList();
+    void refreshStatsQuiet();
+  }, [loadList, patchLocal, refreshStatsQuiet, selectedFloorId]);
 
   const createFollowup = useCallback(async (payload: any) => {
     try {
@@ -931,10 +934,12 @@ function FollowupsWorkspace() {
     }
   }, [refreshStatsQuiet, selectedIds]);
 
-  const bulkSnooze = useCallback((preset: "1h" | "tomorrow" | "next_week") => {
+  const canBulkSnooze = selectedIds.size > 0 && [...selectedIds].every(id =>
+    rawItems.some(item => item.id === id && item.bucket === "today"));
+  const bulkSnooze = useCallback(() => {
     const ids = Array.from(selectedIds);
     runAction(async () => {
-      await runBulk({ label: "Snoozed", successPatch: { status: "snoozed", bucket: "snoozed" }, execute: (id) => mounted.current ? api.post(`/followups/${id}/snooze`, { preset }, { floorId: selectedFloorId }) : Promise.reject(new Error("Workspace changed")) }, ids);
+      await runBulk({ label: "Snoozed", successPatch: { status: "snoozed", bucket: "snoozed" }, execute: (id) => mounted.current ? api.post(`/followups/${id}/snooze`, { preset: "1h" }, { floorId: selectedFloorId }) : Promise.reject(new Error("Workspace changed")) }, ids);
     });
   }, [runBulk, selectedIds, runAction, selectedFloorId]);
 
@@ -1043,7 +1048,7 @@ function FollowupsWorkspace() {
         case "w": case "W": if (selected) contact(selected, "whatsapp"); break;
         case "e": case "E": if (selected) contact(selected, "email"); break;
         case " ": if (selected) { e.preventDefault(); completeFollowup(selected); } break;
-        case "s": case "S": if (selected) setCustomSnoozeFor(null); if (selected) snoozeFollowup(selected, "1h"); break;
+        case "s": case "S": if (selected) openPostpone(selected); break;
         case "/": {
           e.preventDefault();
           // @ts-ignore — RN Web maps testID → data-testid on the underlying <input>
@@ -1054,14 +1059,14 @@ function FollowupsWorkspace() {
         case "?": setShortcutHelp((v) => !v); break;
         case "Escape":
           clearSelectedDetail(); setCustomerPreviewOpen(false);
-          setCallOutcomeFor(null); setCustomSnoozeFor(null);
+          setCallOutcomeFor(null);
           break;
         default: break;
       }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [rawItems, selectedId, contact, completeFollowup, snoozeFollowup, clearSelectedDetail]);
+  }, [rawItems, selectedId, contact, completeFollowup, openPostpone, clearSelectedDetail]);
 
   const activeTileStyle = { borderColor: colors.brand, backgroundColor: colors.brandTint };
   const toggleSummary = useCallback(() => {
@@ -1185,7 +1190,7 @@ function FollowupsWorkspace() {
         </MobileFilterSection>
       </Panel>
 
-      {selectedIds.size > 0 && !isPhone ? <BulkActionBar busy={bulkSaving} count={selectedIds.size} assignees={assignees} onClear={clearSelection} onSnooze={bulkSnooze} onComplete={bulkComplete} onAssign={bulkAssign} /> : null}
+      {selectedIds.size > 0 && !isPhone ? <BulkActionBar busy={bulkSaving} count={selectedIds.size} assignees={assignees} onClear={clearSelection} onSnooze={canBulkSnooze ? bulkSnooze : undefined} onComplete={bulkComplete} onAssign={bulkAssign} /> : null}
     </>
   );
 
@@ -1234,7 +1239,7 @@ function FollowupsWorkspace() {
       renderSectionFooter={({ section }) =>
         section.bucket === visibleSections[visibleSections.length - 1]?.bucket ? paginationFooter : null
       }
-      renderItem={({ item: f }) => <View pointerEvents={pendingPatches.has(f.id) ? "none" : "auto"} accessibilityState={{ busy: pendingPatches.has(f.id) }} style={{ paddingHorizontal: horizontalPadding, marginBottom: spacing.sm }}><MemoFollowupCard f={f} floorNames={floors} active={f.id === selectedId} assignees={assignees} rank={isSanitary ? undefined : rankMap.get(f.id)} checked={selectedIds.has(f.id)} onToggleSelect={toggleSelect} onPress={selectCard} onCall={contact} onWhatsApp={contact} onEmail={contact} onComplete={completeFollowup} onSnooze={snoozeFollowup} onCustomSnooze={setCustomSnoozeFor} onPushDays={pushDue} onAssign={assignFollowup} onMarkLost={(item) => { setLossActionFor(item); setCallOutcomeFor(item); }} onDismiss={dismissFollowup} canDelete={canDeleteFollowups} onDelete={setDeleteTarget} onOpenDoc={openRelatedDocument} onCreateSelection={canCreateTileSelection ? createSelection : undefined} /></View>}
+      renderItem={({ item: f }) => <View pointerEvents={pendingPatches.has(f.id) ? "none" : "auto"} accessibilityState={{ busy: pendingPatches.has(f.id) }} style={{ paddingHorizontal: horizontalPadding, marginBottom: spacing.sm }}><MemoFollowupCard f={f} floorNames={floors} active={f.id === selectedId} assignees={assignees} rank={isSanitary ? undefined : rankMap.get(f.id)} checked={selectedIds.has(f.id)} onToggleSelect={toggleSelect} onPress={selectCard} onCall={contact} onWhatsApp={contact} onEmail={contact} onComplete={completeFollowup} onSnooze={snoozeFollowup} onPostpone={canUpdateFollowups ? openPostpone : undefined} onRecordOutcome={canUpdateFollowups ? openRecordOutcome : undefined} onAssign={assignFollowup} onMarkLost={(item) => { setLossActionFor(item); openRecordOutcome(item); }} onDismiss={dismissFollowup} canDelete={canDeleteFollowups && !f.postponement_history?.length && !f.call_history?.length} onDelete={setDeleteTarget} onOpenDoc={openRelatedDocument} onCreateSelection={canCreateTileSelection ? createSelection : undefined} /></View>}
     />
     );
   };
@@ -1330,7 +1335,7 @@ function FollowupsWorkspace() {
             count={selectedIds.size}
             assignees={assignees}
             onClear={clearSelection}
-            onSnooze={bulkSnooze}
+            onSnooze={canBulkSnooze ? bulkSnooze : undefined}
             onComplete={bulkComplete}
             onAssign={bulkAssign}
           />
@@ -1347,14 +1352,16 @@ function FollowupsWorkspace() {
         subtitle={detail?.followup?.reason}
       >
         <ScrollView style={styles.mobileDetailScroll} contentContainerStyle={styles.mobileDetailContent}>
-          {detail?.followup && detail.followup.status === "open" ? (
+          {detail?.followup && (detail.followup.status === "open" || detail.followup.status === "snoozed") ? (
             <View style={styles.mobileCustomerActions}>
               <Text style={type.overline}>NEXT ACTION</Text>
               <Text style={type.bodySm} numberOfLines={2}>{detail.followup.next_action}</Text>
               <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
-                <Button label="Call" icon="phone" variant="primary" size="sm" onPress={() => contact(detail.followup, "call")} />
+                <Button label="Call" icon="phone" variant="primary" size="sm" onPress={() => { setCustomerPreviewOpen(false); contact(detail.followup, "call"); }} />
                 <IconButton icon="message-circle" tone="surface" size={44} accessibilityLabel="WhatsApp customer" onPress={() => contact(detail.followup, "whatsapp")} />
                 <IconButton icon="check" tone="surface" size={44} accessibilityLabel="Mark follow-up complete" onPress={() => completeFollowup(detail.followup)} />
+                {canUpdateFollowups ? <Button label="Postpone follow-up" icon="calendar" variant="secondary" size="sm" onPress={() => openPostpone(detail.followup)} /> : null}
+                {canUpdateFollowups ? <Button label="Record outcome" variant="secondary" size="sm" onPress={() => openRecordOutcome(detail.followup)} /> : null}
               </View>
               <Pressable
                 onPress={() => router.push(`/(admin)/customers/${detail.customer.id}` as any)}
@@ -1377,7 +1384,10 @@ function FollowupsWorkspace() {
       />
       <LeadScopeSheet lead={scopeLead} leadIds={scopeLeadIds} floorId={selectedFloorId} onClose={() => setScopeLead(null)} onSaved={() => { void loadList(); void refreshStatsQuiet(); }} />
       <AutomationRulesSheet visible={rulesSheet} onClose={() => setRulesSheet(false)} rules={stats?.rules || []} />
-      <CustomSnoozeSheet visible={!!customSnoozeFor} f={customSnoozeFor} onClose={() => setCustomSnoozeFor(null)} onSave={customSnooze} />
+      {postponeFor ? (
+        <PostponeFollowupSheet key={postponeFor.id} dueAt={postponeFor.due_at} customerName={postponeFor.customer_name}
+          onClose={() => setPostponeFor(null)} onSave={(date, reason) => postponeFollowup(postponeFor, date, reason)} />
+      ) : null}
       <ConfirmDialog
         visible={!!deleteTarget}
         onClose={() => setDeleteTarget(null)}
@@ -1404,7 +1414,7 @@ function FollowupsWorkspace() {
 // ─────────────────────────────────────────────────────────────────────────────
 function BulkActionBar({ count, assignees, onClear, onSnooze, onComplete, onAssign, busy }: {
   busy?: boolean; count: number; assignees: Assignee[]; onClear: () => void;
-  onSnooze: (preset: "1h" | "tomorrow" | "next_week") => void;
+  onSnooze?: () => void;
   onComplete: () => void; onAssign: (userId: string) => void;
 }) {
   return (
@@ -1416,14 +1426,7 @@ function BulkActionBar({ count, assignees, onClear, onSnooze, onComplete, onAssi
         <Text style={{ fontSize: 13, fontWeight: "700", color: colors.onSurface }}>selected</Text>
       </View>
       <View style={{ flexDirection: "row", gap: spacing.sm, alignItems: "center", flexWrap: "wrap", flexShrink: 1, minWidth: 0 }}>
-        <Dropdown
-          label="Snooze" icon="clock" variant="secondary"
-          items={[
-            { label: "1 hour", icon: "clock", onPress: () => onSnooze("1h") },
-            { label: "Tomorrow", icon: "sunrise", onPress: () => onSnooze("tomorrow") },
-            { label: "Next week", icon: "calendar", onPress: () => onSnooze("next_week") },
-          ]}
-        />
+        {onSnooze ? <Button label="Snooze 1 hour" icon="clock" variant="secondary" size="sm" onPress={onSnooze} /> : null}
         <Button label="Assign team" icon="users" variant="secondary" size="sm" onPress={() => onAssign("")} />
         <Button label="Complete" icon="check" variant="primary" size="sm" onPress={onComplete} />
         <IconButton icon="x" onPress={onClear} tone="surface" size={34} accessibilityLabel="Clear selection" />
@@ -1488,7 +1491,7 @@ const SHORTCUTS: { keys: string; label: string }[] = [
   { keys: "W", label: "WhatsApp the selected follow-up" },
   { keys: "E", label: "Email the selected follow-up" },
   { keys: "Space", label: "Mark selected follow-up complete" },
-  { keys: "S", label: "Snooze selected follow-up 1 hour" },
+  { keys: "S", label: "Postpone the selected follow-up" },
   { keys: "/", label: "Focus search" },
   { keys: "Esc", label: "Deselect / close panels" },
   { keys: "?", label: "Toggle this shortcut list" },
@@ -1625,17 +1628,17 @@ function IconMenuButton({ icon, tone = "surface", accessibilityLabel, items, tes
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// FollowupCard — the inbox row. Swipe right=Complete, left=Snooze (mobile).
+// FollowupCard — the inbox row. Swipe right=Complete, left=Postpone (mobile).
 // Long-press = quick Assign. Left-edge color bar = instant priority scan.
 // ─────────────────────────────────────────────────────────────────────────────
 function FollowupCard({
   f, active, assignees, rank, checked, floorNames, onToggleSelect,
-  onPress, onCall, onWhatsApp, onEmail, onComplete, onSnooze, onCustomSnooze, onPushDays, onAssign, onMarkLost, onDismiss, canDelete, onDelete, onOpenDoc, onCreateSelection,
+  onPress, onCall, onWhatsApp, onEmail, onComplete, onSnooze, onPostpone, onRecordOutcome, onAssign, onMarkLost, onDismiss, canDelete, onDelete, onOpenDoc, onCreateSelection,
 }: {
   floorNames: { id: string; name: string }[]; f: Followup; active: boolean; assignees: Assignee[]; rank?: number; checked: boolean; onToggleSelect: (id: string) => void;
   onPress: (f: Followup) => void; onCall: (f: Followup, channel: Channel) => void; onWhatsApp: (f: Followup, channel: Channel) => void; onEmail: (f: Followup, channel: Channel) => void;
-  onComplete: (f: Followup) => void; onSnooze: (f: Followup, preset: "15m" | "1h" | "tomorrow" | "next_week") => void;
-  onCustomSnooze: (f: Followup) => void; onPushDays: (f: Followup, days: number) => void;
+  onComplete: (f: Followup) => void; onSnooze: (f: Followup, preset: "15m" | "1h") => void;
+  onPostpone?: (f: Followup) => void; onRecordOutcome?: (f: Followup) => void;
   onAssign: (f: Followup, userId: string) => void; onMarkLost: (f: Followup) => void; onDismiss: (f: Followup) => void; canDelete: boolean; onDelete: (f: Followup) => void; onOpenDoc?: (f: Followup) => void; onCreateSelection?: (f: Followup) => void;
 }) {
   const { isPhone } = useBp();
@@ -1757,7 +1760,9 @@ function FollowupCard({
                 ...(canOpenDoc ? [{ label: f.rule_type === "selection_waiting" ? "Open Selection" : "Open Quotation", icon: "external-link" as FeatherName, onPress: () => onOpenDoc!(f) }] : []),
                 { label: "Call", icon: "phone", onPress: () => onCall(f, "call") },
                 { label: "WhatsApp", icon: "message-circle", onPress: () => onWhatsApp(f, "whatsapp") },
-                { label: "Snooze 1 hour", icon: "clock", onPress: () => onSnooze(f, "1h") },
+                ...(onPostpone ? [{ label: "Postpone follow-up", icon: "calendar" as const, onPress: () => onPostpone(f) }] : []),
+                ...(onRecordOutcome ? [{ label: "Record outcome", icon: "edit-2" as const, onPress: () => onRecordOutcome(f) }] : []),
+                ...(f.bucket === "today" ? [{ label: "Snooze 1 hour", icon: "clock" as const, onPress: () => onSnooze(f, "1h") }] : []),
                 { label: "Mark as lost…", icon: "user-x", tone: "danger" as const, onPress: () => onMarkLost(f) },
               ]}
             />
@@ -1774,30 +1779,23 @@ function FollowupCard({
                 testID={`open-doc-${f.id}`}
               />
             ) : null}
-            <IconMenuButton
-              icon="clock" accessibilityLabel="Snooze" testID={`snooze-${f.id}`}
-              items={[
-                { label: "Snooze 15 min", icon: "clock", onPress: () => onSnooze(f, "15m") },
-                { label: "Snooze 1 hour", icon: "clock", onPress: () => onSnooze(f, "1h") },
-                { label: "Snooze till tomorrow", icon: "sunrise", onPress: () => onSnooze(f, "tomorrow") },
-                { label: "Snooze next week", icon: "calendar", onPress: () => onSnooze(f, "next_week") },
-                { label: "Custom snooze…", icon: "edit-2", onPress: () => onCustomSnooze(f) },
-              ]}
-            />
-            <IconMenuButton
-              icon="fast-forward" accessibilityLabel="Push follow-up date" testID={`push-${f.id}`}
-              items={[
-                { label: "Push +1 day", icon: "chevron-right", onPress: () => onPushDays(f, 1) },
-                { label: "Push +2 days", icon: "chevron-right", onPress: () => onPushDays(f, 2) },
-                { label: "Push +3 days", icon: "chevron-right", onPress: () => onPushDays(f, 3) },
-                { label: "Push +7 days", icon: "chevron-right", onPress: () => onPushDays(f, 7) },
-              ]}
-            />
+            {f.bucket === "today" ? (
+              <IconMenuButton icon="clock" accessibilityLabel="Snooze today’s reminder" testID={`snooze-${f.id}`}
+                items={[
+                  { label: "Snooze 15 min", icon: "clock", onPress: () => onSnooze(f, "15m") },
+                  { label: "Snooze 1 hour", icon: "clock", onPress: () => onSnooze(f, "1h") },
+                ]} />
+            ) : null}
+            {onPostpone ? (
+              <Button label="Postpone follow-up" icon="calendar" variant="secondary" size="sm"
+                onPress={() => onPostpone(f)} testID={`postpone-${f.id}`} />
+            ) : null}
             <IconButton icon="check" onPress={() => onComplete(f)} size={34} tone="surface" accessibilityLabel="Mark complete" testID={`complete-${f.id}`} />
             <Dropdown
               label="More" icon="more-horizontal" variant="secondary"
               items={[
                 { label: "Email", icon: "mail", onPress: () => onEmail(f, "email") },
+                ...(onRecordOutcome ? [{ label: "Record outcome", icon: "edit-2" as const, onPress: () => onRecordOutcome(f) }] : []),
                 { label: "Mark as lost…", icon: "user-x", tone: "danger" as const, onPress: () => onMarkLost(f) },
                 { label: "Dismiss", icon: "x-circle", tone: "danger" as const, onPress: () => onDismiss(f) },
               ]}
@@ -1823,16 +1821,16 @@ function FollowupCard({
           <Text style={styles.swipeText}>Complete</Text>
         </View>
       )}
-      renderRightActions={() => (
+      renderRightActions={onPostpone ? () => (
         <View style={[styles.swipeAction, { backgroundColor: colors.warning }]}>
-          <Text style={styles.swipeText}>Snooze</Text>
-          <Feather name="clock" size={18} color={colors.onBrand} />
+          <Text style={styles.swipeText}>Postpone</Text>
+          <Feather name="calendar" size={18} color={colors.onBrand} />
         </View>
-      )}
+      ) : undefined}
       onSwipeableOpen={(direction) => {
         swipeRef.current?.close();
         if (direction === "left") onComplete(f);
-        else onSnooze(f, "1h");
+        else onPostpone?.(f);
       }}
     >
       {content}
@@ -1872,7 +1870,7 @@ function ContextPanel({ detail, loading, embedded, compact }: { detail: Detail |
       <Panel overline="CONTEXT" title={customer.name}>
         <View style={{ gap: spacing.sm }}>
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
-            {customer.phone ? <Badge label={formatPhone(customer.phone)} tone="neutral" size="sm" icon="phone" /> : null}
+            {customer.phone ? <Badge label={formatDepartmentPhone(customer.phone, followup.floor_id)} tone="neutral" size="sm" icon="phone" /> : null}
             {customer.email ? <Badge label={customer.email} tone="neutral" size="sm" icon="mail" /> : null}
             {customer.city ? <Badge label={customer.city} tone="neutral" size="sm" icon="map-pin" /> : null}
 
@@ -1906,6 +1904,34 @@ function ContextPanel({ detail, loading, embedded, compact }: { detail: Detail |
         </Panel>
       ) : null}
 
+      {followup.postponement_history?.length ? (
+        <Panel title="Postponement history">
+          <View style={{ gap: spacing.md }}>
+            {[...followup.postponement_history].reverse().map(entry => (
+              <View key={entry.changed_at} style={{ gap: spacing.xs }}>
+                <Text style={type.label}>{followupDateLabel(entry.previous_due_at)} → {followupDateLabel(entry.new_due_at)}</Text>
+                <Text style={type.bodySm}>{entry.reason}</Text>
+                <Text style={type.caption}>{[entry.actor_name, followupDateLabel(entry.changed_at, true)].filter(Boolean).join(" · ")}</Text>
+              </View>
+            ))}
+          </View>
+        </Panel>
+      ) : null}
+      {followup.call_history?.length ? (
+        <Panel title="Contact history">
+          <View style={{ gap: spacing.md }}>
+            {[...followup.call_history].reverse().map(entry => (
+              <View key={`${entry.attempt_id}:${entry.recorded_at}`} style={{ gap: spacing.xs }}>
+                <Text style={type.label}>{OUTCOMES.find(item => item.value === entry.outcome)?.label ?? entry.outcome.replaceAll("_", " ")}</Text>
+                {entry.response ? <Text style={type.bodySm}>{entry.response}</Text> : null}
+                {entry.notes ? <Text style={type.bodySm}>{entry.notes}</Text> : null}
+                <Text style={type.caption}>{[entry.actor_name, followupDateLabel(entry.recorded_at, true)].filter(Boolean).join(" · ")}</Text>
+              </View>
+            ))}
+          </View>
+        </Panel>
+      ) : null}
+
       <Panel title="Timeline" overline="ACTIVITY">
         <ActivityTimeline events={timeline} emptyLabel="No activity logged yet for this customer." />
       </Panel>
@@ -1921,121 +1947,124 @@ const OUTCOMES: { value: string; label: string; icon: FeatherName; tone: "succes
   { value: "call_back", label: "Call Back", icon: "phone-call", tone: "brand" },
   { value: "pending", label: "Pending", icon: "clock", tone: "warning" },
   { value: "no_answer", label: "No Answer", icon: "phone-missed", tone: "warning" },
-    { value: "lost", label: "Lost", icon: "user-x", tone: "danger" },
+  { value: "contacted", label: "Contacted", icon: "check", tone: "success" },
+  { value: "lost", label: "Lost", icon: "user-x", tone: "danger" },
 ];
 function CallOutcomeSheet({ visible, f, initialOutcome, onClose, onSubmit }: {
-  visible: boolean; f: Followup | null; initialOutcome?: string; onClose: () => void; onSubmit: (f: Followup, outcome: string, notes?: string, nextFollowupAt?: string, response?: string, interestedFloorIds?: string[], assignments?: LeadScope["assignments"]) => void;
+  visible: boolean;
+  f: Followup | null;
+  initialOutcome?: string;
+  onClose: () => void;
+  onSubmit: (f: Followup, outcome: string, requestKey: string, notes?: string, nextFollowupAt?: string, response?: string, interestedFloorIds?: string[], assignments?: LeadScope["assignments"]) => Promise<void>;
 }) {
   const [outcome, setOutcome] = useState<string | null>(null);
   const [notes, setNotes] = useState("");
-  const [nextFollowupAt, setNextFollowupAt] = useState("");
-  const { selectedFloorId } = useFloorAccess();
+  const [nextDate, setNextDate] = useState("");
   const [response, setResponse] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const inFlight = useRef(false);
+  const attempt = useRef<{ body: string; key: string } | null>(null);
   const [callScope, setCallScope] = useState<LeadScope>({ interested_floor_ids: [], assignments: [] });
   const [scopeDirty, setScopeDirty] = useState(false);
-  const { floors: editableFloors } = useFloorAccess();
-  const canEditCallScope = !!f && (f.interested_floor_ids || [f.floor_id || selectedFloorId]).every(id => editableFloors.some(floor => floor.id === id));
-  // Initialize before the sheet can accept a choice or a Lost reason. A passive
-  // effect could run after the first click and erase that new input.
-  useLayoutEffect(() => { if (visible) { setOutcome(initialOutcome || null); setNotes(""); setNextFollowupAt(""); setResponse(""); setScopeDirty(false); setCallScope({ interested_floor_ids: f?.interested_floor_ids?.length ? f.interested_floor_ids : [f?.floor_id || selectedFloorId], assignments: f?.assignments?.length ? f.assignments : f?.assigned_to ? [{ floor_id: f.floor_id || selectedFloorId, user_id: f.assigned_to, user_name: f.assigned_to_name || undefined }] : [] }); } }, [visible, initialOutcome, f, selectedFloorId]);
+  const { selectedFloorId, floors: editableFloors } = useFloorAccess();
+  const { isPhone } = useBp();
+  const floorId = f?.floor_id || selectedFloorId;
+  const canEditCallScope = !!f && (f.interested_floor_ids?.length ? f.interested_floor_ids : [floorId]).every(id => editableFloors.some(floor => floor.id === id));
+  useLayoutEffect(() => {
+    if (!visible || !f) return;
+    setOutcome(initialOutcome || null);
+    setNotes("");
+    setResponse("");
+    setNextDate("");
+    setSaveError("");
+    setScopeDirty(false);
+    attempt.current = null;
+    setCallScope({
+      interested_floor_ids: f.interested_floor_ids?.length ? f.interested_floor_ids : [floorId],
+      assignments: f.assignments?.length ? f.assignments : f.assigned_to
+        ? [{ floor_id: floorId, user_id: f.assigned_to, user_name: f.assigned_to_name || undefined }] : [],
+    });
+  }, [visible, initialOutcome, f, floorId]);
   if (!f) return null;
   const notesRequired = outcome === "lost";
-  const pending = outcome === "pending";
-  const createsSuccessor = outcome === "interested" || outcome === "call_back" || pending;
-  const hasLocalAssignee = callScope.assignments.some(a => a.floor_id === (f.floor_id || selectedFloorId) && a.user_id);
-  const canSave = (!createsSuccessor || hasLocalAssignee) && !!outcome && (!notesRequired || !!notes.trim()) && (!pending || !!nextFollowupAt.trim());
+  const createsSuccessor = outcome === "interested" || outcome === "call_back" || outcome === "pending";
+  const today = followupCalendarDay(new Date());
+  const tomorrow = addCalendarDays(today, 1);
+  const hasLocalAssignee = callScope.assignments.some(a => a.floor_id === floorId && a.user_id);
+  const dateValid = isCalendarDay(nextDate) && nextDate >= tomorrow;
+  const canSave = !!outcome && (!createsSuccessor || (hasLocalAssignee && dateValid)) && (!notesRequired || !!notes.trim());
+
+  async function save() {
+    if (!f || !outcome || !canSave || inFlight.current) return;
+    const when = createsSuccessor ? `${nextDate}T09:00:00+05:30` : undefined;
+    const scope = createsSuccessor && scopeDirty && canEditCallScope ? callScope : undefined;
+    const body = JSON.stringify({ outcome, notes, when, response, scope });
+    if (attempt.current?.body !== body) attempt.current = { body, key: newLeadRequestKey() };
+    inFlight.current = true;
+    setSaving(true);
+    setSaveError("");
+    try {
+      await onSubmit(f, outcome, attempt.current.key, notes, when, response, scope?.interested_floor_ids, scope?.assignments);
+    } catch (failure: any) {
+      setSaveError(typeof failure?.detail === "string" ? failure.detail : "Could not record the outcome. Try again.");
+    } finally {
+      inFlight.current = false;
+      setSaving(false);
+    }
+  }
+
   return (
-    <Sheet visible={visible} onClose={onClose} variant="modal" title="Log Call Outcome" subtitle={f.customer_name} width={440}
+    <Sheet visible={visible} onClose={() => { if (!inFlight.current) onClose(); }}
+      variant={isPhone ? "bottom" : "modal"} title="Record contact outcome" subtitle={f.customer_name} width={480} scroll dismissable={!saving}
       footer={<>
-        <Button label="Cancel" variant="secondary" onPress={onClose} size="md" />
+        <Button label="Cancel" variant="secondary" onPress={onClose} disabled={saving} />
         <View style={{ flex: 1 }} />
-        <Button label="Save" variant="primary" icon="check" disabled={!canSave} onPress={() => outcome && onSubmit(f, outcome, notesRequired ? notes.trim() : undefined, nextFollowupAt.trim() || undefined, response, createsSuccessor && scopeDirty && canEditCallScope ? callScope.interested_floor_ids : undefined, createsSuccessor && scopeDirty && canEditCallScope ? callScope.assignments : undefined)} size="md" testID="save-call-outcome" />
+        <Button label="Save outcome" icon="check" disabled={!canSave || saving} loading={saving}
+          onPress={() => void save()} testID="save-call-outcome" />
       </>}
     >
-      <ScrollView contentContainerStyle={{ padding: spacing.xl, gap: spacing.md }}>
-        <Text style={type.overline}>OUTCOME</Text>
+      <View style={{ gap: spacing.md }} pointerEvents={saving ? "none" : "auto"} accessibilityState={{ busy: saving }}>
+        <Text style={type.label}>Outcome</Text>
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
-          {OUTCOMES.map((o) => {
-            const on = outcome === o.value;
-            const tone = { success: colors.success, warning: colors.warning, danger: colors.error, brand: colors.brand }[o.tone];
+          {OUTCOMES.map(o => {
+            const selected = outcome === o.value;
             return (
-              <Pressable key={o.value} testID={`outcome-${o.value}`} onPress={() => { setOutcome(o.value); setNotes(""); }}
-                style={{
-                  paddingHorizontal: spacing.md, height: 40, borderRadius: radius.md,
-                  borderWidth: StyleSheet.hairlineWidth, borderColor: on ? tone : colors.border,
-                  backgroundColor: on ? tone : colors.surfaceSecondary,
-                  flexDirection: "row", alignItems: "center", gap: 6,
+              <Pressable key={o.value} testID={`outcome-${o.value}`}
+                accessibilityRole="button" accessibilityState={{ selected, disabled: saving }} disabled={saving}
+                onPress={() => {
+                  setOutcome(o.value);
+                  if (o.value === "call_back") setNextDate(tomorrow);
+                  else if (o.value === "interested") setNextDate(addCalendarDays(today, 2));
+                  else setNextDate("");
                 }}
-              >
-                <Feather name={o.icon} size={14} color={on ? colors.onBrand : colors.onSurfaceSecondary} />
-                <Text style={{ fontSize: 13, fontWeight: "600", color: on ? colors.onBrand : colors.onSurface }}>{o.label}</Text>
+                style={({ pressed }) => ({
+                  paddingHorizontal: spacing.md, minHeight: 44, borderRadius: radius.md,
+                  borderWidth: 1, borderColor: selected ? colors.brand : colors.controlBorder,
+                  backgroundColor: selected || pressed ? colors.brandTint : colors.surfaceSecondary,
+                  flexDirection: "row", alignItems: "center", gap: spacing.sm,
+                })}>
+                <Feather accessible={false} name={o.icon} size={16} color={colors.onSurfaceSecondary} />
+                <Text style={type.label}>{o.label}</Text>
               </Pressable>
             );
           })}
         </View>
-        {createsSuccessor && canEditCallScope ? <LeadScopeFields assignmentsRequired requiredFloorId={f.floor_id || selectedFloorId} value={callScope} onChange={value => { setCallScope(value); setScopeDirty(true); }} sourceId={f.id} sourceFloorId={f.floor_id || selectedFloorId} reference={false} /> : null}
-        <FormField label="Customer response"><TextInput value={response} onChangeText={setResponse} placeholder="What did the customer say?" style={styles.textArea} multiline testID="lead-call-response" /></FormField>
-        {pending ? (
-          <FormField label="Next follow-up date" helper="Required — enter when the customer asked you to reconnect (for example, 2026-08-14T10:00).">
-            <TextInput value={nextFollowupAt} onChangeText={setNextFollowupAt} placeholder="YYYY-MM-DDTHH:MM" placeholderTextColor={colors.onSurfaceMuted}
-              style={styles.textInput} testID="pending-next-followup-at" />
-          </FormField>
+        {createsSuccessor && canEditCallScope ? (
+          <LeadScopeFields assignmentsRequired requiredFloorId={floorId} value={callScope}
+            onChange={value => { setCallScope(value); setScopeDirty(true); }}
+            sourceId={f.id} sourceFloorId={floorId} reference={false} />
         ) : null}
-        {notesRequired ? <FormField label="Lost reason" helper="Required — record why we cannot work with this customer.">
-          <TextInput value={notes} onChangeText={setNotes} placeholder="What did the customer say?" placeholderTextColor={colors.onSurfaceMuted}
-            style={styles.textArea} multiline testID="outcome-notes" />
-        </FormField> : null}
-      </ScrollView>
-    </Sheet>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// CustomSnoozeSheet
-// ─────────────────────────────────────────────────────────────────────────────
-function CustomSnoozeSheet({ visible, f, onClose, onSave }: { visible: boolean; f: Followup | null; onClose: () => void; onSave: (f: Followup, untilIso: string) => void }) {
-  const [date, setDate] = useState("");
-  const [time, setTime] = useState("09:00");
-  useEffect(() => {
-    if (visible) {
-      const d = new Date(Date.now() + 86400000);
-      setDate(d.toISOString().slice(0, 10));
-      setTime("09:00");
-    }
-  }, [visible]);
-  if (!f) return null;
-  const submit = () => {
-    if (!date) { toast.error("Pick a date"); return; }
-    const iso = new Date(`${date}T${time || "09:00"}:00`).toISOString();
-    onSave(f, iso);
-  };
-  return (
-    <Sheet visible={visible} onClose={onClose} variant="modal" title="Custom Snooze" subtitle={f.customer_name} width={400} scroll
-      footer={<>
-        <Button label="Cancel" variant="secondary" onPress={onClose} size="md" />
-        <View style={{ flex: 1 }} />
-        <Button label="Snooze" variant="primary" icon="clock" onPress={submit} size="md" />
-      </>}
-    >
-      <View style={{ gap: spacing.md }}>
-        <FormField label="Date">
-          {Platform.OS === "web" ? (
-            // @ts-ignore native HTML date input
-            <input type="date" value={date} onChange={(e: any) => setDate(e.target.value)}
-              style={{ border: `1px solid ${colors.border}`, borderRadius: radius.md, padding: "10px 12px", fontSize: 16, backgroundColor: colors.surfaceSecondary, color: colors.onSurface, fontFamily: "inherit", outline: "none", boxSizing: "border-box", height: 44 } as any} />
-          ) : (
-            <TextInput value={date} onChangeText={setDate} placeholder="YYYY-MM-DD" placeholderTextColor={colors.onSurfaceMuted} style={styles.textInput} />
-          )}
-        </FormField>
-        <FormField label="Time">
-          {Platform.OS === "web" ? (
-            // @ts-ignore native HTML time input
-            <input type="time" value={time} onChange={(e: any) => setTime(e.target.value)}
-              style={{ border: `1px solid ${colors.border}`, borderRadius: radius.md, padding: "10px 12px", fontSize: 16, backgroundColor: colors.surfaceSecondary, color: colors.onSurface, fontFamily: "inherit", outline: "none", boxSizing: "border-box", height: 44 } as any} />
-          ) : (
-            <TextInput value={time} onChangeText={setTime} placeholder="HH:MM" placeholderTextColor={colors.onSurfaceMuted} style={styles.textInput} />
-          )}
-        </FormField>
+        {createsSuccessor ? (
+          <FollowupDateInput label="Next follow-up date" value={nextDate} onChange={setNextDate}
+            min={tomorrow} disabled={saving} required testID="pending-next-followup-at" />
+        ) : null}
+        <TextField label="Customer response" value={response} onChangeText={setResponse}
+          multiline editable={!saving} maxLength={2000} testID="lead-call-response" />
+        <TextField label={notesRequired ? "Lost reason" : "Contact notes"} value={notes} onChangeText={setNotes}
+          helper={notesRequired ? "Required. Record why the customer isn’t moving forward." : undefined}
+          multiline editable={!saving} maxLength={2000} testID="outcome-notes" />
+        {saveError ? <Alert tone="error" title={saveError} /> : null}
       </View>
     </Sheet>
   );
@@ -2143,7 +2172,7 @@ function NewFollowupSheet({ visible, onClose, customers, assignees, defaultAssig
                   <Pressable key={c.id} onPress={() => { setCustomerId(c.id); setChosenCustomer(c); setCustomerQuery(""); }}
                     style={{ padding: spacing.md, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.divider }}>
                     <Text style={type.bodySm}>{c.name}</Text>
-                    {c.phone ? <Text style={type.caption}>{formatPhone(c.phone)}</Text> : null}
+                    {c.phone ? <Text style={type.caption}>{formatDepartmentPhone(c.phone, selectedFloorId)}</Text> : null}
                   </Pressable>
                 ))}
               </View>

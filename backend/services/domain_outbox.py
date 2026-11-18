@@ -15,7 +15,7 @@ from uuid import uuid4
 
 from auth import floor_inherit
 from db import client, db
-from models import ActivityEvent, Followup, Notification, Payment, PurchaseOrder, PurchaseOrderItem, PurchaseStageEvent, PurchaseStatusEvent, UserPublic
+from models import ActivityEvent, Notification, Payment, PurchaseOrder, PurchaseOrderItem, PurchaseStageEvent, PurchaseStatusEvent, UserPublic
 from models_tile_orders import TileCustomerOrder, TileCustomerOrderBrand, TileCustomerOrderDashboardSummary
 from services.money import format_indian_money
 from services.notifications import notify
@@ -225,35 +225,6 @@ async def _handle_purchase_chalan_lifecycle(event: dict, session: Any) -> dict:
     }
 
 
-async def _upsert_followup(*, key: str, quotation: dict, reason: str, category: str, session: Any) -> None:
-    from services.lead_scope import POST_ORDER_CATEGORIES
-    if category in POST_ORDER_CATEGORIES or quotation.get("status") == "ordered" or quotation.get("customer_outcome") in {"won", "lost"}:
-        return
-    customer = await db.customers.find_one({"id": quotation["customer_id"]}, {"_id": 0}, session=session) or {}
-    followup = Followup(
-        source_key=key,
-        rule_type="manual",
-        category=category,  # type: ignore[arg-type]
-        customer_id=quotation["customer_id"],
-        customer_name=quotation.get("customer_name", ""),
-        customer_phone=customer.get("phone"),
-        customer_tier=customer.get("tier", "retail"),
-        quotation_id=quotation["id"],
-        quotation_number=quotation.get("number"),
-        project_name=quotation.get("project_name"),
-        value=round(float(quotation.get("grand_total") or 0), 2),
-        reason=reason,
-        next_action="Review with customer",
-        next_action_reason="Created by the quotation workflow.",
-        suggested_channel="call",
-        due_at=now_iso(),
-        is_automated=False,
-        floor_id=floor_inherit(quotation),
-    ).model_dump()
-    followup["automation_key"] = key
-    await db.followups.update_one({"automation_key": key}, {"$setOnInsert": followup}, upsert=True, session=session)
-
-
 async def _next_po_number(session: Any) -> str:
     year = datetime.now(timezone.utc).year
     return await next_number("purchase_order", f"FPO-{year}-", collection="purchase_orders", session=session)
@@ -310,7 +281,6 @@ async def _handle_quotation_generated(event: dict, session: Any) -> dict:
         summary=f"Quotation generated · revision {event['payload']['revision']}",
         payload={"event": EVENT_QUOTATION_GENERATED, "revision": event["payload"]["revision"], "pdf": True}, session=session,
     )
-    await _upsert_followup(key=f"{key}:followup", quotation=quotation, reason=f"Quotation {quotation.get('number')} generated — review with customer.", category="quotation", session=session)
     return {"quotation_id": quotation_id, "revision": event["payload"]["revision"]}
 
 

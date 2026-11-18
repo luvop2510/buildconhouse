@@ -6,6 +6,7 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from "reac
 import { Text } from "@/src/components/AppText";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { MarkQuotationSentSheet } from "@/src/components/MarkQuotationSentSheet";
 import { ActivityTimeline, TimelineEvent } from "@/src/components/ActivityTimeline";
 import { useBp } from "@/src/design/responsive";
 import { Alert, Button, Card, IconButton, PageHeader, PriceTag, StatusBadge } from "@/src/components/ui";
@@ -16,6 +17,9 @@ import { WhatsAppQuotationSheet, prepareQuotationWhatsAppDraft, type WhatsAppQuo
 import { downloadApiFile } from "@/src/utils/downloadFile";
 import { colors, money, radius, spacing, type } from "@/src/theme/tokens";
 import { useRequireFloorAccess } from "@/src/hooks/use-floor-access";
+import { useActionAccess } from "@/src/hooks/use-permissions";
+import { useAuth } from "@/src/state/auth";
+import { quotationDisplayStatus } from "@/src/utils/quotationStatus";
 
 type Line = { id: string; sku: string; name: string; qty: number; unit_price: number; discount_pct: number | null; room?: string; description?: string | null; category_id?: string | null; godown_stock_id?: string | null; godown_source_customer_name?: string | null; godown_source_purchased_at?: string | null; godown_allocated_at?: string | null };
 type Quotation = {
@@ -23,6 +27,8 @@ type Quotation = {
   purchase_completion_status?: "active" | "completed";
   customer_outcome?: "won" | "lost" | null;
   customer_id?: string; referrer_id?: string | null; referrer_name?: string | null; referrer_type?: string | null;
+  updated_at?: string;
+  sent_at?: string | null; sent_by_name?: string | null; first_followup_due_date?: string | null;
   items: Line[]; rooms: string[]; subtotal: number; discount_total: number;
   grand_total: number; created_at: string; notes?: string;
   created_by_name: string;
@@ -48,6 +54,9 @@ export default function QuotationDetail() {
   const router = useRouter();
   const { isPhone } = useBp();
   const isTablet = !isPhone;
+  const { staff } = useAuth();
+  const canMarkSent = useActionAccess("quotations", "update", !!staff && !["worker", "warehouse"].includes(staff.role));
+  const canExport = useActionAccess("quotations", "export");
 
   const [q, setQ] = useState<Quotation | null>(null);
   const [breakdown, setBreakdown] = useState<Breakdown | null>(null);
@@ -55,6 +64,12 @@ export default function QuotationDetail() {
   const [linkedPos, setLinkedPos] = useState<PoStub[]>([]);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [pdfOptionsOpen, setPdfOptionsOpen] = useState(false);
+  const [markSentOpen, setMarkSentOpen] = useState(false);
+  const [markSentError, setMarkSentError] = useState<string | null>(null);
+  const [markingSent, setMarkingSent] = useState(false);
+  const sentRequest = useRef(false);
+  const [exportingExcel, setExportingExcel] = useState(false);
+  const excelRequest = useRef(false);
   const [whatsappDraft, setWhatsappDraft] = useState<WhatsAppQuotationDraft | null>(null);
   const [preparingWhatsApp, setPreparingWhatsApp] = useState(false);
   const prepareWhatsApp = async () => {
@@ -132,6 +147,39 @@ export default function QuotationDetail() {
     await downloadApiFile(`/quotations/${id}/pptx`, `${name} PPT ${date}.pptx`, "product PPT", q.floor_id || "first-floor");
   };
 
+  const openExcel = async () => {
+    if (!q || excelRequest.current) return;
+    excelRequest.current = true;
+    setExportingExcel(true);
+    try {
+      const name = q.customer_name.replace(/[\\/:*?"<>|]/g, "").trim() || "Customer";
+      await downloadApiFile(`/quotations/${encodeURIComponent(q.id)}/xlsx`, `${name} Quotation.xlsx`, "quotation Excel", q.floor_id || "first-floor");
+    } finally {
+      excelRequest.current = false;
+      setExportingExcel(false);
+    }
+  };
+
+  const markSent = async (followupDate?: string) => {
+    if (!q || !canMarkSent || sentRequest.current) return;
+    sentRequest.current = true;
+    setMarkingSent(true);
+    setMarkSentError(null);
+    try {
+      const updated = await api.post<Quotation>(`/quotations/${encodeURIComponent(q.id)}/mark-sent`, {
+        expected_updated_at: q.updated_at, followup_date: followupDate,
+      }, { floorId: q.floor_id || "first-floor" });
+      if (contextRef.current !== context) return;
+      setQ(previous => ({ ...previous, ...updated, purchase_completion_status: previous?.purchase_completion_status }));
+      setMarkSentOpen(false);
+    } catch (error: any) {
+      if (contextRef.current === context) setMarkSentError(typeof error?.detail === "string" ? error.detail : "Could not mark this quotation as sent. Try again.");
+    } finally {
+      sentRequest.current = false;
+      setMarkingSent(false);
+    }
+  };
+
   const advance = async () => {
     if (!q || advancing) return;
     const next = NEXT_STATUS[q.status];
@@ -178,9 +226,6 @@ export default function QuotationDetail() {
           {isPhone ? (
             <IconButton icon="edit-3" tone="surface" onPress={() => router.push(`/(admin)/quotations/new?quotationId=${encodeURIComponent(id)}` as any)} testID="edit-quotation" accessibilityLabel="Edit quotation" />
           ) : <Button label="Edit" icon="edit-3" variant="secondary" size="sm" onPress={() => router.push(`/(admin)/quotations/new?quotationId=${encodeURIComponent(id)}` as any)} testID="edit-quotation" />}
-          {isPhone ? (
-            <IconButton icon="download" tone="surface" onPress={() => setPdfOptionsOpen(true)} testID="download-pdf" accessibilityLabel="Download PDF" />
-          ) : <Button label="PDF" icon="download" variant="secondary" size="sm" onPress={() => setPdfOptionsOpen(true)} testID="download-pdf" />}
           {!isPhone ? <Button label="Product PPT" icon="image" variant="secondary" size="sm" onPress={openPpt} testID="download-ppt" /> : null}
           {isPhone ? (
             <IconButton icon="trash-2" tone="danger" onPress={() => setDeleteOpen(true)} testID="delete-quotation" accessibilityLabel="Delete quotation" />
@@ -196,7 +241,6 @@ export default function QuotationDetail() {
       )} />
       {isPhone ? <View style={styles.phoneHeaderActions}>
         <IconButton icon="edit-3" tone="surface" onPress={() => router.push(`/(admin)/quotations/new?quotationId=${encodeURIComponent(id)}` as any)} testID="edit-quotation" accessibilityLabel="Edit quotation" />
-        <IconButton icon="download" tone="surface" onPress={() => setPdfOptionsOpen(true)} testID="download-pdf" accessibilityLabel="Download PDF" />
         <IconButton icon="trash-2" tone="danger" onPress={() => setDeleteOpen(true)} testID="delete-quotation" accessibilityLabel="Delete quotation" />
         {NEXT_STATUS[q.status] ? <IconButton icon="check" tone="brand" disabled={advancing} onPress={advance} testID="advance-status" accessibilityLabel={`Mark ${NEXT_STATUS[q.status].replace("_", " ")}`} /> : null}
       </View> : null}
@@ -205,13 +249,18 @@ export default function QuotationDetail() {
         {relatedError ? <Alert tone="warning" title="Some related records are unavailable" description="Order links or activity may be incomplete. Reload to refresh them." /> : null}
         {/* Document summary */}
         <View style={styles.hero} testID="quotation-detail-summary">
-          <StatusBadge status={q.customer_outcome || q.status} />
+          <StatusBadge status={q.customer_outcome || quotationDisplayStatus(q.status)} />
           {q.customer_outcome ? <Text style={[type.caption, { marginTop: spacing.sm }]} testID="quotation-customer-outcome">{q.customer_outcome === "won" ? "Won Customer" : "Lost Customer"} recorded. Create a new quotation for a new sale.</Text> : null}
           {q.purchase_completion_status === "completed" ? <Text style={[type.caption, { color: colors.success, marginTop: spacing.sm }]}>100% completed</Text> : null}
           <Text accessibilityRole="header" aria-level={2} style={[type.titleLg, { marginTop: 10 }]} numberOfLines={2}>{q.customer_name || "Unknown customer"}</Text>
           <Text style={[type.bodyMuted, { marginTop: 4 }]}>
             Prepared by {q.created_by_name} · {new Date(q.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })}
           </Text>
+          {q.sent_at ? <Text accessibilityLiveRegion="polite" style={type.bodyMuted} testID="quotation-sent-at">
+            Sent {new Date(q.sent_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}
+            {q.sent_by_name ? ` by ${q.sent_by_name}` : ""}
+            {q.first_followup_due_date ? ` · First follow-up ${new Date(q.first_followup_due_date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" })}` : ""}
+          </Text> : null}
           {q.referrer_id || q.referrer_name ? <View style={{ marginTop: spacing.sm, gap: spacing.xs }}>
             <Text style={type.bodyMuted}>Architect / interior designer: {referrerLabel(q)}</Text>
             {q.customer_id ? <Button label="View reference and customers brought" variant="secondary" size="sm" onPress={() => router.push(`/(admin)/customers/${q.customer_id}` as any)} /> : null}
@@ -233,7 +282,19 @@ export default function QuotationDetail() {
               </Pressable>
             ) : null}
           </View>
-          <View style={{ marginTop: 12, alignSelf: "flex-start" }}><Button label="Share PDF" icon="message-circle" variant="secondary" size="sm" loading={preparingWhatsApp} disabled={!q.items.length || preparingWhatsApp} onPress={() => void prepareWhatsApp()} testID="quotation-whatsapp-draft" /></View>
+          <View style={{ marginTop: spacing.md, flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
+            {canMarkSent && q.status === "draft" && !q.customer_outcome ? (
+              <Button label="Mark as sent" icon="check" disabled={!q.items.length}
+                onPress={() => { setMarkSentError(null); setMarkSentOpen(true); }} testID="mark-quotation-sent" />
+            ) : null}
+            {canExport ? <>
+              <Button label="Download PDF" icon="download" variant="secondary" onPress={() => setPdfOptionsOpen(true)} testID="download-pdf" />
+              <Button label="Download Excel" icon="download" variant="secondary" loading={exportingExcel}
+                disabled={exportingExcel} onPress={() => void openExcel()} testID="download-excel" />
+              <Button label="Share PDF" icon="message-circle" variant="secondary" loading={preparingWhatsApp}
+                disabled={!q.items.length || preparingWhatsApp} onPress={() => void prepareWhatsApp()} testID="quotation-whatsapp-draft" />
+            </> : null}
+          </View>
           {isPhone ? <View style={{ marginTop: 12, alignSelf: "flex-start" }}><Button label="Download product PPT" icon="image" variant="secondary" size="sm" onPress={openPpt} testID="download-ppt" /></View> : null}
         </View>
 
@@ -375,7 +436,10 @@ export default function QuotationDetail() {
           </View>
         </Card>
       </ScrollView>
-      <WhatsAppQuotationSheet draft={whatsappDraft} onClose={() => setWhatsappDraft(null)} />
+      <WhatsAppQuotationSheet draft={whatsappDraft} onClose={() => setWhatsappDraft(null)} onSent={() => void load()} />
+      <MarkQuotationSentSheet visible={markSentOpen} error={markSentError} saving={markingSent}
+        onClose={() => { if (!sentRequest.current) setMarkSentOpen(false); }}
+        onConfirm={followupDate => void markSent(followupDate)} />
       <BottomSheet visible={pdfOptionsOpen} onClose={() => setPdfOptionsOpen(false)} title="Download quotation PDF" testID="quotation-detail-pdf-options">
         <View style={{ gap: spacing.sm, paddingBottom: spacing.lg }}>
           <Text style={type.bodyMuted}>Include Vitra dimension diagrams in this PDF?</Text>

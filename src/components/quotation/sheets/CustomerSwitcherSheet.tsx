@@ -1,4 +1,4 @@
-import { formatPhone } from "@/src/utils/phone";
+import { formatDepartmentPhone } from "@/src/utils/phone";
 // Customer switcher — searchable list + inline "create new customer" form.
 // Opens from the topbar's Customer field. Switching preserves every line
 // item / room / discount already in the builder; only customer_id (and its
@@ -211,7 +211,7 @@ export function CustomerSwitcherSheet() {
                 <Pressable key={source.customer.id} onPress={() => importGroundCustomer(source.customer.id)} style={styles.custRow}>
                   <View style={{ flex: 1, minWidth: 0 }}>
                     <Text style={styles.custName} numberOfLines={1}>{source.customer.company || source.customer.name}</Text>
-                    <Text style={type.caption} numberOfLines={1}>{[source.latest_quotation?.project_name, source.latest_quotation?.number, formatPhone(source.customer.phone)].filter(Boolean).join(" · ") || "Contact details"}</Text>
+                    <Text style={type.caption} numberOfLines={1}>{[source.latest_quotation?.project_name, source.latest_quotation?.number, formatDepartmentPhone(source.customer.phone, "ground-floor")].filter(Boolean).join(" · ") || "Contact details"}</Text>
                   </View>
                   <Feather name="arrow-down-left" size={16} color={ds.brass} />
                 </Pressable>
@@ -233,7 +233,7 @@ export function CustomerSwitcherSheet() {
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <Text style={styles.custName} numberOfLines={1}>{c.name}</Text>
                   <Text style={type.caption} numberOfLines={1}>
-                    {[formatPhone(c.phone), c.email].filter(Boolean).join(" · ") || "—"}
+                    {[formatDepartmentPhone(c.phone, b.activeFloorId), c.email].filter(Boolean).join(" · ") || "—"}
                   </Text>
                 </View>
                 {active ? <Feather name="check" size={16} color={ds.brass} /> : null}

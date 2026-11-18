@@ -1,4 +1,4 @@
-import { formatPhone } from "@/src/utils/phone";
+import { formatDepartmentPhone } from "@/src/utils/phone";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, View } from "react-native";
 import { api } from "@/src/api/client";
@@ -116,7 +116,7 @@ export function CustomerDataDeletionDialog({ customer, onClose, onDeleted }: {
               void load([...selected]);
             }} style={{ minHeight: 44, paddingVertical: spacing.sm, gap: spacing.xs }}>
               <Text style={type.bodyStrong}>{candidate.selected ? "Selected · " : "Include · "}{candidate.customer_name || candidate.id}</Text>
-              <Text style={type.caption}>{formatPhone(candidate.customer_phone)} · {candidate.id}</Text>
+              <Text style={type.caption}>{formatDepartmentPhone(candidate.customer_phone, "third-floor")} · {candidate.id}</Text>
             </Pressable>)}
         </View> : null}
         <Text style={type.caption}>Unrelated customers, catalog products and supplier stock remain. Shared inventory history is retained with this customer&apos;s identity removed. Reserved stock is released; delivered goods are not returned to stock.</Text>

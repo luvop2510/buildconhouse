@@ -1,4 +1,5 @@
-import { formatPhone } from "@/src/utils/phone";
+import { formatDepartmentPhone } from "@/src/utils/phone";
+import { quotationDisplayStatus } from "@/src/utils/quotationStatus";
 import { LeadScopeFields } from "@/src/components/leads/LeadScopeFields";
 import type { LeadScope } from "@/src/api/leads";
 import { referrerLabel } from "@/src/utils/referrer";
@@ -397,7 +398,7 @@ export default function CustomerDetail() {
   }, [workspace, productFilter]);
   const exportDetail = async (section: "quotations" | "products" | "orders" | "timeline") => {
     const rows = section === "quotations"
-      ? [["Quotation", "Status", "Items", "Total (INR)", "Created"], ...quotations.map(row => [row.number, row.status, row.items.length, row.grand_total, row.created_at])]
+      ? [["Quotation", "Status", "Items", "Total (INR)", "Created"], ...quotations.map(row => [row.number, quotationDisplayStatus(row.status) === "pending" ? "Pending" : row.status, row.items.length, row.grand_total, row.created_at])]
       : section === "products"
         ? [["PO", "SKU", "Product", "Brand", "Stage", "Quantity", "Unit cost (INR)", "Blocked"], ...visibleProducts.map(row => [row.po_number, row.sku, row.name, row.brand_name, row.stage_label, row.qty, row.unit_cost, row.blocked ? "Yes" : "No"])]
         : section === "orders"
@@ -540,7 +541,7 @@ export default function CustomerDetail() {
               </View>
               <View style={{ gap: 6, marginTop: 4 }}>
                 <Row icon="mail" text={customer.email} />
-                {customer.phone ? <Row icon="phone" text={formatPhone(customer.phone)} /> : null}
+                {customer.phone ? <Row icon="phone" text={formatDepartmentPhone(customer.phone, selectedFloorId)} /> : null}
                 {customer.address ? <Row icon="map-pin" text={customer.address} /> : null}
               </View>
             </View>
@@ -647,7 +648,7 @@ export default function CustomerDetail() {
                       <>
                         <View style={styles.mobileQuotationHeading}>
                           <Text style={[type.mono, { flex: 1, minWidth: 0 }]} numberOfLines={1}>{q.number}</Text>
-                          <StatusBadge status={q.status} />
+                          <StatusBadge status={quotationDisplayStatus(q.status)} />
                         </View>
                         <View style={styles.mobileQuotationMeta}>
                           <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
@@ -669,7 +670,7 @@ export default function CustomerDetail() {
                         <Text style={[type.mono, { width: 110, textAlign: "right", fontWeight: "700" }]} numberOfLines={1}>
                           {money(q.grand_total)}
                         </Text>
-                        <StatusBadge status={q.status} />
+                        <StatusBadge status={quotationDisplayStatus(q.status)} />
                       </>
                     )}
                   </Pressable>

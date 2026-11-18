@@ -11,8 +11,9 @@ import Feather from "@expo/vector-icons/Feather";
 import { useState } from "react";
 import { Platform, Pressable, StyleSheet, View } from "react-native";
 import { Text } from "@/src/components/AppText";
+import { StatusBadge } from "@/src/components/ui";
 
-import { colors, radius, spacing, statusMeta, type } from "@/src/theme/tokens";
+import { colors, radius, spacing, type } from "@/src/theme/tokens";
 import { color as ds } from "@/src/design/tokens";
 import { BottomSheet } from "@/src/components/BottomSheet";
 import { RecentQuotationsPanel } from "../panes/RecentQuotationsPanel";
@@ -25,6 +26,7 @@ import { useFloorAccess } from "@/src/hooks/use-floor-access";
 import { WhatsAppQuotationSheet, prepareQuotationWhatsAppDraft, type WhatsAppQuotationDraft } from "../WhatsAppQuotationSheet";
 
 import { useBuilder } from "../context/BuilderContext";
+import { quotationDisplayStatus } from "@/src/utils/quotationStatus";
 
 // isPhone/isDesktop are measured off the builder's own container width by
 // BuilderShell (threePane/twoPane/isPhone), not off raw window width via
@@ -64,8 +66,6 @@ export function BuilderTopbar({
   const [pdfOptionsOpen, setPdfOptionsOpen] = useState(false);
 
   const revs = b.recentQuotations.find((q) => q.id === b.quotationId)?.revision_count ?? 0;
-  const status = b.recentQuotations.find((q) => q.id === b.quotationId)?.status || "draft";
-  const meta = statusMeta[status] || statusMeta.draft;
 
   return (
     <View style={hidden ? { display: "none" } : undefined}>
@@ -80,8 +80,8 @@ export function BuilderTopbar({
           <Text style={[type.titleMd, styles.titleText]} numberOfLines={1}>
             {b.quotationNumber || "New quotation"}
           </Text>
-          <View style={[styles.statusPill, { backgroundColor: meta.bg }]}>
-            <Text style={[styles.statusText, { color: meta.fg }]}>{meta.label}</Text>
+          <View testID="builder-quotation-status">
+            <StatusBadge status={quotationDisplayStatus(b.quotationStatus)} />
           </View>
           {!isPhone && revs > 0 ? (
             <View style={styles.revPill}>
@@ -194,7 +194,7 @@ export function BuilderTopbar({
       <BottomSheet visible={!!whatsappError} onClose={() => setWhatsappError(null)} title="PDF sharing unavailable" testID="quotation-whatsapp-error">
         <Text style={type.bodyMuted}>{whatsappError}</Text>
       </BottomSheet>
-      <WhatsAppQuotationSheet draft={whatsappDraft?.draft || null} onClose={() => setWhatsappDraft(null)} />
+      <WhatsAppQuotationSheet onSent={() => void b.refreshQuotationStatus()} draft={whatsappDraft?.draft || null} onClose={() => setWhatsappDraft(null)} />
       <BottomSheet visible={actionsOpen} onClose={() => setActionsOpen(false)} title="Quotation actions" testID="quotation-actions-sheet">
         <View style={{ gap: 8 }}>
           {[
@@ -293,8 +293,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, backgroundColor: colors.surfaceTertiary,
   },
   numPillText: { fontSize: 11, fontWeight: "700", color: colors.onSurface, fontVariant: ["tabular-nums"] },
-  statusPill: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999 },
-  statusText: { fontSize: 10, fontWeight: "700", letterSpacing: 0.4 },
   revPill: {
     flexDirection: "row", alignItems: "center", gap: 4,
     paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999, backgroundColor: colors.surfaceTertiary,

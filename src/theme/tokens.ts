@@ -289,7 +289,7 @@ export const moneyShort = (v: number, currency = "₹") => {
 
 export const roleLabels: Record<string, string> = {
   owner: "Owner", admin: "Admin", manager: "Manager", sales: "Sales",
-  purchase: "Purchase", warehouse: "Warehouse", accounts: "Accounts", worker: "Worker",
+  purchase: "Purchase", warehouse: "Warehouse", accounts: "Accounts", worker: "Employee",
 };
 
 // Status meta — used across quotations, orders, payments.

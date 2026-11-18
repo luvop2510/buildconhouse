@@ -12,6 +12,7 @@ export const TILES_STAGE_LABELS: Record<TilesStage, string> = {
 };
 export function tilesStageLabel(docType: string, status: string) {
   const stage = tilesStage(docType, status);
+  if (docType === "tiles_quotation" && status === "sent") return "Quotation — Pending";
   return ["approved", "won"].includes(status)
     ? `${docType === "tiles_selection" ? "Selection" : "Quotation"} — Approved`
     : TILES_STAGE_LABELS[stage];
@@ -22,7 +23,6 @@ export function canPlaceOrder(docType: string, status: string) {
   return docType !== "tiles_quotation" || EDITABLE_TILES_STATUSES.has(status);
 }
 export function normalizeTilesStatus(status: string) {
-  if (status === "sent") return "pending_approval";
   if (status === "won") return "approved";
   return status;
 }

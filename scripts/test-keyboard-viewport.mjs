@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
-import { formatPhone } from '../src/utils/phone.ts';
+import { formatDepartmentPhone, formatPhone } from '../src/utils/phone.ts';
 
 for (const file of ['../app/_layout.tsx', '../app/_layout.web.tsx']) assert.match(readFileSync(new URL(file, import.meta.url), 'utf8'), /useKeyboardViewport\(\)/);
 const source = readFileSync(new URL('../src/hooks/use-keyboard-viewport.ts', import.meta.url), 'utf8');
@@ -131,12 +131,12 @@ function renderModule(path, platform) {
     compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true },
   }).outputText, {
     module: result, exports: result.exports,
-    require: name => name === 'react' ? { forwardRef: render => render, useRef: value => ({ current: value }), useState: value => [value, () => {}], useEffect() {} }
+    require: name => name === 'react' ? { createContext: value => ({ value }), useContext: context => context.value, forwardRef: render => render, useRef: value => ({ current: value }), useState: value => [value, () => {}], useEffect() {} }
       : name === 'react/jsx-runtime' ? { jsx, jsxs: jsx }
       : name === 'react-native' ? { Platform: { OS: platform }, StyleSheet: { flatten: value => value }, Text: 'Text', TextInput: 'TextInput', View: 'View' }
       : name === 'react-native-safe-area-context' ? { SafeAreaView: 'SafeAreaView' }
       : name.endsWith('appTextFamily') ? { appTextFamily: () => 'System' }
-      : name.endsWith('/phone') ? { formatPhone }
+      : name.endsWith('/phone') ? { formatDepartmentPhone, formatPhone }
       : name.endsWith('use-input-active') ? { reportInputFocus() {} }
       : { color: {}, layout: {} },
   });

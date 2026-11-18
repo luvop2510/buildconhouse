@@ -1,4 +1,4 @@
-import { formatPhone } from "@/src/utils/phone";
+import { formatDepartmentPhone } from "@/src/utils/phone";
 import { referrerCode } from "@/src/utils/referrer";
 // QuotationPane V4 — the right pane in the V4 shell.
 // Renders: scrolling customer/room controls, canvas
@@ -137,7 +137,7 @@ function CustomerDetails() {
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text style={styles.summaryTitle} numberOfLines={1}>{customer?.name || "Customer & project details"}</Text>
           <Text style={styles.summarySubtitle} numberOfLines={1}>
-            {customer ? [b.s.header.projectName, formatPhone(b.s.header.phone), b.s.header.address].filter(Boolean).join(" · ") || "Add project, address & reference" : "Add customer, address, phone & reference"}
+            {customer ? [b.s.header.projectName, formatDepartmentPhone(b.s.header.phone, b.activeFloorId), b.s.header.address].filter(Boolean).join(" · ") || "Add project, address & reference" : "Add customer, address, phone & reference"}
           </Text>
         </View>
         <Text style={styles.editLabel}>{expanded ? "Hide" : "Edit"}</Text>

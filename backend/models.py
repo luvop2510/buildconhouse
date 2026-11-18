@@ -873,6 +873,10 @@ class Quotation(TimestampedModel):
     referrer_id: Optional[str] = None               # tracking is via a structured Referrer
     referrer_name: Optional[str] = None              # denormalized at write time — see Referrer
     status: QuotationStatus = "draft"
+    sent_at: Optional[str] = None
+    sent_by: Optional[str] = None
+    sent_by_name: Optional[str] = None
+    first_followup_due_date: Optional[str] = None
     # Historical sales classification is independent of Place Order. Imported
     # won/lost quotations must not create purchase/payment projections.
     customer_outcome: Optional[Literal["won", "lost"]] = None
@@ -919,7 +923,7 @@ class Quotation(TimestampedModel):
 
 
 class QuotationCreate(_QuotationWritePayload):
-    # Stable local tile-draft identity; replay recovers the original document.
+    # Stable local draft identity; replay recovers the original document.
     client_draft_id: Optional[str] = Field(default=None, min_length=1, max_length=100)
     customer_id: str
     items: list[QuotationLineItem] = []
@@ -931,6 +935,7 @@ class QuotationCreate(_QuotationWritePayload):
     reference_source: Optional[str] = None
     referrer_type: Optional[ReferrerType] = None
     referrer_id: Optional[str] = None
+    ui_state: dict = Field(default_factory=dict)
     project_discount_pct: DiscountPercentageInput = 0
     category_discounts: dict[str, DiscountPercentageInput] = {}
     room_discounts: dict[str, RoomDiscountCfg] = {}
@@ -1424,7 +1429,7 @@ FollowupStatus = Literal["open", "snoozed", "done", "dismissed"]
 # follow-up so it cannot disappear from the queue.
 FollowupOutcome = Literal[
     "interested", "call_back", "no_answer", "rejected", "converted",
-    "won", "lost", "pending",
+    "won", "lost", "pending", "contacted",
 ]
 NotebookStatus = Literal["new", "pending", "won", "lost"]
 NotebookField = Literal[
@@ -1574,7 +1579,8 @@ class FollowupCallOutcomePayload(BaseModel):
     interested_floor_ids: Optional[list[str]] = Field(default=None, min_length=1, max_length=20)
     response: Optional[str] = Field(default=None, max_length=2000)
     outcome: FollowupOutcome
-    notes: Optional[str] = None
+    notes: Optional[str] = Field(default=None, max_length=2000)
+    request_key: Optional[str] = Field(default=None, min_length=8, max_length=128)
     # Required by the route for a pending customer.  Keeping it optional here
     # lets the API return a clear, outcome-specific validation error.
     next_followup_at: Optional[datetime] = None

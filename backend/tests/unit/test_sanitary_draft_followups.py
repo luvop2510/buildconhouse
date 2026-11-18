@@ -1,4 +1,4 @@
-"""Customer quotation drafts get a seven-day reminder, even before items exist."""
+"""Unsent drafts do not start a countdown. Legacy sent rows remain readable."""
 import asyncio
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -32,23 +32,14 @@ def _fixture(monkeypatch, *, days=8, status="draft", floor="first-floor", items=
     return quote, rows
 
 
-def test_sanitary_draft_with_no_items_has_explicit_seven_day_reminder(monkeypatch):
-    quote, followups = _fixture(monkeypatch)
-    result = asyncio.run(engine._reconcile_followups_locked())
-    assert result["created"] == 1
-    reminder = followups.rows[0]
-    assert reminder["source_key"] == "quotation_followup:draft-1"
-    assert reminder["due_at"] == (engine.parse_iso(quote["created_at"]) + timedelta(days=7)).isoformat()
-    assert "Quotation draft" in reminder["reason"]
-    assert "no order placed" in reminder["reason"]
-    assert reminder["floor_id"] == "first-floor"
-    assert "Quotation draft" in reminder["tags"]
+def test_even_old_sanitary_drafts_do_not_schedule_a_reminder(monkeypatch):
+    _, followups = _fixture(monkeypatch, days=40)
     asyncio.run(engine._reconcile_followups_locked())
-    assert len(followups.rows) == 1
+    assert followups.rows == []
 
 
-def test_sanitary_draft_is_not_due_before_seven_days(monkeypatch):
-    _, followups = _fixture(monkeypatch, days=6)
+def test_legacy_sent_reminder_is_not_due_before_seven_days(monkeypatch):
+    _, followups = _fixture(monkeypatch, days=6, status="sent")
     asyncio.run(engine._reconcile_followups_locked())
     assert followups.rows == []
 
@@ -66,8 +57,8 @@ def test_approved_unplaced_quotation_still_needs_contact(monkeypatch):
     assert "no order placed" in followups.rows[0]["reason"]
 
 
-def test_placing_order_retires_the_draft_reminder(monkeypatch):
-    quote, followups = _fixture(monkeypatch)
+def test_placing_order_retires_the_legacy_sent_reminder(monkeypatch):
+    quote, followups = _fixture(monkeypatch, status="sent")
     asyncio.run(engine._reconcile_followups_locked())
     quote["status"] = "ordered"
     result = asyncio.run(engine._reconcile_followups_locked())

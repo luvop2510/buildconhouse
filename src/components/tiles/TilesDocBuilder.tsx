@@ -1,6 +1,7 @@
+import { MarkQuotationSentSheet } from "@/src/components/MarkQuotationSentSheet";
 import { ExistingTileCustomer } from "./ExistingTileCustomer";
 import { clearsManualTileTotal, tileLineTotal, tileRateWithoutCoverage, tileUnitRate } from "./tilePriceEdits";
-import { formatPhone } from "@/src/utils/phone";
+import { formatDepartmentPhone } from "@/src/utils/phone";
 import { tileProductName } from "./tileProductName";
 import { useAuth } from "@/src/state/auth";
 import { useActionAccess } from "@/src/hooks/use-permissions";
@@ -73,7 +74,7 @@ import { TilesProductPicker } from "./TilesProductPicker";
 import { TILE_IMAGE_ASPECT_RATIO } from "./tilePresentation";
 import { tileQuantityUnit, tileSourcePriceUnit } from "./tileQuantityUnit";
 import { followupLegacyReference } from "./followupReference";
-import { canPlaceOrder, nextTilesAction, normalizeTilesStatus, tilesStage } from "./tilesStage";
+import { canPlaceOrder, nextTilesAction, normalizeTilesStatus, tilesStage, tilesStageLabel } from "./tilesStage";
 import { readTileDraft, writeTileDraft, removeTileDraft, tileDraftMatchesServer, type TileDraft } from "./tileDraftStorage";
 
 export type TilesDocType = "tiles_selection" | "tiles_quotation";
@@ -923,6 +924,53 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
     } finally { setBusy(null); }
   }, [busy, persist]);
 
+  const [markSentOpen, setMarkSentOpen] = useState(false);
+  const [markSentError, setMarkSentError] = useState<string | null>(null);
+  const markingSent = useRef(false);
+  const markSent = async (followupDate?: string) => {
+    if (busy || markingSent.current || !docId || docType !== "tiles_quotation" || status !== "draft") return;
+    markingSent.current = true;
+    setBusy("mark-sent");
+    setMarkSentError(null);
+    const current = () => mountedRef.current && documentGenerationRef.current === documentGeneration;
+    try {
+      const id = dirtyRef.current ? await persist({ silent: false }) : docId;
+      if (!current()) return;
+      if (!id) {
+        setMarkSentError("Save the quotation before marking it as sent.");
+        return;
+      }
+      const saved = await api.post<{ status: string; updated_at: string }>(`/quotations/${id}/mark-sent`, {
+        expected_updated_at: serverSavedAtRef.current, followup_date: followupDate,
+      }, { floorId: TILES_FLOOR_ID });
+      if (!current()) return;
+      serverSavedAtRef.current = saved.updated_at;
+      setStatus(saved.status);
+      setMarkSentOpen(false);
+    } catch (error: any) {
+      if (current()) setMarkSentError(typeof error?.detail === "string" ? error.detail : "Could not mark the quotation as sent. Try again.");
+    } finally {
+      markingSent.current = false;
+      if (mountedRef.current) setBusy(currentBusy => currentBusy === "mark-sent" ? null : currentBusy);
+    }
+  };
+
+  const reloadSentStatus = async () => {
+    if (!docId || docType !== "tiles_quotation") return;
+    const existingVersion = serverSavedAtRef.current;
+    if (dirtyRef.current || whatsappDraft?.expected_updated_at !== existingVersion) return;
+    try {
+      const latest = await api.get<{ status: string; updated_at: string }>(`/quotations/${docId}`, { floorId: TILES_FLOOR_ID });
+      if (mountedRef.current && documentGenerationRef.current === documentGeneration
+        && serverSavedAtRef.current === existingVersion && !dirtyRef.current && latest.status === "sent") {
+        serverSavedAtRef.current = latest.updated_at;
+        setStatus("sent");
+      }
+    } catch {
+      // The delivery receipt remains available even if a detail refresh fails.
+    }
+  };
+
   const placeOrder = useCallback(async () => {
     if (busy) return;
     setBusy("order");
@@ -1093,7 +1141,10 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
     saveState, retrySave: () => persist({ silent: true }), busy, generatePdf, placeOrder, serverTotals, previewTotals,
     recoveryDraft, recoverDraft,
     dismissRecovery: () => { setRecoveryDraft(null); if (accountId) void removeTileDraft(accountId, docType, draftRouteId); },
-    whatsappDraft, closeWhatsApp: () => setWhatsappDraft(null), prepareWhatsApp,
+    whatsappDraft, closeWhatsApp: () => setWhatsappDraft(null), prepareWhatsApp, reloadSentStatus,
+    markSentOpen, markSentError, markSent,
+    openMarkSent: () => { setMarkSentError(null); setMarkSentOpen(true); },
+    closeMarkSent: () => { if (!markingSent.current) setMarkSentOpen(false); },
     customerCompleted: Boolean(!loading && completionSnapshot?.completed && completionSnapshot.id === docId && completionSnapshot.customerId === customerId),
     status, stage: tilesStage(docType, status), workflowAction, runWorkflowAction, workflowError, deleteDocument,
   };
@@ -1335,7 +1386,7 @@ function CustomerNameField({
             <Pressable
               key={c.id}
               accessibilityRole="button"
-              accessibilityLabel={`Use ${c.name}, ${c.phone || "no phone"}, ${c.address || "no address"}`}
+              accessibilityLabel={`Use ${c.name}, ${formatDepartmentPhone(c.phone, TILES_FLOOR_ID) || "no phone"}, ${c.address || "no address"}`}
               testID={`tiles-customer-option-${c.id}`}
               // Both handlers on purpose: onPressIn beats the TextInput's
               // delayed blur-hide for real pointers, while web click events
@@ -1346,7 +1397,7 @@ function CustomerNameField({
               style={({ hovered }: any) => [suggestStyles.row, hovered && { backgroundColor: colors.brandTint }]}
             >
               <Text style={suggestStyles.name}>{c.name}</Text>
-              <Text style={suggestStyles.phone}>{[formatPhone(c.phone), c.address].filter(Boolean).join(" · ") || "No contact details saved"}</Text>
+              <Text style={suggestStyles.phone}>{[formatDepartmentPhone(c.phone, TILES_FLOOR_ID), c.address].filter(Boolean).join(" · ") || "No contact details saved"}</Text>
             </Pressable>
           ))}
           </ScrollView>
@@ -2150,8 +2201,8 @@ function MobileRowCard({
 }
 
 function MobileTilesEditor({
-  docType, doc, router, onDelete, canDelete, workspaceWidth,
-}: { docType: TilesDocType; doc: ReturnType<typeof useTilesDoc>; router: ReturnType<typeof useRouter>; onDelete: () => void; canDelete: boolean; workspaceWidth: number }) {
+  docType, doc, router, onDelete, canDelete, canMarkSent, workspaceWidth,
+}: { docType: TilesDocType; doc: ReturnType<typeof useTilesDoc>; router: ReturnType<typeof useRouter>; onDelete: () => void; canDelete: boolean; canMarkSent: boolean; workspaceWidth: number }) {
   const { isPhone } = useBp();
   const { fontScale } = useWindowDimensions();
   // Pair short fields where they fit; larger accessibility text reclaims a column.
@@ -2200,6 +2251,7 @@ function MobileTilesEditor({
           <Text style={[type.titleMd, { marginTop: 1 }]} numberOfLines={1}>
             {title}{doc.docNumberServer ? `  ·  ${doc.docNumberServer}` : ""}
           </Text>
+          {!isSelection ? <Text style={type.caption} testID="tiles-quotation-status">{tilesStageLabel(docType, doc.status)}</Text> : null}
           {doc.customerCompleted ? <Text testID="quotation-customer-completed" style={[type.caption, { color: colors.success }]}>100% completed</Text> : null}
         </View>
         {doc.hasDraft && canDelete ? <Dropdown
@@ -2288,7 +2340,11 @@ function MobileTilesEditor({
         aria-hidden={inputActive}
         style={[mobileStyles.bottomBar, { paddingBottom: Math.max(spacing.md, insets.bottom + spacing.sm) }, inputActive && mobileStyles.bottomBarHidden]}
       >
-        <Button label="Share PDF" icon="message-circle" onPress={doc.prepareWhatsApp} loading={doc.busy === "whatsapp"} disabled={!!doc.busy} variant="secondary" testID="tiles-mobile-whatsapp-draft" />
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
+          <Button label="Share PDF" icon="message-circle" onPress={doc.prepareWhatsApp} loading={doc.busy === "whatsapp"} disabled={!!doc.busy} variant="secondary" testID="tiles-mobile-whatsapp-draft" />
+          {canMarkSent ? <Button label="Mark as sent" icon="check" onPress={doc.openMarkSent}
+            disabled={!!doc.busy} variant="secondary" testID="tiles-mobile-mark-sent" /> : null}
+        </View>
         <View style={{ flexDirection: "row", gap: spacing.sm }}>
           <Button
             label="Download PDF" icon="download" onPress={doc.generatePdf}
@@ -2415,6 +2471,8 @@ export function TilesDocBuilder({ docType, initialProductId, initialQuotationId 
   const title = isSelection ? "Tiles Selection" : "Tiles Quotation";
   const { staff } = useAuth();
   const canDelete = useActionAccess("tiles", "delete", canManageDestructiveData(staff?.role));
+  const canUpdate = useActionAccess("tiles", "update", !!staff && !["worker", "warehouse"].includes(staff.role));
+  const canMarkSent = canUpdate && !isSelection && doc.status === "draft" && !!doc.docId && doc.rows.some(row => row.productId);
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const currentDeleteId = doc.docId || "local-draft";
   const confirmDelete = () => { if (doc.hasDraft && canDelete && !doc.busy) setDeleteTargetId(currentDeleteId); };
@@ -2461,8 +2519,10 @@ export function TilesDocBuilder({ docType, initialProductId, initialQuotationId 
           </View>
         </View>
       ) : <>
-      <WhatsAppQuotationSheet draft={doc.whatsappDraft} onClose={doc.closeWhatsApp} />
-      {useResponsiveEditor ? <MobileTilesEditor docType={docType} doc={doc} router={router} onDelete={confirmDelete} canDelete={canDelete} workspaceWidth={workspaceWidth} /> : (
+      <WhatsAppQuotationSheet draft={doc.whatsappDraft} onClose={doc.closeWhatsApp} onSent={() => void doc.reloadSentStatus()} />
+      <MarkQuotationSentSheet visible={doc.markSentOpen} error={doc.markSentError} saving={doc.busy === "mark-sent"}
+        onClose={doc.closeMarkSent} onConfirm={date => void doc.markSent(date)} />
+      {useResponsiveEditor ? <MobileTilesEditor docType={docType} doc={doc} router={router} onDelete={confirmDelete} canDelete={canDelete} canMarkSent={canMarkSent} workspaceWidth={workspaceWidth} /> : (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.surfaceSecondary }} edges={["top"]}>
       <View style={shellStyles.topbar}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flex: 1, minWidth: 0 }}>
@@ -2474,6 +2534,7 @@ export function TilesDocBuilder({ docType, initialProductId, initialQuotationId 
             <Text style={[type.titleMd, { marginTop: 1 }]} numberOfLines={1}>
               {title}{doc.docNumberServer ? `  ·  ${doc.docNumberServer}` : ""}
             </Text>
+            {!isSelection ? <Text style={type.caption} testID="tiles-quotation-status">{tilesStageLabel(docType, doc.status)}</Text> : null}
             {doc.customerCompleted ? <Text testID="quotation-customer-completed" style={[type.caption, { color: colors.success }]}>100% completed</Text> : null}
           </View>
         </View>
@@ -2487,6 +2548,8 @@ export function TilesDocBuilder({ docType, initialProductId, initialQuotationId 
               testID="tiles-workflow-action"
             />
           ) : null}
+          {canMarkSent ? <ActionBtn label="Mark as sent" icon="check" onPress={doc.openMarkSent}
+            loading={doc.busy === "mark-sent"} testID="tiles-mark-sent" /> : null}
           <ActionBtn label="Share PDF" icon="message-circle" onPress={doc.prepareWhatsApp} loading={doc.busy === "whatsapp"} testID="tiles-whatsapp-draft" />
           <ActionBtn
             label={isSelection ? "Generate selection PDF" : "Generate quotation PDF"}

@@ -1,4 +1,4 @@
-import { formatPhone } from "@/src/utils/phone";
+import { formatDepartmentPhone } from "@/src/utils/phone";
 import { LeadScopeFields } from "@/src/components/leads/LeadScopeFields";
 import type { LeadScope } from "@/src/api/leads";
 import { Disclosure } from "@/src/design/Disclosure";
@@ -197,7 +197,7 @@ export default function NewWalkIn() {
           <PageHeader title="Log Walk-in" back={() => router.back()} embedded />
           <Text accessibilityRole="header" style={type.bodyStrong}>Customer details</Text>
           <TextField label="Customer name *" error={error === "Name is required" ? error : undefined} autoComplete="name" value={name} onChangeText={setName} placeholder="Full name" testID="walkin-name" />
-          <TextField label="Phone *" error={error === "Phone is required" ? error : undefined} autoComplete="tel" value={phone} onChangeText={setPhone} keyboardType="phone-pad" placeholder="10-digit mobile" testID="walkin-phone" />
+          <TextField label="Phone *" error={error === "Phone is required" ? error : undefined} autoComplete="tel" value={phone} onChangeText={setPhone} keyboardType="phone-pad" phoneFloorId={floorId} placeholder="10-digit mobile" testID="walkin-phone" />
 
           <TextField label="Address *" error={error === "Address is required" ? error : undefined} value={address} onChangeText={setAddress} placeholder="Street, area and city" autoComplete="street-address" multiline numberOfLines={2} testID="walkin-address" />
 
@@ -281,7 +281,7 @@ export default function NewWalkIn() {
             {matches.medium.map((m) => (
               <Card key={m.id} variant="outlined" style={{ gap: spacing.xs, marginBottom: spacing.sm }}>
                 <Text style={type.bodyStrong}>{m.name}</Text>
-                <Text style={type.bodyMuted}>{[formatPhone(m.phone), m.city].filter(Boolean).join(" · ") || "No details on file"}</Text>
+                <Text style={type.bodyMuted}>{[formatDepartmentPhone(m.phone, floorId), m.city].filter(Boolean).join(" · ") || "No details on file"}</Text>
                 <View style={{ flexDirection: "row", gap: spacing.sm, flexWrap: "wrap", marginTop: spacing.xs }}>
                   <Button label="Use Existing Customer" size="sm" onPress={() => linkExistingCustomer(m)} testID={`walkin-use-existing-${m.id}`} />
                   <Button

@@ -156,7 +156,7 @@ export type BuilderState = {
 
 // Flat row model for the receipt DnD list (mixes room headers + lines).
 export type BuilderRow =
-  | { kind: "room-header"; id: string; roomName: string; itemCount: number; subtotal: number; collapsed: boolean; roomDiscount: RoomDiscount | null }
+  | { kind: "room-header"; id: string; roomName: string; itemCount: number; subtotal: number; roomDiscount: RoomDiscount | null }
   | { kind: "line"; id: string; line: Line };
 
 // Sheet state descriptors.

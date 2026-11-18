@@ -16,7 +16,7 @@ from reportlab.lib.units import mm
 from reportlab.platypus import Flowable, HRFlowable, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from services.money import format_indian_money
-from services.phone_format import format_phone
+from services.phone_format import format_department_phone
 
 from pdf_generator import LANDSCAPE_A4, LOGO_PATH, _escape, brand_partners_table  # noqa: F401 — LOGO_PATH kept for parity with pdf_tiles imports
 from pdf_tiles import DEFAULT_ADDRESS, DEFAULT_EMAIL, DEFAULT_MOBILE, _logo_flowable, _rupee
@@ -82,6 +82,7 @@ def chalan_pdf_filename(chalan: dict, customer_name: str) -> str:
 
 def build_chalan_pdf(chalan: dict, po: dict, customer: dict, branding: dict | None = None) -> bytes:
     b = branding or {}
+    floor_id = chalan.get("floor_id") or po.get("floor_id") or customer.get("floor_id")
     buf = BytesIO()
     doc = SimpleDocTemplate(
         buf, pagesize=LANDSCAPE_A4, leftMargin=12 * mm, rightMargin=12 * mm,
@@ -133,7 +134,7 @@ def build_chalan_pdf(chalan: dict, po: dict, customer: dict, branding: dict | No
         [Paragraph("CUSTOMER", styles["label"]), Paragraph(_escape(customer_name), styles["value"]),
          Paragraph("SUPPLIER", styles["label"]), Paragraph(_escape(_first_value(po.get("supplier_name"))), styles["value"])],
         [Paragraph("ADDRESS", styles["label"]), Paragraph(_escape(customer_address), styles["value"]), "", ""],
-        [Paragraph("PHONE", styles["label"]), Paragraph(_escape(format_phone(_first_value(customer.get("phone"), po.get("customer_phone")))), styles["value"]), "", ""],
+        [Paragraph("PHONE", styles["label"]), Paragraph(_escape(format_department_phone(_first_value(customer.get("phone"), po.get("customer_phone")), floor_id)), styles["value"]), "", ""],
     ]
     header = Table(header_rows, colWidths=[28 * mm, 65 * mm, 28 * mm, 65 * mm])
     header.setStyle(TableStyle([
@@ -252,7 +253,7 @@ def build_chalan_pdf(chalan: dict, po: dict, customer: dict, branding: dict | No
     story.append(HRFlowable(width="100%", thickness=0.9, color=INK, spaceAfter=2 * mm))
     address_line = b.get("company_address") or DEFAULT_ADDRESS
     email = b.get("footer_email") or DEFAULT_EMAIL
-    mobile = format_phone(b.get("footer_phone") or DEFAULT_MOBILE)
+    mobile = format_department_phone(b.get("footer_phone") or DEFAULT_MOBILE, floor_id)
     company_name = b.get("footer_company_name") or "Buildcon House"
     story.append(Paragraph("COMPANY DETAILS", styles["section"]))
     story.append(Paragraph(
@@ -299,7 +300,7 @@ def build_tile_chalan_pdf(chalan: dict, branding: dict | None = None) -> bytes:
 
     flow.append(Paragraph("<b>Customer</b>", heading))
     flow.append(Paragraph(
-        f"{_escape(chalan.get('customer_name', ''))} &nbsp;·&nbsp; {_escape(format_phone(chalan.get('customer_phone') or ''))}<br/>"
+        f"{_escape(chalan.get('customer_name', ''))} &nbsp;·&nbsp; {_escape(format_department_phone(chalan.get('customer_phone'), 'ground-floor'))}<br/>"
         f"{_escape(chalan.get('delivery_address', ''))}, {_escape(chalan.get('delivery_city', ''))}<br/>"
         f"Reference: {_escape(chalan.get('reference_number') or '—')}", body,
     ))
@@ -307,7 +308,7 @@ def build_tile_chalan_pdf(chalan: dict, branding: dict | None = None) -> bytes:
 
     flow.append(Paragraph("<b>Supplier</b>", heading))
     flow.append(Paragraph(
-        f"{_escape(chalan.get('supplier_name', ''))} &nbsp;·&nbsp; {_escape(chalan.get('supplier_contact') or '—')}<br/>"
+        f"{_escape(chalan.get('supplier_name', ''))} &nbsp;·&nbsp; {_escape(format_department_phone(chalan.get('supplier_contact'), 'ground-floor') or '—')}<br/>"
         f"{_escape(chalan.get('supplier_address') or '—')}", body,
     ))
     flow.append(Spacer(1, 5 * mm))
@@ -367,7 +368,7 @@ def build_tile_chalan_pdf(chalan: dict, branding: dict | None = None) -> bytes:
         f"&nbsp;·&nbsp; {_escape(chalan.get('system_version', 'BuildCon ERP'))}", small,
     ))
     flow.append(Paragraph(
-        branding.get("footer_company_name", "Buildcon House") + " · " + format_phone(branding.get("footer_phone", DEFAULT_MOBILE)), small,
+        branding.get("footer_company_name", "Buildcon House") + " · " + format_department_phone(branding.get("footer_phone", DEFAULT_MOBILE), "ground-floor"), small,
     ))
 
     doc.build(flow)

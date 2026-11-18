@@ -8,7 +8,7 @@ from fastapi import HTTPException
 
 from models import Quotation, QuotationUpdate, UserPublic
 from routes import quotation_routes
-from services import automation_rules, domain_outbox, followup_engine
+from services import automation_rules, followup_engine
 
 
 def _quote(outcome, *, doc_type="standard"):
@@ -61,6 +61,7 @@ def test_historical_outcomes_create_neither_quotation_nor_inactivity_reminders(m
     assert captured == [{}]
     # An independent new quotation for the same customer still needs follow-up.
     quotation["customer_outcome"] = None
+    quotation["status"] = "sent"
     asyncio.run(followup_engine._reconcile_followups_locked())
     assert "quotation_followup:history" in captured[1]
     assert "customer_inactive:customer" in captured[1]
@@ -76,16 +77,6 @@ def test_historical_tile_outcomes_do_not_restart_waiting_reminders(monkeypatch, 
         [_quote(outcome, doc_type=doc_type)], {"customer": {"id": "customer"}}, {},
     ))
     assert rows == {}
-
-
-@pytest.mark.parametrize("outcome", ["won", "lost"])
-def test_pdf_workflow_does_not_reopen_historical_sales_followups(monkeypatch, outcome):
-    # No collection can be accessed: terminal outcomes return before the
-    # customer lookup or follow-up upsert performed by ordinary PDF generation.
-    monkeypatch.setattr(domain_outbox, "db", SimpleNamespace())
-    asyncio.run(domain_outbox._upsert_followup(
-        key="pdf:history", quotation=_quote(outcome), reason="Review PDF", category="quotation", session=None,
-    ))
 
 
 @pytest.mark.parametrize("outcome", ["won", "lost"])

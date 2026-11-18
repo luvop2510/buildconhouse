@@ -121,16 +121,17 @@ def test_order_placed_purchase_order_and_payment_inherit_quotation_floor(monkeyp
     assert not fake_db.notifications.inserted, "test must never write to the real db.notifications"
 
 
-def test_upsert_followup_inherits_quotation_floor(monkeypatch):
-    class _FakeDb:
-        customers = _Recorder(find_one_result={"phone": "555", "tier": "retail"})
-        followups = _Recorder()
-
-    fake_db = _FakeDb()
+def test_pdf_generation_keeps_audit_without_creating_followup(monkeypatch):
+    fake_db = type("Db", (), {
+        "quotations": _Recorder(find_one_result=_quotation("ground-floor")),
+        "activity_events": _Recorder(),
+        "followups": _Recorder(),
+    })()
     monkeypatch.setattr(domain_outbox, "db", fake_db)
-
-    asyncio.run(domain_outbox._upsert_followup(
-        key="k1", quotation=_quotation("ground-floor"), reason="test", category="quotation", session=None,
+    result = asyncio.run(domain_outbox._handle_quotation_generated(
+        {"payload": {"quotation_id": "q-1", "revision": 1}, "idempotency_key": "pdf:q-1",
+         "actor_id": "user-1", "actor_name": "Employee"}, session=None,
     ))
-
-    assert fake_db.followups.upserts[0]["floor_id"] == "ground-floor"
+    assert result["quotation_id"] == "q-1"
+    assert fake_db.activity_events.upserts[0]["event_type"] == "quotation.pdf_generated"
+    assert fake_db.followups.upserts == []

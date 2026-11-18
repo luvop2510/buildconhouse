@@ -40,6 +40,18 @@ def test_excel_uses_saved_phone_snapshot_including_explicit_empty(snapshot, expe
     assert book["Sheet1 (3)"]["D9"].value == expected
 
 
+@pytest.mark.parametrize("floor,phone,expected", [
+    ("first-floor", "990-995-57-55", "9909955755"),
+    ("ground-floor", "+91 (990) 995-57-55", "+91 9909955755"),
+    ("third-floor", "+1 (415) 555-0123", "+1 (415) 555-0123"),
+    ("second-floor", "990-995-57-55", "990-995-57-55"),
+])
+def test_excel_formats_only_department_local_mobiles(floor, phone, expected):
+    book = load_workbook(BytesIO(_book({"items": [_line()], "floor_id": floor, "phone_snapshot": phone})), data_only=True)
+    phone_cell = book["Sheet1 (3)"]["D9"]
+    assert phone_cell.value == expected and phone_cell.data_type == "s"
+
+
 def test_prices_use_mrp_and_full_precision_discount_cascade():
     doc = {"items": [_line(), _line(id="l2", room="Guest", qty=3, unit_price=150, mrp=250)],
         "project_discount_pct": 10, "room_discounts": {"Master": {"type": "amount", "value": 123.45}}}
@@ -185,3 +197,19 @@ def test_excel_currency_uses_indian_locale_and_grouping_without_changing_values(
         assert book[sheet][cell].value == 12345678.9
         assert '[$₹-en-IN]' in book[sheet][cell].number_format
         assert '#,##,##0' in book[sheet][cell].number_format
+
+
+def test_excel_matches_pdf_room_and_product_order():
+    order = [1, 3, 4, 5, 6, 7, 2]
+    master = [_line(id=f"master-{i}", sku=f"M{i}", room="Master", sort_order=order[i - 1], qty=i)
+              for i in range(1, 8)]
+    data = _book({
+        "rooms": ["Master", "Empty", "Guest"],
+        "items": [_line(id="guest", sku="G1", room="Guest"), *master,
+                  _line(id="legacy", sku="L1", room="Legacy")],
+    })
+    book = load_workbook(BytesIO(data), data_only=True)
+    first = book["BATHROOM 1"]
+    assert [book[f"BATHROOM {n}"]["A1"].value for n in (1, 2, 3)] == ["Master", "Guest", "Legacy"]
+    assert [first[f"B{r}"].value for r in range(3, 10)] == ["M1", "M7", "M2", "M3", "M4", "M5", "M6"]
+    assert [first[f"F{r}"].value for r in range(3, 10)] == [1, 7, 2, 3, 4, 5, 6]

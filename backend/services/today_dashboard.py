@@ -75,8 +75,15 @@ def selected_floor(user):
 
 
 def task(row, resource, href, *, title=None, due=None, progress=None):
-    # Whitelisted output deliberately excludes amounts, contacts and histories.
-    return {"id": row["id"], "resource": resource, "title": title or row.get("customer_name") or row.get("number") or "Scheduled work",
+    # Group the authorized work preview by the saved customer relationship.
+    # Missing identities stay independent, even when display names match.
+    customer_id = row.get("customer_id") or (row.get("source_customer_id") if resource == "godown_stock" else None)
+    customer_name = (row.get("customer") or {}).get("name") if resource == "kitchen_projects" else (
+        row.get("source_customer_name") if resource == "godown_stock" else row.get("customer_name")
+    )
+    reference = row.get("project_reference") or row.get("project_name") or row.get("number") or row.get("quotation_number")
+    return {"id": row["id"], "resource": resource, "title": title or customer_name or row.get("number") or "Scheduled work",
+            "customer_id": customer_id, "customer_name": customer_name, "reference": reference, "doc_type": row.get("doc_type"),
             "status": row.get("status") or "open", "due_at": (due if due.tzinfo else due.replace(tzinfo=timezone.utc)).isoformat() if isinstance(due, datetime) else due, "updated_at": row.get("updated_at"),
             "assignee_name": row.get("assigned_to_name") or row.get("salesperson_name"),
             "href": href, "progress": progress}
@@ -89,7 +96,7 @@ async def followup_tasks(database, user, floor, full, start, end, now):
     effective_due = {"$cond": [{"$and": [{"$eq": ["$status", "snoozed"]},
                                           {"$gt": [{"$convert": {"input": "$snoozed_until", "to": "date", "onError": None, "onNull": None}}, now]}]}, "$snoozed_until", "$due_at"]}
     active = {"status": {"$in": ["open", "snoozed"]}}
-    projection = {"_id": 0, **{key: 1 for key in ("id", "customer_name", "status", "due_at", "updated_at", "assigned_to_name", "completed_at")}}
+    projection = {"_id": 0, **{key: 1 for key in ("id", "customer_id", "customer_name", "project_name", "quotation_number", "status", "due_at", "updated_at", "assigned_to_name", "completed_at")}}
     rows = await database.followups.aggregate([
         {"$match": match}, {"$set": {"due_at": {"$convert": {"input": effective_due, "to": "date", "onError": None, "onNull": None}}, "completed_at": {"$convert": {"input": "$completed_at", "to": "date", "onError": None, "onNull": None}}}}, {"$facet": {
             "open": [{"$match": active}, {"$count": "count"}],
@@ -106,7 +113,10 @@ async def followup_tasks(database, user, floor, full, start, end, now):
 
 async def scheduled_tasks(database, user, floor, resources, full, start, end):
     specs = []
-    fields = {"_id": 0, **{key: 1 for key in ("id", "number", "customer_name", "status", "updated_at", "assigned_to_name", "due_at", "progress", "source_customer_name", "name", "doc_type")}}
+    fields = {"_id": 0, **{key: 1 for key in (
+        "id", "number", "customer_id", "customer_name", "status", "updated_at", "assigned_to_name", "due_at",
+        "progress", "source_customer_id", "source_customer_name", "project_name", "quotation_number", "name", "doc_type",
+    )}}
     if "walkins" in resources:
         specs.append(("walkins", "walkins", {"showroom_transferred_at": None},
                       {"status": {"$in": ["new", "contacted", "selection_scheduled"]}}, "$next_followup_at", fields,
@@ -138,7 +148,7 @@ async def scheduled_tasks(database, user, floor, resources, full, start, end):
                 assigned["stage"] = {"$in": allowed_stages(user)}
         specs.append(("kitchen_projects", "kitchen_projects", assigned,
                       {"stage": {"$ne": "completed"}, "status": {"$nin": ["Lost", "Cancelled", "On Hold"]}, "lifecycle_status": {"$nin": ["Cancelled", "On Hold"]}}, due,
-                      {**fields, "stage": 1, "customer.name": 1, "cad.progress": 1, "production.progress": 1, "installation.progress": 1},
+                      {**fields, "stage": 1, "customer.name": 1, "project_reference": 1, "cad.progress": 1, "production.progress": 1, "installation.progress": 1},
                       {"stage": "completed", "completion_date": start.astimezone(INDIA).date().isoformat()}))
     if "furniture_quotations" in resources:
         specs.append(("furniture_quotations", "furniture_quotations", {}, {"status": "draft"}, None, fields, None))
@@ -203,10 +213,18 @@ async def workflow_counts(database, floor, resources):
              ("kitchen_projects", "Kitchen projects", "kitchen_projects", "stage"),
              ("furniture_quotations", "Furniture quotations", "furniture_quotations", "status")]
     specs = [spec for spec in specs if spec[0] in resources]
+    def stage_field(resource, field):
+        if resource == "tiles":
+            return {"$cond": [
+                {"$and": [{"$eq": ["$status", "sent"]}, {"$eq": ["$doc_type", "tiles_quotation"]}]},
+                "pending", "$status",
+            ]}
+        return "$" + field
+
     rows = await asyncio.gather(*(database[collection].aggregate([
         {"$match": {"floor_id": floor, "is_deleted": {"$ne": True}}},
-        {"$group": {"_id": "$" + field, "count": {"$sum": 1}}}], maxTimeMS=5000).to_list(50)
-        for _, _, collection, field in specs))
+        {"$group": {"_id": stage_field(resource, field), "count": {"$sum": 1}}}], maxTimeMS=5000).to_list(50)
+        for resource, _, collection, field in specs))
     return [{"resource": resource, "label": label, "total": sum(row["count"] for row in statuses),
              "statuses": [{"status": row["_id"] or "unknown", "count": row["count"]} for row in statuses]}
             for (resource, label, _, _), statuses in zip(specs, rows)]

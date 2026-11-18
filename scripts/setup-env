@@ -8,6 +8,7 @@
 #
 # Never commits .env. Never overwrites an existing .env without --force.
 set -euo pipefail
+umask 077
 
 FORCE=${FORCE:-0}
 MODE="interactive"
@@ -22,7 +23,7 @@ done
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BACKEND_ENV="$ROOT/backend/.env"
-FRONTEND_ENV="$ROOT/frontend/.env"
+FRONTEND_ENV="$ROOT/.env"
 
 need() {
   local var="$1" prompt="$2" default="${3:-}"
@@ -65,7 +66,7 @@ else
 fi
 
 if [[ -f "$FRONTEND_ENV" && "$FORCE" -ne 1 ]]; then
-  echo "  ✓ frontend/.env already exists (use --force to overwrite)"
+  echo "  ✓ Root .env already exists (use --force to overwrite)"
 else
   echo "==> Writing $FRONTEND_ENV"
   cat > "$FRONTEND_ENV" <<EOF

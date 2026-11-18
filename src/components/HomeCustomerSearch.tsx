@@ -8,11 +8,16 @@ import { Button, EmptyState, ErrorState, LoadingState, SearchField, Sheet } from
 import { Surface, Txt } from "@/src/design/components";
 import { KITCHEN_WORKSPACE_PAGES } from "@/src/kitchen-workspace-pages";
 import { color, radius, space } from "@/src/design/tokens";
+import { formatDepartmentPhone } from "@/src/utils/phone";
+import { KITCHEN_FLOOR_ID } from "@/src/constants/floors";
 
 interface Match { kind: string; id: string; floor_id: string; customer_id?: string; name: string; phone?: string; reference?: string; address?: string; stage?: string; status?: string; doc_type?: string }
 interface Result { rows: Match[]; total: number; page: number; limit: number }
 interface RecordView { kind: string; summary: Match; data: Record<string, unknown> }
 interface Profile { customer: Match; records: RecordView[]; workflows: { floor_id: string; records: RecordView[] }[] }
+// The universal lookup historically shows Kitchen's raw contact value.
+const displayPhone = (match: Match) => match.floor_id === KITCHEN_FLOOR_ID
+  ? match.phone : formatDepartmentPhone(match.phone, match.floor_id);
 const label = (key: string) => key.replace(/_/g, " ").replace(/\b\w/g, letter => letter.toUpperCase());
 const stageLabel = (stage: string) => KITCHEN_WORKSPACE_PAGES.find(page => page.stage === stage)?.label || label(stage);
 const cleanReference = (value?: string) => value && !/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(value) ? value : "";
@@ -105,14 +110,14 @@ export function HomeCustomerSearch() {
     {!term ? null : error ? <ErrorState title="Customer search unavailable" subtitle={error} onRetry={() => setRevision(value => value + 1)} /> : !result ? <LoadingState label="Searching customers…" /> : <>
       <View accessibilityLiveRegion="polite"><Txt v="caption" tone="soft">{result.total} matching customers{result.total > 20 ? ` · Page ${page}` : ""}</Txt></View>
       {!result.rows.length ? <EmptyState title="No matching customers" subtitle="Try another name or part of a phone number." /> : result.rows.map(match => <Pressable key={`${match.kind}:${match.floor_id}:${match.id}`} accessibilityRole="button" accessibilityLabel={`View ${match.name}, ${floorLabel(match.floor_id, floorNames)}`} testID={`home-customer-result-${match.kind}-${match.id}`} onPress={() => { setSelected(match); setProfile(null); setProfileError(null); }} style={({ pressed }) => ({ minHeight: 72, padding: space.x3, borderWidth: 1, borderColor: color.line, borderRadius: radius.md, backgroundColor: pressed ? color.hoverWash : color.surface, gap: space.x1 })}>
-        <Txt v="bodyMid">{match.name}</Txt><Txt v="sub">{[match.phone, floorLabel(match.floor_id, floorNames)].filter(Boolean).join(" · ")}</Txt>
+        <Txt v="bodyMid">{match.name}</Txt><Txt v="sub">{[displayPhone(match), floorLabel(match.floor_id, floorNames)].filter(Boolean).join(" · ")}</Txt>
       </Pressable>)}
       {result.total > 20 ? <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space.x2 }}><Button label="Previous results" variant="secondary" disabled={page <= 1} onPress={() => setPage(value => value - 1)} /><Button label="Next results" variant="secondary" disabled={page * 20 >= result.total} onPress={() => setPage(value => value + 1)} /></View> : null}
     </>}
     <Sheet scroll visible={!!selected} title={detail?.customer.name || selected?.name || "Customer details"} onClose={() => setSelected(null)} testID="home-customer-profile">
       {selected ? <View style={{ gap: space.x4 }}>{detailError ? <ErrorState title="Customer details unavailable" subtitle={detailError} onRetry={() => setRevision(value => value + 1)} /> : !detail ? <LoadingState label="Loading customer details…" /> : <>
         <View style={{ gap: space.x2 }}>
-          {detail.customer.phone ? <Txt v="body" selectable>{detail.customer.phone}</Txt> : null}
+          {detail.customer.phone ? <Txt v="body" selectable>{displayPhone(detail.customer)}</Txt> : null}
           <Txt v="sub" tone="soft">{[...new Set([detail.customer.floor_id, ...detail.workflows.map(workflow => workflow.floor_id)])].map(id => floorLabel(id, floorNames)).join(" · ")}</Txt>
           {detail.customer.address ? <Txt v="sub" selectable>{detail.customer.address}</Txt> : null}
           <Txt v="sub">{detail.records.length ? [...new Set(detail.records.map(record => stageLabel(record.summary.stage || "lead")))].join(" · ") : "No active workflow"}</Txt>

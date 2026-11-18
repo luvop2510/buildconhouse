@@ -42,7 +42,7 @@ export default function TeamAssign() {
       </View>
       </MobileFilterSection>
       {error ? <ErrorState title="Couldn't load team activity" onRetry={() => load()} /> : !report ? <LoadingState label="Loading team activity…" /> : !report.workers.length ? <EmptyState icon="users" title="No assigned leads" subtitle="Assign people from the Interested floors and Assign team options on each follow-up." /> : <View style={{ gap: spacing.md }}>
-        {report.activity_truncated ? <Text style={type.caption}>Showing the most recent activity for this page. Worker totals include all matching leads and contacts.</Text> : null}
+        {report.activity_truncated ? <Text style={type.caption}>Showing the most recent activity for this page. Employee totals include all matching leads and contacts.</Text> : null}
         {report.workers.map(worker => <Card key={worker.user_id} testID={`team-worker-${worker.user_id}`}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.md }}><Avatar name={worker.user_name} size={36} /><Text style={type.titleSm}>{worker.user_name}</Text></View>
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.md, marginVertical: spacing.md }}>

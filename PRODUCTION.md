@@ -28,9 +28,9 @@ every request goes User → Login → JWT → Backend → Role check → API →
 
 ## 2. Required environment variables
 
-Full reference with descriptions: `backend/.env.example`, `frontend/.env.example`.
+See `backend/.env.example` and the root `.env.example` for the variable reference.
 **Production must inject these as real deployment secrets** — `backend/.env` /
-`frontend/.env` are local/preview fallbacks only (`load_dotenv(override=False)`) and
+the root `.env` are local/preview fallbacks only (`load_dotenv(override=False)`) and
 are gitignored on purpose. Never commit a populated `.env` file.
 
 | Variable | Required | Notes |
@@ -86,7 +86,7 @@ intentional; do not remove it.
 
 ## 5. Deployment steps (Railway)
 
-1. Confirm `backend/.env` / `frontend/.env` are **not** committed (check `.gitignore`).
+1. Confirm Git ignores the local `backend/.env` and root `.env`.
 2. In Railway, connect the `main` branch of `yashvardhansinh2510-max/forge2.0` to the
    backend service and set its root directory to `backend`. Set the Config-as-Code path
    to `/backend/railway.json`; it selects the Dockerfile builder, deployment readiness
@@ -187,7 +187,7 @@ first line of diagnostics even without Sentry/PostHog configured.
 ## 10. Recurring preview `.env` wipe — permanent mitigation
 
 The Emergent **preview** environment periodically resets and wipes
-`backend/.env`/`frontend/.env` (this has happened multiple times during development).
+`backend/.env` and the root `.env`.
 This does **not** affect a real production deployment (secrets there are managed by
 Emergent's deployment secrets store, not this ephemeral container) — but to make
 preview recovery fast and mistake-proof going forward:

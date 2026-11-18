@@ -30,7 +30,8 @@ def test_concurrent_save_cannot_resurrect_deleted_customer(monkeypatch):
         app.add_middleware(MutationAdmissionMiddleware)
         owner = UserPublic(id='owner', email='owner@qa.invalid', full_name='Synthetic owner',
                            role='owner', active_floor_id='first-floor', floor_ids=[])
-        app.dependency_overrides[customer_routes._customer_deletion_owner] = lambda: owner
+        await database.users.insert_one({'id': owner.id, 'role': owner.role, 'active': True, 'floor_ids': []})
+        app.dependency_overrides[customer_routes.get_current_user] = lambda: owner.model_copy()
         app.include_router(customer_routes.router, prefix='/api')
         @app.post('/api/quotations')
         async def save():

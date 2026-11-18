@@ -70,14 +70,14 @@ class Collection:
     def find(self, query, projection=None):
         return Cursor([row for row in self.rows if matches(row, query)])
 
-    async def find_one(self, query, projection=None):
+    async def find_one(self, query, projection=None, *, session=None):
         return next((deepcopy(row) for row in self.rows if matches(row, query)), None)
 
-    async def insert_one(self, row):
+    async def insert_one(self, row, *, session=None):
         self.writes += 1
         self.rows.append(deepcopy(row))
 
-    async def update_one(self, query, update, upsert=False):
+    async def update_one(self, query, update, upsert=False, *, session=None):
         if self.before_update:
             await self.before_update(query, update)
         row = next((row for row in self.rows if matches(row, query)), None)
@@ -91,6 +91,8 @@ class Collection:
                 set_field(row, key, value)
             for key, value in update.get('$inc', {}).items():
                 set_field(row, key, (field(row, key) or 0) + value)
+            for key, value in update.get('$push', {}).items():
+                set_field(row, key, [*(field(row, key) or []), deepcopy(value)])
             for key in update.get('$unset', {}):
                 set_field(row, key, None, remove=True)
         if self.after_update:
@@ -519,6 +521,9 @@ def test_unassigned_call_outcome_cannot_create_an_unassigned_successor(monkeypat
 
 @pytest.mark.parametrize('outcome', ['interested', 'call_back', 'pending'])
 def test_call_outcome_reuses_existing_eligible_assignment_without_reselection(monkeypatch, outcome):
+    from tests.unit.test_followup_outcomes import _FakeSession
+    import db as connection
+    monkeypatch.setattr(connection, 'client', SimpleNamespace(start_session=AsyncMock(return_value=_FakeSession())))
     from datetime import datetime, timedelta, timezone
     db = database()
     selected_worker(db, ['first-floor'])

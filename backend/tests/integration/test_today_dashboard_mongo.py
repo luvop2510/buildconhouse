@@ -25,7 +25,8 @@ async def test_today_dates_counts_floor_scope_and_department_projection():
     actor = UserPublic(id="person", email="person@example.com", full_name="Person", role="owner", active_floor_id=floor)
     try:
         await db.followups.insert_many([
-            followup("today"), followup("overdue", due_at="2026-10-28T18:29:59Z"),
+            followup("today", customer_id="customer-a", project_name="Apartment renovation"),
+            followup("overdue", customer_id="customer-b", due_at="2026-10-28T18:29:59Z"),
             followup("snoozed", status="snoozed", due_at="2026-10-26T00:00:00Z", snoozed_until="2026-10-30T00:00:00Z"),
             followup("done", status="done", completed_at="2026-10-28T18:30:00Z"),
             followup("foreign", floor_id="ground-floor"), followup("payment", category="payment"),
@@ -45,7 +46,7 @@ async def test_today_dates_counts_floor_scope_and_department_projection():
             {"id": "debt", "floor_id": floor, "customer_name": "Collect", "status": "ordered", "grand_total": 100,
              "payment_extra_amount": 999, "payment_extra_history": [{"amount": 20}]},
             {"id": "settled", "floor_id": floor, "status": "ordered", "grand_total": 100},
-            {"id": "draft", "floor_id": floor, "status": "draft", "valid_until": "2026-10-29T02:00:00Z", "grand_total": 900},
+            {"id": "draft", "floor_id": floor, "status": "draft", "customer_id": "customer-a", "customer_name": "Customer", "project_name": "Guest bathroom", "valid_until": "2026-10-29T02:00:00Z", "grand_total": 900},
             {"id": "debt", "floor_id": "ground-floor", "status": "ordered", "grand_total": 900},
         ])
         await db.payments.insert_many([
@@ -67,7 +68,14 @@ async def test_today_dates_counts_floor_scope_and_department_projection():
         assert overview["payments"] == {"currency": "INR", "received_today": 630, "receipt_count": 3}
         assert result["unavailable_sections"] == []
         assert {task["id"] for task in result["tasks"]} == {"today", "overdue", "snoozed", "walkin", "no-date", "purchase", "debt", "draft", "shortage", "loan"}
-        assert next(task for task in result["tasks"] if task["id"] == "debt")["progress"] == 33
+        tasks = {task["id"]: task for task in result["tasks"]}
+        assert tasks["today"]["customer_id"] == tasks["draft"]["customer_id"] == "customer-a"
+        assert tasks["today"]["reference"] == "Apartment renovation"
+        assert tasks["draft"]["reference"] == "Guest bathroom"
+        assert tasks["overdue"]["customer_id"] == "customer-b"
+        assert tasks["overdue"]["customer_name"] == tasks["today"]["customer_name"] == "Customer"
+        assert tasks["snoozed"]["customer_id"] is None
+        assert tasks["debt"]["progress"] == 33
         assert all("value" not in task and "customer_phone" not in task for task in result["tasks"])
         await db.users.insert_one({"id": "person", "floor_ids": [floor], "delegation_grants": [
             {"user_id": "person", "resource": "purchases", "floor_id": floor, "actions": ["view"]}]})

@@ -1,6 +1,6 @@
 # Repeatable stability verification
 
-The canonical frontend is the repository root (`app/`, `src/`, root npm manifests). `frontend/` is a legacy checkout. Backend source is `backend/`. Use current `origin` and deployment configuration rather than historical repository names in old audit notes.
+The canonical frontend is the repository root (`app/`, `src/`, root npm manifests). Backend source is `backend/`. Use current `origin` and deployment configuration when following older audit notes.
 
 ## Before feature work
 

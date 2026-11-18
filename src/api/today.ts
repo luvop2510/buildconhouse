@@ -1,6 +1,7 @@
 /** Server-projected work data: departmental responses never carry money or workflow aggregates. */
 export type TodayTask = {
   id: string; resource: string; title: string; status: string; due_at: string | null;
+  customer_id?: string | null; customer_name?: string | null; reference?: string | null; doc_type?: string | null;
   updated_at: string | null; assignee_name: string | null; href: string; progress: number | null;
 };
 export type TodayData = {

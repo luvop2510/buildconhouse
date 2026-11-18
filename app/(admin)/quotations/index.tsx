@@ -1,3 +1,4 @@
+import { quotationDisplayStatus } from "@/src/utils/quotationStatus";
 // BuildCon House · Quotations list
 // One padded scroll on phones; aligned commercial records on larger workspaces.
 
@@ -29,10 +30,12 @@ type Quotation = {
 };
 const PAGE_SIZE = 30;
 
-type Filter = "all" | "draft" | "approved" | "ordered" | "won";
+type Filter = "all" | "draft" | "sent" | "pending_approval" | "approved" | "ordered" | "won";
 const PENDING_FILTERS: { key: Filter; label: string }[] = [
   { key: "all",              label: "All" },
   { key: "draft",            label: "Draft" },
+  { key: "sent",             label: "Pending" },
+  { key: "pending_approval", label: "Approval" },
 ];
 const COMPLETED_FILTERS: { key: Filter; label: string }[] = [
   { key: "all",      label: "All" },
@@ -107,7 +110,7 @@ export default function QuotationsList() {
     setLoadingMore(append);
     if (!append) { setItems(null); setHasMore(false); }
     try {
-      const statuses = filterValues(statusFilter).flatMap(value => value === "draft" ? ["draft", "pending_approval", "sent"] : [value]);
+      const statuses = filterValues(statusFilter);
       const params = new URLSearchParams({ doc_type: "standard", view: outcome || (completed ? "completed" : "pending"),
         summary: "true", q: query, status: statuses.join(","), skip: String(skip), limit: String(PAGE_SIZE + 1) });
       const rows = await api.get<Quotation[]>(`/quotations?${params}`, { floorId: "first-floor" });
@@ -143,9 +146,9 @@ export default function QuotationsList() {
   const pageSubtitle = loadError ? "Pipeline unavailable" : items && !searching ? `${items.length} quotations shown · ${money(totalValue)}` : "Loading quotations…";
   const headerActions = (
         <View style={styles.headerActions}>
-          <Pressable accessibilityRole="button" accessibilityLabel={completed ? "View draft quotations" : "View completed quotations"}
+          <Pressable accessibilityRole="button" accessibilityLabel={completed ? "View open quotations" : "View completed quotations"}
             testID="quotations-lifecycle-toggle" onPress={() => router.push(`/(admin)/quotations?view=${completed ? "pending" : "completed"}` as any)} style={styles.lifecycleLink}>
-            <Text style={styles.lifecycleText}>{completed ? "Drafts" : "Completed"}</Text>
+            <Text style={styles.lifecycleText}>{completed ? "Open quotations" : "Completed"}</Text>
           </Pressable>
           {!completed && !outcome ? <Pressable
             accessibilityRole="button"
@@ -255,7 +258,7 @@ function QuotationRow({ q, onPress, canDelete, onDelete }: { q: Quotation; onPre
   const { isPhone, isDesktop } = useBp();
   const created = new Date(q.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
   const count = q.item_count ?? q.items?.length ?? 0;
-  const status = q.purchase_completion_status === "completed" ? <Text style={[styles.meta, { color: ds.ok }]}>100% completed</Text> : <StatusBadge status={q.customer_outcome || (["pending_approval", "sent"].includes(q.status) ? "draft" : q.status)} />;
+  const status = q.purchase_completion_status === "completed" ? <Text style={[styles.meta, { color: ds.ok }]}>100% completed</Text> : <StatusBadge status={q.customer_outcome || quotationDisplayStatus(q.status)} />;
   return <View style={[styles.record, isPhone && styles.recordPhone]}>
     <Pressable accessibilityRole="button"
       accessibilityLabel={`Open quotation ${q.number} for ${q.customer_name || "unnamed customer"}`}

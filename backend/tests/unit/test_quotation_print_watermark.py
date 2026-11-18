@@ -113,3 +113,60 @@ def test_diagonal_ink_remains_visible_in_rendered_summary_and_continuations(docu
             # Distinct pale ink must survive page rasterization, rather than
             # merely existing as an unused/invisible PDF image resource.
             assert visible.histogram()[255] > actual.width * actual.height * 0.01
+
+
+@pytest.mark.parametrize("floor,remove_attribution", [
+    ("ground-floor", True),
+    ("first-floor", False),
+    ("second-floor", False),
+])
+def test_only_ground_standard_quotation_omits_both_staff_fields(floor, remove_attribution):
+    quote = {
+        "floor_id": floor, "doc_type": "standard", "number": "FQ-PROOF-001",
+        "created_at": "2026-11-18T10:00:00Z",
+        "attended_by": "Sales Attendant Sample", "prepared_by": "Sales Preparer Sample",
+        "address_snapshot": "Sample Road, Rajkot", "reference_source": "Showroom reference",
+        "phone_snapshot": "990-995-57-55",
+        "items": [{"name": "Basin mixer", "sku": "BASIN-1", "room": "Master", "qty": 2, "unit_price": 1000}],
+    }
+    pages = PdfReader(BytesIO(pdf_generator.build_quotation_pdf(quote, {"name": "Sample Customer"}))).pages
+    cover = pages[0].extract_text()
+    for text in ("ATTENDED BY", "PREPARED BY", "Sales Attendant Sample", "Sales Preparer Sample"):
+        assert (text not in cover) is remove_attribution
+    for text in ("Sample Customer", "Showroom reference", "Sample Road, Rajkot", "FQ-PROOF-001", "18 Nov 2026", "PRICE SUMMARY"):
+        assert text in cover
+    assert ("990-995-57-55" if floor == "second-floor" else "9909955755") in cover
+    assert "BASIN-1" in pages[1].extract_text()
+
+
+@pytest.mark.parametrize("floor,builder,font_size,gray", [
+    ("ground-floor", pdf_generator.build_quotation_pdf, 9, 89 / 255),
+    ("first-floor", pdf_generator.build_quotation_pdf, 9, 89 / 255),
+    ("ground-floor", pdf_tiles.build_tiles_quotation_pdf, 10, 89 / 255),
+    ("second-floor", pdf_generator.build_quotation_pdf, 8, 17 / 255),
+], ids=["ground-sanitary", "sanitary", "tiles", "kitchen"])
+def test_quotation_prints_uniform_serial_numbers(floor, builder, font_size, gray):
+    serials = ["1", "2", "3", "4"]
+    quotation = {
+        "number": "SERIAL-PROOF", "floor_id": floor,
+        "items": [{"name": "Sample fitting", "sku": f"QA-{number}", "qty": 1.25,
+                   "unit_price": 100, "room": "Master Bathroom", "rate_sqft": 113,
+                   "size": "600x600", "quantity_unit": "Box"} for number in serials],
+    }
+    reader = PdfReader(BytesIO(builder(quotation, {"name": "Sample Client"})))
+    emitted = []
+    for page in reader.pages[1:]:
+        operations = ContentStream(page.get_contents(), reader).operations
+        for index, (values, operator) in enumerate(operations):
+            if operator != b"Tj" or str(values[0]) not in serials:
+                continue
+            # Each isolated table cell sets its fill and font immediately
+            # before drawing its label. The tiles page indicator shares its
+            # text block with other strings and is not a table serial.
+            cell = operations[max(0, index - 6):index]
+            if [opcode for _, opcode in cell] == [b"rg", b"BT", b"Tm", b"Tf", b"TL", b"Td"]:
+                emitted.append((str(values[0]), list(map(float, cell[0][0])), float(cell[3][0][1])))
+    assert [serial for serial, _, _ in emitted] == serials
+    for _, color, point_size in emitted:
+        assert color == pytest.approx([gray] * 3, abs=1e-6)
+        assert point_size == font_size

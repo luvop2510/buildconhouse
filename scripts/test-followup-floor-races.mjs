@@ -10,7 +10,7 @@ const marker = '  // ── Filtering (100% client-side';
 const deleteAction = source.slice(source.indexOf('  const deleteSavedView ='), source.indexOf('  // ── Export'));
 const bulkActions = source.slice(source.indexOf('  const runBulk ='), source.indexOf('  // ── Saved Views'));
 const instrumented = source.replace(deleteAction, '').replace(bulkActions, '').replace('function FollowupsWorkspace()', 'export function FollowupsWorkspace()')
-  .replace(marker, deleteAction + bulkActions + '  return { deleteFollowup, setDeleteTarget, pendingDeleteIds, setSelectedId, runBulk, bulkComplete, bulkSnooze, setSelectedIds, selectedIds, bulkResult, completeFollowup, snoozeFollowup, customSnooze, pushDue, dismissFollowup, pendingPatches, confirmedItems, patchLocal, deleteSavedView, savedViews, setSavedViews, visibleSavedViews: typeof visibleSavedViews === \'undefined\' ? savedViews : visibleSavedViews, loadList, loadDetail, refreshStatsQuiet, contact, rawItems, detail, stats, workspace, setWorkspace, q, setQ, followupView, setFollowupView, priorityFilter, setPriorityFilter, ownerFilter, setOwnerFilter };\n' + marker);
+  .replace(marker, deleteAction + bulkActions + '  return { deleteFollowup, setDeleteTarget, pendingDeleteIds, setSelectedId, runBulk, bulkComplete, bulkSnooze, setSelectedIds, selectedIds, bulkResult, completeFollowup, snoozeFollowup, postponeFollowup, dismissFollowup, pendingPatches, confirmedItems, patchLocal, deleteSavedView, savedViews, setSavedViews, visibleSavedViews: typeof visibleSavedViews === \'undefined\' ? savedViews : visibleSavedViews, loadList, loadDetail, refreshStatsQuiet, contact, rawItems, detail, stats, workspace, setWorkspace, q, setQ, followupView, setFollowupView, priorityFilter, setPriorityFilter, ownerFilter, setOwnerFilter };\n' + marker);
 assert.notEqual(instrumented, source);
 const compiled = ts.transpileModule(instrumented, { compilerOptions: {
   module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX,
@@ -163,6 +163,8 @@ function callOutcomeFixture() {
       slots[index] ||= { value: initial };
       return [slots[index].value, value => { slots[index].value = value; }];
     },
+    useRef(value) { const index = cursor++; return slots[index] ||= { current: value }; },
+    useBp: () => ({ isPhone: false }),
     useEffect: schedule(passive), useLayoutEffect: schedule(layout),
     useFloorAccess: () => ({ selectedFloorId: 'first-floor', floors: [{ id: 'first-floor' }] }),
   });
@@ -228,8 +230,6 @@ async function loadedInbox() {
 for (const [action, args, status, bucket] of [
   ['completeFollowup', [], 'done', 'completed'],
   ['snoozeFollowup', ['1h'], 'snoozed', 'snoozed'],
-  ['customSnooze', ['2026-11-08T10:00:00Z'], 'snoozed', 'snoozed'],
-  ['pushDue', [7], 'open', 'this_week'],
   ['dismissFollowup', [], 'dismissed', 'completed'],
 ]) test(`${action} paints immediately, coalesces competing actions and restores on failure`, async () => {
   const h = await loadedInbox();
@@ -247,6 +247,25 @@ for (const [action, args, status, bucket] of [
   assert.equal(h.state.rawItems[0].bucket, 'today');
   assert.equal(h.state.pendingPatches.size, 0);
   assert.match(h.notices.at(-1), /restored/);
+  h.unmount();
+});
+
+test('a postponement waits for acknowledgement and keeps the confirmed date on failure', async () => {
+  const h = await loadedInbox();
+  const original = h.state.rawItems[0];
+  const newDate = '2026-11-08';
+  const updatedDate = '2026-11-07T18:30:00Z';
+  const failed = h.state.postponeFollowup(original, newDate, 'Customer needs extra time');
+  await h.settle();
+  assert.equal(h.state.rawItems[0].due_at, original.due_at);
+  h.requests.at(-1).reject(new Error('unavailable'));
+  await assert.rejects(failed, /unavailable/);
+  await h.settle();
+  assert.equal(h.state.rawItems[0].due_at, original.due_at);
+  const recovery = h.state.postponeFollowup(original, newDate, 'Customer needs extra time');
+  h.requests.at(-1).resolve({ ...original, due_at: updatedDate, bucket: 'this_week' });
+  await recovery; await h.settle();
+  assert.equal(h.state.rawItems[0].due_at, updatedDate);
   h.unmount();
 });
 

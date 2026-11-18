@@ -21,7 +21,7 @@ import { FloorDelegationEditor } from "@/src/components/FloorDelegationEditor";
 import { DelegationCatalog, DelegationGrant, DelegationState, isDelegationCatalog, loadDelegation } from "@/src/team-delegation";
 import { optionalContact, teamPhone, teamPhonePatch, teamErrorMessage, validateTeamContacts } from "@/src/team-contacts";
 import { floorDisplayLabel } from "@/src/constants/floors";
-import { colors, radius, spacing, type } from "@/src/theme/tokens";
+import { colors, radius, roleLabels, spacing, type } from "@/src/theme/tokens";
 
 type Staff = {
   id: string; full_name: string; email?: string | null; role: string;
@@ -80,7 +80,7 @@ export default function Team() {
         <IconAction icon="user-plus" label="Add" onPress={() => setAddOpen(true)} focusRef={addButtonRef} testID="team-add-btn" />
         <ExcelExportButton resource="team" page="Team" section="Team directory" filename="team-directory.xlsx" testID="team-export-excel" disabled={!items?.length || loadError} scopeKey={ownerId || ""} loadRows={async () => {
           if (!items || items.length >= 200) throw new Error("The team directory reached its 200-member read limit. A complete export is unavailable.");
-          return [["Name", "Email", "Phone", "Login ID", "Role", "Access type", "Status", "Floors"], ...items.map(member => [member.full_name, optionalContact(member.email), teamPhone(member), optionalContact(member.login_id), member.team_role || member.role, member.custom_access ? "Delegated" : "Standard", member.active ? "Active" : "Disabled", (member.floor_ids || []).map(id => options?.floors.find(floor => floor.id === id)?.name || id).join(", ")])];
+          return [["Name", "Email", "Phone", "Login ID", "Role", "Access type", "Status", "Floors"], ...items.map(member => [member.full_name, optionalContact(member.email), teamPhone(member), optionalContact(member.login_id), member.team_role || roleLabels[member.role] || member.role, member.custom_access ? "Delegated" : "Standard", member.active ? "Active" : "Disabled", (member.floor_ids || []).map(id => options?.floors.find(floor => floor.id === id)?.name || id).join(", ")])];
         }} />
       </View>}
     >
@@ -134,7 +134,7 @@ export default function Team() {
                 </View>
                 <Feather name="chevron-right" size={16} color={colors.onSurfaceMuted} />
                 <View style={{ alignItems: isPhone ? "flex-start" : "flex-end", gap: 4, minWidth: 0, flexShrink: 1, ...(isPhone ? { width: "100%", paddingLeft: 44 + spacing.md } : { maxWidth: "40%" }) }}>
-                  <Badge label={u.team_role || (u.custom_access ? "Delegated staff" : roleInfo?.label || u.role)} tone={u.active ? "brand" : "neutral"} size="sm" truncate testID={`team-role-${u.id}`} />
+                  <Badge label={u.team_role || (u.custom_access ? "Delegated staff" : roleLabels[u.role] || roleInfo?.label || u.role)} tone={u.active ? "brand" : "neutral"} size="sm" truncate testID={`team-role-${u.id}`} />
                   {!u.active ? <Badge label="Disabled" tone="warning" size="sm" /> : null}
                 </View>
               </Pressable>
@@ -220,7 +220,7 @@ function ContactFields({ prefix, email, onEmail, phone, onPhone, disabled }: {
   return <View style={{ gap: spacing.md }}>
     <Text style={type.label}>Contact details</Text>
     <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.md }}>
-      <View style={styles.contactColumn}><TextField testID={`${prefix}-phone`} label="Phone" value={phone} onChangeText={onPhone} keyboardType="phone-pad" placeholder="Optional" maxLength={40} editable={!disabled} /></View>
+      <View style={styles.contactColumn}><TextField testID={`${prefix}-phone`} label="Phone" value={phone} onChangeText={onPhone} phoneFloorId={null} keyboardType="phone-pad" placeholder="Optional" maxLength={40} editable={!disabled} /></View>
       <View style={styles.contactColumn}><TextField testID={`${prefix}-email`} label="Email" value={email} onChangeText={onEmail} keyboardType="email-address" placeholder="Optional email address" autoCapitalize="none" autoCorrect={false} maxLength={254} editable={!disabled} /></View>
     </View>
     <Text style={type.caption}>Contacts are optional. Keep an email or username for sign-in.</Text>

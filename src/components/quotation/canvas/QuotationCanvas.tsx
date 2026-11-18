@@ -1,76 +1,31 @@
 import type { ReactNode } from "react";
-// QuotationCanvas — the DnD flat list that mixes room headers + lines.
-import { Pressable, ScrollView, StyleSheet, View } from "react-native";
-import { Text } from "@/src/components/AppText";
-import Feather from "@expo/vector-icons/Feather";
 import DraggableFlatList, { RenderItemParams } from "react-native-draggable-flatlist";
 
-import { EmptyState } from "@/src/components/ui";
-import { font, radius, spacing } from "@/src/theme/tokens";
-import { color as ds } from "@/src/design/tokens";
-
+import { spacing } from "@/src/theme/tokens";
 import { useBuilder } from "../context/BuilderContext";
 import type { BuilderRow } from "../helpers/types";
+import { EmptyRoom } from "./EmptyRoom";
 import { LineRow } from "./LineRow";
 import { RoomHeaderRow } from "./RoomHeaderRow";
 
+type ProductRow = Extract<BuilderRow, { kind: "line" }>;
+
 export function QuotationCanvas({ compact = false, scrollHeader }: { compact?: boolean; scrollHeader?: ReactNode }) {
   const b = useBuilder();
+  const header = b.flatRows.find(row => row.kind === "room-header");
+  const products = b.flatRows.filter((row): row is ProductRow => row.kind === "line");
 
-  const renderItem = ({ item, drag, isActive }: RenderItemParams<BuilderRow>) => {
-    if (item.kind === "room-header") {
-      return (
-        <RoomHeaderRow
-          roomName={item.roomName}
-          itemCount={item.itemCount}
-          subtotal={item.subtotal}
-          collapsed={item.collapsed}
-          drag={drag}
-          isActive={isActive}
-          roomDiscount={item.roomDiscount}
-        />
-      );
-    }
-    return (
-      <LineRow
-        line={item.line}
-        drag={drag}
-        isActive={isActive}
-        catDiscs={b.s.categoryDiscounts}
-        projDisc={b.s.projectDiscount}
-        roomDiscs={b.s.roomDiscounts}
-        compact={compact}
-      />
-    );
-  };
-
-  if (b.flatRows.length === 0 || (b.flatRows.length <= b.s.rooms.length && b.s.lines.length === 0)) {
-    return (
-      <ScrollView style={{ flex: 1, minHeight: 0 }} keyboardShouldPersistTaps="handled">{scrollHeader}<View style={{ justifyContent: "center", paddingVertical: 24 }}>
-        <EmptyState
-          icon="file-plus"
-          title="Add your first product"
-          subtitle={compact ? "Tap Browse catalog to search and add products. Everything totals live." : "Search on the left and tap to add. Everything totals live."}
-        />
-        {compact ? (
-          <Pressable
-            testID="empty-browse-catalog"
-            onPress={() => b.setPickerSheetOpen(true)}
-            style={styles.browseBtn}
-          >
-            <Feather name="search" size={15} color={ds.canvas} />
-            <Text style={styles.browseBtnText}>Browse catalog</Text>
-          </Pressable>
-        ) : null}
-      </View></ScrollView>
-    );
-  }
+  const renderItem = ({ item, drag, isActive }: RenderItemParams<ProductRow>) => (
+    <LineRow line={item.line} drag={drag} isActive={isActive} catDiscs={b.s.categoryDiscounts}
+      projDisc={b.s.projectDiscount} roomDiscs={b.s.roomDiscounts} compact={compact} />
+  );
 
   return (
     <DraggableFlatList
-      ListHeaderComponent={scrollHeader ? <>{scrollHeader}</> : null}
-      data={b.flatRows}
-      keyExtractor={(row) => row.id}
+      ListHeaderComponent={<>{scrollHeader}{header ? <RoomHeaderRow key={header.id} {...header} /> : null}</>}
+      ListEmptyComponent={<EmptyRoom compact={compact} />}
+      data={products}
+      keyExtractor={row => row.id}
       onDragEnd={b.onLinesDragEnd}
       renderItem={renderItem}
       style={{ flex: 1, minHeight: 0 }}
@@ -82,12 +37,3 @@ export function QuotationCanvas({ compact = false, scrollHeader }: { compact?: b
     />
   );
 }
-
-const styles = StyleSheet.create({
-  browseBtn: {
-    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
-    marginTop: spacing.lg, marginHorizontal: spacing.xl,
-    backgroundColor: ds.brass, paddingVertical: 12, borderRadius: radius.md,
-  },
-  browseBtnText: { color: ds.canvas, fontSize: 14, fontFamily: font.semibold, fontWeight: "600" },
-});

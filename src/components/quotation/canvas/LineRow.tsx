@@ -17,6 +17,7 @@ import { effectivePct, sourceBadge } from "../helpers/pricing";
 import { FinishSwatch } from "../shared/VariantChip";
 import { grabCursor } from "../shared/grabCursor";
 import type { Line, RoomDiscount } from "../helpers/types";
+import { quotationRoomLines } from "../helpers/roomProducts";
 
 function LineRowImpl({
   line, drag, isActive, catDiscs, projDisc, roomDiscs, compact = false,
@@ -97,7 +98,7 @@ function LineRowImpl({
         onLongPress={isIncluded ? undefined : drag}
         accessibilityRole="button"
         accessibilityLabel={`Reorder ${l.name}`}
-        accessibilityHint="Drag to move. Use product actions for Move up and Move down."
+        accessibilityHint={Platform.OS === "web" ? "Drag to move or use the Up and Down arrow keys." : "Drag to move. Use product actions for Move up and Move down."}
         disabled={isIncluded}
         delayLongPress={160}
         hitSlop={6}
@@ -217,12 +218,16 @@ function RemoveLineButton({ line, onCancel }: { line: Line; onCancel: () => void
 
 function LineActions({ line }: { line: Line }) {
   const b = useBuilder();
+  const peers = quotationRoomLines(b.s, b.s.activeRoom).filter(item => !item.included_for_line_id);
+  const index = peers.findIndex(item => item.id === line.id);
+  const first = index <= 0;
+  const last = index < 0 || index === peers.length - 1;
   return (
     <>
-      <Pressable testID={`line-move-up-${line.id}`} accessibilityLabel="Move product up" onPress={() => b.moveLine(line.id, -1)} style={styles.icon}>
+      <Pressable testID={`line-move-up-${line.id}`} accessibilityRole="button" accessibilityLabel="Move product up" disabled={first} onPress={() => b.moveLine(line.id, -1)} style={[styles.icon, first && styles.iconDisabled]}>
         <Feather name="chevron-up" size={16} color={colors.onSurfaceMuted} />
       </Pressable>
-      <Pressable testID={`line-move-down-${line.id}`} accessibilityLabel="Move product down" onPress={() => b.moveLine(line.id, 1)} style={styles.icon}>
+      <Pressable testID={`line-move-down-${line.id}`} accessibilityRole="button" accessibilityLabel="Move product down" disabled={last} onPress={() => b.moveLine(line.id, 1)} style={[styles.icon, last && styles.iconDisabled]}>
         <Feather name="chevron-down" size={16} color={colors.onSurfaceMuted} />
       </Pressable>
       <Pressable testID={`line-desc-${line.id}`} accessibilityLabel="Edit description" onPress={() => b.setDescSheet({ line_id: line.id })} style={styles.icon}>
@@ -251,8 +256,8 @@ const styles = StyleSheet.create({
   rowHovered: { borderColor: colors.brandBorder, backgroundColor: colors.surface, transform: [{ translateY: -1 }] },
   rowPhone: { padding: 12, gap: 8, alignItems: "flex-start" },
   dragHandle: {
-    width: 28, minHeight: 44, alignItems: "center", justifyContent: "center", alignSelf: "stretch",
-    marginRight: -2, marginLeft: -4,
+    width: 44, height: 44, alignItems: "center", justifyContent: "center",
+    marginRight: -8, marginLeft: -8,
   },
   // A compact portrait frame gives product imagery enough vertical room in
   // the narrow quotation panel. `contain` in ProductImage preserves every
@@ -274,6 +279,7 @@ const styles = StyleSheet.create({
   controls: { flexDirection: "row", gap: 6, marginTop: 2, flexWrap: "wrap" },
   includedHint: { alignSelf: "center", fontSize: 11, color: colors.onSurfaceMuted, fontStyle: "italic" },
   icon: { width: 44, height: 44, borderRadius: 9, alignItems: "center", justifyContent: "center", backgroundColor: colors.surfaceTertiary },
+  iconDisabled: { opacity: 0.4 },
   iconSelected: { backgroundColor: ds.brassTint, borderWidth: StyleSheet.hairlineWidth, borderColor: ds.brassLine },
   iconPressed: { opacity: 0.72, transform: [{ scale: 0.96 }] },
   removeIcon: { backgroundColor: colors.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border },

@@ -50,8 +50,8 @@ def test_notebook_won_does_not_update_an_unplaced_lead():
 @pytest.mark.parametrize("outcome", ["won", "converted"])
 def test_call_won_does_not_update_an_unplaced_lead(monkeypatch, outcome):
     class Followups:
-        async def find_one(self, *_args):
-            return {"id": "f1", "quotation_id": "q1", "floor_id": "first-floor"}
+        async def find_one(self, *_args, **_kwargs):
+            return {"id": "f1", "quotation_id": "q1", "floor_id": "first-floor", "status": "open"}
         async def update_one(self, *_args):
             pytest.fail("unplaced lead must not be updated")
     monkeypatch.setattr(followup_routes, "db", SimpleNamespace(followups=Followups(), quotations=Quotations()))
@@ -63,12 +63,13 @@ def test_call_won_does_not_update_an_unplaced_lead(monkeypatch, outcome):
 
 @pytest.mark.parametrize("outcome", ["won", "converted"])
 def test_call_confirmation_retains_already_placed_order(monkeypatch, outcome):
-    row = {"id": "f1", "quotation_id": "q1", "floor_id": "first-floor"}
+    row = {"id": "f1", "quotation_id": "q1", "floor_id": "first-floor", "status": "open"}
     class Followups:
-        async def find_one(self, *_args):
+        async def find_one(self, *_args, **_kwargs):
             return row
-        async def update_one(self, _query, update):
+        async def update_one(self, _query, update, *, session=None):
             row.update(update["$set"])
+            return SimpleNamespace(matched_count=1)
     async def event(*_args, **_kwargs):
         return None
     monkeypatch.setattr(followup_routes, "db", SimpleNamespace(followups=Followups(), quotations=Quotations("ordered")))

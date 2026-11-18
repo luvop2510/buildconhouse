@@ -1,4 +1,4 @@
-import { formatPhone } from "@/src/utils/phone";
+import { formatDepartmentPhone } from "@/src/utils/phone";
 // Customers list — DS-aligned rebuild.
 // Uses PageHeader, HeroBanner stat row, filter chips, SearchField, and a
 // unified customer-card language shared with quotations/purchases/payments.
@@ -25,6 +25,7 @@ import { CustomerDataDeletionDialog } from "@/src/components/customer/CustomerDa
 import { toast } from "@/src/components/Toast";
 import { ErrorState } from "@/src/components/ui";
 import { useFloorAccess } from "@/src/hooks/use-floor-access";
+import { KITCHEN_FLOOR_ID } from "@/src/constants/floors";
 import { downloadSectionExcel } from "@/src/utils/sectionExcel";
 
 type Customer = {
@@ -99,8 +100,8 @@ export default function Customers() {
   const filtered = useMemo(() => (items || []).filter((c) => {
     if (!q) return true;
     const needle = q.toLowerCase();
-    return `${c.name} ${c.company || ""} ${c.email} ${c.phone || ""} ${c.city || ""}`.toLowerCase().includes(needle);
-  }), [items, q]);
+    return `${c.name} ${c.company || ""} ${c.email} ${c.phone || ""} ${formatDepartmentPhone(c.phone, selectedFloorId)} ${c.city || ""}`.toLowerCase().includes(needle);
+  }), [items, q, selectedFloorId]);
 
   // Keep the mobile scroll surface light even when the legacy list endpoint
   // returns hundreds of accounts. Search/filter changes always begin at the
@@ -114,7 +115,7 @@ export default function Customers() {
         section: completed ? "100% completed customers" : "Active customer accounts",
         rows: [
           ["Name", "Status", "Email", "Phone"],
-          ...filtered.map(customer => [customer.name, completed ? "100% completed" : "Active", customer.email, formatPhone(customer.phone)]),
+          ...filtered.map(customer => [customer.name, completed ? "100% completed" : "Active", customer.email, formatDepartmentPhone(customer.phone, selectedFloorId)]),
         ],
         filename: `customers-${completed ? "completed" : "active"}.xlsx`,
         floorId: selectedFloorId,
@@ -227,10 +228,16 @@ export default function Customers() {
                 <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
                   <Text numberOfLines={isDesktop ? 1 : 2} style={type.titleSm}>{c.name}</Text>
                   <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm, flexWrap: "wrap" }}>
-                    <Text style={type.caption} numberOfLines={isDesktop ? 1 : 2}>{c.email}</Text>
+                    {c.email ? <Text style={type.caption} numberOfLines={isDesktop ? 1 : 2}>{c.email}</Text> : null}
+                    {c.phone && selectedFloorId !== KITCHEN_FLOOR_ID ? (
+                      <>
+                        {c.email ? <View style={styles.dot} /> : null}
+                        <Text style={type.caption}>{formatDepartmentPhone(c.phone, selectedFloorId)}</Text>
+                      </>
+                    ) : null}
                     {c.city ? (
                       <>
-                        <View style={styles.dot} />
+                        {c.email || (c.phone && selectedFloorId !== KITCHEN_FLOOR_ID) ? <View style={styles.dot} /> : null}
                         <Text style={type.caption} numberOfLines={isDesktop ? 1 : 2}>{c.city}</Text>
                       </>
                     ) : null}

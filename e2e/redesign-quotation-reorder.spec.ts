@@ -66,7 +66,7 @@ test('critical quotation drag rearranges categories, persists ordered items and 
   await reviewQuotation(page);
   await expect(page.getByTestId('line-drag-line-b')).toBeVisible();
   const ids = await page.locator('[data-quotation-row]').evaluateAll(elements => elements.map(element => element.getAttribute('data-quotation-row')));
-  expect(ids).toEqual(['hdr-Master Bath', 'line-b', 'line-a', 'hdr-Kitchen', 'line-c', 'hdr-Closed']);
+  expect(ids).toEqual(['hdr-Master Bath', 'line-b', 'line-a']);
   await expect(page.getByText('Collapsed fixture', { exact: true })).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
 });
@@ -90,7 +90,7 @@ test('critical quotation touch pointer reorder and Escape cancellation work with
   const touch = await page.context().newCDPSession(page);
   await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y: startY }] });
   await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y: destinationY }] });
-  await expect(page.locator('[data-quotation-row]')).toHaveCount(6);
+  await expect(page.locator('[data-quotation-row]')).toHaveCount(3);
   await expect.poll(() => page.locator('[data-quotation-row]').nth(1).getAttribute('data-quotation-row')).toBe('line-b');
   await page.keyboard.press('Escape');
   await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
@@ -104,11 +104,11 @@ test('critical quotation touch pointer reorder and Escape cancellation work with
 });
 
 
-test('critical quotation products can be dragged across rooms and dragged from the bottom to the top with auto-scroll', async ({ page }) => {
+test('critical quotation products can be dragged from the bottom to the top of a room with auto-scroll', async ({ page }) => {
   const getDocument = await orderedQuotation(page, 12);
   // Begin on the final product and hold at the canvas edge as a salesperson
   // does when a longer quotation extends above the visible receipt.
-  const handle = page.getByTestId('line-drag-line-c');
+  const handle = page.getByTestId('line-drag-extra-11');
   await handle.scrollIntoViewIfNeeded();
   const source = await handle.boundingBox();
   const canvas = await page.getByTestId('receipt-list').boundingBox();
@@ -117,32 +117,26 @@ test('critical quotation products can be dragged across rooms and dragged from t
   await page.mouse.move(x, Math.max(source.y, canvas.y) + 8);
   await page.mouse.down();
   await page.mouse.move(x, canvas.y + 12, { steps: 12 });
-  await expect.poll(() => page.locator('[data-quotation-row]').nth(1).getAttribute('data-quotation-row')).toBe('line-c');
+  await expect.poll(() => page.locator('[data-quotation-row]').nth(1).getAttribute('data-quotation-row')).toBe('extra-11');
   await page.mouse.up();
-  await expect.poll(() => getDocument().items[0].id).toBe('line-c');
+  await expect.poll(() => getDocument().items[0].id).toBe('extra-11');
   expect(getDocument().items[0].room).toBe('Master Bath');
   expect(getDocument().items).toHaveLength(16);
   await page.reload();
-  await expect(page.getByTestId('line-drag-line-c')).toBeAttached();
+  await expect(page.getByTestId('line-drag-extra-11')).toBeAttached();
   await reviewQuotation(page);
-  await expect(page.locator('[data-quotation-row]').nth(1)).toHaveAttribute('data-quotation-row', 'line-c');
+  await expect(page.locator('[data-quotation-row]').nth(1)).toHaveAttribute('data-quotation-row', 'extra-11');
 });
 
-test('critical quotation room drag moves its entire section and preserves collapsed products on reload', async ({ page }) => {
+test('critical quotation room can move to the top without modifying products or changing the selection', async ({ page }) => {
   const getDocument = await orderedQuotation(page);
-  const handle = page.getByTestId('room-drag-Kitchen');
-  await handle.scrollIntoViewIfNeeded();
-  const source = await handle.boundingBox();
-  const canvas = await page.getByTestId('receipt-list').boundingBox();
-  if (!source || !canvas) throw new Error('Missing section drag geometry');
-  const x = source.x + source.width / 2;
-  await page.mouse.move(x, source.y + source.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(x, canvas.y + 12, { steps: 10 });
-  await expect.poll(() => page.locator('[data-quotation-row]').first().getAttribute('data-quotation-row')).toBe('hdr-Kitchen');
-  await page.mouse.up();
+  await page.getByTestId('room-Kitchen').click();
+  await expect(page.getByTestId('line-drag-line-c')).toBeVisible();
+  await expect(page.getByTestId('line-drag-line-a')).toHaveCount(0);
+  await page.getByTestId('room-actions-Kitchen').click();
+  await page.getByTestId('room-top-Kitchen').click();
   await expect.poll(() => getDocument().rooms).toEqual(['Kitchen', 'Master Bath', 'Closed']);
-  expect(getDocument().items.map(item => item.id)).toEqual(['line-c', 'line-a', 'line-b', 'line-hidden']);
+  expect(getDocument().items.map(item => item.id)).toEqual(['line-a', 'line-b', 'line-c', 'line-hidden']);
   expect(getDocument().items.find(item => item.id === 'line-a')?.room).toBe('Master Bath');
   await page.reload();
   await expect(page.getByTestId('line-drag-line-c')).toBeAttached();
@@ -214,54 +208,13 @@ test('critical quotation real touch drop persists product ordering after reload'
 });
 
 
-test('critical quotation a product can be dragged down into another room without changing totals', async ({ page }) => {
+test('critical quotation a product can be moved to the next room without changing totals', async ({ page }) => {
   const getDocument = await orderedQuotation(page);
-  const handle = page.getByTestId('line-drag-line-a');
-  await handle.scrollIntoViewIfNeeded();
-  const source = await handle.boundingBox();
-  const canvas = await page.getByTestId('receipt-list').boundingBox();
-  if (!source || !canvas) throw new Error('Missing downward drag geometry');
-  const x = source.x + source.width / 2;
-  const y = (Math.max(source.y, canvas.y) + Math.min(source.y + source.height, canvas.y + canvas.height)) / 2;
-  await page.mouse.move(x, y);
-  await page.mouse.down();
-  // Scroll the destination into the receipt during the captured gesture,
-  // then release inside the room rather than continuing past it at the edge.
-  await page.mouse.move(x, canvas.y + canvas.height / 2);
-  await page.getByTestId('receipt-list').evaluate(element => {
-    const destination = element.querySelector<HTMLElement>('[data-quotation-row="line-c"]');
-    if (destination) element.scrollTop = (destination.parentElement?.offsetTop || 0) + destination.offsetTop + destination.offsetHeight / 2 - element.clientHeight / 2;
-  });
-  // Preview insertion and browser scrolling can change layout between calls.
-  // Model both settled insertion positions using fresh bounds in each phase.
-  const moveToInsertion = async (after: boolean) => {
-    const intendedRows = after
-      ? ['hdr-Master Bath', 'line-b', 'hdr-Kitchen', 'line-c', 'line-a', 'hdr-Closed']
-      : ['hdr-Master Bath', 'line-b', 'hdr-Kitchen', 'line-a', 'line-c', 'hdr-Closed'];
-    await expect(async () => {
-      const dropY = await page.getByTestId('receipt-list').evaluate((element, after) => {
-        const destination = element.querySelector<HTMLElement>('[data-quotation-row="line-c"]');
-        const boundary = element.querySelector<HTMLElement>(after ? '[data-quotation-row="hdr-Closed"]' : '[data-quotation-row="hdr-Kitchen"]');
-        const root = destination?.parentElement;
-        if (!destination || !boundary || !root) throw new Error('Missing destination geometry');
-        element.scrollTop = (destination.parentElement?.offsetTop || 0) + destination.offsetTop + destination.offsetHeight / 2 - element.clientHeight / 2;
-        const top = root.getBoundingClientRect().top;
-        const productMid = top + destination.offsetTop + destination.offsetHeight / 2;
-        const boundaryMid = top + boundary.offsetTop + boundary.offsetHeight / 2;
-        const viewport = element.getBoundingClientRect();
-        const lower = Math.max(Math.min(productMid, boundaryMid) + 1, viewport.top + 65);
-        const upper = Math.min(Math.max(productMid, boundaryMid) - 1, viewport.bottom - 65);
-        if (lower >= upper) throw new Error('Destination insertion gap is outside the receipt');
-        return (lower + upper) / 2;
-      }, after);
-      await page.mouse.move(x, dropY);
-      expect(await page.locator('[data-quotation-row]').evaluateAll(elements => elements.map(element => element.getAttribute('data-quotation-row')))).toEqual(intendedRows);
-    }).toPass({ timeout: 5000 });
-  };
-  await moveToInsertion(false);
-  await moveToInsertion(true);
-  await page.mouse.up();
-  await expect.poll(() => getDocument().items.map(item => item.id)).toEqual(['line-b', 'line-c', 'line-a', 'line-hidden']);
-  expect(getDocument().items.find(item => item.id === 'line-a')?.room).toBe('Kitchen');
+  await page.getByTestId('line-actions-line-a').click();
+  await page.getByTestId('line-move-line-a').click();
+  await expect.poll(() => getDocument().items.find(item => item.id === 'line-a')?.room).toBe('Kitchen');
+  await expect(page.getByTestId('line-drag-line-a')).toHaveCount(0);
+  await page.getByTestId('room-Kitchen').click();
+  await expect(page.getByTestId('line-drag-line-a')).toBeVisible();
   expect(getDocument().items.reduce((sum, item) => sum + item.qty * item.unit_price, 0)).toBe(1000);
 });

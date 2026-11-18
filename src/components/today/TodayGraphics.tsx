@@ -4,6 +4,7 @@ import { HalfGauge, SegmentedMeter } from '@/src/design/graphics';
 import { Surface, Txt, Skeleton } from '@/src/design/components';
 import { useBp } from '@/src/design/responsive';
 import { color, space } from '@/src/design/tokens';
+import { quotationDisplayStatus } from '@/src/utils/quotationStatus';
 import { kitchenStageColor, kitchenStageLabel } from '@/src/design/kitchenStageColors';
 
 export function TodaySummary({summary,unavailable=false}:{summary:TodayData['task_summary']|undefined;unavailable?:boolean}) {
@@ -28,7 +29,12 @@ export function TodaySummary({summary,unavailable=false}:{summary:TodayData['tas
 export function WorkflowDistribution({workflow}:{workflow:TodayData['workflows'][number]}) {
  const tones=[color.action,color.inkMid,color.inkSoft];
  const kitchen=workflow.resource==='kitchen_projects';
- const rows=workflow.statuses.map((row,i)=>({...row,label:kitchen?kitchenStageLabel(row.status):row.status,color:(kitchen?kitchenStageColor(row.status):undefined)??tones[i%tones.length]}));
+ const quotation=workflow.resource==='quotations';
+ const rows=workflow.statuses.map((row,i)=>{
+  const status=quotation?quotationDisplayStatus(row.status):row.status;
+  const label = kitchen ? kitchenStageLabel(row.status) : status === 'pending' && (quotation || workflow.resource === 'tiles') ? 'Pending' : status;
+  return {...row,label,color:(kitchen?kitchenStageColor(row.status):undefined)??tones[i%tones.length]};
+ });
  return <View testID={`today-workflow-${workflow.resource}`} style={{gap:space.x2}}>
   <View style={{flexDirection:'row',justifyContent:'space-between',gap:space.x2}}><Txt v="rowTitle" style={{flex:1}}>{workflow.label}</Txt><Txt v="num">{workflow.total.toLocaleString('en-IN')}</Txt></View>
   <SegmentedMeter testID={`today-workflow-meter-${workflow.resource}`} values={rows.map(row=>({value:row.count,color:row.color}))} label={`${workflow.label}. ${rows.map(row=>`${row.label}: ${row.count}`).join('. ')}`}/>

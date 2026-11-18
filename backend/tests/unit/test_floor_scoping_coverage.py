@@ -42,6 +42,8 @@ SCOPING_HELPERS = {
     "floor_inherit",
     "accessible_floor_ids",
     "_payment_scope_query",
+    "_record_quotation_sent",  # scoped quotation read before the transactional write
+    "_selected_followup_or_404",  # checks the stored floor against the selected department
     "_tile_draft_receipt_id",  # requires Ground Floor access and binds actor/floor into the receipt key
 }
 

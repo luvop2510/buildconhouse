@@ -9,6 +9,7 @@ export type BuilderDraft = {
   quotationId: string | null;
   quotationNumber: string | null;
   serverSavedAt: string | null;
+  clientDraftId?: string;
   resetGeneration?: string;
   state: BuilderState;
 };
@@ -18,6 +19,7 @@ export function parseBuilderDraft(raw: string | null, accountId: string, floorId
   try {
     const draft = JSON.parse(raw || "null");
     if (!draft || draft.version !== 1 || draft.accountId !== accountId || draft.floorId !== floorId
+      || (draft.clientDraftId !== undefined && (typeof draft.clientDraftId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(draft.clientDraftId)))
       || !Number.isFinite(draft.at) || draft.at > now + 60_000 || now - draft.at > DRAFT_TTL_MS) return null;
     const s = draft.state;
     if (!s || !s.header || !Array.isArray(s.lines) || !Array.isArray(s.rooms) || !s.rooms.length
@@ -36,7 +38,7 @@ export function parseBuilderDraft(raw: string | null, accountId: string, floorId
 
 /** A server edit after our base snapshot must never be silently overwritten. */
 export function draftNeedsCopy(draft: BuilderDraft, server: { updated_at?: string; status?: string }): boolean {
-  if (server.status && server.status !== "draft") return true;
+  if (server.status && server.status !== "draft" && server.status !== "sent") return true;
   const base = Date.parse(draft.serverSavedAt || "");
   const current = Date.parse(server.updated_at || "");
   return !Number.isFinite(base) || !Number.isFinite(current) || current > base + 1000;

@@ -1,6 +1,8 @@
 """Human-readable Indian mobile numbers; storage and dial identities stay unchanged."""
 import re
 
+PLAIN_INDIAN_MOBILE_FLOORS = {"ground-floor", "first-floor", "third-floor"}
+
 
 def format_phone(value):
     if not value:
@@ -10,6 +12,21 @@ def format_phone(value):
     if len(local) != 10 or not re.fullmatch(r"[+\d\s().-]+", str(value)):
         return value
     return f"{'+91 ' if len(digits) == 12 else ''}{local[:3]}-{local[3:6]}-{local[6:8]}-{local[8:]}"
+
+
+def format_department_phone(value: str | None, floor_id: str | None) -> str:
+    """Display a local mobile without separators, retaining any country code."""
+    if floor_id not in PLAIN_INDIAN_MOBILE_FLOORS:
+        return format_phone(value)
+    value = str(value or "")
+    if not re.fullmatch(r"\s*\+?[\d\s().-]+", value):
+        return value
+    digits = re.sub(r"[\s().-]", "", value)
+    if re.fullmatch(r"[6-9][0-9]{9}", digits):
+        return digits
+    if re.fullmatch(r"\+?91[6-9][0-9]{9}", digits):
+        return f"+91 {digits[-10:]}"
+    return value
 
 
 def required_phone(value):

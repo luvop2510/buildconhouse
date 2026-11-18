@@ -6,7 +6,7 @@
 # execs the real binary. Rules: injected /opt/install-guard/rules.json, else the baked
 # default inside cmd-guard.js.
 
-GUARD=/app/frontend/scripts/cmd-guard.js
+GUARD=/app/scripts/cmd-guard.js
 BIN_NAME=$(basename "$0")
 
 if [ -f "$GUARD" ] && command -v node >/dev/null 2>&1; then

@@ -1,4 +1,4 @@
-import { formatPhone } from "@/src/utils/phone";
+import { formatDepartmentPhone } from "@/src/utils/phone";
 import { useEffect, useRef, useState } from "react";
 import { View } from "react-native";
 
@@ -10,7 +10,7 @@ import { shareApiPdf } from "@/src/utils/downloadFile";
 import { defaultQuotationMessage, quotationPdfPath } from "@/src/utils/quotationWhatsApp";
 import { spacing, type } from "@/src/theme/tokens";
 
-type DeliveryReceipt = { status: string; updated_at?: string; error_code?: string };
+type DeliveryReceipt = { status: string; updated_at?: string; error_code?: string; quotation_mark_pending_error?: string };
 export type WhatsAppQuotationDraft = {
   id: string; floor_id: string; phone: string | null; customer_name: string; filename: string;
   expected_updated_at: string; include_dimensions: boolean; direct_send_configured: boolean;
@@ -20,8 +20,8 @@ export async function prepareQuotationWhatsAppDraft(id: string, floorId: string,
   return api.post<WhatsAppQuotationDraft>(`/quotations/${encodeURIComponent(id)}/whatsapp-draft?include_dimensions=${includeDimensions}`, undefined, { floorId });
 }
 
-export function WhatsAppQuotationSheet({ draft, onClose }: {
-  draft: WhatsAppQuotationDraft | null; onClose: () => void;
+export function WhatsAppQuotationSheet({ draft, onClose, onSent }: {
+  draft: WhatsAppQuotationDraft | null; onClose: () => void; onSent?: () => void;
 }) {
   const [message, setMessage] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -44,7 +44,10 @@ export function WhatsAppQuotationSheet({ draft, onClose }: {
         message: message.trim(), expected_updated_at: draft.expected_updated_at,
         idempotency_key: requestKey.current, include_dimensions: draft.include_dimensions,
       }, { floorId: draft.floor_id });
-      if (activeDraft.current === draft) setReceipt(result);
+      if (activeDraft.current === draft) {
+        setReceipt(result);
+        if (["accepted", "sent", "delivered", "read"].includes(result.status)) onSent?.();
+      }
     } catch (failure: any) {
       if (activeDraft.current === draft) {
         // An interrupted response may already have reached the provider. Keep
@@ -59,7 +62,10 @@ export function WhatsAppQuotationSheet({ draft, onClose }: {
     setBusy(true); setError(null);
     try {
       const result = await api.get<DeliveryReceipt>(`/whatsapp/deliveries/${encodeURIComponent(draft.id)}/${encodeURIComponent(requestKey.current)}`, { floorId: draft.floor_id });
-      if (activeDraft.current === draft) setReceipt(result);
+      if (activeDraft.current === draft) {
+        setReceipt(result);
+        if (["accepted", "sent", "delivered", "read"].includes(result.status)) onSent?.();
+      }
     } catch (failure: any) {
       if (activeDraft.current === draft) setError(typeof failure?.detail === "string" ? failure.detail : "Could not refresh delivery status.");
     } finally { if (activeDraft.current === draft) setBusy(false); }
@@ -68,7 +74,7 @@ export function WhatsAppQuotationSheet({ draft, onClose }: {
   return <BottomSheet visible={!!draft} onClose={() => { if (!busy) onClose(); }} title="Share PDF" testID="quotation-whatsapp-sheet">
     <View style={{ gap: spacing.md, paddingBottom: spacing.lg }}>
       {error ? <Alert tone="error" title={error} /> : null}
-      <Text style={type.bodyStrong}>{draft?.customer_name}{draft?.phone ? ` · ${formatPhone(draft.phone)}` : ""}</Text>
+      <Text style={type.bodyStrong}>{draft?.customer_name}{draft?.phone ? ` · ${formatDepartmentPhone(draft.phone, draft.floor_id)}` : ""}</Text>
       <Text style={type.bodyMuted}>Share the PDF attachment with the customer.</Text>
       <Button label="Share PDF file" icon="share" variant="secondary" disabled={busy} onPress={async () => {
         if (!draft || busy) return;
@@ -81,6 +87,7 @@ export function WhatsAppQuotationSheet({ draft, onClose }: {
         <Button label="Send PDF to WhatsApp" icon="send" onPress={() => void send()} disabled={!message.trim() || busy || !!receipt} loading={busy} testID="send-quotation-pdf-whatsapp" />
       </> : <Text style={type.bodyMuted}>{!draft?.phone ? "Add a valid customer WhatsApp number to enable direct delivery." : "Direct WhatsApp delivery is unavailable. Use Share PDF file to send the attachment from your device."}</Text>}
       {receipt ? <>
+        {receipt.quotation_mark_pending_error ? <Alert tone="warning" title={receipt.quotation_mark_pending_error} /> : null}
         <Text style={type.body}>{receipt.status === "accepted" ? "PDF submitted to WhatsApp" : `PDF delivery: ${receipt.status}`}{receipt.error_code ? ` · ${receipt.error_code}` : ""}</Text>
         <Button label="Refresh delivery status" variant="secondary" disabled={busy} onPress={() => void refresh()} testID="refresh-quotation-pdf-status" />
       </> : null}

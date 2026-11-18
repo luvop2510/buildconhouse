@@ -23,7 +23,7 @@ import io
 import json
 import re
 from collections import Counter
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Optional
 from uuid import uuid4, uuid5, NAMESPACE_URL
 
@@ -32,7 +32,8 @@ from fastapi.responses import StreamingResponse
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import get_column_letter
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
 from services.referrer_identity import referrer_query
@@ -50,7 +51,7 @@ from services import automation_rules, workflow_transitions
 from services import lead_scope
 from services.activity_log import log_event, timeline_for
 from services.followup_engine import (
-    RULE_DEFINITIONS, _followup_sort_key, age_days,
+    IST, RULE_DEFINITIONS, _followup_sort_key, age_days,
     compute_bucket, ist_day_bounds_utc, money_short, parse_iso,
     reason_factors_for, reconcile_followups, score_followup,
 )
@@ -1205,7 +1206,7 @@ async def get_detail(followup_id: str, user: UserPublic = Depends(get_current_us
     customer, pending_quotations, timeline = await asyncio.gather(
         db.customers.find_one({"id": f["customer_id"], "floor_id": floor_id}, {"_id": 0, "password_hash": 0}),
         db.quotations.find({"customer_id": f["customer_id"], "floor_id": floor_id,
-                            "status": {"$in": ["draft", "sent", "pending_approval", "approved", "selection"]}},
+                            "status": {"$in": ["sent", "pending_approval"]}},
                            {"_id": 0, "id": 1, "number": 1, "status": 1, "grand_total": 1,
                             "valid_until": 1, "updated_at": 1, "created_by_name": 1}).sort("updated_at", -1).to_list(200),
         timeline_for(entity_type="followup", entity_id=followup_id, limit=60, floor_ids=[floor_id]),
@@ -1372,6 +1373,10 @@ async def update_followup(followup_id: str, body: FollowupUpdate, user: UserPubl
         raise HTTPException(status_code=404, detail="Follow-up not found")
     patch = body.model_dump(exclude_unset=True)
     patch.pop("notes", None)
+    if "due_at" in patch:
+        raise HTTPException(422, "Use Postpone follow-up to change the due date and record a reason")
+    if patch.get("status") == "open" and f.get("status") in {"done", "dismissed"}:
+        raise HTTPException(409, "This follow-up is closed. Create a new follow-up to contact the customer again.")
     scope_keys = {"interested_floor_ids", "assignments", "reference_source", "referrer_id"}
     scope_patch = {k: patch.pop(k) for k in list(patch) if k in scope_keys}
     if scope_patch:
@@ -1397,7 +1402,10 @@ async def update_followup(followup_id: str, body: FollowupUpdate, user: UserPubl
             summary=f"Follow-up dismissed — {f.get('reason')}",
         )
     patch["updated_at"] = now_iso()
-    await db.followups.update_one(floor_query(user, {"id": followup_id}), {"$set": patch})
+    query = {"id": followup_id}
+    if patch.get("status") == "open":
+        query["status"] = {"$in": ["open", "snoozed"]}
+    await db.followups.update_one(floor_query(user, query), {"$set": patch})
     return await db.followups.find_one(floor_query(user, {"id": followup_id}), {"_id": 0})
 
 
@@ -1410,9 +1418,13 @@ async def delete_followup(
     """Permanently remove a follow-up during manager data cleanup."""
     _reject_action_note(notes)
     f = await _selected_followup_or_404(followup_id, user)
-    result = await db.followups.delete_one(floor_query(user, {"id": followup_id}))
+    if f.get("postponement_history") or f.get("call_history"):
+        raise HTTPException(409, "This follow-up has recorded history. Complete or dismiss it to keep the record.")
+    result = await db.followups.delete_one(floor_query(user, {
+        "id": followup_id, "postponement_history.0": {"$exists": False}, "call_history.0": {"$exists": False},
+    }))
     if result.deleted_count == 0:
-        raise HTTPException(status_code=404, detail="Follow-up not found")
+        raise HTTPException(409, "This follow-up changed. Refresh and try again.")
     activity = await db.activity_events.delete_many(floor_query(user, {
         "$or": [
             {"entity_type": "followup", "entity_id": followup_id},
@@ -1430,55 +1442,107 @@ async def delete_followup(
 # ─────────────────────────────────────────────────────────────────────────────
 # Actions — snooze / complete / contact / call outcome
 # ─────────────────────────────────────────────────────────────────────────────
+class FollowupPostponePayload(BaseModel):
+    new_due_date: date
+    expected_due_at: str = Field(min_length=1, max_length=64)
+    reason: str = Field(max_length=2000)
+
+
+@router.post("/{followup_id}/postpone")
+async def postpone_followup(followup_id: str, body: FollowupPostponePayload, user: UserPublic = Depends(get_current_user)):
+    reason = body.reason.strip()
+    if not reason:
+        raise HTTPException(422, "Enter a reason for postponement")
+    current = await _selected_followup_or_404(followup_id, user)
+    if current.get("status") not in {"open", "snoozed"}:
+        raise HTTPException(409, "This follow-up is closed")
+    if current.get("category") in lead_scope.POST_ORDER_CATEGORIES or current.get("rule_type") in lead_scope.POST_ORDER_RULES or current.get("purchase_id"):
+        raise HTTPException(404, "This activity belongs in Orders")
+
+    previous_due = parse_iso(body.expected_due_at)
+    if not previous_due:
+        raise HTTPException(422, "The current due date is invalid. Reopen the follow-up and try again.")
+    now = datetime.now(timezone.utc)
+    if body.new_due_date <= max(previous_due.astimezone(IST).date(), now.astimezone(IST).date()):
+        raise HTTPException(422, "Choose a future date later than the current due date")
+    new_due_at = datetime.combine(body.new_due_date, time.min, tzinfo=IST).astimezone(timezone.utc).isoformat()
+    history = {
+        "previous_due_at": body.expected_due_at,
+        "new_due_at": new_due_at,
+        "reason": reason,
+        "actor_id": user.id,
+        "actor_name": user.full_name,
+    }
+    lookup = {"id": followup_id, "floor_id": current["floor_id"]}
+    updated = await db.followups.find_one_and_update(
+        {**lookup, "status": {"$in": ["open", "snoozed"]}, "due_at": body.expected_due_at},
+        {"$set": {"due_at": new_due_at, "status": "open", "snoozed_until": None, "updated_at": now.isoformat(), "date_only_due": True},
+         "$push": {"postponement_history": {**history, "changed_at": now.isoformat()}}},
+        projection={"_id": 0}, return_document=ReturnDocument.AFTER,
+    )
+    if updated is None:
+        # A client may retry after the successful write's response was lost.
+        # A matching persisted action acknowledges it without appending again.
+        updated = await db.followups.find_one(lookup, {"_id": 0})
+        if not updated or not any(all(entry.get(field) == value for field, value in history.items())
+                                  for entry in updated.get("postponement_history", [])):
+            raise HTTPException(409, "The due date changed. Reopen the follow-up to see its current date.")
+    else:
+        await log_event(
+            event_type="followup.postponed", entity_type="followup", entity_id=followup_id, actor=user,
+            floor_id=current["floor_id"], customer_id=current.get("customer_id"), quotation_id=current.get("quotation_id"),
+            payload=history, summary="Follow-up postponed",
+        )
+    return {**updated, "bucket": compute_bucket(updated)}
+
+
 @router.post("/{followup_id}/snooze")
 async def snooze_followup(followup_id: str, body: FollowupSnoozePayload, user: UserPublic = Depends(get_current_user)):
     _reject_action_note(body.notes)
-    f = await db.followups.find_one(floor_query(user, {"id": followup_id}), {"_id": 0})
-    if not f:
-        raise HTTPException(status_code=404, detail="Follow-up not found")
+    f = await _selected_followup_or_404(followup_id, user)
     now = datetime.now(timezone.utc)
-    if body.until:
-        until = parse_iso(body.until) or (now + timedelta(hours=1))
-    elif body.minutes:
-        until = now + timedelta(minutes=body.minutes)
-    elif body.preset == "15m":
-        until = now + timedelta(minutes=15)
-    elif body.preset == "1h":
-        until = now + timedelta(hours=1)
-    elif body.preset == "tomorrow":
-        until = (now + timedelta(days=1)).replace(hour=9, minute=0, second=0, microsecond=0)
-    elif body.preset == "next_week":
-        until = (now + timedelta(days=7)).replace(hour=9, minute=0, second=0, microsecond=0)
-    else:
-        until = now + timedelta(hours=1)
-
-    await db.followups.update_one(floor_query(user, {"id": followup_id}), {"$set": {
-        "status": "snoozed", "snoozed_until": until.isoformat(), "updated_at": now_iso(),
-    }})
+    due = parse_iso(f.get("due_at"))
+    _, day_end = ist_day_bounds_utc()
+    minutes = body.minutes if body.minutes is not None else (15 if body.preset == "15m" else 60)
+    until = now + timedelta(minutes=minutes) if 0 < minutes <= 60 else None
+    # Snooze is a short reminder pause on the scheduled day. All calendar
+    # changes use the audited Postpone follow-up command.
+    if (body.until is not None or body.preset not in {None, "15m", "1h"} or not until
+            or until >= day_end or not due or due.astimezone(IST).date() != now.astimezone(IST).date()):
+        raise HTTPException(422, "Use Postpone follow-up to choose another date with a reason")
+    updated = await db.followups.find_one_and_update(
+        {"id": followup_id, "floor_id": f["floor_id"], "due_at": f["due_at"], "status": {"$in": ["open", "snoozed"]}},
+        {"$set": {"status": "snoozed", "snoozed_until": until.isoformat(), "updated_at": now.isoformat()}},
+        projection={"_id": 0}, return_document=ReturnDocument.AFTER,
+    )
+    if updated is None:
+        raise HTTPException(409, "This follow-up changed. Reopen it and try again.")
     await log_event(
         event_type="followup.snoozed", entity_type="followup", entity_id=followup_id, actor=user,
-        customer_id=f.get("customer_id"),
-        summary=f"Snoozed until {until.strftime('%d %b, %I:%M %p')}",
+        customer_id=f.get("customer_id"), floor_id=f["floor_id"],
+        summary=f"Snoozed until {until.astimezone(IST).strftime('%I:%M %p')}",
     )
-    return await db.followups.find_one(floor_query(user, {"id": followup_id}), {"_id": 0})
+    return updated
 
 
 @router.post("/{followup_id}/complete")
 async def complete_followup(followup_id: str, body: FollowupCompletePayload, user: UserPublic = Depends(get_current_user)):
     _reject_action_note(body.notes)
-    f = await db.followups.find_one(floor_query(user, {"id": followup_id}), {"_id": 0})
-    if not f:
-        raise HTTPException(status_code=404, detail="Follow-up not found")
-    await db.followups.update_one(floor_query(user, {"id": followup_id}), {"$set": {
-        "status": "done", "completed_at": now_iso(),
-        "updated_at": now_iso(),
-    }})
+    f = await _selected_followup_or_404(followup_id, user)
+    now = now_iso()
+    updated = await db.followups.find_one_and_update(
+        {"id": followup_id, "floor_id": f["floor_id"], "status": {"$in": ["open", "snoozed"]}},
+        {"$set": {"status": "done", "completed_at": now, "updated_at": now, "snoozed_until": None}},
+        projection={"_id": 0}, return_document=ReturnDocument.AFTER,
+    )
+    if updated is None:
+        return {**await _selected_followup_or_404(followup_id, user), "bucket": "completed"}
     await log_event(
         event_type="followup.completed", entity_type="followup", entity_id=followup_id, actor=user,
         customer_id=f.get("customer_id"), quotation_id=f.get("quotation_id"), purchase_id=f.get("purchase_id"),
-        summary="Follow-up marked complete",
+        floor_id=f["floor_id"], summary="Follow-up marked complete",
     )
-    return await db.followups.find_one(floor_query(user, {"id": followup_id}), {"_id": 0})
+    return {**updated, "bucket": "completed"}
 
 
 @router.post("/{followup_id}/contact")
@@ -1578,12 +1642,26 @@ async def _record_lost_quotation_followup(followup: dict, update: dict, user: Us
 @router.post("/{followup_id}/log-call")
 async def log_call(followup_id: str, body: FollowupCallOutcomePayload, user: UserPublic = Depends(get_current_user)):
     outcome = "lost" if body.outcome == "rejected" else body.outcome
-    notes = _required_action_note(body.notes) if outcome == "lost" else None
-    if outcome != "lost":
-        _reject_action_note(body.notes)
-    f = await db.followups.find_one(floor_query(user, {"id": followup_id}), {"_id": 0})
-    if not f:
-        raise HTTPException(status_code=404, detail="Follow-up not found")
+    notes = _required_action_note(body.notes) if outcome == "lost" else (body.notes or "").strip() or None
+    f = await _selected_followup_or_404(followup_id, user)
+    if f.get("category") in lead_scope.POST_ORDER_CATEGORIES or f.get("rule_type") in lead_scope.POST_ORDER_RULES or f.get("purchase_id"):
+        raise HTTPException(404, "This activity belongs in Orders")
+    request_key = f"{user.id}:{body.request_key}" if body.request_key else None
+    fingerprint = hashlib.sha256(json.dumps(body.model_dump(mode="json", exclude={"request_key"}), sort_keys=True).encode()).hexdigest()
+    def replayed(row: dict) -> bool:
+        for entry in row.get("call_history", []):
+            if request_key and entry.get("request_key") == request_key:
+                if entry.get("request_fingerprint") != fingerprint:
+                    raise HTTPException(409, "This outcome was already saved with different details.")
+                return True
+        return False
+    if replayed(f):
+        return f
+    if f.get("status") not in {"open", "snoozed"}:
+        # Older clients can safely retry a completed outcome even without a key.
+        if f.get("completed_outcome") == outcome:
+            return f
+        raise HTTPException(409, "This follow-up is closed")
     now_dt = datetime.now(timezone.utc)
     if outcome in {"won", "converted"}:
         from services.order_confirmation import placed_order
@@ -1609,18 +1687,16 @@ async def log_call(followup_id: str, body: FollowupCallOutcomePayload, user: Use
         patch["notes"] = notes
     next_created = None
 
-    if outcome == "lost" and not (body.notes or "").strip():
-        raise HTTPException(status_code=422, detail="A reason is required when marking a client as lost")
-
-    if outcome == "pending" and body.next_followup_at is None:
-        raise HTTPException(status_code=422, detail="Choose the next follow-up date for a pending client")
-
-    if outcome == "pending":
-        next_due = body.next_followup_at
-        if next_due is None or (next_due.replace(tzinfo=timezone.utc) if next_due.tzinfo is None else next_due.astimezone(timezone.utc)) <= now_dt:
-            raise HTTPException(422, "The next follow-up date must be in the future")
+    creates_successor = outcome in {"interested", "call_back", "pending"}
+    due = body.next_followup_at
+    if outcome == "pending" and due is None:
+        raise HTTPException(422, "Choose the next follow-up date for a pending client")
+    if due is not None:
+        due = (due.replace(tzinfo=IST) if due.tzinfo is None else due).astimezone(timezone.utc)
+        if not creates_successor or due <= now_dt:
+            raise HTTPException(422, "Choose a future date for the next follow-up")
     successor_assignments = None
-    if outcome in ("interested", "call_back", "pending"):
+    if creates_successor:
         selected = body.assignments if body.assignments is not None else f.get("assignments")
         selected = _required_create_assignments([f["floor_id"]], selected, f.get("assigned_to") if body.assignments is None else None, f["floor_id"])
         local_selected = [item for item in selected if (item.floor_id if hasattr(item, "floor_id") else item["floor_id"]) == f["floor_id"]]
@@ -1643,18 +1719,10 @@ async def log_call(followup_id: str, body: FollowupCallOutcomePayload, user: Use
         else:
             patch.update({"assigned_to": None, "assigned_to_name": None})
 
-    if outcome in ("interested", "call_back", "pending"):
-        patch.update({"status": "done", "completed_at": now_iso(), "completed_outcome": outcome})
-        if outcome == "pending":
-            due = body.next_followup_at
-            if due.tzinfo is None:
-                due = due.replace(tzinfo=timezone.utc)
-            else:
-                due = due.astimezone(timezone.utc)
-            if due <= now_dt:
-                raise HTTPException(status_code=422, detail="The next follow-up date must be in the future")
-        else:
-            due = now_dt + timedelta(days=1 if outcome == "call_back" else 2)
+    successor = None
+    if creates_successor:
+        patch.update({"status": "done", "completed_at": now_iso(), "completed_outcome": outcome, "snoozed_until": None})
+        due = due or now_dt + timedelta(days=1 if outcome == "call_back" else 2)
         next_reason = {
             "call_back": "Call back requested",
             "interested": "Customer interested — follow up on their decision",
@@ -1680,26 +1748,15 @@ async def log_call(followup_id: str, body: FollowupCallOutcomePayload, user: Use
             assignments=f.get("assignments", []), reference_source=f.get("reference_source"),
             referrer_id=f.get("referrer_id"), referrer_name=f.get("referrer_name"), referrer_type=f.get("referrer_type"),
         )
-        await db.followups.insert_one(nf.model_dump())
+        successor = {**nf.model_dump(), "previous_followup_id": followup_id}
         next_created = nf.id
-    elif outcome == "no_answer":
-        attempts = patch["contact_attempts"]
-        patch["contact_attempts"] = attempts
-        if attempts >= 2:
-            # Escalate — stop same-day retries after the 2nd miss; push to
-            # tomorrow morning and bump urgency so it doesn't get buried.
-            next_due = (now_dt + timedelta(days=1)).replace(hour=9, minute=30, second=0, microsecond=0)
-            bumped_score = min(100, (f.get("priority_score") or 0) + 10)
-            bumped_level = "critical" if bumped_score >= 80 else "high" if bumped_score >= 60 else f.get("priority_level", "medium")
-            patch["due_at"] = next_due.isoformat()
-            patch["priority_score"] = bumped_score
-            patch["priority_level"] = bumped_level
-        else:
-            patch["due_at"] = (now_dt + timedelta(hours=4)).isoformat()
-    elif outcome == "rejected":
+    elif outcome == "no_answer" and patch["contact_attempts"] >= 2:
+        bumped_score = min(100, (f.get("priority_score") or 0) + 10)
+        bumped_level = "critical" if bumped_score >= 80 else "high" if bumped_score >= 60 else f.get("priority_level", "medium")
+        patch.update({"priority_score": bumped_score, "priority_level": bumped_level})
+    elif outcome == "contacted":
         patch.update({
-            "status": "dismissed", "completed_at": now_iso(),
-            "completed_outcome": "rejected", "resolution_note": "Customer rejected",
+            "status": "done", "completed_at": now_iso(), "completed_outcome": outcome, "snoozed_until": None,
         })
     elif outcome == "converted":
         patch.update({
@@ -1721,13 +1778,52 @@ async def log_call(followup_id: str, body: FollowupCallOutcomePayload, user: Use
     # not overwrite increments from another worker contacting this same lead.
     patch.pop("contact_attempts", None)
     patch.pop("call_attempts", None)
-    update = {"$set": patch}
+    entry = {
+        "outcome": outcome, "notes": notes, "response": (body.response or "").strip() or None,
+        "actor_id": user.id, "actor_name": user.full_name,
+        "recorded_at": now_dt.isoformat(), "attempt_id": attempt_id,
+        "request_key": request_key, "request_fingerprint": fingerprint if request_key else None,
+        "next_followup_id": next_created,
+    }
+    update = {"$set": patch, "$push": {"call_history": entry}}
     if not pending_attempt:
         update["$inc"] = {"contact_attempts": 1, "call_attempts": 1}
-    if outcome == "lost" and f.get("quotation_id") and f.get("floor_id") in {"ground-floor", "first-floor"}:
+    guard = {
+        "id": followup_id, "floor_id": f["floor_id"], "status": {"$in": ["open", "snoozed"]},
+        "due_at": f.get("due_at"),
+    }
+    if request_key:
+        guard["call_history.request_key"] = {"$ne": request_key}
+    if pending_attempt:
+        guard["call_history.attempt_id"] = {"$ne": pending_attempt}
+
+    async def commit_outcome(session=None):
+        result = await db.followups.update_one(guard, update, session=session)
+        if not result.matched_count:
+            return False
+        if successor:
+            await db.followups.insert_one(successor, session=session)
+        return True
+
+    if outcome == "lost" and f.get("quotation_id") and f["floor_id"] in {"ground-floor", "first-floor"}:
         await _record_lost_quotation_followup(f, update, user)
+        committed = True
+    elif successor:
+        # Move the original to Completed and insert the next reminder as
+        # one write unit so a retry cannot leave an extra open reminder.
+        from db import client
+
+        async with await client.start_session() as session:
+            committed = await session.with_transaction(commit_outcome)
     else:
-        await db.followups.update_one(floor_query(user, {"id": followup_id}), update)
+        committed = await commit_outcome()
+    if not committed:
+        current = await _selected_followup_or_404(followup_id, user)
+        if replayed(current):
+            return current
+        if pending_attempt and any(row.get("attempt_id") == pending_attempt for row in current.get("call_history", [])):
+            raise HTTPException(409, "An outcome is already recorded for this contact attempt.")
+        raise HTTPException(409, "This follow-up changed. Reopen it before recording the outcome.")
     if pending_attempt:
         # A second initiation by this worker may finish while this outcome is
         # awaiting scope writes. Only consume the attempt that we actually read.

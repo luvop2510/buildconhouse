@@ -1,9 +1,9 @@
 """Official BuildCon House quotation PDF — faithful A4 print template."""
 from __future__ import annotations
-from services.phone_format import format_phone
+from services.phone_format import format_department_phone
 from services.referrer_identity import pdf_reference_label
+from services.quotation_item_order import ordered_room_items
 
-from collections import defaultdict
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from services.money import format_indian_money
@@ -40,6 +40,7 @@ LINE = colors.HexColor("#8E8E8E")
 GRID = colors.HexColor("#9C9C9C")
 HEADER_GREY = colors.HexColor("#C8C8C8")
 ZEBRA = colors.HexColor("#F0F0F0")
+QUOTATION_SERIAL_GREY = colors.HexColor("#595959")
 WHITE = colors.white
 PDF_DIR = Path(__file__).resolve().parent
 LOGO_PATH = PDF_DIR / "buildcon_logo.png"
@@ -498,7 +499,7 @@ def _img(
     return _ImageUnavailableFrame(width_mm, height_mm)
 
 
-def _draw_footer(cv, doc, branding: dict | None = None) -> None:
+def _draw_footer(cv, doc, branding: dict | None = None, *, floor_id: str | None = None) -> None:
     b = branding or {}
     cv.saveState()
     page_width, _ = doc.pagesize
@@ -510,7 +511,7 @@ def _draw_footer(cv, doc, branding: dict | None = None) -> None:
     cv.drawString(doc.leftMargin, 10.5 * mm, b.get("footer_company_name") or "Buildcon House")
     cv.setFillColor(INK)
     cv.setFont("Helvetica", 7)
-    cv.drawString(doc.leftMargin, 6.5 * mm, f"M: {format_phone(b.get('footer_phone') or '+91 99099 06652')}   |   {b.get('footer_email') or 'buildconhouse10@gmail.com'}")
+    cv.drawString(doc.leftMargin, 6.5 * mm, f"M: {format_department_phone(b.get('footer_phone') or '+91 99099 06652', floor_id)}   |   {b.get('footer_email') or 'buildconhouse10@gmail.com'}")
     right = page_width - doc.rightMargin
     cv.setFont("Helvetica", 7)
     cv.drawRightString(right, 10.5 * mm, f"Page {doc.page}")
@@ -526,6 +527,7 @@ WATERMARK_PAGE_INSET = 4 * mm
 # Blend the mark more fully into white stock so product tables remain the
 # strongest content on every page while the watermark still prints reliably.
 WATERMARK_INK_STRENGTH = 0.18
+QUOTATION_WATERMARK_INK_STRENGTH = 0.16
 HEADER_LOGO_INK_STRENGTH = 0.76
 
 
@@ -549,7 +551,7 @@ def watermark_geometry(page_width: float, page_height: float) -> tuple[float, fl
 
 
 @functools.lru_cache(maxsize=4)
-def _print_watermark_image(path: str, modified_ns: int) -> ImageReader:
+def _print_watermark_image(path: str, modified_ns: int, ink_strength: float) -> ImageReader:
     """Bake pale ink into RGB pixels so PDF print engines need no alpha.
 
     The previous 7.5% PDF transparency made the logo almost white and depended
@@ -562,7 +564,7 @@ def _print_watermark_image(path: str, modified_ns: int) -> ImageReader:
         rgba = source.convert("RGBA")
     white = PILImage.new("RGBA", rgba.size, "white")
     original = PILImage.alpha_composite(white, rgba).convert("RGB")
-    printable = PILImage.blend(white.convert("RGB"), original, WATERMARK_INK_STRENGTH)
+    printable = PILImage.blend(white.convert("RGB"), original, ink_strength)
     return ImageReader(printable)
 
 
@@ -599,7 +601,8 @@ class _HeaderLogo(Flowable):
         self.canv.drawImage(self.image, 0, 0, width=self.width, height=self.height, mask="auto")
 
 
-def _draw_room_watermark(cv, doc, branding: dict | None = None) -> None:
+def _draw_room_watermark(cv, doc, branding: dict | None = None, *,
+                         ink_strength: float = WATERMARK_INK_STRENGTH) -> None:
     b = branding or {}
     if not b.get("show_watermark", True):
         return
@@ -612,16 +615,18 @@ def _draw_room_watermark(cv, doc, branding: dict | None = None) -> None:
     watermark_cy = watermark_y + watermark_h / 2
     cv.translate(watermark_cx, watermark_cy)
     cv.rotate(watermark_angle(page_width, page_height))
-    image = _print_watermark_image(str(LOGO_PATH), LOGO_PATH.stat().st_mtime_ns)
+    image = _print_watermark_image(str(LOGO_PATH), LOGO_PATH.stat().st_mtime_ns, ink_strength)
     cv.drawImage(image, -watermark_w / 2, -watermark_h / 2, width=watermark_w, height=watermark_h)
     cv.restoreState()
 
 
-def _draw_quotation_page_chrome(cv, doc, branding: dict | None = None) -> None:
+def _draw_quotation_page_chrome(cv, doc, branding: dict | None = None, *,
+                                floor_id: str | None = None, product_quotation: bool = False) -> None:
     """Shared footer/watermark chrome for the summary and area pages."""
     if doc.page > 1:
-        _draw_room_watermark(cv, doc, branding)
-    _draw_footer(cv, doc, branding)
+        strength = QUOTATION_WATERMARK_INK_STRENGTH if product_quotation else WATERMARK_INK_STRENGTH
+        _draw_room_watermark(cv, doc, branding, ink_strength=strength)
+    _draw_footer(cv, doc, branding, floor_id=floor_id)
 
 
 def _brand_header(right_title: str, styles: dict, style_key: str = "titleRight") -> Table:
@@ -752,6 +757,10 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
     """
     started_at = monotonic()
     b = branding or {}
+    floor_id = quotation.get("floor_id") or customer.get("floor_id")
+    standard = (quotation.get("doc_type") or "standard") == "standard"
+    product_quotation = standard and floor_id != "second-floor" and quotation.get("_po_final") is None
+    compact_ground_meta = product_quotation and floor_id == "ground-floor"
     items = quotation.get("items") or []
     media_urls = [
         url for item in items
@@ -774,7 +783,7 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
     def page_chrome(cv, template_doc, size):
         cv.setPageSize(size)
         template_doc.pagesize = size
-        _draw_quotation_page_chrome(cv, template_doc, branding=b)
+        _draw_quotation_page_chrome(cv, template_doc, branding=b, floor_id=floor_id, product_quotation=product_quotation)
 
     doc.addPageTemplates([
         PageTemplate(id="cover", frames=[Frame(10 * mm, BOTTOM_MARGIN_MM * mm,
@@ -810,6 +819,9 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
         "tableHead": ParagraphStyle("tableHead", parent=base["Normal"], fontName="Helvetica-Bold", fontSize=7.5, leading=9.0, textColor=INK, alignment=1),
         "signature": ParagraphStyle("signature", parent=base["Normal"], fontName="Helvetica-Bold", fontSize=7.5, leading=9, textColor=INK, alignment=2),
     }
+    serial_style = styles["cellCenter"]
+    if product_quotation:
+        serial_style = ParagraphStyle("quoteSerial", parent=serial_style, fontSize=9, textColor=QUOTATION_SERIAL_GREY)
     # Discount-aware layout mode — decided ONCE for the whole document so the
     # summary table and every item table switch columns consistently (never
     # mixed within a single PDF). Signal: the quotation's own resolved
@@ -821,44 +833,30 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
     )
     story: list[Flowable] = []
     created = datetime.strptime(pdf_document_date(quotation), "%d-%m-%Y").strftime("%d %b %Y")
-    room_order = list(quotation.get("rooms") or [])
-    grouped_with_position: dict[str, list[tuple[int, dict]]] = defaultdict(list)
-    for source_position, item in enumerate(quotation.get("items", [])):
-        grouped_with_position[item.get("room") or "General"].append((source_position, item))
-
-    def _item_sort_key(entry: tuple[int, dict]) -> tuple[int, int]:
-        """Respect staff drag/drop order without letting malformed values shuffle a page."""
-        source_position, item = entry
-        try:
-            return int(item.get("sort_order", source_position)), source_position
-        except (TypeError, ValueError):
-            return source_position, source_position
-
-    # Products always stay with their selected room (mixing bathrooms simply
-    # to fill a page made the document harder to read), while order inside the
-    # room follows the persisted canvas order rather than incidental API order.
-    grouped: dict[str, list[dict]] = {
-        room: [item for _, item in sorted(entries, key=_item_sort_key)]
-        for room, entries in grouped_with_position.items()
-    }
-    for room in grouped:
-        if room not in room_order:
-            room_order.append(room)
-    room_order = [r for r in room_order if grouped.get(r)]  # never render a room with 0 items
+    grouped = {room: [item for _, item in entries]
+               for room, entries in ordered_room_items(items, quotation.get("rooms")).items()}
+    room_order = list(grouped)
 
     # --- PAGE 1: supplied BuildCon House quotation cover ---------------------
     # Keep this cover deliberately close to the approved quotation's first
-    # page: the broad header, two four-field information bands, clear price
+    # page: the broad header, customer and reference information, clear price
     # summary and roomy contractual block are the visual system.  Product
     # images belong on the itemised pages, where up to 17 real selections can
     # be read without turning the cover into a cramped catalogue.
     story.append(_brand_header("PRODUCT QUOTATION<br/><font name='Helvetica' size='8'>Tiles &amp; Sanitaryware Solutions</font>", styles))
     story.extend([Spacer(1, 3 * mm), HRFlowable(width="100%", thickness=1.25, color=BLUE), Spacer(1, 2.5 * mm)])
+    reference = pdf_reference_label(quotation)
+    address = quotation.get("address_snapshot") or customer.get("address") or ""
+    labels = ["REFERENCE", "", "ADDRESS", ""] if compact_ground_meta else ["REFERENCE", "ATTENDED BY", "PREPARED BY", "ADDRESS"]
+    details = [reference, "", address, ""] if compact_ground_meta else [
+        reference, quotation.get("attended_by") or "",
+        quotation.get("prepared_by") or b.get("footer_company_name") or "Buildcon House", address,
+    ]
     meta = [
         [Paragraph("CUSTOMER NAME", styles["label"]), Paragraph("CONTACT NO.", styles["label"]), Paragraph("SELECTION / QUOTATION DATE", styles["label"]), Paragraph("QUOTATION NO.", styles["label"])],
-        [Paragraph(_escape(customer.get("name") or quotation.get("customer_name")), styles["body"]), Paragraph(_escape(format_phone(quotation.get("phone_snapshot") or customer.get("phone") or "")), styles["body"]), Paragraph(created, styles["body"]), Paragraph(_escape(quotation.get("number")), styles["body"])],
-        [Paragraph("REFERENCE", styles["label"]), Paragraph("ATTENDED BY", styles["label"]), Paragraph("PREPARED BY", styles["label"]), Paragraph("ADDRESS", styles["label"])],
-        [Paragraph(_escape(pdf_reference_label(quotation)), styles["body"]), Paragraph(_escape(quotation.get("attended_by") or ""), styles["body"]), Paragraph(_escape(quotation.get("prepared_by") or b.get("footer_company_name") or "Buildcon House"), styles["body"]), Paragraph(_escape(quotation.get("address_snapshot") or customer.get("address") or ""), styles["body"])],
+        [Paragraph(_escape(customer.get("name") or quotation.get("customer_name")), styles["body"]), Paragraph(_escape(format_department_phone(quotation.get("phone_snapshot") or customer.get("phone"), floor_id)), styles["body"]), Paragraph(created, styles["body"]), Paragraph(_escape(quotation.get("number")), styles["body"])],
+        [Paragraph(label, styles["label"]) if label else "" for label in labels],
+        [Paragraph(_escape(value), styles["body"]) if value else "" for value in details],
     ]
     meta_row_heights = [None] * 4
     meta_style = [
@@ -868,6 +866,10 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
         ("LEFTPADDING", (0, 0), (-1, -1), 3), ("RIGHTPADDING", (0, 0), (-1, -1), 3),
         ("TOPPADDING", (0, 0), (-1, -1), 1), ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
     ]
+    if compact_ground_meta:
+        # Reclaim the two staff fields' space for Reference and Address.
+        for row in (2, 3):
+            meta_style.extend([("SPAN", (0, row), (1, row)), ("SPAN", (2, row), (3, row))])
     meta_table = Table(meta, colWidths=[_pw(66.75) * mm] * 4, rowHeights=meta_row_heights, minRowHeights=[7 * mm, 8 * mm, 7 * mm, 8 * mm])
     meta_table.setStyle(TableStyle(meta_style))
     story.extend([meta_table, Spacer(1, 2 * mm)])
@@ -887,12 +889,12 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
         gross, _, net = _room_totals(grouped.get(room, []))
         if has_discount:
             summary_rows.append([
-                Paragraph(str(index + 1), styles["cellCenter"]), Paragraph(_ellipsize(room, 180), styles["cell"]),
+                Paragraph(str(index + 1), serial_style), Paragraph(_ellipsize(room, 180), styles["cell"]),
                 _SingleLineParagraph(_standard_money(gross), styles["cellCenter"]), _SingleLineParagraph(_standard_money(net), styles["cellCenter"]),
             ])
         else:
             summary_rows.append([
-                Paragraph(str(index + 1), styles["cellCenter"]), Paragraph(_ellipsize(room, 180), styles["cell"]),
+                Paragraph(str(index + 1), serial_style), Paragraph(_ellipsize(room, 180), styles["cell"]),
                 _SingleLineParagraph(_standard_money(net), styles["cellCenter"]),
             ])
     if has_discount:
@@ -911,10 +913,9 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
         ("BACKGROUND", (0, -2), (-1, -1), HEADER_GREY), ("ALIGN", (0, 0), (0, -1), "CENTER"),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LEFTPADDING", (0, 0), (-1, -1), 3), ("RIGHTPADDING", (0, 0), (-1, -1), 3),
     ]
-    for r in range(2, n_rooms + 1, 2):  # zebra every 2nd room row (1-indexed data rows)
-        # Retain the alternating serial-number cue without painting over
-        # the diagonal background across the complete room row.
-        summary_style_cmds.append(("BACKGROUND", (0, r), (0, r), ZEBRA))
+    if not product_quotation:
+        for r in range(2, n_rooms + 1, 2):
+            summary_style_cmds.append(("BACKGROUND", (0, r), (0, r), ZEBRA))
     summary = Table(summary_rows, colWidths=summary_col_widths, rowHeights=summary_row_heights, repeatRows=1)
     summary.setStyle(TableStyle(summary_style_cmds))
     story.extend([summary, Spacer(1, 2 * mm), Paragraph("OUR BRAND PARTNERS", styles["section"]), Spacer(1, 0.8 * mm)])
@@ -955,7 +956,7 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
         ("TOPPADDING", (0, 0), (-1, -1), 0.4), ("BOTTOMPADDING", (0, 0), (-1, -1), 0.4),
     ]))
     enquiries = Paragraph(
-        f"For general enquiries: M: {_escape(format_phone(b.get('footer_phone') or '+91 99099 06652'))}  |  Email: {_escape(b.get('footer_email') or 'buildconhouse10@gmail.com')}",
+        f"For general enquiries: M: {_escape(format_department_phone(b.get('footer_phone') or '+91 99099 06652', floor_id))}  |  Email: {_escape(b.get('footer_email') or 'buildconhouse10@gmail.com')}",
         styles["small"],
     )
     signature = Table([[Paragraph("I/We have reviewed and agree to the terms and conditions mentioned in this quotation.", styles["small"]), Paragraph("CUSTOMER SIGNATURE &amp; DATE", styles["signature"])]], colWidths=[_pw(160) * mm, _pw(107) * mm], rowHeights=[8 * mm])
@@ -1076,7 +1077,7 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
                 ]
                 if has_discount:
                     rows.append([
-                        Paragraph(str(sr_no), styles["cellCenter"]), product_images, diagram_images,
+                        Paragraph(str(sr_no), serial_style), product_images, diagram_images,
                         Paragraph(_ellipsize(item.get("sku"), 80), styles["itemSku"]), Paragraph(description, styles["itemDescription"]),
                         _SingleLineParagraph(_standard_money(listed_mrp), styles["itemMoney"]), Paragraph(f"{qty:g}", styles["itemQty"]),
                         _SingleLineParagraph(_standard_money(qty * listed_mrp), styles["itemMoney"]),
@@ -1084,7 +1085,7 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
                     ])
                 else:
                     rows.append([
-                        Paragraph(str(sr_no), styles["cellCenter"]), product_images, diagram_images,
+                        Paragraph(str(sr_no), serial_style), product_images, diagram_images,
                         Paragraph(_ellipsize(item.get("sku"), 80), styles["itemSku"]), Paragraph(description, styles["itemDescription"]),
                         _SingleLineParagraph(_standard_money(base_rate), styles["itemMoney"]), Paragraph(f"{qty:g}", styles["itemQty"]),
                         _SingleLineParagraph(_standard_money(qty * base_rate), styles["itemMoney"]),
@@ -1116,8 +1117,9 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
                 ("TOPPADDING", (0, 0), (-1, 0), 2), ("BOTTOMPADDING", (0, 0), (-1, 0), 2),
                 ("TOPPADDING", (0, -1), (-1, -1), 2), ("BOTTOMPADDING", (0, -1), (-1, -1), 2),
             ]
-            for r in range(2, n_data_rows + 1, 2):  # zebra every 2nd item row
-                item_style_cmds.append(("BACKGROUND", (0, r), (0, r), ZEBRA))
+            if not product_quotation:
+                for r in range(2, n_data_rows + 1, 2):
+                    item_style_cmds.append(("BACKGROUND", (0, r), (0, r), ZEBRA))
             table = Table(rows, colWidths=item_widths, rowHeights=row_heights, repeatRows=1)
             table.setStyle(TableStyle(item_style_cmds))
             story.append(table)

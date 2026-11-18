@@ -15,15 +15,16 @@ from services.money import format_indian_money
 
 import asyncio
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Optional
+from datetime import date, datetime, time, timedelta, timezone
+from typing import Any, Optional
+from uuid import NAMESPACE_URL, uuid5
 
 from pymongo import UpdateOne
 from pymongo.errors import DuplicateKeyError
 
 from auth import floor_inherit
 from db import db
-from models import Followup, now_iso
+from models import Followup, UserPublic, now_iso
 from services.activity_log import log_event
 from services.notifications import notify
 from services.lead_scope import POST_ORDER_CATEGORIES, POST_ORDER_RULES
@@ -60,15 +61,77 @@ def quotation_followup_due_at(created_at: datetime, floor_id: str) -> Optional[d
     return due if datetime.now(timezone.utc) >= due else None
 
 
+async def schedule_sent_quotation_followup(
+    quotation: dict, *, sent_at: datetime, actor: UserPublic,
+    followup_date: date | None = None, session: Any,
+) -> str:
+    """Create one first follow-up in the same transaction that records the send."""
+    sent_day = sent_at.astimezone(IST).date()
+    due_date = followup_date or sent_day + timedelta(days=FOLLOWUP_DEFAULT_DAYS)
+    if due_date <= sent_day:
+        raise ValueError("Choose a follow-up date after the send date")
+
+    floor = floor_inherit(quotation)
+    customer_id = quotation["customer_id"]
+    customer = await db.customers.find_one(
+        {"id": customer_id, "floor_id": floor}, {"_id": 0, "phone": 1, "tier": 1}, session=session,
+    ) or {}
+    rule = "quotation_tiles_waiting" if quotation.get("doc_type") == "tiles_quotation" else "quotation_followup"
+    key = f"quotation_sent:{quotation['id']}"
+    reminder = Followup(
+        id=str(uuid5(NAMESPACE_URL, key)),
+        source_key=key,
+        rule_type=rule,
+        category="quotation",
+        floor_id=floor,
+        customer_id=customer_id,
+        customer_name=quotation.get("customer_name") or "",
+        customer_phone=customer.get("phone") or quotation.get("phone_snapshot"),
+        customer_tier=customer.get("tier") or "retail",
+        quotation_id=quotation["id"],
+        quotation_number=quotation.get("number"),
+        project_name=quotation.get("project_name"),
+        value=float(quotation.get("grand_total") or 0),
+        reason="Follow up after sending the quotation",
+        next_action="Call customer",
+        next_action_reason="Ask whether the customer has reviewed the quotation.",
+        due_at=datetime.combine(due_date, time.min, tzinfo=IST).astimezone(timezone.utc).isoformat(),
+        assigned_to=actor.id if actor.role != "owner" else None,
+        assigned_to_name=actor.full_name if actor.role != "owner" else None,
+    ).model_dump()
+    await db.followups.update_one(
+        {"_id": key}, {"$setOnInsert": {**reminder, "scheduled_from_send": True, "date_only_due": True}}, upsert=True, session=session,
+    )
+    # Keep older review reminders and their notes as history. Their original
+    # date was derived from creating a draft or exporting a PDF.
+    await db.followups.update_many(
+        {
+            "floor_id": floor, "quotation_id": quotation["id"],
+            "status": {"$in": ["open", "snoozed"]},
+            "$or": [
+                {"source_key": {"$in": [f"quotation_followup:{quotation['id']}", f"quotation_tiles_waiting:{quotation['id']}"]}},
+                {"automation_key": {"$regex": "^quotation-generated:"}},
+            ],
+        },
+        {"$set": {
+            "status": "done", "auto_resolved": True, "completed_at": sent_at.isoformat(),
+            "updated_at": sent_at.isoformat(), "snoozed_until": None,
+            "resolution_note": "Replaced by the follow-up scheduled when the quotation was sent.",
+        }},
+        session=session,
+    )
+    return due_date.isoformat()
+
+
 DELIVERED_RECENCY_DAYS = 5
 
 RULE_DEFINITIONS = [
     {"rule_type": "quotation_followup", "label": "Quotation/selection follow-up", "category": "quotation",
-     "description": "Floor-timed nudge — Ground Floor (Tiles) at 4 days, First Floor (Sanitary) at 7 days after creation. Excludes Tile Selections/Quotations, which use their own configurable cadence below."},
+     "description": "First reminder seven calendar days after sending a quotation, unless the sender chooses another date."},
     {"rule_type": "selection_waiting", "label": "Tile Selection waiting", "category": "selection",
      "description": "Escalating reminder while a Tile Selection awaits conversion to a Quotation. Day thresholds configurable in Settings → Automation Rules (default 2/4/7/10 days)."},
     {"rule_type": "quotation_tiles_waiting", "label": "Tile Quotation waiting", "category": "quotation",
-     "description": "Escalating reminder while a Tile Quotation awaits approval/order. Day thresholds configurable in Settings → Automation Rules (default 2/5/10/15 days)."},
+     "description": "First reminder seven calendar days after sending a Tile Quotation, unless the sender chooses another date."},
     {"rule_type": "walk_in_new", "label": "Walk-in waiting", "category": "walk_in",
      "description": "Escalating reminder while a Walk-in has not yet reached a Selection. Day thresholds configurable in Settings → Automation Rules (default 1/3/7/14 days). Auto-closes the moment a Selection is created for that customer."},
     {"rule_type": "order_confirmed_ops", "label": "Order confirmed — Operations handoff", "category": "operations",
@@ -325,7 +388,7 @@ async def _tiles_pipeline_producer(quotations: list[dict], customers: dict[str, 
         status = q.get("status")
         if doc_type == "tiles_selection" and status not in ("ordered", "rejected", "lost", "cancelled"):
             build(q, cust, selection_offsets, "selection_waiting", "selection", "Selection")
-        elif doc_type == "tiles_quotation" and status not in ("ordered", "rejected", "lost", "cancelled"):
+        elif doc_type == "tiles_quotation" and not q.get("sent_at") and status in ("sent", "pending_approval", "approved", "won"):
             build(q, cust, quotation_offsets, "quotation_tiles_waiting", "quotation", "Quotation")
     return out
 
@@ -441,6 +504,7 @@ async def reconcile_followups() -> dict:
 
 async def _persist_desired_followups(
     desired: dict[str, dict], quotation_created_by: dict[str, str] | None = None,
+    closed_quotations: set[tuple[str, str]] | None = None,
 ) -> dict:
     """Write the reconciler's desired state: upsert what should exist, resolve
     what should not.
@@ -540,7 +604,12 @@ async def _persist_desired_followups(
     await flush_refreshes()
 
     for _key, ex in existing_by_key.items():
-        await db.followups.update_one({"id": ex["id"]}, {"$set": {
+        if ex.get("scheduled_from_send") and (ex["floor_id"], ex["quotation_id"]) not in (closed_quotations or set()):
+            # A send can commit after our quotation snapshot. An unknown
+            # source is never proof of closure. Explicit deletion cleans up
+            # its own quotation links, and order/loss paths close them in-place.
+            continue
+        await db.followups.update_one({"id": ex["id"], "status": {"$in": ["open", "snoozed"]}}, {"$set": {
             "status": "done", "auto_resolved": True, "completed_at": now_iso(),
             "resolution_note": "Resolved automatically — the trigger condition no longer applies.",
             "updated_at": now_iso(),
@@ -610,23 +679,22 @@ async def _reconcile_followups_locked() -> dict:
         days_since_contact = age_days(last_contact)
         tags = [tier.upper()] + ([q["reference_source"]] if q.get("reference_source") else [])
 
-        if (status in ("draft", "sent", "pending_approval") or (status == "approved" and _followup_floor_id(q, None) == "first-floor")) and created_at and q.get("doc_type") not in ("tiles_selection", "tiles_quotation"):
+        if not q.get("sent_at") and (status in ("sent", "pending_approval") or (status == "approved" and floor_inherit(q) == "first-floor")) and created_at and q.get("doc_type") not in ("tiles_selection", "tiles_quotation"):
             q_floor_id = _followup_floor_id(q, None)
             due = quotation_followup_due_at(created_at, q_floor_id)
             if due:
-                source_label = "Quotation draft" if status == "draft" else "Quotation"
                 age_created = age_days(created_at)
                 upsert(
                     f"quotation_followup:{q['id']}", "quotation_followup", "quotation", cust,
                     quotation=q, value=value, due_at=due.isoformat(),
                     urgency_bullet=f"No follow-up since it was created {age_created} days ago", urgency_pts=20,
                     reason=(
-                        f"{source_label} created {age_created} day(s) ago; no order placed — "
+                        f"Quotation created {age_created} day(s) ago; no order placed — "
                         f"₹{money_short(value)}. Time to follow up."
                     ),
                     next_action="Call customer",
                     next_action_reason=f"{quotation_followup_delay_days(q_floor_id)}-day follow-up window has passed.",
-                    channel="call", tags=tags + (["Quotation draft"] if status == "draft" else []), days_since_contact=days_since_contact,
+                    channel="call", tags=tags, days_since_contact=days_since_contact,
                 )
 
         if status in ("sent", "pending_approval", "approved") and q.get("valid_until"):
@@ -668,6 +736,8 @@ async def _reconcile_followups_locked() -> dict:
     for q in quotations:
         if q.get("customer_outcome") in {"won", "lost"}:
             continue
+        if q.get("status") == "draft" and q.get("doc_type") != "tiles_selection":
+            continue
         quotations_by_customer.setdefault(q["customer_id"], []).append(q)
 
     for cid, cust in customers.items():
@@ -697,4 +767,8 @@ async def _reconcile_followups_locked() -> dict:
     desired = {key: fields for key, fields in desired.items() if (fields.get("floor_id"), fields.get("customer_id")) not in ordered_customers}
     # ---- Persist: upsert desired, auto-resolve stale --------------------------
     quotation_created_by = {q["id"]: q.get("created_by") for q in quotations}
-    return await _persist_desired_followups(desired, quotation_created_by)
+    closed_quotations = {
+        (floor_inherit(q), q["id"]) for q in quotations
+        if q.get("status") in {"ordered", "rejected", "cancelled", "lost"} or q.get("customer_outcome") in {"won", "lost"}
+    }
+    return await _persist_desired_followups(desired, quotation_created_by, closed_quotations)

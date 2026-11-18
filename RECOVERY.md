@@ -49,10 +49,9 @@ sudo supervisorctl restart backend expo
 
 Then run both bootstrap commands above. Never commit the populated `.env` file.
 
-## Frontend recovery (`frontend/.env`)
+## Frontend recovery
 
-`frontend/.env` disappears for the same reason as the backend's. It needs exactly
-one line:
+Restore the repository root `.env` with the current preview URL.
 
 ```
 EXPO_PUBLIC_BACKEND_URL=<this session's public preview URL>

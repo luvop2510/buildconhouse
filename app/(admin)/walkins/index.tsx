@@ -1,4 +1,4 @@
-import { formatPhone } from "@/src/utils/phone";
+import { formatDepartmentPhone } from "@/src/utils/phone";
 import { MobileFilterSection, MultiSelectFilterBar } from "@/src/components/ds";
 import { filterValues, toggleFilterValue } from "@/src/utils/filters";
 import { WALKIN_SUMMARY_LABELS, walkinSummaryFilters, type WalkinSummary } from "@/src/utils/walkinSummary";
@@ -321,7 +321,7 @@ export default function WalkInsScreen({
     if (rows.length >= WALKIN_EXPORT_LIMIT) throw new Error("This list reached the 2,000-walk-in limit. Narrow the filters before exporting.");
     return [
       ["Customer", "Phone", "Walk-in", "Visited", "Status", "Salesperson", "Floor", "Source", "Interested products", "Next follow-up"],
-      ...rows.map(item => [item.customer_name, formatPhone(item.customer_phone), item.number, item.visited_at, item.status.replace(/_/g, " "), item.salesperson_name || "Unassigned", item.floor_id, item.source, item.interested_products.join(", "), item.next_followup_at]),
+      ...rows.map(item => [item.customer_name, formatDepartmentPhone(item.customer_phone, item.floor_id), item.number, item.visited_at, item.status.replace(/_/g, " "), item.salesperson_name || "Unassigned", item.floor_id, item.source, item.interested_products.join(", "), item.next_followup_at]),
     ];
   };
   const pageHeader = <PageHeader

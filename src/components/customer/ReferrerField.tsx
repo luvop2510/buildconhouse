@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, View } from "react-native";
-import { Text, TextInput } from "@/src/components/AppText";
+import { DepartmentPhoneFloor, Text, TextInput } from "@/src/components/AppText";
 
-import { validPhone } from "@/src/utils/phone";
+import { formatDepartmentPhone, validPhone } from "@/src/utils/phone";
 import { documentReferrerName, referrerCode } from "@/src/utils/referrer";
 import { api } from "@/src/api/client";
 import { Alert, Button, LoadingState, Sheet, TextField } from "@/src/components/ui";
@@ -14,6 +14,7 @@ export type ReferrerValue = Pick<Referrer, "id" | "name" | "type" | "company"> |
 
 export function ReferrerField({ value, onChange, floorId, label = "Referred By", allowCreate = true, disabled = false, showCode = true }: { value: ReferrerValue; onChange: (value: ReferrerValue) => void; floorId?: string; label?: string; allowCreate?: boolean; disabled?: boolean; showCode?: boolean }) {
   const { isPhone } = useBp();
+  const departmentFloor = useContext(DepartmentPhoneFloor);
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<Referrer[]>([]);
   const [kind, setKind] = useState<Referrer["type"] | "all">("all");
@@ -95,7 +96,7 @@ export function ReferrerField({ value, onChange, floorId, label = "Referred By",
         {allowCreate && kind !== "all" ? <>
         <Text style={[type.label, { marginTop: spacing.md }]}>Add new {kind === "architect" ? "architect" : "interior designer"}</Text>
         <TextInput value={name} onChangeText={setName} placeholder="Designer / architect name (required)" accessibilityLabel="Designer / architect name (required)" style={{ minHeight: 48, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, paddingHorizontal: spacing.md }} />
-        <TextField label="Phone (required)" value={phone} onChangeText={setPhone} keyboardType="phone-pad" placeholder="990-995-57-55" testID="lead-interior-phone" />
+        <TextField label="Phone (required)" value={phone} onChangeText={setPhone} keyboardType="phone-pad" phoneFloorId={floorId} placeholder={formatDepartmentPhone("9909955755", floorId ?? departmentFloor)} testID="lead-interior-phone" />
         <TextField label="Address (optional)" value={address} onChangeText={setAddress} />
         <TextInput value={company} onChangeText={setCompany} placeholder="Interior / studio name (optional)" accessibilityLabel="Interior / studio name" style={{ minHeight: 48, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, paddingHorizontal: spacing.md }} testID="lead-interior-company" />
         <Button label={adding ? "Adding…" : "Add and select"} disabled={adding || !name.trim() || !validPhone(phone)} onPress={add} />

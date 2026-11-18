@@ -34,7 +34,7 @@ def now() -> str:
 
 
 def public_receipt(record: dict) -> dict:
-    return {key: record.get(key) for key in ("idempotency_key", "source_id", "status", "message_id", "created_at", "updated_at", "error_code")}
+    return {key: record.get(key) for key in ("idempotency_key", "source_id", "status", "message_id", "created_at", "updated_at", "submitted_at", "error_code")}
 
 
 async def send_document(pdf_bytes: bytes, filename: str, recipient_phone: str, message: str,
@@ -95,11 +95,12 @@ async def send_document(pdf_bytes: bytes, filename: str, recipient_phone: str, m
             message_id = response.json()["messages"][0]["id"]
             if not isinstance(message_id, str) or not message_id:
                 raise ValueError("Missing message ID")
-            record.update(status="accepted", message_id=message_id, updated_at=now())
+            submitted_at = now()
+            record.update(status="accepted", message_id=message_id, updated_at=submitted_at, submitted_at=submitted_at)
             # Attach the provider ID first; never overwrite a concurrently
             # received terminal status with the local acceptance acknowledgement.
             await db.whatsapp_deliveries.update_one(scope, {"$set": {
-                "message_id": message_id, "updated_at": record["updated_at"]}})
+                "message_id": message_id, "updated_at": submitted_at, "submitted_at": submitted_at}})
             await db.whatsapp_deliveries.update_one({**scope, "provider_event_order": {"$exists": False}},
                 {"$set": {"status": "accepted"}})
             early = await db.whatsapp_status_events.find_one({"message_id": message_id}, {"_id": 0})

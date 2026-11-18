@@ -1,6 +1,7 @@
-"""Only explicit lost actions can write notes; routine CRM actions are note-free."""
+"""Postponement and outcome commands own notes; routine edits preserve them."""
 from __future__ import annotations
 import asyncio
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 import pytest
@@ -22,8 +23,6 @@ def user():
     (routes.update_followup, FollowupUpdate(status="dismissed", notes="Routine note")),
     (routes.update_followup, FollowupUpdate(notes="Standalone note")),
     (routes.contact_followup, FollowupContactPayload(channel="call", notes="Routine note")),
-    (routes.log_call, FollowupCallOutcomePayload(outcome="won", notes="Routine note")),
-    (routes.log_call, FollowupCallOutcomePayload(outcome="no_answer", notes="Routine note")),
 ])
 def test_non_loss_notes_rejected_before_database(monkeypatch, action, payload):
     database = AsyncMock()
@@ -38,16 +37,25 @@ def test_non_loss_notes_rejected_before_database(monkeypatch, action, payload):
     (routes.complete_followup, FollowupCompletePayload()),
     (routes.snooze_followup, FollowupSnoozePayload(preset="1h")),
     (routes.update_followup, FollowupUpdate(status="dismissed")),
-    (routes.update_followup, FollowupUpdate(due_at="2026-10-19T10:00:00+00:00")),
 ])
 def test_routine_changes_preserve_historical_notes(monkeypatch, action, payload):
-    collection = SimpleNamespace(find_one=AsyncMock(return_value={
+    due = routes.ist_day_bounds_utc()[0].isoformat()
+    row = {
         "id": "followup-1", "customer_id": "customer-1", "notes": "Historical note",
-    }), update_one=AsyncMock())
+        "status": "open", "floor_id": "first-floor", "due_at": due,
+    }
+    class Morning(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime.fromisoformat(due).replace(tzinfo=timezone.utc).astimezone(tz) + routes.timedelta(hours=9)
+    monkeypatch.setattr(routes, "datetime", Morning)
+    collection = SimpleNamespace(find_one=AsyncMock(return_value=row), update_one=AsyncMock(),
+        find_one_and_update=AsyncMock(return_value=row))
     monkeypatch.setattr(routes, "db", SimpleNamespace(followups=collection))
     monkeypatch.setattr(routes, "log_event", AsyncMock())
     asyncio.run(action("followup-1", payload, user()))
-    saved = collection.update_one.await_args.args[1]["$set"]
+    write = collection.update_one.await_args or collection.find_one_and_update.await_args
+    saved = write.args[1]["$set"]
     assert "notes" not in saved
     assert "Historical note" not in saved.values()
 

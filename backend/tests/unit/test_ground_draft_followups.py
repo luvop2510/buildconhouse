@@ -1,4 +1,4 @@
-"""Saved Ground selections/quotations remain leads until an order or loss."""
+"""Ground selections and quotations have different start points for follow-ups."""
 import asyncio
 from datetime import datetime, timedelta, timezone
 
@@ -16,6 +16,9 @@ def test_saved_ground_drafts_need_followup_even_without_items(monkeypatch, doc_t
     quote = {"id": "q", "number": "TQ-1", "floor_id": "ground-floor", "customer_id": "c", "status": status,
              "doc_type": doc_type, "created_at": (datetime.now(timezone.utc) - timedelta(days=3)).isoformat(), "items": []}
     rows = asyncio.run(engine._tiles_pipeline_producer([quote], {"c": {"id": "c", "name": "Customer"}}, {}))
+    if doc_type == "tiles_quotation" and status == "draft":
+        assert rows == {}
+        return
     assert list(rows) == [f"{rule}:q"]
     assert rows[f"{rule}:q"]["floor_id"] == "ground-floor"
     assert rows[f"{rule}:q"]["quotation_id"] == "q"

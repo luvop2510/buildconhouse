@@ -191,6 +191,9 @@ test('Kitchen stage, long history and private document lists meet existing prima
     if (pathname.endsWith('/configuration')) return route.fulfill({ json: { version: 1, decision_contract: '2026-10-20', department_manager_user_ids: [], files: { max_bytes: 786432, allowed_types: ['application/pdf'] } } });
     if (pathname.endsWith('/assignees')) return route.fulfill({ json: { rows: [] } });
     if (pathname.endsWith('/file-transfers')) return route.fulfill({ json: { transfer: null } });
+    if (pathname === '/api/kitchen-projects/kitchen-heavy/follow-ups') {
+      return route.fulfill({ json: { rows: [], total: 0, page: 1, limit: 30 } });
+    }
     if (pathname === '/api/kitchen-projects/kitchen-heavy') return route.fulfill({ json: project });
     unexpected.push(pathname); return route.fulfill({ status: 500, json: { detail: 'Unexpected heavy fixture request' } });
   });

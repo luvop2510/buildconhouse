@@ -1,10 +1,10 @@
 // Shared interface font defaults preserve explicit tokens on web and native.
-import { forwardRef, useEffect, useRef, useState, type ElementRef } from "react";
+import { createContext, forwardRef, useContext, useEffect, useRef, useState, type ElementRef } from "react";
 import {
   Platform, StyleSheet, Text as NativeText, TextInput as NativeTextInput,
   type TextProps, type TextInputProps,
 } from "react-native";
-import { formatPhone } from "@/src/utils/phone";
+import { formatDepartmentPhone } from "@/src/utils/phone";
 import { appTextFamily } from "./appTextFamily";
 import { reportInputFocus } from "@/src/hooks/use-input-active";
 
@@ -12,13 +12,16 @@ import { reportInputFocus } from "@/src/hooks/use-input-active";
 export type Text = ElementRef<typeof NativeText>;
 export type TextInput = ElementRef<typeof NativeTextInput>;
 
+export const DepartmentPhoneFloor = createContext<string | undefined>(undefined);
+
 // eslint-disable-next-line @typescript-eslint/no-redeclare -- component and instance type intentionally share the native export name
 export const Text = forwardRef<Text, TextProps>(function AppText({ style, ...props }, ref) {
   return <NativeText {...props} ref={ref} style={[{ fontFamily: appTextFamily(StyleSheet.flatten(style), Platform.OS) }, style]} />;
 });
 
 // eslint-disable-next-line @typescript-eslint/no-redeclare -- preserve the TextInput instance type used by existing refs
-export const TextInput = forwardRef<TextInput, TextInputProps>(function AppTextInput({ style, onFocus, onBlur, onChangeText, ...props }, ref) {
+export const TextInput = forwardRef<TextInput, TextInputProps & { phoneFloorId?: string | null }>(function AppTextInput({ style, onFocus, onBlur, onChangeText, phoneFloorId, ...props }, ref) {
+  const departmentFloor = useContext(DepartmentPhoneFloor);
   const focusId = useRef(Symbol("input"));
   const [focused, setFocused] = useState(false);
   useEffect(() => {
@@ -33,7 +36,7 @@ export const TextInput = forwardRef<TextInput, TextInputProps>(function AppTextI
     : `max(var(--forge-input-font-floor, 0px), ${configuredSize}px)`;
   const phone = props.keyboardType === "phone-pad" || props.inputMode === "tel";
   return <NativeTextInput {...props} ref={ref}
-    value={phone && !focused && typeof props.value === "string" ? formatPhone(props.value) : props.value}
+    value={phone && !focused && typeof props.value === "string" ? formatDepartmentPhone(props.value, phoneFloorId === undefined ? departmentFloor : phoneFloorId) : props.value}
     onChangeText={onChangeText}
     // Keep Android's landscape IME editor from replacing the whole workspace.
     disableFullscreenUI={props.disableFullscreenUI ?? Platform.OS === "android"}

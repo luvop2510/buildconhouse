@@ -48,6 +48,7 @@ export function QuotationBuilder({
       initialGodownStockId={initialGodownStockId || null}
       initialGodownVariant={initialGodownVariant || null}
       initialQuotationId={initialQuotationId || null}
+      onStartNew={() => router.replace("/(admin)/quotations/new")}
       onFinalize={(quotationId) => router.replace(`/(admin)/quotations/${quotationId}` as any)}
     >
       <BuilderShell onBack={() => router.canGoBack() ? router.back() : router.replace("/(admin)/quotations")} />

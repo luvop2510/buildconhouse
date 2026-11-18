@@ -2,11 +2,13 @@
 
 Internal operations workspace for sanitaryware, tiles, kitchen and furniture departments. The canonical Expo / React Native Web application is at this repository root. FastAPI runs from `backend/` with MongoDB Atlas and Supabase file storage.
 
-The older `frontend/` checkout is retained for existing work. CI and releases build the root application; make new frontend changes under `app/` and `src/` here.
+CI and releases build the root application. Work on frontend routes in `app/` and shared frontend code in `src/`.
 
 ## Run and validate
 
 Use Node 22 or later. Install with `npm ci`, then run `npm run web`. Set local development configuration using `.env.example`; keep real secrets out of source control.
+
+For the backend, use Python 3.12 and install `backend/requirements-prod.txt` in a virtual environment.
 
 Production browsers use the same-origin `/api` worker with HttpOnly sessions and CSRF protection. The production build requires `BACKEND_URL`, a server-side HTTPS URL. Native builds use `EXPO_PUBLIC_BACKEND_URL` separately.
 

@@ -54,22 +54,13 @@ for (const floorId of ['ground-floor', 'first-floor', 'third-floor']) {
         return actionBounds.y + actionBounds.height;
       }).toBeLessThanOrEqual(bounds!.y);
     }
-    for (const name of ['Snooze', 'Assign team', 'Complete', 'Clear selection']) {
+    for (const name of ['Snooze 1 hour', 'Assign team', 'Complete', 'Clear selection']) {
       const action = bar.getByRole('button', { name, exact: true });
       const box = await action.boundingBox();
       expect(box, name).not.toBeNull();
       expect(box!.x, name).toBeGreaterThanOrEqual(bounds!.x);
       expect(box!.x + box!.width, name).toBeLessThanOrEqual(Math.min(width, bounds!.x + bounds!.width) + 1);
     }
-    await bar.getByRole('button', { name: 'Snooze', exact: true }).click();
-    const menu = page.getByRole('menu', { name: 'Snooze', exact: true });
-    await expect(menu).toBeVisible();
-    const menuBounds = (await menu.boundingBox())!;
-    expect(menuBounds.x).toBeGreaterThanOrEqual(0);
-    expect(menuBounds.x + menuBounds.width).toBeLessThanOrEqual(width);
-    expect(menuBounds.y + menuBounds.height).toBeLessThanOrEqual(page.viewportSize()!.height);
-    await page.keyboard.press('Escape');
-    await expect(menu).toHaveCount(0);
     await bar.getByRole('button', { name: 'Clear selection' }).click();
     await card.getByRole('button', { name: 'More', exact: true }).click();
     await expect(page.getByRole('menu', { name: 'More', exact: true })).toBeVisible();
@@ -77,11 +68,11 @@ for (const floorId of ['ground-floor', 'first-floor', 'third-floor']) {
     await expect(page.getByRole('dialog').filter({ has: page.getByText('NEXT ACTION', { exact: true }) })).toHaveCount(0);
     if (width >= 768) {
       await page.keyboard.press('Escape');
-      await card.getByRole('button', { name: 'Snooze', exact: true }).click();
-      const snooze = page.getByRole('menu', { name: 'Snooze', exact: true });
+      await card.getByRole('button', { name: 'Snooze today’s reminder', exact: true }).click();
+      const snooze = page.getByRole('menu', { name: 'Snooze today’s reminder', exact: true });
       await expect(snooze).toBeVisible();
       const bounds = (await snooze.boundingBox())!;
-      const label = (await snooze.getByText('Snooze till tomorrow', { exact: true }).boundingBox())!;
+      const label = (await snooze.getByText('Snooze 1 hour', { exact: true }).boundingBox())!;
       expect(label.x + label.width).toBeLessThanOrEqual(bounds.x + bounds.width);
     }
     await expect(page.getByRole('menu')).toHaveCSS('opacity', '1');

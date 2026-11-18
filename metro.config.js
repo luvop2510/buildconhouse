@@ -15,7 +15,7 @@ config.cacheStores = [
 ];
 
 
-// Releases use the root app/src. Do not crawl the preserved legacy checkout,
+// Releases use the root app/src. Do not crawl local legacy checkouts,
 // Python backend/venvs, or gigabytes of generated browser evidence on startup.
 // Preserve Metro's default exclusions and scope ours to top-level directories
 // so package source and active app assets remain resolvable on every platform.

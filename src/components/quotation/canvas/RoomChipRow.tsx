@@ -8,6 +8,7 @@ import { colors } from "@/src/theme/tokens";
 import { color as ds } from "@/src/design/tokens";
 
 import { useBuilder } from "../context/BuilderContext";
+import { RoomPicker } from "./RoomPicker";
 import { grabCursor } from "../shared/grabCursor";
 
 export function RoomChipRow() {
@@ -28,7 +29,8 @@ export function RoomChipRow() {
         <Pressable
           onLongPress={drag}
           delayLongPress={160}
-          accessibilityRole="button" accessibilityState={{ selected: active }}
+          accessibilityRole="button"
+          accessibilityLabel={`${item}, ${count} products${active ? ", current room" : ""}`}
           onPress={() => b.setActiveRoom(item)}
           testID={`room-${item}`}
           style={[styles.tab, active && styles.tabActive, isActive && { opacity: 0.7 }, grabCursor]}
@@ -55,6 +57,7 @@ export function RoomChipRow() {
           activationDistance={8}
         />
       </View>
+      <RoomPicker />
       <Pressable
         onPress={() => { b.setRoomInput(""); b.setRoomSheet({ kind: "add" }); }}
         testID="add-room-btn" accessibilityRole="button" accessibilityLabel="Add room"
@@ -75,7 +78,7 @@ const styles = StyleSheet.create({
   },
   tabActive: { backgroundColor: ds.brassTint, borderColor: ds.brassLine },
   roomName: { maxWidth: 116, fontSize: 12, fontWeight: "600", color: colors.onSurfaceSecondary },
-  roomNameActive: { color: ds.brassDeep },
+  roomNameActive: { color: ds.brassDeep, fontWeight: "700" },
   count: { minWidth: 19, height: 19, paddingHorizontal: 5, borderRadius: 10, alignItems: "center", justifyContent: "center", backgroundColor: colors.surfaceTertiary },
   countActive: { backgroundColor: colors.surface },
   countLabel: { fontSize: 10, fontWeight: "700", color: colors.onSurfaceMuted, fontVariant: ["tabular-nums"] },

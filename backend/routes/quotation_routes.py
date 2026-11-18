@@ -4,7 +4,7 @@ import asyncio
 import logging
 from math import isfinite
 from typing import Literal
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from urllib.parse import quote
 from uuid import UUID, NAMESPACE_URL, uuid4, uuid5
 
@@ -524,7 +524,7 @@ async def _quotation_catalog_products(items: list[QuotationLineItem], user: User
     return [products_by_id.get(item.product_id) for item in items]
 
 
-async def _replay_tile_draft(receipt_id: str, user: UserPublic) -> Quotation | None:
+async def _replay_tile_draft(receipt_id: str, user: UserPublic, floor_id: str = TILES_FLOOR_ID) -> Quotation | None:
     receipt = await db.settings.find_one({"_id": receipt_id}, {"_id": 0})
     if not receipt:
         return None
@@ -533,7 +533,7 @@ async def _replay_tile_draft(receipt_id: str, user: UserPublic) -> Quotation | N
     # Receipts contain identity only and survive document/customer deletion.
     # A lost create response must recover its original record, never recreate
     # a record the user subsequently deleted.
-    doc = await db.quotations.find_one({"id": receipt["quotation_id"], "floor_id": TILES_FLOOR_ID,
+    doc = await db.quotations.find_one({"id": receipt["quotation_id"], "floor_id": floor_id,
                                         "created_by": user.id}, {"_id": 0})
     if not doc:
         raise HTTPException(status_code=410, detail="This draft was deleted. Start a new quotation or selection.")
@@ -544,18 +544,25 @@ async def _replay_tile_draft(receipt_id: str, user: UserPublic) -> Quotation | N
 def _tile_draft_receipt_id(client_draft_id: str, doc_type: str, user: UserPublic) -> str:
     require_floor_access(TILES_FLOOR_ID, user)
     if doc_type not in TILES_DOC_TYPES:
-        raise HTTPException(status_code=422, detail="Draft recovery keys are supported for tile documents only")
+        raise HTTPException(422, "Only tile drafts can be discarded through this route.")
+    return _draft_receipt_id(client_draft_id, doc_type, user.id, TILES_FLOOR_ID)
+
+
+def _draft_receipt_id(client_draft_id: str, doc_type: str, actor_id: str, floor_id: str) -> str:
     try:
         draft_key = str(UUID(client_draft_id))
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail="Invalid tile draft recovery key") from exc
-    return "tile-draft:" + str(uuid5(NAMESPACE_URL, f"{user.id}:{TILES_FLOOR_ID}:{doc_type}:{draft_key}"))
+        raise HTTPException(status_code=422, detail="Invalid draft recovery key") from exc
+    prefix = "tile-draft:" if doc_type in TILES_DOC_TYPES else "standard-draft:"
+    return prefix + str(uuid5(NAMESPACE_URL, f"{actor_id}:{floor_id}:{doc_type}:{draft_key}"))
 
 
 @router.get("/client-draft/{client_draft_id}", response_model=Quotation)
-async def get_client_tile_draft(client_draft_id: str, doc_type: Literal["tiles_selection", "tiles_quotation"],
+async def get_client_tile_draft(client_draft_id: str, doc_type: Literal["standard", "tiles_selection", "tiles_quotation"],
                                 user: UserPublic = Depends(require_min_role("sales"))):
-    replay = await _replay_tile_draft(_tile_draft_receipt_id(client_draft_id, doc_type, user), user)
+    floor_id = "first-floor" if doc_type == "standard" else TILES_FLOOR_ID
+    require_floor_access(floor_id, user)
+    replay = await _replay_tile_draft(_draft_receipt_id(client_draft_id, doc_type, user.id, floor_id), user, floor_id)
     if not replay:
         raise HTTPException(status_code=404, detail="No saved quotation exists for this draft")
     return replay
@@ -600,13 +607,15 @@ async def create_quotation(
 ):
     # Incomplete details are valid drafts. Address validation belongs to PDF/order actions.
     draft_receipt_id = None
+    receipt_floor = "first-floor" if body.doc_type == "standard" else TILES_FLOOR_ID
     if body.client_draft_id:
-        draft_receipt_id = _tile_draft_receipt_id(body.client_draft_id, body.doc_type, user)
-        replay = await _replay_tile_draft(draft_receipt_id, user)
+        require_floor_access(receipt_floor, user)
+        draft_receipt_id = _draft_receipt_id(body.client_draft_id, body.doc_type, user.id, receipt_floor)
+        replay = await _replay_tile_draft(draft_receipt_id, user, receipt_floor)
         if replay:
             return replay
         if any(line.godown_stock_id for line in body.items or []):
-            raise HTTPException(status_code=422, detail="Create the tile draft before reserving godown stock")
+            raise HTTPException(status_code=422, detail="Save the quotation draft before reserving godown stock")
     customer = await get_floor_scoped_or_404(
         db.customers, body.customer_id, user, not_found="Customer not found", projection={"_id": 0},
     )
@@ -644,6 +653,8 @@ async def create_quotation(
         _floor_for_tiles_document(user, item_floor_ids)
         if body.doc_type in TILES_DOC_TYPES else _floor_id_for_new_quotation(user, item_floor_ids)
     )
+    if draft_receipt_id and quotation_floor_id != receipt_floor:
+        raise HTTPException(status_code=422, detail="This draft recovery key belongs to a different department.")
     items = [QuotationLineItem(**item) for item in await _canonicalize_item_images(items, quotation_floor_id)]
 
     totals = _tile_totals(
@@ -676,6 +687,7 @@ async def create_quotation(
         rooms=body.rooms or [],
         project_discount_pct=body.project_discount_pct or 0,
         category_discounts=body.category_discounts or {},
+        ui_state=body.ui_state,
         room_discounts=body.room_discounts or {},
         notes=body.notes,
         valid_until=body.valid_until,
@@ -728,15 +740,16 @@ async def create_quotation(
         # cannot strand a key or resurrect a deleted quotation on replay.
         quot.id = str(uuid5(NAMESPACE_URL, draft_receipt_id))
         async def insert_draft(session):
-            await db.settings.insert_one({"_id": draft_receipt_id, "id": draft_receipt_id, "kind": "tile_draft_receipt",
-                "quotation_id": quot.id, "floor_id": TILES_FLOOR_ID, "created_by": user.id,
+            await db.settings.insert_one({"_id": draft_receipt_id, "id": draft_receipt_id,
+                "kind": "tile_draft_receipt" if body.doc_type in TILES_DOC_TYPES else "standard_draft_receipt",
+                "quotation_id": quot.id, "floor_id": receipt_floor, "created_by": user.id,
                 "source_doc_type": body.doc_type, "source_updated_at": quot.updated_at}, session=session)
             await db.quotations.insert_one(quot.model_dump(exclude={"create_replayed", "create_original_updated_at"}), session=session)
         try:
             async with await client.start_session() as session:
                 await session.with_transaction(insert_draft)
         except DuplicateKeyError:
-            replay = await _replay_tile_draft(draft_receipt_id, user)
+            replay = await _replay_tile_draft(draft_receipt_id, user, receipt_floor)
             if replay:
                 return replay
             raise
@@ -775,10 +788,8 @@ async def create_quotation(
     if quot.doc_type == "tiles_selection":
         from services.walkin_service import on_selection_created
         await on_selection_created(customer["id"], quot.id, quot.number)
-    # Every quotation family enters the same idempotent follow-up engine at
-    # creation time. Tile Selections additionally update the walk-in lifecycle
-    # above. Reconcile now without waiting for another status change; the
-    # configured age threshold still determines when a reminder becomes due.
+    # Reconcile other business reminders without starting a draft's customer
+    # quotation countdown. The send command schedules that follow-up.
     asyncio.create_task(reconcile_followups_admitted())
     return quot
 
@@ -952,6 +963,77 @@ def _stamped_items_for_update(
     )
 
 
+class MarkQuotationSentInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_updated_at: str | None = Field(default=None, max_length=100)
+    followup_date: date | None = None
+
+
+async def _record_quotation_sent(
+    quotation_id: str, body: MarkQuotationSentInput, user: UserPublic, *, sent_at: datetime | None = None,
+) -> Quotation:
+    from db import client
+    from services.followup_engine import schedule_sent_quotation_followup
+
+    sent_at = sent_at or datetime.now(timezone.utc)
+
+    async def operation(session):
+        doc = await get_floor_scoped_or_404(
+            db.quotations, quotation_id, user, not_found="Quotation not found",
+            projection={"_id": 0}, session=session,
+        )
+        doc_type = doc.get("doc_type") or "standard"
+        if doc_type == "tiles_selection":
+            raise HTTPException(409, "Move this selection to a quotation before marking it as sent.")
+        if doc.get("status") == "sent" or doc.get("sent_at"):
+            return doc, False
+        if doc.get("customer_outcome") or doc.get("status", "draft") not in {"draft", "pending_approval"}:
+            raise HTTPException(409, "Only an open draft quotation can be marked as sent.")
+        if body.expected_updated_at is not None and body.expected_updated_at != doc.get("updated_at"):
+            raise HTTPException(409, "This quotation changed. Reopen it before marking it as sent.")
+        if not doc.get("items"):
+            raise HTTPException(422, "Add at least one product before marking this quotation as sent.")
+        _require_tiles_quotation_address(doc_type, doc.get("address_snapshot"))
+        customer = await db.customers.find_one(
+            {"id": doc["customer_id"], "floor_id": doc["floor_id"], "deleted_at": None},
+            {"_id": 0, "id": 1}, session=session,
+        )
+        if not customer:
+            raise HTTPException(422, "Select a saved customer before marking this quotation as sent.")
+        try:
+            due_date = await schedule_sent_quotation_followup(
+                doc, sent_at=sent_at, actor=user, followup_date=body.followup_date, session=session,
+            )
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        update = {
+            "status": "sent", "sent_at": sent_at.isoformat(),
+            "sent_by": user.id, "sent_by_name": user.full_name,
+            "first_followup_due_date": due_date,
+            "updated_at": now_iso(),
+        }
+        await db.quotations.update_one({"id": doc["id"], "floor_id": doc["floor_id"]},
+                                       {"$set": update}, session=session)
+        return {**doc, **update}, True
+
+    async with await client.start_session() as session:
+        doc, changed = await session.with_transaction(operation)
+    if changed:
+        await log_event(
+            event_type="quotation.status_changed", entity_type="quotation", entity_id=quotation_id,
+            actor=user, floor_id=doc["floor_id"], customer_id=doc["customer_id"], quotation_id=quotation_id,
+            summary=f"{doc['number']} marked as sent", payload={"to": "sent", "first_followup_due_date": doc["first_followup_due_date"]},
+        )
+    return Quotation(**doc)
+
+
+@router.post("/{quotation_id}/mark-sent", response_model=Quotation)
+async def mark_quotation_sent(
+    quotation_id: str, body: MarkQuotationSentInput, user: UserPublic = Depends(require_min_role("sales")),
+):
+    return await _record_quotation_sent(quotation_id, body, user)
+
+
 @router.patch("/{quotation_id}", response_model=Quotation)
 async def update_quotation(
     quotation_id: str,
@@ -960,6 +1042,14 @@ async def update_quotation(
 ):
     doc = await get_floor_scoped_or_404(db.quotations, quotation_id, user, not_found="Quotation not found", projection={"_id": 0})
 
+    if body.status == "sent":
+        if body.model_fields_set - {"status", "reason", "silent", "expected_updated_at"}:
+            raise HTTPException(409, "Save quotation changes before marking it as sent.")
+        return await _record_quotation_sent(
+            quotation_id, MarkQuotationSentInput(expected_updated_at=body.expected_updated_at), user,
+        )
+    if body.status == "draft" and (doc.get("sent_at") or doc.get("status") == "sent"):
+        raise HTTPException(409, "A sent quotation cannot return to draft.")
     if body.expected_updated_at is not None and body.expected_updated_at != doc.get("updated_at"):
         raise HTTPException(status_code=409, detail="This quotation changed elsewhere. Reopen the saved quotation before applying your draft.")
     update: dict = {}
@@ -2137,9 +2227,32 @@ async def send_quotation_whatsapp(quotation_id: str, body: QuotationWhatsAppSend
     if not phone:
         raise HTTPException(422, "Add a valid WhatsApp phone number to the customer's contact details first")
     data, filename = await _build_quotation_file(doc, customer, body.include_dimensions)
-    return await send_document(pdf_bytes=data, filename=filename, recipient_phone=phone,
-                               message=body.message, idempotency_key=body.idempotency_key,
-                               floor_id=doc["floor_id"], source_id=doc["id"], actor_id=user.id)
+    receipt = await send_document(pdf_bytes=data, filename=filename, recipient_phone=phone,
+                                  message=body.message, idempotency_key=body.idempotency_key,
+                                  floor_id=doc["floor_id"], source_id=doc["id"], actor_id=user.id)
+    if (
+        receipt.get("status") in {"accepted", "sent", "delivered", "read"}
+        and doc.get("status", "draft") in {"draft", "pending_approval"}
+        and doc.get("doc_type") != "tiles_selection"
+        and not doc.get("customer_outcome")
+    ):
+        # Delivery authorizes export only. Enforce update separately and keep
+        # a provider-accepted receipt visible if the status write cannot finish.
+        from auth import authorize_staff_resource
+        try:
+            await require_min_role("sales")(user)
+            await authorize_staff_resource(
+                user, method="POST", path=f"/api/quotations/{quotation_id}/mark-sent", floor_id=doc["floor_id"],
+            )
+            submitted_at = receipt.get("submitted_at") or receipt.get("updated_at")
+            await _record_quotation_sent(
+                quotation_id, MarkQuotationSentInput(expected_updated_at=body.expected_updated_at), user,
+                sent_at=datetime.fromisoformat(submitted_at) if submitted_at else None,
+            )
+        except Exception as exc:
+            logger.warning("Quotation delivery accepted but send state could not be recorded: %s", type(exc).__name__)
+            receipt["quotation_mark_pending_error"] = "WhatsApp accepted the PDF. Check the saved quotation status and mark it as sent if it is still a draft."
+    return receipt
 
 
 # Existing expiring capabilities remain readable for compatibility; new sharing
