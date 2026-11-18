@@ -7,7 +7,7 @@
 import { api, clearApiResponseCache } from "@/src/api/client";
 
 export const CATALOG_PAGE_SIZE = 50;
-export type CatalogSort = "source" | "popular" | "recent" | "price_asc" | "price_desc" | "name";
+export type CatalogSort = "source" | "popular" | "recent" | "price_asc" | "price_desc" | "name" | "custom";
 export type CatalogEntry = {
   entry_id: string; source_catalog: string; sheet_name: string;
   sheet_order: number; row_number: number; source_order: number;
@@ -36,8 +36,10 @@ export type CatalogQuery = {
   sort?: CatalogSort;
 };
 
-export type CatalogPage<T> = { total: number; items: T[] };
+export type CatalogPage<T> = { total: number; items: T[]; order_version?: number };
 export type CatalogRequestOptions = { floorId?: string; signal?: AbortSignal };
+export type CatalogOrderScope = { floorId: string; brandId: string; categoryId: string };
+export type CatalogProductOrder = { version: number; can_reorder: boolean };
 
 const PAGE_TTL_MS = 60_000;
 const REFERENCE_TTL_MS = 5 * 60_000;
@@ -46,7 +48,8 @@ function stableParams(query: CatalogQuery, skip: number, limit: number): URLSear
   const p = new URLSearchParams();
   p.set("limit", String(limit));
   p.set("skip", String(skip));
-  if (query.mode !== "families") p.set("sort", query.sort || "popular");
+  if (query.sort) p.set("sort", query.sort);
+  else if (query.mode !== "families") p.set("sort", "popular");
   if (query.q?.trim()) p.set("q", query.q.trim());
   if (query.brandId) p.set("brand_id", query.brandId);
   if (query.categoryId) p.set("category_id", query.categoryId);
@@ -78,7 +81,19 @@ export async function fetchCatalogPage<T>(
 ): Promise<CatalogPage<T>> {
   const params = stableParams(query, skip, limit);
   const endpoint = query.mode === "families" ? "/products/families" : "/products";
-  return cachedGet<CatalogPage<T>>(`${endpoint}?${params.toString()}`, PAGE_TTL_MS, options);
+  return cachedGet<CatalogPage<T>>(`${endpoint}?${params.toString()}`, query.sort === "custom" ? 0 : PAGE_TTL_MS, options);
+}
+
+function catalogOrderPath(scope: CatalogOrderScope): string {
+  return `/catalog/product-order?${new URLSearchParams({ brand_id: scope.brandId, category_id: scope.categoryId })}`;
+}
+
+export function getCatalogProductOrder(scope: CatalogOrderScope, signal?: AbortSignal) {
+  return api.get<CatalogProductOrder>(catalogOrderPath(scope), { floorId: scope.floorId, signal, cacheMs: 0 });
+}
+
+export function saveCatalogProductOrder(scope: CatalogOrderScope, version: number, productIds: string[]) {
+  return api.put<CatalogProductOrder>(catalogOrderPath(scope), { expected_version: version, product_ids: productIds }, { floorId: scope.floorId });
 }
 
 type CatalogIdentity = {

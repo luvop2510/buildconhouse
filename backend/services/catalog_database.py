@@ -42,7 +42,35 @@ def aggregate(pipeline):
     return db.products.aggregate(pipeline, allowDiskUse=True, maxTimeMS=MAX_QUERY_MS, batchSize=CATALOG_BATCH_SIZE)
 
 
-def listing_pipeline(filters=None, *, floor_ids=None, q=None, per_category=False, per_placement=False, deduplicate=True):
+def _tile_price_kind_expression():
+    unit = {"$cond": [
+        {"$in": [{"$ifNull": ["$specs.price_unit", ""]}, ["", False, 0]]},
+        {"$ifNull": ["$specs.rate_unit", ""]}, "$specs.price_unit",
+    ]}
+    legacy_sqft = {"$or": [
+        {"$ne": [{"$type": f"$specs.{field}"}, "missing"]}
+        for field in ("rate_per_sqft", "sqft_per_box")
+    ]}
+
+    def matches(pattern):
+        return {"$regexMatch": {"input": {"$trim": {"input": "$$unit"}}, "regex": pattern, "options": "i"}}
+
+    separator = r"[\s._-]+"
+    optional_per = rf"(?:per{separator})?"
+    return {"$cond": [{"$eq": ["$floor_id", "ground-floor"]}, {"$let": {
+        "vars": {"unit": {"$convert": {"input": {"$cond": [{"$in": [unit, [False, 0]]}, "", unit]},
+                                          "to": "string", "onError": "", "onNull": ""}}},
+        "in": {"$switch": {"branches": [
+            {"case": {"$and": [{"$eq": ["$$unit", ""]}, legacy_sqft]}, "then": "sqft"},
+            {"case": matches(rf"^(?:{optional_per}(?:pieces?|pcs?|tile)|)$"), "then": "piece"},
+            {"case": matches(rf"^(?:{optional_per}(?:sqft|sq{separator}ft)|per{separator}square{separator}foot)$"), "then": "sqft"},
+            {"case": matches(rf"^{optional_per}box$"), "then": "box"},
+        ], "default": ""}},
+    }}, ""]}
+
+
+def listing_pipeline(filters=None, *, floor_ids=None, q=None, per_category=False, per_placement=False,
+                     deduplicate=True, family_kind=False):
     """Match floor before joins; expand source placements before user filters."""
     from services import catalog_service as catalog
     query = {"active": True, **floor_query(floor_ids)}
@@ -101,6 +129,7 @@ def listing_pipeline(filters=None, *, floor_ids=None, q=None, per_category=False
     }
     pipeline.append({"$project": {
         "_id": 0, **{field: 1 for field in listing_fields},
+        **({"_family_price_kind": _tile_price_kind_expression()} if family_kind else {}),
         "images": {"$slice": [{"$ifNull": ["$images", []]}, 1]},
         **{f"_placement.{field}": 1 for field in ("source_catalog", "source_order")},
         **{f"catalog_entry.{field}": 1 for field in ("entry_id", "source_catalog", "sheet_name", "sheet_order", "row_number", "source_order", "serial_number", "category_id", "category_name", "source_sku", "subcategory", "mrp", "price_status", "name", "description", "source_status_note")},
@@ -127,6 +156,15 @@ def listing_pipeline(filters=None, *, floor_ids=None, q=None, per_category=False
 
 def family_group_key():
     return {"key": {"$ifNull": ["$family_key", {"$concat": ["solo:", "$id"]}]}, "floor": "$floor_id", "brand": "$brand_id", "category": "$category_id"}
+
+
+def _catalog_family_group_key():
+    key = family_group_key()
+    key["key"] = {"$cond": [
+        {"$in": [{"$ifNull": ["$family_key", ""]}, [""]]}, {"$concat": ["solo:", "$id"]}, "$family_key",
+    ]}
+    key["price_kind"] = "$_family_price_kind"
+    return key
 
 
 def source_sort():
@@ -267,21 +305,75 @@ async def reference_counts(name, arguments):
     return sorted(output, key=catalog._category_sort_key if categories else lambda row: row.get("name") or "")
 
 
+async def ordered_scope_members(scope):
+    """Read live canonical IDs for every visible card before accepting a save."""
+    from services.catalog_product_order import MAX_ORDER_PRODUCTS
+
+    base = listing_pipeline({"brand_id": scope["brand_id"], "category_id": scope["category_id"]},
+                            floor_ids=[scope["floor_id"]], family_kind=True)
+    rows = await aggregate(base + [
+        {"$limit": MAX_ORDER_PRODUCTS + 1},
+        {"$sort": source_sort()},
+        {"$group": {"_id": _catalog_family_group_key(), "sample_id": {"$first": "$id"},
+                    "product_ids": {"$push": "$id"}}},
+    ]).to_list(MAX_ORDER_PRODUCTS + 1)
+    if sum(len(row["product_ids"]) for row in rows) > MAX_ORDER_PRODUCTS:
+        raise HTTPException(413, "This category has too many products to reorder in one edit")
+    return {row["sample_id"]: row["product_ids"] for row in rows}
+
+
+def _family_sort_stages(sort, ranks, user_id):
+    stages = []
+    accumulators = {}
+    order = {}
+    if sort == "custom" and ranks:
+        stages.append({"$set": {"_custom_rank": {"$indexOfArray": [{"$literal": ranks}, "$id"]}}})
+        accumulators["_custom_rank"] = {"$min": {"$cond": [{"$lt": ["$_custom_rank", 0]}, len(ranks), "$_custom_rank"]}}
+        order["_custom_rank"] = 1
+    if sort in {"price_asc", "price_desc"}:
+        order["sample._sort_price"] = 1 if sort == "price_asc" else -1
+    if sort in {"recent", "popular"}:
+        stages.extend(usage_lookup(user_id))
+        if sort == "popular":
+            accumulators.update(_usage_count={"$sum": "$usage_count"}, _my_usage_count={"$sum": "$my_usage_count"})
+            order.update(_usage_count=-1, _my_usage_count=-1)
+        else:
+            accumulators["_last_used_at"] = {"$max": {"$convert": {"input": "$_usage.last_used_at", "to": "date", "onError": None, "onNull": None}}}
+            order["_last_used_at"] = -1
+    return stages, accumulators, order
+
+
 async def families(arguments):
     filters = {key: arguments.get(key) for key in ("brand_id", "category_id", "subcategory", "series", "finish", "colour", "size")}
-    base = listing_pipeline(filters, floor_ids=arguments.get("floor_ids"), q=arguments.get("q"))
-    groups = [{"$sort": source_sort()}, {"$group": {"_id": family_group_key(), "sample": {"$first": "$$ROOT"}}}, {"$set": {"_sort_name": {"$ifNull": ["$sample.catalog_entry.name", {"$ifNull": ["$sample.family_name", "$sample.name"]}]}}}]
-    has_source = await aggregate(base + [{"$match": {"listing_id": {"$exists": True}}}, {"$limit": 1}, {"$project": {"id": 1}}]).to_list(1)
-    order = {"sample._source_rank": 1, "sample._brand_order": 1, "sample._placement.source_catalog": 1, "sample._placement.source_order": 1, "_sort_name": 1, "sample.id": 1} if has_source else {"_sort_name": 1, "sample.id": 1}
+    base = listing_pipeline(filters, floor_ids=arguments.get("floor_ids"), q=arguments.get("q"), family_kind=True)
+    sort = arguments.get("sort")
+    stages, accumulators, order = _family_sort_stages(sort, arguments.get("ranked_product_ids") or [], arguments.get("user_id"))
+    groups = [*stages, {"$sort": source_sort()}, {"$group": {
+        "_id": _catalog_family_group_key(), "sample": {"$first": "$$ROOT"}, **accumulators,
+    }}, {"$set": {"_sort_name": {"$cond": [
+        {"$eq": ["$sample._source_rank", 0]}, "$sample.name", {"$cond": [
+            {"$ne": [{"$ifNull": ["$sample.family_name", ""]}, ""]}, "$sample.family_name", "$sample.name",
+        ]},
+    ]}}}]
+    if sort == "source" or (sort not in {"name", "price_asc", "price_desc"} and await aggregate(
+            base + [{"$match": {"listing_id": {"$exists": True}}}, {"$limit": 1}, {"$project": {"id": 1}}]).to_list(1)):
+        order.update({"sample._source_rank": 1, "sample._brand_order": 1, "sample._placement.source_catalog": 1,
+                      "sample._placement.source_order": 1, "_sort_name": 1, "sample.listing_id": 1, "sample.id": 1})
+    else:
+        order.update({"_sort_name": 1, "sample.id": 1})
     result = await aggregate(base + groups + [{"$facet": {"total": [{"$count": "value"}], "items": [{"$sort": order}, {"$skip": arguments["skip"]}, {"$limit": arguments["limit"]}]}}]).to_list(1)
     result = result[0] if result else {}; selected = result.get("items", [])
     if not selected: return {"total": result.get("total", [{}])[0].get("value", 0) if result.get("total") else 0, "items": []}
     keys = [row["_id"] for row in selected]
-    rows = await bounded(aggregate(base + [{"$set": {"_family_group": family_group_key()}}, {"$match": {"_family_group": {"$in": keys}}}, {"$unset": ["_brand", "_placement", "_family_group"]}]), MAX_CONTEXT_PRODUCTS, "Family page variants")
+    rows = await bounded(aggregate(base + [{"$set": {"_family_group": _catalog_family_group_key()}}, {"$match": {"_family_group": {"$in": keys}}}, {"$unset": ["_brand", "_placement", "_family_group"]}]), MAX_CONTEXT_PRODUCTS, "Family page variants")
     snapshot = await context([], product_ids=[row["id"] for row in rows], floor_ids=arguments.get("floor_ids"), listing_rows=rows)
     rows = [restore_listing(row, snapshot) for row in rows]
     page_snapshot = replace(snapshot, products=tuple(rows))
     response = await run_in_memory("list_family_groups", page_snapshot, {**arguments, "skip": 0})
+    # Mongo applies sort before paging. Hydration may see a different (page
+    # only) mix of source products and usage rows, so keep that selected order.
+    positions = {row["sample"]["id"]: index for index, row in enumerate(selected)}
+    response["items"].sort(key=lambda row: positions[row["sample_product_id"]])
     response["total"] = result["total"][0]["value"] if result.get("total") else 0
     return response
 

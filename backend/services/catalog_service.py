@@ -1204,6 +1204,8 @@ async def list_family_groups(
     series: Optional[str], q: Optional[str], limit: int, skip: int,
     floor_ids: Optional[list[str]] = None,
     finish: Optional[str] = None, colour: Optional[str] = None, size: Optional[str] = None,
+    sort: Optional[str] = None, user_id: Optional[str] = None,
+    ranked_product_ids: tuple[str, ...] | list[str] = (),
 ) -> dict:
     snapshot = await get_catalog_snapshot()
     pattern = _compile_search(q)
@@ -1253,10 +1255,30 @@ async def list_family_groups(
         # needed only for the requested page, not every SKU in the catalog.
         group["variants"].append(product)
     has_source = any(item.get("catalog_entry") for item in products)
-    ordered = sorted(groups.values(), key=lambda row: (
-        _source_sort_key({**row, "id": row["sample_product_id"], "name": row["family_name"]}, snapshot)
-        if has_source else (row.get("family_name") or "",)
-    ))
+    ranks = {product_id: index for index, product_id in enumerate(ranked_product_ids)}
+    my_usage = snapshot.usage_by_user.get(user_id, {}) if sort in {"popular", "recent"} else {}
+
+    def order_key(row):
+        sample_id = row["sample_product_id"]
+        name_order = (row.get("family_name") or "", sample_id)
+        fallback = (_source_sort_key({**row, "id": sample_id, "name": row["family_name"]}, snapshot)
+                    if has_source or sort == "source" else name_order)
+        if sort in {"price_asc", "price_desc"}:
+            price = float(row["variants"][0].get("price") or 0)
+            return (price if sort == "price_asc" else -price, *name_order)
+        if sort == "name":
+            return name_order
+        member_ids = [product["id"] for product in row["variants"]]
+        if sort == "custom" and ranks:
+            return (min(ranks.get(product_id, len(ranks)) for product_id in member_ids), *fallback)
+        if sort == "popular":
+            return (-sum(snapshot.global_usage.get(product_id, 0) for product_id in member_ids),
+                    -sum(int(my_usage.get(product_id, {}).get("count", 0)) for product_id in member_ids), *fallback)
+        if sort == "recent":
+            return (-max(_iso_timestamp(my_usage.get(product_id, {}).get("last_used_at")) for product_id in member_ids), *fallback)
+        return fallback
+
+    ordered = sorted(groups.values(), key=order_key)
     page = []
     for raw_group in ordered[skip:skip + limit]:
         group = copy.deepcopy({**raw_group, "variants": [

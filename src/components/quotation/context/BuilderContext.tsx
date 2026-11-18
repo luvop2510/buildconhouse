@@ -31,7 +31,7 @@ import { draftNeedsCopy, type BuilderDraft } from "../helpers/draftRecovery";
 import { useFloorAccess } from "@/src/hooks/use-floor-access";
 import type { HistoryApi } from "@/src/hooks/useHistory";
 import { playAddProductSound } from "@/src/services/soundService";
-import { catalogPageProgress, catalogReferences, CATALOG_PAGE_SIZE, clearCatalogCache, fetchCatalogPage, mergeCatalogPage } from "@/src/services/catalogService";
+import { catalogPageProgress, catalogReferences, CATALOG_PAGE_SIZE, clearCatalogCache, fetchCatalogPage, mergeCatalogPage, type CatalogSort } from "@/src/services/catalogService";
 import { downloadApiFile } from "@/src/utils/downloadFile";
 
 import { computeTotals, computeLineBreakdown, type LineBreakdown } from "../helpers/pricing";
@@ -52,7 +52,8 @@ import {
 import { catalogPriceUnknown, catalogProductDetailPath } from "../helpers/catalogSource";
 
 
-type SortKey = "popular" | "recent" | "price_asc" | "price_desc" | "name";
+export type BuilderCatalogSort = Exclude<CatalogSort, "source">;
+const BUILDER_CATALOG_SORTS = new Set<unknown>(["popular", "recent", "price_asc", "price_desc", "name", "custom"]);
 
 type CatalogFamily = {
   family_key?: string | null; family_name?: string | null; brand_id: string; category_id: string;
@@ -105,6 +106,8 @@ function familyCardToProduct(family: CatalogFamily): Product | null {
     variants,
   };
 }
+
+export { familyCardToProduct, type CatalogFamily };
 
 // -----------------------------------------------------------------------------
 // Assistant selection — which line/product is currently focused in the right pane.
@@ -167,8 +170,8 @@ export type BuilderApi = {
   setSelectedBrandId: (id: string | null) => void;
   selectedCategoryId: string | null;
   setSelectedCategoryId: (id: string | null) => void;
-  sortKey: SortKey;
-  setSortKey: (k: SortKey) => void;
+  sortKey: BuilderCatalogSort;
+  setSortKey: (k: BuilderCatalogSort | null) => void;
   favouriteIds: string[];
   toggleFavourite: (id: string) => void;
 
@@ -370,7 +373,10 @@ export function BuilderProvider({ onFinalize, onStartNew, initialProductId, init
   const selectedBrandIds = useMemo(() => selectedBrandId ? [selectedBrandId] : [], [selectedBrandId]);
   const selectedCategoryIds = useMemo(() => selectedCategoryId ? [selectedCategoryId] : [], [selectedCategoryId]);
   const [selectedSizes, setSelectedSizes] = useState<string[]>([]);
-  const [sortKey, setSortKey] = useState<SortKey>("popular");
+  const [sortOverride, setSortKey] = useState<BuilderCatalogSort | null>(null);
+  const hasCatalogOrderScope = Boolean(selectedBrandId && selectedCategoryId);
+  const sortKey = sortOverride && (sortOverride !== "custom" || hasCatalogOrderScope)
+    ? sortOverride : hasCatalogOrderScope ? "custom" : "popular";
   const [categoriesForRail, setCategoriesForRail] = useState<Category[]>([]);
   const [categoriesLoading, setCategoriesLoading] = useState(false);
   const [categoriesError, setCategoriesError] = useState<string | null>(null);
@@ -599,11 +605,13 @@ export function BuilderProvider({ onFinalize, onStartNew, initialProductId, init
   const setSelectedBrandId = useCallback((id: string | null) => {
     selectBrandId(id);
     selectCategoryId(null);
+    if (id !== selectedBrandId || selectedCategoryId) setSortKey(null);
     if (categoriesError && id === selectedBrandId) retryCategories();
-  }, [categoriesError, selectedBrandId, retryCategories]);
+  }, [categoriesError, selectedBrandId, selectedCategoryId, retryCategories]);
   const setSelectedCategoryId = useCallback((id: string | null) => {
     selectCategoryId(id);
-  }, []);
+    if (id !== selectedCategoryId) setSortKey(null);
+  }, [selectedCategoryId]);
   const setPickerTab = useCallback((tab: PickerTab) => setPickerTabState(tab), []);
 
   const toggleFavourite = useCallback((id: string) => {
@@ -619,6 +627,7 @@ export function BuilderProvider({ onFinalize, onStartNew, initialProductId, init
   // ---------- Product explorer fetch (page 1 on filter/search/sort change) ----------
   const productRequestGeneration = useRef(0);
   const nextProductOffset = useRef(0);
+  const browsingOrderVersion = useRef<number | undefined>(undefined);
   const productQueryScope = JSON.stringify([activeFloorId, q, selectedBrandIds, selectedCategoryIds, selectedSizes, sortKey, productRetry]);
   const currentProductScope = useRef(productQueryScope);
   currentProductScope.current = productQueryScope;
@@ -633,6 +642,7 @@ export function BuilderProvider({ onFinalize, onStartNew, initialProductId, init
     }
     const generation = ++productRequestGeneration.current;
     nextProductOffset.current = 0;
+    browsingOrderVersion.current = undefined;
     loadingMoreRef.current = false;
     setProductLoadingMore(false);
     const controller = new AbortController();
@@ -648,6 +658,7 @@ export function BuilderProvider({ onFinalize, onStartNew, initialProductId, init
           mode: "families", q, brandIds: selectedBrandIds, categoryIds: selectedCategoryIds, sizes: selectedSizes, sort: sortKey,
         }, 0, CATALOG_PAGE_SIZE, { floorId: activeFloorId, signal: controller.signal });
         if (cancelled || !productMounted.current || productQueryScope !== currentProductScope.current || generation !== productRequestGeneration.current) return;
+        browsingOrderVersion.current = res.order_version;
         const items = (res.items || []).map(familyCardToProduct).filter((item): item is Product => item !== null);
         setProducts(items);
         setProductTotal(res.total || 0);
@@ -688,6 +699,10 @@ export function BuilderProvider({ onFinalize, onStartNew, initialProductId, init
           mode: "families", q, brandIds: selectedBrandIds, categoryIds: selectedCategoryIds, sizes: selectedSizes, sort: sortKey,
         }, skipAt, CATALOG_PAGE_SIZE, { floorId: activeFloorId, signal: controller.signal });
         if (controller.signal.aborted || !productMounted.current || productQueryScope !== currentProductScope.current || generation !== productRequestGeneration.current) return;
+        if (sortKey === "custom" && browsingOrderVersion.current !== res.order_version) {
+          retryProducts();
+          return;
+        }
         const items = (res.items || []).map(familyCardToProduct).filter((item): item is Product => item !== null);
         setProducts((cur) => mergeCatalogPage(cur, items));
         setProductTotal(res.total || 0);
@@ -704,7 +719,7 @@ export function BuilderProvider({ onFinalize, onStartNew, initialProductId, init
         }
       }
     })();
-  }, [productLoading, productHasMore, q, selectedBrandIds, selectedCategoryIds, selectedSizes, sortKey, activeFloorId, productQueryScope]);
+  }, [productLoading, productHasMore, q, selectedBrandIds, selectedCategoryIds, selectedSizes, sortKey, activeFloorId, productQueryScope, retryProducts]);
 
   // ---------- Autosave ----------
   const persistSnapshot = useCallback(async (snapshot: BuilderState, roomOperation = false): Promise<string | null> => {
@@ -726,7 +741,7 @@ export function BuilderProvider({ onFinalize, onStartNew, initialProductId, init
         ui_state: {
           activeRoom: snapshot.activeRoom,
           collapsedRooms: snapshot.collapsedRooms,
-          selectedBrandId, selectedCategoryId, selectedBrandIds, selectedCategoryIds, selectedSizes, sortKey,
+          selectedBrandId, selectedCategoryId, selectedBrandIds, selectedCategoryIds, selectedSizes, sortKey: sortOverride ?? undefined,
         },
         project_discount_pct: snapshot.projectDiscount,
         category_discounts: snapshot.categoryDiscounts,
@@ -807,7 +822,7 @@ export function BuilderProvider({ onFinalize, onStartNew, initialProductId, init
       }
     };
     return enqueueQuotationPersist(persistQueue, run);
-  }, [initialQuotationId, selectedBrandId, selectedCategoryId, selectedBrandIds, selectedCategoryIds, selectedSizes, sortKey, activeFloorId, accountId, canCreateQuotation, canUpdateQuotation, onFinalize]);
+  }, [initialQuotationId, selectedBrandId, selectedCategoryId, selectedBrandIds, selectedCategoryIds, selectedSizes, sortOverride, activeFloorId, accountId, canCreateQuotation, canUpdateQuotation, onFinalize]);
 
   const persist = useCallback(() => persistSnapshot(s), [persistSnapshot, s]);
 
@@ -990,7 +1005,7 @@ export function BuilderProvider({ onFinalize, onStartNew, initialProductId, init
       selectBrandId(restoreSingleCatalogChoice(ui.selectedBrandIds, ui.selectedBrandId));
       selectCategoryId(restoreSingleCatalogChoice(ui.selectedCategoryIds, ui.selectedCategoryId));
       setSelectedSizes(Array.isArray(ui.selectedSizes) ? ui.selectedSizes : []);
-      if (ui.sortKey) setSortKey(ui.sortKey);
+      setSortKey(BUILDER_CATALOG_SORTS.has(ui.sortKey) ? ui.sortKey : null);
       if (announce) toast.success(`Restored ${doc.number}`);
     } catch (e: any) {
       if (request !== restoreRequest.current) return;

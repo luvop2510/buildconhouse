@@ -35,6 +35,8 @@ RESOURCE_REGISTRY["dashboard"].update(actions=["view"], description="View today'
 RESOURCE_REGISTRY["quotations"].update(floor_ids=["first-floor"], description="Create and manage Sanitary quotations, confirm orders, and export documents.")
 RESOURCE_REGISTRY["tiles"].update(floor_ids=["ground-floor"], description="Create tile selections and quotations, confirm orders, and export documents.")
 RESOURCE_REGISTRY["catalog"].update(floor_ids=["ground-floor", "first-floor"], description="Manage the selected Ground or Sanitary Bathroom catalog.")
+RESOURCE_REGISTRY["catalog_product_reorder"] = {"label": "Reorder catalog products", "floor_ids": ["ground-floor", "first-floor"],
+    "actions": ["view", "update"], "description": "Set the shared product order for a brand and category without changing catalog products."}
 RESOURCE_REGISTRY["orders"].update(floor_ids=["ground-floor"], description="Manage tile purchase orders, dispatches, and delivery stages.")
 RESOURCE_REGISTRY["godown_stock"].update(floor_ids=["first-floor"], description="Manage godown stock and customer transfers.")
 RESOURCE_REGISTRY["purchases"].update(floor_ids=["first-floor"], description="Manage Sanitary Bathroom purchases and purchasing stages.")
@@ -231,7 +233,9 @@ def granted_floor_ids(grants, *, user_id: str, path: str, action: str, resource:
             floor = "first-floor"
         if quotation_default and floor == "first-floor":
             resources = ("catalog", "quotations")
-        elif quotation_lookup and floor == "ground-floor" and fullmatch(r"/api/customers(?:/[^/]+)?", path):
+        elif quotation_lookup and floor == "ground-floor" and (
+            path in {"/api/catalog/product-order", "/api/products/families"} or fullmatch(r"/api/customers(?:/[^/]+)?", path)
+        ):
             resources = (*resources, "tiles")
         elif quotation_lookup and floor == "first-floor":
             resources = (*resources, "quotations")
@@ -243,7 +247,7 @@ def granted_floor_ids(grants, *, user_id: str, path: str, action: str, resource:
                for candidate in resources
                for capability in (("export",) if furniture_delivery and candidate == "furniture_quotations"
                                   else ("create", "update") if quotation_default and candidate == "quotations" else (action,))):
-            if grant.get("resource") in {"followups", "purchases", "catalog"}:
+            if grant.get("resource") in {"followups", "purchases", "catalog", "catalog_product_reorder"}:
                 supported = RESOURCE_REGISTRY[grant["resource"]]["floor_ids"]
                 if floor is None:
                     floors.extend(supported)
@@ -263,7 +267,7 @@ def quotation_dependency_read(path: str) -> bool:
     inside that page. Separate Catalog/Customers grants still control those
     pages and every mutation of their underlying records.
     """
-    return bool(path in {"/api/brands", "/api/categories", "/api/catalog/hierarchy", "/api/catalog/search", "/api/catalog/facets"}
+    return bool(path in {"/api/brands", "/api/categories", "/api/catalog/hierarchy", "/api/catalog/search", "/api/catalog/facets", "/api/catalog/product-order"}
                 or fullmatch(r"/api/products(?:/[^/]+(?:/(?:alternates|complete-the-set|size-variants|media))?)?", path)
                 or fullmatch(r"/api/families/[^/]+", path)
                 or fullmatch(r"/api/customers(?:/[^/]+)?", path))
@@ -315,6 +319,8 @@ def resource_candidates_for_api_path(path: str, floor_id: str | None) -> tuple[s
     must never authorize a Sanitary quotation. The explicit floor header is
     what makes this compatibility mapping safe.
     """
+    if path == "/api/catalog/product-order":
+        return ("catalog", "catalog_product_reorder")
     if floor_id == "third-floor" and whatsapp_document_status(path):
         return ("furniture_quotations",)
     if floor_id == "second-floor" and (path == "/api/kitchen-projects" or path.startswith("/api/kitchen-projects/")):

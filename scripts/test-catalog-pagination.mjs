@@ -82,6 +82,7 @@ const context = {
   productLoading: false, productHasMore: true, q: '', selectedBrandIds: [], selectedCategoryIds: [], selectedSizes: [], sortKey: 'popular', activeFloorId: 'first-floor', CATALOG_PAGE_SIZE: exports.CATALOG_PAGE_SIZE,
   fetchCatalogPage: (_query, skip) => new Promise(resolve => reads.push({ skip, resolve })),
   setProducts: update => { shown = update(shown); },
+  browsingOrderVersion: { current: undefined }, retryProducts: () => { throw new Error('Unexpected reloading for a stable page'); },
   setProductTotal: () => {}, setProductLoadingMore: () => {}, setProductHasMore: value => { more = value; },
   console,
 };

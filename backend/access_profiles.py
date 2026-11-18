@@ -87,6 +87,7 @@ def profile_allows_request(profile: str | None, method: str, path: str) -> bool:
     if profile in {GROUND_TILE_QUOTATIONS_FOLLOWUPS, SANITARY_QUOTATIONS_FOLLOWUPS}:
         return (path.startswith("/api/quotations") or path.startswith("/api/followups")
                 or _customer_for_quotation(method, path) or _catalog_read(method, path)
+                or (method == "PUT" and path == "/api/catalog/product-order")
                 or (profile == GROUND_TILE_QUOTATIONS_FOLLOWUPS and _tile_customer_tracking(method, path))
                 or (method in {"GET", "POST"} and path == "/api/referrers")
                 or (method == "POST" and path in {"/api/products/custom", "/api/products/custom-with-media"})
