@@ -53,6 +53,9 @@ function catalogStore(extra = 0) {
     orders: new Map<string, { version: number; product_ids: string[] }>(),
     writes: [] as { brand: string | null; category: string | null; payload: { expected_version: number; product_ids: string[] } }[],
     quotationWrites: [] as string[],
+    editorReads: 0,
+    browseReads: [] as number[],
+    legacyEditor: false,
     failNextSave: false,
   };
 }
@@ -94,7 +97,19 @@ async function catalogSession(page: Page, store: ReturnType<typeof catalogStore>
     const key = scopeKey(brand, category);
     const current = store.orders.get(key);
     const version = current?.version ?? 0;
-    if (request.method() === 'GET') return route.fulfill({ json: { version, can_reorder: canReorder } });
+    if (request.method() === 'GET') {
+      const response = { version, can_reorder: canReorder };
+      if (canReorder && params.get('include_products') === 'true' && !store.legacyEditor) {
+        store.editorReads++;
+        const cards = store.cards(brand, category);
+        if (current) {
+          const ranks = new Map(current.product_ids.map((id, index) => [id, index]));
+          cards.sort((a, b) => ranks.get(a.id)! - ranks.get(b.id)!);
+        }
+        return route.fulfill({ json: { ...response, products: cards.map(({ id, sku, name, price }) => ({ id, sku, name, price })) } });
+      }
+      return route.fulfill({ json: response });
+    }
     if (!canReorder) return route.fulfill({ status: 403, json: { detail: 'Catalog reordering denied.' } });
     if (request.method() !== 'PUT') return route.fulfill({ status: 405, json: { detail: 'Use PUT to save order.' } });
     if (store.failNextSave) {
@@ -127,6 +142,7 @@ async function catalogSession(page: Page, store: ReturnType<typeof catalogStore>
     }
     const skip = Number(params.get('skip') || 0);
     const limit = Number(params.get('limit') || 50);
+    store.browseReads.push(limit);
     return route.fulfill({ json: {
       items: cards.slice(skip, skip + limit).map(product => ({
         family_key: product.id, family_name: product.name, sample_product_id: product.id,
@@ -365,6 +381,7 @@ test('critical a quick touch swipe scrolls the catalog without picking up a card
 test('critical stale catalog edits keep the saved order until the editor reloads', async ({ page, browserName }) => {
   test.skip(browserName !== 'chromium' || page.viewportSize()!.width < 1180, 'Representative desktop concurrency and keyboard case.');
   const store = catalogStore();
+  store.legacyEditor = true;
   await catalogSession(page, store, true);
   await page.goto(builderPath);
   await chooseCategory(page, 'shower');
@@ -434,22 +451,27 @@ test('critical Grohe All Products moves position ten to two and keeps category, 
   expect(store.quotationWrites).toEqual([]);
 });
 
-test('critical large catalog reorders beyond the first API page and saves all cards exactly once', async ({ page, browserName }) => {
-  test.skip(browserName !== 'chromium' || page.viewportSize()!.width < 1180, 'Desktop paginated catalog.');
-  const store = catalogStore(247);
+test('critical large All Brands catalog loads one editor snapshot and saves all cards exactly once', async ({ page, browserName }) => {
+  test.skip(browserName !== 'chromium' || page.viewportSize()!.width < 1180, 'Desktop catalog at realistic size.');
+  const store = catalogStore(1603);
   await catalogSession(page, store, true);
   await page.goto(builderPath);
-  await chooseCategory(page, null);
+  await expect(productList(page).getByTestId('product-card-TEMP-100')).toBeVisible();
+  const browseReads = store.browseReads.length;
   await page.getByTestId('reorder-catalog-products').click();
-  const complete = store.cards(grohe.id, null);
-  await expect(page.locator('[data-catalog-reorder-row]')).toHaveCount(260);
+  const complete = store.cards(null, null);
+  await expect(page.locator('[data-catalog-reorder-row]')).toHaveCount(1618);
+  expect(store.editorReads).toBe(1);
+  expect(store.browseReads).toHaveLength(browseReads);
+  await page.getByTestId(`catalog-reorder-row-${complete[47].id}`).evaluate(row => row.scrollIntoView({ block: 'center' }));
   await dragCard(page, complete[52].id, complete[47].id);
   await page.getByTestId('catalog-save-order').click();
   await expect.poll(() => store.writes.length).toBe(1);
   const ids = store.writes[0].payload.product_ids;
-  expect(ids).toHaveLength(260);
-  expect(new Set(ids).size).toBe(260);
+  expect(ids).toHaveLength(1618);
+  expect(new Set(ids).size).toBe(1618);
   expect(ids[47]).toBe(complete[52].id);
   expect(ids[48]).toBe(complete[47].id);
+  expect(store.browseReads.every(limit => limit === 50)).toBe(true);
   expect(store.quotationWrites).toEqual([]);
 });

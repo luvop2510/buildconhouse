@@ -65,6 +65,12 @@ def test_shared_product_order_across_sessions_sorts_categories_and_membership(mo
                 {**_product("other-two", "Other Brand Mixer", 13), "brand_id": "other"},
                 {**_product("lever-only", "Mixer Exclusive", 14), "category_id": LEVER, "catalog_entries": []},
             ])
+            await database.product_media.insert_one({
+                "id": "tempesta-preview", "product_id": "tempesta-100", "floor_id": FLOOR,
+                "source_type": "supplier", "role": "hero", "bucket": "forge-products",
+                "storage_key": "tempesta100.webp", "public_url": "https://images.example.test/tempesta100.webp",
+                "sha1": "test-image-hash",
+            })
             await database.product_usage.insert_many([
                 {"product_id": "tempesta-variant", "user_id": "viewer", "count": 4, "last_used_at": "2026-11-15T04:00:00Z"},
                 {"product_id": "tempesta-210", "user_id": "viewer", "count": 2, "last_used_at": "2026-11-18T04:00:00Z"},
@@ -116,11 +122,28 @@ def test_shared_product_order_across_sessions_sorts_categories_and_membership(mo
                     return await api.put(PRODUCT_ORDER, params=scope, headers=actor,
                                          json={"expected_version": expected, "product_ids": order})
 
+                async def editor(actor, scope=params):
+                    response = await api.get(PRODUCT_ORDER, params={**scope, "include_products": "true"}, headers=actor)
+                    assert response.status_code == 200, response.text
+                    assert response.headers["Cache-Control"] == "no-store"
+                    return response.json()
+
                 for actor, can_reorder in [(owner, True), (delegate, True), (catalog_manager, True), (viewer, False), (manager, False)]:
                     response = await api.get(PRODUCT_ORDER, params=params, headers=actor)
                     assert response.status_code == 200, response.text
                     assert response.headers["Cache-Control"] == "no-store"
                     assert response.json() == {"version": 0, "can_reorder": can_reorder}
+
+                initial_editor = await editor(owner)
+                assert initial_editor["version"] == 0
+                assert [card["id"] for card in initial_editor["products"]] == await products(owner, sort="default")
+                assert all(card.keys() == {"id", "sku", "name", "price", "price_unknown", "image"}
+                           for card in initial_editor["products"])
+                assert initial_editor["products"][0] == {
+                    "id": "tempesta-100", "sku": "tempesta-100", "name": "Tempesta 100",
+                    "price": 100, "price_unknown": False, "image": "https://images.example.test/tempesta100.webp",
+                }
+                assert await editor(viewer) == {"version": 0, "can_reorder": False}
 
                 moved = [first[-1], *first[:-1]]
                 other_order = await products(owner, category=LEVER, version=0)
@@ -163,6 +186,12 @@ def test_shared_product_order_across_sessions_sorts_categories_and_membership(mo
                 global_order = list(reversed(global_cards))
                 assert (await save(owner, global_order, 0, {})).status_code == 200
                 assert await products(refreshed, sort="default", brand=None, category=None, version=1) == global_order
+                for actor, scope, saved in [
+                    (owner, params, moved), (delegate, brand_scope, brand_order), (catalog_manager, {}, global_order),
+                ]:
+                    snapshot = await editor(actor, scope)
+                    assert snapshot["version"] == 1
+                    assert [card["id"] for card in snapshot["products"]] == saved
                 assert await products(refreshed, sort="default", category=None, version=1) == brand_order
                 assert (await save(delegate, ["other-two", "other-one"], 0, {"brand_id": "other"})).status_code == 200
                 assert await products(refreshed, sort="default", brand="other", category=None, version=1) == ["other-two", "other-one"]
@@ -195,6 +224,18 @@ def test_shared_product_order_across_sessions_sorts_categories_and_membership(mo
                 assert (await api.get(PRODUCT_ORDER, params=params, headers=await identity("owner", "ground-floor"))).status_code == 404
                 assert await database.quotations.find_one({"id": quotation["id"]}) == quotation
                 assert await database.catalog_product_orders.count_documents({}) == 4
+
+                # Match the deployed All Brands card count in both catalog modes.
+                await database.products.insert_many([
+                    {**_product(f"large-{index}", f"Showroom Product {index}", index + 200), "brand_id": "other"}
+                    for index in range(1609)
+                ])
+                await catalog_service.refresh_catalog_snapshot()
+                snapshot = await editor(owner, {})
+                ids = [card["id"] for card in snapshot["products"]]
+                assert len(ids) == len(set(ids)) == 1618
+                assert ids[:3] == global_order[:3]
+                assert (await products(owner, sort="default", brand=None, category=None, limit=50)) == ids[:50]
         finally:
             await client.drop_database(database.name)
             client.close()

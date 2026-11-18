@@ -6,8 +6,10 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi import FastAPI
+from pymongo.errors import AutoReconnect
 
 import server
+from services.mutation_admission import admission
 
 
 class _HealthyPreflight:
@@ -89,3 +91,59 @@ async def test_startup_failure_after_worker_start_cleans_up_resources(monkeypatc
     assert app.state.outbox_worker.cancelled()
     assert closed
     assert client_closed
+
+
+@pytest.mark.asyncio
+async def test_shutdown_waits_for_cancelled_request_and_retries_exact_release_before_closing_mongo(monkeypatch):
+    entered = asyncio.Event()
+    retrying = asyncio.Event()
+    recover = asyncio.Event()
+    events = []
+
+    class Gate:
+        writers = {"other-writer"}
+
+        def with_options(self, **_options):
+            return self
+
+        async def update_one(self, query, update, **_options):
+            if "$setOnInsert" in update:
+                return
+            if "$addToSet" in update:
+                self.writers.add(update["$addToSet"]["writers"])
+                return SimpleNamespace(matched_count=1)
+            if not retrying.is_set():
+                retrying.set()
+                raise AutoReconnect("Temporary loss of the database connection")
+            await recover.wait()
+            self.writers.remove(query["writers"])
+            events.append("release")
+
+    gate = Gate()
+
+    class Client:
+        def close(self):
+            events.append("close")
+
+    monkeypatch.setattr(server, "client", Client())
+    monkeypatch.setattr(server, "get_media_storage", lambda: object())
+
+    async def request():
+        async with admission(SimpleNamespace(settings=gate)):
+            entered.set()
+            await asyncio.Event().wait()
+
+    task = asyncio.create_task(request())
+    await asyncio.wait_for(entered.wait(), 1)
+    task.cancel()
+    shutdown = asyncio.create_task(server._shutdown_resources(FastAPI()))
+    try:
+        await asyncio.wait_for(retrying.wait(), 1)
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert events == [] and len(gate.writers) == 2 and not shutdown.done()
+    finally:
+        recover.set()
+        await asyncio.wait_for(shutdown, 1)
+    assert events == ["release", "close"]
+    assert gate.writers == {"other-writer"}

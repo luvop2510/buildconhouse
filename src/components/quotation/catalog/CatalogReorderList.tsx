@@ -2,10 +2,9 @@ import Feather from "@expo/vector-icons/Feather";
 import { AccessibilityInfo, Pressable, StyleSheet, View } from "react-native";
 import DraggableFlatList, { ScaleDecorator, type RenderItemParams } from "react-native-draggable-flatlist";
 
-import { catalogItemKey } from "@/src/services/catalogService";
+import { catalogItemKey, type CatalogOrderProduct } from "@/src/services/catalogService";
 import { colors, radius, spacing } from "@/src/theme/tokens";
 
-import type { Product } from "../helpers/types";
 import { moveCatalogProduct, type CatalogReorderListProps } from "./CatalogReorderList.shared";
 
 export function CatalogReorderList({ products, onReorder, renderCard, disabled }: CatalogReorderListProps) {
@@ -17,7 +16,7 @@ export function CatalogReorderList({ products, onReorder, renderCard, disabled }
     AccessibilityInfo.announceForAccessibility(`${next[to].name} moved to position ${to + 1} of ${next.length}.`);
   };
 
-  const renderItem = ({ item, drag, isActive, getIndex }: RenderItemParams<Product>) => {
+  const renderItem = ({ item, drag, isActive, getIndex }: RenderItemParams<CatalogOrderProduct>) => {
     const index = getIndex() ?? -1;
     const actions = [
       ...(index > 0 ? [{ name: "moveUp", label: "Move up" }] : []),

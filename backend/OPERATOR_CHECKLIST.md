@@ -7,6 +7,21 @@
 3. Production startup does not auto-apply pending migrations unless `FORGE_RUN_STARTUP_MIGRATIONS=true` is deliberately set for a controlled one-replica rollout. Pending migrations make readiness return 503, while preserving a running process for diagnostics.
 4. Build from `backend/` and inspect the final image before promotion: `docker build -t buildcon-backend .` then `docker run --rm --entrypoint sh buildcon-backend -c 'test ! -e /app/.env && test ! -d /app/tests && test ! -d /app/.venv && test ! -d /app/backups'`. `.dockerignore` excludes local backups before a remote builder receives the context.
 
+## Graceful mutation shutdown
+
+The container entrypoint uses `exec` so Uvicorn receives `SIGTERM`. Uvicorn
+can spend 30 seconds draining HTTP tasks. The application then allows up to
+40 seconds for its background workers and exact Mongo admission releases,
+including a default 30-second socket wait with time for cleanup retry. The
+Railway drain is 90 seconds to allow both phases and resource cleanup.
+
+The approved Railway service has a custom start command and has previously
+ignored nested `backend/railway.json`. For this rollout, align its active
+start command with the Docker entrypoint or remove the override, and set
+the service's draining time to 90 seconds. Verify both in the deployed
+service settings. A deploy or timeout never authorizes clearing another
+process's admission tokens.
+
 ## Recovery and operational acceptance
 
 Use the verified, BSON-preserving recovery procedure in

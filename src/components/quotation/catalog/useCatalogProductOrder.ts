@@ -2,15 +2,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError } from "@/src/api/client";
 import {
   CATALOG_PAGE_SIZE, fetchCatalogPage, getCatalogProductOrder, saveCatalogProductOrder,
-  type CatalogOrderScope,
+  type CatalogOrderProduct, type CatalogOrderScope,
 } from "@/src/services/catalogService";
 import { familyCardToProduct, type CatalogFamily } from "../context/BuilderContext";
-import type { Product } from "../helpers/types";
 
 type Draft = {
   scopeKey: string;
   version: number | null;
-  products: Product[];
+  products: CatalogOrderProduct[];
   phase: "loading" | "ready" | "saving";
   error?: string;
   reloadRequired?: boolean;
@@ -18,8 +17,9 @@ type Draft = {
 
 type Operation = { scopeKey: string; read?: AbortController };
 
-async function loadOrderProducts(scope: CatalogOrderScope, version: number, signal: AbortSignal) {
-  const products: Product[] = [];
+// An older backend may reply without products during a frontend/backend rollout.
+async function loadLegacyOrderProducts(scope: CatalogOrderScope, version: number, signal: AbortSignal) {
+  const products: CatalogOrderProduct[] = [];
   const seen = new Set<string>();
   let total: number | undefined;
   let skip = 0;
@@ -37,7 +37,8 @@ async function loadOrderProducts(scope: CatalogOrderScope, version: number, sign
       const product = familyCardToProduct(family);
       if (!product || seen.has(product.id)) throw new Error("The catalog changed while loading. Reload the order and try again.");
       seen.add(product.id);
-      products.push(product);
+      const { id, sku, name, price, price_unknown, images } = product;
+      products.push({ id, sku, name, price, price_unknown, image: images[0] });
     }
     skip += page.items.length;
   } while (skip < total);
@@ -56,7 +57,7 @@ export function useCatalogProductOrder(scope: CatalogOrderScope | null, onSaved:
   useEffect(() => {
     if (!scope) return;
     const controller = new AbortController();
-    void getCatalogProductOrder(scope, controller.signal).then(({ can_reorder }) => {
+    void getCatalogProductOrder(scope, { signal: controller.signal }).then(({ can_reorder }) => {
       if (!controller.signal.aborted) setPermission({ scopeKey, allowed: can_reorder });
     }).catch(() => {
       if (!controller.signal.aborted) setPermission({ scopeKey, allowed: false });
@@ -80,9 +81,9 @@ export function useCatalogProductOrder(scope: CatalogOrderScope | null, onSaved:
     operation.current = request;
     setOpenDraft({ scopeKey, version: null, products: [], phase: "loading" });
     try {
-      const initial = await getCatalogProductOrder(scope, read.signal);
+      const initial = await getCatalogProductOrder(scope, { signal: read.signal, includeProducts: true });
       if (!initial.can_reorder) throw new Error("You no longer have permission to reorder these products.");
-      const products = await loadOrderProducts(scope, initial.version, read.signal);
+      const products = initial.products ?? await loadLegacyOrderProducts(scope, initial.version, read.signal);
       if (operation.current === request && currentScope.current === scopeKey) {
         setOpenDraft({ scopeKey, version: initial.version, products, phase: "ready" });
       }
@@ -103,7 +104,7 @@ export function useCatalogProductOrder(scope: CatalogOrderScope | null, onSaved:
     setOpenDraft(null);
   }, []);
 
-  const reorder = useCallback((products: Product[]) => {
+  const reorder = useCallback((products: CatalogOrderProduct[]) => {
     setOpenDraft((current) => current?.scopeKey === scopeKey && current.phase === "ready"
       ? { ...current, products } : current);
   }, [scopeKey]);

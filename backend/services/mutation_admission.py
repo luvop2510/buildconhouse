@@ -21,6 +21,7 @@ KEY = "customer-graph-mutation-admission:v1"
 SCOPED_EXCLUSIVE = "scoped-deletion:v2"
 PROCESS_ID = str(uuid4())
 logger = logging.getLogger("forge.mutation_admission")
+_active_admissions = set()
 _release_tasks = set()
 _UNCERTAIN_WRITES = (ConnectionFailure, ExecutionTimeout, WriteConcernError)
 
@@ -150,8 +151,43 @@ async def _release_when_database_recovers(gate, query, update, token, uncertain_
             seconds = min(seconds * 2, 30)
 
 
+async def drain_mutation_admission(timeout: float) -> None:
+    """Wait for this process's admitted work and exact releases during shutdown."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    try:
+        while pending := {
+            task for task in _active_admissions | _release_tasks
+            if task.get_loop() is loop and not task.done()
+        }:
+            _, unfinished = await asyncio.wait(pending, timeout=max(0, deadline - loop.time()))
+            if unfinished:
+                logger.warning("Shutdown ended with %d unfinished mutation admission operation(s)", len(unfinished))
+                return
+    finally:
+        # Only stop exact-token retry tasks. A writer that has not settled
+        # still owns its token, even if the deployment's drain budget elapsed.
+        for job in tuple(_release_tasks):
+            if job.get_loop() is loop and not job.done():
+                job.cancel()
+
+
 @asynccontextmanager
 async def admission(database, *, exclusive=False, operation="unclassified", scope=None):
+    # Uvicorn can begin lifespan shutdown immediately after cancelling an
+    # HTTP task. Track its admission through the final Mongo release.
+    complete = asyncio.get_running_loop().create_future()
+    _active_admissions.add(complete)
+    try:
+        async with _reserve(database, exclusive=exclusive, operation=operation, scope=scope):
+            yield
+    finally:
+        complete.set_result(None)
+        _active_admissions.discard(complete)
+
+
+@asynccontextmanager
+async def _reserve(database, *, exclusive, operation, scope):
     gate = database.settings.with_options(write_concern=WriteConcern("majority"))
     try:
         await gate.update_one({"_id": KEY}, {"$setOnInsert": {"writers": [], "exclusive": None}}, upsert=True)

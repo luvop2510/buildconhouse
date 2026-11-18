@@ -17,6 +17,7 @@ from starlette.middleware.gzip import DEFAULT_EXCLUDED_CONTENT_TYPES, GZipMiddle
 from middleware import SecurityHeadersMiddleware
 from services.request_limits import RequestBodyLimitMiddleware
 from services.runtime_identity import source_revision
+from services.mutation_admission import drain_mutation_admission
 
 from bootstrap import LEGACY_DEMO_PASSWORD, _check_demo_accounts, run_bootstrap
 from settings import settings
@@ -209,26 +210,32 @@ async def _startup(app: FastAPI) -> None:
 async def _shutdown_resources(app: FastAPI) -> None:
     """Release resources created during startup, including partial startup."""
     worker = getattr(app.state, "outbox_worker", None)
-    if worker:
-        worker.cancel()
-        try:
-            await worker
-        except asyncio.CancelledError:
-            pass
-    for task in getattr(app.state, "optional_startup_tasks", []):
+    tasks = set(getattr(app.state, "optional_startup_tasks", []))
+    if worker is not None:
+        tasks.add(worker)
+    loop = asyncio.get_running_loop()
+    # Leave time for a normal Mongo socket wait (30s by default) and an
+    # exact-token cleanup retry within the deployment's shutdown budget.
+    deadline = loop.time() + 40
+    for task in tasks:
         task.cancel()
-    for task in getattr(app.state, "optional_startup_tasks", []):
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
-    await catalog_service.stop_catalog_refresh()
-    storage = get_media_storage()
-    close_storage = getattr(storage, "close", None)
-    if close_storage:
-        await close_storage()
-    client.close()
-    logger.info("Forge API shutting down.")
+    try:
+        if tasks:
+            done, pending = await asyncio.wait(tasks, timeout=max(0, deadline - loop.time()))
+            if pending:
+                logger.warning("Shutdown ended with %d unfinished background worker(s)", len(pending))
+            for task in done:
+                if not task.cancelled() and (error := task.exception()):
+                    logger.warning("Background worker failed during shutdown (%s)", type(error).__name__)
+        await drain_mutation_admission(max(0, deadline - loop.time()))
+        await catalog_service.stop_catalog_refresh()
+        storage = get_media_storage()
+        close_storage = getattr(storage, "close", None)
+        if close_storage:
+            await close_storage()
+    finally:
+        client.close()
+        logger.info("Forge API shutting down.")
 
 
 @asynccontextmanager

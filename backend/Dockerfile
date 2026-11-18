@@ -59,5 +59,6 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
 
 # Railway supplies PORT for both routing and its deployment health check.  Keep
 # 8000 as the local-container default while binding to the platform port when
-# it is present.
-CMD ["sh", "-c", "uvicorn server:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1"]
+# it is present. Replace the shell so Uvicorn receives the container's
+# SIGTERM and can drain requests before the Mongo client closes.
+CMD ["sh", "-c", "exec uvicorn server:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1 --timeout-graceful-shutdown 30"]
