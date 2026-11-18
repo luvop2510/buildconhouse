@@ -19,6 +19,8 @@ test('empty category can be found and deleted from the catalog', async ({ page }
   await page.goto('/catalog');
   await page.getByTestId('open-delete-category').click();
   await page.getByTestId('manage-delete-category-custom-category').click();
+  expect(deleted).toBe(false);
+  await page.getByTestId('confirm-delete-category-confirm').click();
   await expect.poll(() => deleted).toBe(true);
   await expect(page.getByTestId('manage-delete-category-custom-category')).toHaveCount(0);
 });
@@ -73,11 +75,15 @@ test('catalog deletion shows progress and permits retry after failure', async ({
   });
   await page.goto('/catalog/product-one');
   await page.getByTestId('delete-catalog-product').click();
+  const confirmation = page.getByTestId('confirm-delete-catalog-product-confirm');
+  expect(attempts).toBe(0);
+  await confirmation.click();
   await expect(page.getByTestId('delete-catalog-progress')).toBeVisible();
   await expect(page.getByTestId('delete-catalog-product')).toBeDisabled();
+  await expect.poll(() => attempts).toBe(1);
   release?.();
-  await expect(page.getByRole('alert')).toContainText('Please retry deletion');
-  await page.getByTestId('retry-delete-catalog-product').click();
+  await expect(page.getByTestId('confirm-delete-catalog-product').getByRole('alert')).toContainText('Please retry deletion');
+  await confirmation.click();
   await expect(page).toHaveURL(/\/catalog$/);
   expect(attempts).toBe(2);
 });
@@ -108,6 +114,7 @@ for (const floor of ['first-floor', 'ground-floor']) {
     });
     await page.goto('/catalog/product-one');
     await page.getByTestId('delete-catalog-product').click();
+    await page.getByTestId('confirm-delete-catalog-product-confirm').click();
     await expect(page).toHaveURL(/\/catalog$/);
   });
 }

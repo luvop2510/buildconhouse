@@ -27,6 +27,7 @@ import {
   SegmentedControl, Sheet, Skeleton, SkeletonList, StatTile, MobileFilterSection,
 } from "@/src/components/ds";
 import { toast } from "@/src/components/Toast";
+import { useDeletionConfirmation } from "@/src/components/useDeletionConfirmation";
 import { useAuth } from "@/src/state/auth";
 import { useActionAccess } from "@/src/hooks/use-permissions";
 import { useFloorAccess } from "@/src/hooks/use-floor-access";
@@ -303,8 +304,8 @@ function FollowupsWorkspace() {
   const [pendingPatches, setPendingPatches] = useState(new Map<string, Partial<Followup>>());
   const [pendingDeleteIds, setPendingDeleteIds] = useState(new Set<string>());
   const mutationVersion = useRef(0);
-  const rawItems = useMemo(() => confirmedItems.filter(item => !pendingDeleteIds.has(item.id)).map(item => pendingPatches.has(item.id)
-    ? { ...item, ...pendingPatches.get(item.id) } : item), [confirmedItems, pendingPatches, pendingDeleteIds]);
+  const rawItems = useMemo(() => confirmedItems.map(item => pendingPatches.has(item.id)
+    ? { ...item, ...pendingPatches.get(item.id) } : item), [confirmedItems, pendingPatches]);
   const [listPage, setListPage] = useState(1);
   const [hasMorePages, setHasMorePages] = useState(false);
   const [loadingPage, setLoadingPage] = useState(false);
@@ -370,8 +371,6 @@ function FollowupsWorkspace() {
   const [savedViews, setSavedViews] = useState<SavedView[]>([]);
   const savedViewsVersion = useRef(0);
   const pendingViewDeletes = useRef(new Set<string>());
-  const [hiddenViewIds, setHiddenViewIds] = useState<Set<string>>(new Set());
-  const visibleSavedViews = savedViews.filter(view => !hiddenViewIds.has(view.id));
   const [savedViewsSheet, setSavedViewsSheet] = useState(false);
   const [shortcutHelp, setShortcutHelp] = useState(false);
   // Follow-ups 2.0 — dedicated workspaces (Tile Selections / Tile Quotations)
@@ -712,9 +711,8 @@ function FollowupsWorkspace() {
   ), [optimisticAction, selectedFloorId]);
 
   const deleteFollowup = useCallback(() => {
-    if (!mounted.current || !deleteTarget || pendingFollowupActions.current.has(deleteTarget.id)) return;
+    if (!mounted.current || !canDeleteFollowups || !deleteTarget || pendingFollowupActions.current.has(deleteTarget.id)) return;
     const target = deleteTarget;
-    setDeleteTarget(null);
     pendingFollowupActions.current.set(target.id, {});
     setPendingDeleteIds(previous => new Set(previous).add(target.id));
     setDeleting(true);
@@ -723,12 +721,13 @@ function FollowupsWorkspace() {
         await api.delete(`/followups/${encodeURIComponent(target.id)}`, { floorId: selectedFloorId });
         if (!mounted.current) return;
         mutationVersion.current += 1;
+        setDeleteTarget(null);
         setRawItems((prev) => prev.filter((item) => item.id !== target.id));
         if (selectedIdRef.current === target.id) clearSelectedDetail();
         toast.success("Follow-up deleted");
         void refreshStatsQuiet();
-      } catch {
-        if (mounted.current) toast.error("Could not confirm deletion. The follow-up has been restored; refresh to check or try again.");
+      } catch (error: any) {
+        if (mounted.current) toast.error(error?.detail || "Could not confirm deletion. Refresh to check or try again.");
       } finally {
         pendingFollowupActions.current.delete(target.id);
         if (mounted.current) {
@@ -737,7 +736,7 @@ function FollowupsWorkspace() {
         }
       }
     })();
-  }, [clearSelectedDetail, deleteTarget, refreshStatsQuiet, selectedFloorId]);
+  }, [canDeleteFollowups, clearSelectedDetail, deleteTarget, refreshStatsQuiet, selectedFloorId]);
 
   const openRecordOutcome = useCallback((f: Followup) => {
     setCustomerPreviewOpen(false);
@@ -988,24 +987,23 @@ function FollowupsWorkspace() {
   }, [q, kpiFilter, followupView, priorityFilter, categoryFilter, tierFilter, ownerFilter, selectedFloorId]);
 
   const deleteSavedView = useCallback(async (id: string) => {
-    if (!mounted.current || pendingViewDeletes.current.has(id)) return;
+    if (!mounted.current || pendingViewDeletes.current.has(id)) return false;
     pendingViewDeletes.current.add(id);
-    setHiddenViewIds(new Set(pendingViewDeletes.current));
     try {
       await api.delete(`/followups/saved-views/${encodeURIComponent(id)}`, { floorId: selectedFloorId });
       if (mounted.current) {
         savedViewsVersion.current += 1;
         setSavedViews(previous => previous.filter(view => view.id !== id));
       }
-    } catch {
-      if (mounted.current) toast.error("Could not delete the saved view. It has been restored; try again.");
+      return true;
+    } catch (error) {
+      if (mounted.current) toast.error(error instanceof Error ? error.message : "Could not confirm deletion of the saved view. Try again.");
+      return false;
     } finally {
       pendingViewDeletes.current.delete(id);
-      // The pending overlay keeps the original order and concurrent additions
-      // available for rollback without replacing the full list snapshot.
-      if (mounted.current) setHiddenViewIds(new Set(pendingViewDeletes.current));
     }
   }, [selectedFloorId]);
+  const savedViewDeletion = useDeletionConfirmation(selectedFloorId, "confirm-delete-followup-view", deleteSavedView);
 
   // ── Export ───────────────────────────────────────────────────────────────
   const doExport = useCallback(async (format: "xlsx" | "csv") => {
@@ -1390,19 +1388,21 @@ function FollowupsWorkspace() {
       ) : null}
       <ConfirmDialog
         visible={!!deleteTarget}
-        onClose={() => setDeleteTarget(null)}
+        onClose={() => { if (!deleting) setDeleteTarget(null); }}
         onConfirm={deleteFollowup}
         title="Delete this follow-up?"
         description="This permanently removes the follow-up and its timeline entries."
         confirmLabel="Delete follow-up"
         tone="danger"
         loading={deleting}
+        disabled={!!deleteTarget && !pendingDeleteIds.has(deleteTarget.id) && pendingPatches.has(deleteTarget.id)}
         testID="confirm-delete-followup"
       />
       <SavedViewsSheet
-        visible={savedViewsSheet} onClose={() => setSavedViewsSheet(false)} views={visibleSavedViews}
-        onApply={applySavedView} onSave={saveCurrentView} onDelete={deleteSavedView}
+        visible={savedViewsSheet} onClose={() => setSavedViewsSheet(false)} views={savedViews}
+        onApply={applySavedView} onSave={saveCurrentView} onDelete={view => savedViewDeletion.prompt(view.id, `Delete saved view ${view.name}?`)}
       />
+      {savedViewDeletion.dialog}
       <ShortcutHelpSheet visible={shortcutHelp} onClose={() => setShortcutHelp(false)} />
     </SafeAreaView>
   );
@@ -1442,7 +1442,7 @@ function BulkActionBar({ count, assignees, onClear, onSnooze, onComplete, onAssi
 // ─────────────────────────────────────────────────────────────────────────────
 function SavedViewsSheet({ visible, onClose, views, onApply, onSave, onDelete }: {
   visible: boolean; onClose: () => void; views: SavedView[];
-  onApply: (v: SavedView) => void; onSave: (name: string) => void; onDelete: (id: string) => void;
+  onApply: (v: SavedView) => void; onSave: (name: string) => void; onDelete: (v: SavedView) => void;
 }) {
   const [naming, setNaming] = useState(false);
   const [name, setName] = useState("");
@@ -1459,7 +1459,7 @@ function SavedViewsSheet({ visible, onClose, views, onApply, onSave, onDelete }:
                 <Feather name="bookmark" size={14} color={colors.brand} />
                 <Text style={type.bodySm}>{v.name}</Text>
               </Pressable>
-              <IconButton icon="trash-2" onPress={() => onDelete(v.id)} tone="danger" size={36} accessibilityLabel="Delete view" />
+              <IconButton icon="trash-2" onPress={() => onDelete(v)} tone="danger" size={36} accessibilityLabel="Delete view" />
             </View>
           ))
         )}

@@ -34,6 +34,7 @@ function fixture() {
     '@/src/design/tokens': { color: {} },
     '../helpers/media': { productImageList: () => [] },
     '../context/BuilderContext': { useBuilder: () => ({ productModal: product, patchProduct(id, patch) { updates.push({ id, ...patch }); if (product?.id === id) product = { ...product, ...patch }; dirty = true; } }) },
+    '@/src/components/useDeletionConfirmation': { useDeletionConfirmation: () => ({}) },
     '@/src/components/Toast': { toast: { success: text => notices.push(text), error: text => notices.push(text) } },
     '@/src/services/catalogService': { clearCatalogCache() {} },
     '@/src/api/client': { api: { patch(path, body, options) {

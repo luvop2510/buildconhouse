@@ -25,11 +25,12 @@ const labels: Record<string, string> = {
   chalans: "Delivery notes", ready_batches: "Ready batches", material_movements: "Material movements",
 };
 
-/** The Customers list is the single entry point for a complete data deletion. */
-export function CustomerDataDeletionDialog({ customer, onClose, onDeleted }: {
+/** All customer entry points use the same named graph preview and confirmation. */
+export function CustomerDataDeletionDialog({ customer, onClose, onDeleted, waitForSave = false }: {
   customer: { id: string; name: string; company?: string | null } | null;
   onClose: () => void;
   onDeleted: (id: string) => void;
+  waitForSave?: boolean;
 }) {
   const { selectedFloorId } = useFloorAccess();
   const [preview, setPreview] = useState<Preview | null>(null);
@@ -38,7 +39,9 @@ export function CustomerDataDeletionDialog({ customer, onClose, onDeleted }: {
   const [error, setError] = useState("");
   const [outcomeUnknown, setOutcomeUnknown] = useState(false);
   const generation = useRef(0);
+  const pending = useRef(new Set<string>());
   const id = customer?.id;
+  const deletionKey = JSON.stringify([selectedFloorId, id]);
   const load = useCallback(async (selected: string[] = []) => {
     if (!id) return;
     const request = ++generation.current;
@@ -60,14 +63,16 @@ export function CustomerDataDeletionDialog({ customer, onClose, onDeleted }: {
     setError("");
     setDeleting(false);
     setOutcomeUnknown(false);
-    void load();
+    if (waitForSave) setLoading(false);
+    else void load();
     return () => { generation.current += 1; };
-  }, [load]);
+  }, [load, waitForSave]);
 
   const remove = async () => {
-    if (!id || !preview || deleting || preview.customer_id !== id) return;
+    if (!id || !preview || waitForSave || pending.current.has(deletionKey) || preview.customer_id !== id) return;
     const request = generation.current;
     const targetId = id;
+    pending.current.add(deletionKey);
     setDeleting(true);
     setError("");
     try {
@@ -76,14 +81,16 @@ export function CustomerDataDeletionDialog({ customer, onClose, onDeleted }: {
     } catch (e: any) {
       if (request === generation.current) {
         const uncertain = !e?.status || e.status === 408 || e.status >= 500;
+        const temporarilyBusy = e?.status === 409 && e?.payload?.code === "mutation_admission_busy";
         setOutcomeUnknown(uncertain);
         setError(uncertain ? "Deletion outcome could not be confirmed. Retry the same confirmed deletion to resolve its result." : e?.detail || "Customer data could not be deleted. Review current data before trying again.");
         // The backend has a durable deletion receipt. Preserve the exact
         // confirmation on transport failure so a retry can resolve a commit
         // whose response was lost. A rejected/conflicting request needs review.
-        if (!uncertain) setPreview(null);
+        if (!uncertain && !temporarilyBusy) setPreview(null);
       }
     } finally {
+      pending.current.delete(deletionKey);
       if (request === generation.current) setDeleting(false);
     }
   };
@@ -95,11 +102,11 @@ export function CustomerDataDeletionDialog({ customer, onClose, onDeleted }: {
       <Button label="Cancel" variant="secondary" onPress={onClose} disabled={deleting} />
       <View style={{ flex: 1 }} />
       <Button label={outcomeUnknown ? "Retry confirmed deletion" : "Confirm delete customer"} variant="danger" onPress={remove} loading={deleting}
-        disabled={!preview || loading || deleting} testID="confirm-delete-customer-list-confirm" />
+        disabled={!preview || waitForSave || loading || deleting} testID="confirm-delete-customer-list-confirm" />
     </>}>
     <View style={{ padding: spacing.lg, gap: spacing.md }}>
       <Text style={type.body}>{preview?.recoverable ? "Remove this Kitchen customer and their Kitchen projects from active records. Saved history and documents remain available for controlled recovery. Other departments are preserved." : "Review the linked records below before deleting this customer from the selected department. The existing deletion process permanently removes these records and retains stock movement evidence. This cannot be undone. Customers with linked records on other departments need separate review."}</Text>
-      {loading ? <View accessibilityRole="progressbar" accessibilityLabel="Loading deletion summary" style={{ padding: spacing.lg }}><ActivityIndicator color={colors.brand} /></View> : null}
+      {waitForSave ? <Text accessibilityLiveRegion="polite" style={type.caption}>Waiting for the current save to finish…</Text> : loading ? <View accessibilityRole="progressbar" accessibilityLabel="Loading deletion summary" style={{ padding: spacing.lg }}><ActivityIndicator color={colors.brand} /></View> : null}
       {preview ? <View testID="customer-deletion-summary" style={{ gap: spacing.sm }}>
         {Object.entries(preview.counts).filter(([key]) => labels[key]).map(([key, count]) =>
           <View key={key} style={{ flexDirection: "row", justifyContent: "space-between", gap: spacing.md }}>
@@ -123,7 +130,7 @@ export function CustomerDataDeletionDialog({ customer, onClose, onDeleted }: {
       </View> : null}
       {error ? <View style={{ gap: spacing.sm }}>
         <Text accessibilityRole="alert" style={[type.body, { color: colors.error }]}>{error}</Text>
-        {!outcomeUnknown ? <Button label="Review current data" variant="secondary" onPress={() => { void load(); }} disabled={loading || deleting} /> : null}
+        {!outcomeUnknown && !preview ? <Button label="Review current data" variant="secondary" onPress={() => { void load(); }} disabled={loading || deleting} /> : null}
       </View> : null}
     </View>
   </Sheet>;

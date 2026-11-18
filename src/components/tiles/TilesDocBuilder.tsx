@@ -58,7 +58,7 @@ import { api } from "@/src/api/client";
 import { toast } from "@/src/components/Toast";
 import { ProductImage } from "@/src/components/ProductImage";
 import { productImageList } from "@/src/components/quotation/helpers/media";
-import { enqueueQuotationPersist } from "@/src/components/quotation/helpers/autosave";
+import { QuotationMutations } from "@/src/components/quotation/helpers/autosave";
 import { builderDraftEpoch } from "@/src/components/quotation/helpers/draftStorage";
 import { computeQuotationTotals } from "@/src/components/quotation/helpers/totals";
 import type { Customer, Product } from "@/src/components/quotation/helpers/types";
@@ -251,6 +251,8 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
   const router = useRouter();
   const { staff } = useAuth();
   const accountId = staff?.id || "";
+  const activeAccountId = useRef(accountId);
+  activeAccountId.current = accountId;
   const { id, quotationId, followupId } = useLocalSearchParams<{ id?: string; quotationId?: string; followupId?: string }>();
   const routeId = initialQuotationId || id || quotationId;
   const sourceFollowupId = docType === "tiles_selection" && typeof followupId === "string" ? followupId : null;
@@ -300,17 +302,17 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
   const dirtyRef = useRef(false);
   const editRevisionRef = useRef(0);
   const persistRef = useRef<() => Promise<string | null>>(async () => null);
-  const persistQueue = useRef<Promise<string | null>>(Promise.resolve(null));
+  const [mutations] = useState(() => new QuotationMutations());
   const pendingFinishes = useRef(new Set<string>());
   const [finishRevision, setFinishRevision] = useState(0);
   const variantRequests = useRef<Record<string, number>>({});
   const persistedIdRef = useRef<string | null>(null);
   const createdDocumentRef = useRef<{ id: string; docType: TilesDocType } | null>(null);
+  const createdDraftDocumentId = useRef<string | null>(null);
   const seededProductRef = useRef<string | null>(null);
   const seededFollowupRef = useRef<string | null>(null);
   const [followupError, setFollowupError] = useState<string | null>(null);
   const [followupAttempt, setFollowupAttempt] = useState(0);
-  const deletingScopes = useRef(new Set<string>());
   const clientDraftIdRef = useRef<string | null>(null);
   if (!clientDraftIdRef.current) clientDraftIdRef.current = randomUUID();
   const localSnapshot = {
@@ -356,7 +358,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
       setLoading(false);
       // Reusing this route for a fresh document must not carry the previous
       // document's customer, ID or rows into the new draft scope.
-      dirtyRef.current = false; persistedIdRef.current = null; customerIdRef.current = null;
+      dirtyRef.current = false; persistedIdRef.current = null; customerIdRef.current = null; createdDraftDocumentId.current = null;
       serverSavedAtRef.current = null; clientDraftIdRef.current = randomUUID();
       setDocId(null); setDocNumberServer(null); setCustomerId(null); setCustomerSnapshot({ name: "", phone: "" });
       setHeader({ customerName: "", phone: "", reference: "", docDate: defaultDocDate(docType), attendedBy: "", preparedBy: "", address: "", docNumber: "", transportationFee: "0" });
@@ -472,13 +474,13 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
   // Store every rendered edit immediately, including incomplete names,
   // quantities and photo URLs. The network debounce never owns the only copy.
   useEffect(() => {
-    if (!accountId || !localReady || loading || restoreError || recoveryDraft || !dirtyRef.current || deletingScopes.current.has(documentScope)) return;
+    if (!accountId || !localReady || loading || restoreError || recoveryDraft || !dirtyRef.current || mutations.isDeleting(documentScope)) return;
     let current = true;
     void writeTileDraft(localSnapshotRef.current, draftEpoch.current).then(() => {
       if (current) setSaveState(value => value === "idle" ? "local" : value);
     }).catch(() => { if (current) setSaveState("error"); });
     return () => { current = false; };
-  }, [accountId, localReady, loading, restoreError, recoveryDraft, header, rows, partner, partnerEditVersion, customerId, customerSnapshot, docId, routeId, documentScope]);
+  }, [accountId, localReady, loading, restoreError, recoveryDraft, header, rows, partner, partnerEditVersion, customerId, customerSnapshot, docId, routeId, documentScope, mutations]);
 
   const setHeaderField = useCallback((field: keyof TilesHeader, value: string) => {
     setHeader((cur) => ({ ...cur, [field]: value }));
@@ -744,7 +746,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
         if (!silent) toast.show("Wait for the selected finish to finish loading.");
         return null;
       }
-      if (loading || !localReady || restoreError || recoveryDraft || deletingScopes.current.has(documentScope) || !current() || (routeId && docId !== routeId)) return null;
+      if (loading || !localReady || restoreError || recoveryDraft || !current() || (routeId && docId !== routeId)) return null;
       let id = persistedIdRef.current || docId;
       const name = header.customerName.trim();
       if (!name) {
@@ -827,6 +829,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
         persistedIdRef.current = created.id;
         serverSavedAtRef.current = created.updated_at || null;
         createdDocumentRef.current = { id: created.id, docType };
+        createdDraftDocumentId.current = created.id;
         setDocId(created.id);
         setDocNumberServer(created.number);
         // Persist the assigned ID before the optional reference patch. A
@@ -872,7 +875,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
         if (!current()) return null;
       }
       setSaveState(editRevisionRef.current === savingRevision && !dirtyRef.current ? "saved" : "local");
-      if (!deletingScopes.current.has(documentScope) && !routeId && createdDocumentRef.current?.id === id) router.setParams({ id });
+      if (!mutations.isDeleting(documentScope) && !routeId && createdDocumentRef.current?.id === id) router.setParams({ id });
       return id;
       } catch (e: any) {
         if (!current()) return null;
@@ -882,8 +885,8 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
         return null;
       }
     };
-    return enqueueQuotationPersist(persistQueue, run);
-  }, [header, partner, partnerEditVersion, customerId, customerSnapshot, docId, docType, buildItems, router, rows, loading, localReady, recoveryDraft, restoreError, documentScope, documentGeneration, routeId, draftRouteId, accountId]);
+    return mutations.save(documentScope, run);
+  }, [header, partner, partnerEditVersion, customerId, customerSnapshot, docId, docType, buildItems, router, rows, loading, localReady, recoveryDraft, restoreError, documentScope, documentGeneration, routeId, draftRouteId, accountId, mutations]);
   persistRef.current = () => persist({ silent: true });
 
   // Autosave: create the document on the first meaningful edit, then silently
@@ -891,10 +894,10 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
   // explicit workflow/PDF action before it acquired an id, which made the
   // Save-free editor lose a first draft if the tab was closed early.
   useEffect(() => {
-    if (customerLookupActive || loading || !localReady || recoveryDraft || restoreError || (routeId && docId !== routeId) || !dirtyRef.current || !header.customerName.trim()) return;
+    if (customerLookupActive || loading || !localReady || recoveryDraft || restoreError || (routeId && docId !== routeId) || !dirtyRef.current || !header.customerName.trim() || mutations.isDeleting(documentScope)) return;
     const timer = setTimeout(() => { void persistRef.current(); }, 400);
     return () => clearTimeout(timer);
-  }, [header, partner, partnerEditVersion, rows, docId, loading, localReady, recoveryDraft, restoreError, routeId, customerLookupActive, finishRevision]);
+  }, [header, partner, partnerEditVersion, rows, docId, loading, localReady, recoveryDraft, restoreError, routeId, customerLookupActive, finishRevision, documentScope, mutations]);
 
   const generatePdf = useCallback(async () => {
     if (rows.some((row) => row.productId && !row.image?.trim())) {
@@ -1018,31 +1021,32 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
   }, [busy, docType, status, persist, router]);
 
   const deleteDocument = useCallback(async () => {
-    if (busy || deletingScopes.current.has(documentScope)) return false;
+    if (busy || loading || (routeId && docId !== routeId)) return false;
     const targetId = persistedIdRef.current || docId;
     const targetDraftId = clientDraftIdRef.current;
     const current = () => mountedRef.current && documentScopeRef.current === documentScope && documentGenerationRef.current === documentGeneration;
-    deletingScopes.current.add(documentScope);
     setBusy("delete");
-    try {
-      const savedId = await persistQueue.current;
-      const id = targetId || savedId;
-      if (id) await api.delete(`/quotations/${id}`, { floorId: TILES_FLOOR_ID });
-      else await api.delete(`/quotations/client-draft/${targetDraftId}?doc_type=${docType}`, { floorId: TILES_FLOOR_ID });
-      if (accountId) {
-        await removeTileDraft(accountId, docType, draftRouteId);
-        if (id && id !== routeId) await removeTileDraft(accountId, docType, id);
-      }
-      if (!current()) return true;
-      dirtyRef.current = false;
-      toast.success(docType === "tiles_selection" ? "Selection deleted" : "Quotation deleted");
-      router.replace("/(admin)/tiles" as any);
-      return true;
-    } catch (e: any) {
-      if (current()) toast.error(e?.detail || "Document could not be deleted");
-      return false;
-    } finally { deletingScopes.current.delete(documentScope); if (current()) setBusy(null); }
-  }, [docId, docType, busy, router, accountId, routeId, draftRouteId, documentScope, documentGeneration]);
+    return mutations.remove(documentScope, async () => {
+      try {
+        if (!mountedRef.current || activeAccountId.current !== accountId) return false;
+        const id = targetId || (current() ? persistedIdRef.current : null);
+        if (id) await api.delete(`/quotations/${encodeURIComponent(id)}`, { floorId: TILES_FLOOR_ID });
+        else await api.delete(`/quotations/client-draft/${targetDraftId}?doc_type=${docType}`, { floorId: TILES_FLOOR_ID });
+        if (accountId) {
+          if (current() || draftRouteId) await removeTileDraft(accountId, docType, draftRouteId).catch(() => {});
+          if (id && id !== routeId) await removeTileDraft(accountId, docType, id).catch(() => {});
+        }
+        if (!current()) return true;
+        dirtyRef.current = false;
+        toast.success(docType === "tiles_selection" ? "Selection deleted" : "Quotation deleted");
+        router.replace("/(admin)/tiles" as any);
+        return true;
+      } catch (e: any) {
+        if (current()) toast.error(e?.detail || "Document could not be deleted");
+        return false;
+      } finally { if (current()) setBusy(null); }
+    });
+  }, [docId, docType, busy, loading, router, accountId, routeId, draftRouteId, documentScope, documentGeneration, mutations]);
 
   const recoverDraft = useCallback(async () => {
     if (!recoveryDraft || busy) return;
@@ -1147,6 +1151,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
     closeMarkSent: () => { if (!markingSent.current) setMarkSentOpen(false); },
     customerCompleted: Boolean(!loading && completionSnapshot?.completed && completionSnapshot.id === docId && completionSnapshot.customerId === customerId),
     status, stage: tilesStage(docType, status), workflowAction, runWorkflowAction, workflowError, deleteDocument,
+    deleteIdentity: JSON.stringify([accountId, docType, routeId && routeId !== createdDraftDocumentId.current ? routeId : clientDraftIdRef.current]),
   };
 }
 
@@ -2474,7 +2479,7 @@ export function TilesDocBuilder({ docType, initialProductId, initialQuotationId 
   const canUpdate = useActionAccess("tiles", "update", !!staff && !["worker", "warehouse"].includes(staff.role));
   const canMarkSent = canUpdate && !isSelection && doc.status === "draft" && !!doc.docId && doc.rows.some(row => row.productId);
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
-  const currentDeleteId = doc.docId || "local-draft";
+  const currentDeleteId = doc.deleteIdentity;
   const confirmDelete = () => { if (doc.hasDraft && canDelete && !doc.busy) setDeleteTargetId(currentDeleteId); };
 
   // Device width is not the usable document width: the admin sidebar/rail

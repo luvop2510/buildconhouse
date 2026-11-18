@@ -23,6 +23,8 @@ for (const floor of ['first-floor']) {
     });
     await page.goto('/purchase-orders/delete-po');
     await page.getByTestId('delete-purchase-order').click();
+    expect(deleted).toBe(false);
+    await page.getByTestId('confirm-delete-purchase-order-confirm').click();
     await expect.poll(() => deleted).toBe(true);
   });
 }
@@ -45,5 +47,7 @@ test('ground tile purchase deletion uses the Ground floor scope', async ({ page 
   });
   await page.goto('/tiles/orders/po/po-one');
   await page.getByTestId('delete-tile-purchase-order').click();
+  expect(deleted).toBe(false);
+  await page.getByTestId('confirm-delete-tile-purchase-order-confirm').click();
   await expect.poll(() => deleted).toBe(true);
 });

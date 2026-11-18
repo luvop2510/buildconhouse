@@ -5,10 +5,10 @@ import asyncio
 import hashlib
 import json
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Literal, Optional
 from uuid import NAMESPACE_URL, uuid5
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field, ValidationError
 from pymongo.errors import DuplicateKeyError
 
@@ -19,10 +19,12 @@ from pymongo.write_concern import WriteConcern
 from catalog_policy import removed_brand_document
 from models import Brand, BrandCreate, Category, CategoryCreate, ConcealedPart, Product, ProductCreate, ProductPatch, SizeVariantResolution, UserPublic
 from services import catalog_service, media_service
+from services import catalog_product_order as product_order
 from services.activity_log import log_event
 from services.pagination import MAX_PAGE_LIMIT, normalize_pagination
 
 router = APIRouter(tags=["catalog"])
+FamilySort = Literal["source", "popular", "recent", "price_asc", "price_desc", "name", "custom", "default"]
 
 
 async def _validate_diagram_media_urls(product_id: str, updates: dict) -> None:
@@ -326,6 +328,7 @@ async def list_families(
     subcategory: Optional[str] = None,
     series: Optional[str] = None,
     q: Optional[str] = None,
+    sort: Optional[FamilySort] = None,
     limit: int = Query(50, ge=1),
     skip: int = Query(0, ge=0),
     brand_ids: Optional[list[str]] = Query(None, max_length=100),
@@ -341,9 +344,15 @@ async def list_families(
     collapsed underneath. Ideal for the premium grouped catalog view.
     """
     skip, limit = normalize_pagination(skip, limit)
-    return await catalog_service.list_family_groups(
-        brand_id=brand_ids if isinstance(brand_ids, list) else brand_id,
-        category_id=category_ids if isinstance(category_ids, list) else category_id,
+    brands = brand_ids if isinstance(brand_ids, list) else brand_id
+    categories = category_ids if isinstance(category_ids, list) else category_id
+    floors = floor_scope_ids(user)
+    scope = product_order.selected_scope(floors, brands, categories) if sort in {"custom", "default"} else None
+    order = await product_order.read_order(db, scope) if scope else {}
+    version = order.get("version", 0)
+    result = await catalog_service.list_family_groups(
+        brand_id=brands,
+        category_id=categories,
         subcategory=subcategories if isinstance(subcategories, list) else subcategory,
         series=series_values if isinstance(series_values, list) else series,
         finish=finishes if isinstance(finishes, list) else None,
@@ -352,8 +361,53 @@ async def list_families(
         q=q,
         limit=limit,
         skip=skip,
-        floor_ids=floor_scope_ids(user),
+        floor_ids=floors,
+        sort=("custom" if version else "popular") if sort == "default" else sort,
+        user_id=user.id,
+        ranked_product_ids=order.get("product_ids", []),
     )
+    if scope:
+        result["order_version"] = version
+    return result
+
+
+def _product_order_scope(user: UserPublic, brand_id: str | None, category_id: str | None) -> dict:
+    scope = product_order.selected_scope(floor_scope_ids(user), brand_id, category_id)
+    if not scope:
+        raise HTTPException(400, "Select a supported quotation catalog floor")
+    return scope
+
+
+@router.get(product_order.ORDER_PATH)
+async def get_catalog_product_order(
+    response: Response,
+    brand_id: str | None = Query(None, min_length=1, max_length=200),
+    category_id: str | None = Query(None, min_length=1, max_length=200),
+    user: UserPublic = Depends(get_current_user),
+):
+    response.headers["Cache-Control"] = "no-store"
+    scope = _product_order_scope(user, brand_id, category_id)
+    await product_order.require_catalog_scope(db, scope)
+    order, allowed = await asyncio.gather(product_order.read_order(db, scope),
+        product_order.can_reorder_products(db, user, scope["floor_id"]))
+    return {"version": order.get("version", 0), "can_reorder": allowed}
+
+
+@router.put(product_order.ORDER_PATH)
+async def update_catalog_product_order(
+    body: product_order.CatalogProductOrderUpdate,
+    response: Response,
+    brand_id: str | None = Query(None, min_length=1, max_length=200),
+    category_id: str | None = Query(None, min_length=1, max_length=200),
+    user: UserPublic = Depends(get_current_user),
+):
+    response.headers["Cache-Control"] = "no-store"
+    scope = _product_order_scope(user, brand_id, category_id)
+    if not await product_order.can_reorder_products(db, user, scope["floor_id"]):
+        raise HTTPException(403, "Catalog reordering requires owner or explicitly granted catalog access")
+    await product_order.require_catalog_scope(db, scope)
+    version = await product_order.save_order(db, scope, body, user.id)
+    return {"version": version, "can_reorder": True}
 
 
 # ---------- Ranked search (Iteration 2A) ----------

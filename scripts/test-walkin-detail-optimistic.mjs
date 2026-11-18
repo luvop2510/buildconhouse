@@ -30,6 +30,7 @@ function fixture() {
     '@/src/state/auth': { useAuth: () => ({ staff: { id: 'owner', role: 'owner' } }) },
     '@/src/hooks/use-permissions': { useModuleAccess: () => () => true },
     '@/src/design/responsive': { useBp: () => ({ isPhone: true }) },
+    '@/src/components/useDeletionConfirmation': { useDeletionConfirmation: () => ({}) },
     '@/src/components/Toast': { toast: { success: value => notices.push(value), error: value => notices.push(value) } },
     '@/src/theme/tokens': { colors: {}, spacing: {}, type: {} },
     '@/src/api/walkins': { walkinsApi: { get: request('get'), timeline: request('timeline'), update: request('update'), reassign: request('reassign'), visitShowroom: request('visitShowroom'), remove: request('remove'), listAssignees: async () => [{ id: 'new', full_name: 'Next salesperson' }] } },

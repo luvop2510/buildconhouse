@@ -31,6 +31,39 @@ async function followups(page: Page, floorId: string, role = 'owner') {
   return { card, detailReads: () => detailReads };
 }
 
+test('desktop follow-up and saved view deletions wait for explicit confirmation', async ({ page }) => {
+  test.skip(page.viewportSize()!.width < 768, 'Saved views has a desktop toolbar action.');
+  const { card } = await followups(page, 'first-floor');
+  let viewDeleted = false;
+  let followupDeleted = false;
+  await page.route('**/api/followups/saved-views', route => route.fulfill({ json: viewDeleted ? [] : [
+    { id: 'fixture-view', name: 'Sales fixture view', filters: {} },
+  ] }));
+  await page.route('**/api/followups/saved-views/fixture-view', route => {
+    expect(route.request().method()).toBe('DELETE');
+    viewDeleted = true;
+    return route.fulfill({ json: { ok: true } });
+  });
+  await page.route('**/api/followups/menu-customer', route => {
+    expect(route.request().method()).toBe('DELETE');
+    followupDeleted = true;
+    return route.fulfill({ json: { ok: true } });
+  });
+  await page.reload();
+  await page.getByRole('button', { name: 'Saved views', exact: true }).click();
+  await page.getByRole('button', { name: 'Delete view', exact: true }).click();
+  expect(viewDeleted).toBe(false);
+  await page.getByTestId('confirm-delete-followup-view-confirm').click();
+  await expect(page.getByText('Sales fixture view', { exact: true })).toHaveCount(0);
+  expect(viewDeleted).toBe(true);
+  await page.keyboard.press('Escape');
+  await card.getByTestId('delete-followup-menu-customer').click();
+  expect(followupDeleted).toBe(false);
+  await page.getByTestId('confirm-delete-followup-confirm').click();
+  await expect(card).toHaveCount(0);
+  expect(followupDeleted).toBe(true);
+});
+
 for (const floorId of ['ground-floor', 'first-floor', 'third-floor']) {
   test(`critical ${floorId} selected follow-up actions fit the viewport and menus stay separate from customer details`, async ({ page }, info) => {
     const { card, detailReads } = await followups(page, floorId);

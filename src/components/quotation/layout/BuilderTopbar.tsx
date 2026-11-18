@@ -58,7 +58,7 @@ export function BuilderTopbar({
     } catch (error: any) { setWhatsappError(error?.detail || "Could not prepare the PDF for sharing."); }
     finally { setPreparingWhatsApp(false); }
   };
-  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [recentOpen, setRecentOpen] = useState(false);
@@ -168,7 +168,7 @@ export function BuilderTopbar({
         {canDeleteQuotations && b.quotationId ? (
           <Pressable
             testID="builder-delete-quotation"
-            onPress={() => setDeleteOpen(true)}
+            onPress={() => setDeleteTarget(b.quotationId)}
             style={({ pressed }) => [styles.iconBtn, { opacity: pressed ? 0.7 : 1 }]}
             hitSlop={6}
             accessibilityLabel="Delete quotation"
@@ -211,7 +211,7 @@ export function BuilderTopbar({
             onPress={() => { setActionsOpen(false); item.action(); }} style={[styles.actionRow, item.disabled && { opacity: 0.4 }]}>
             <Feather name={item.icon} size={18} color={colors.onSurface} /><Text style={styles.actionLabel}>{item.label}</Text>
           </Pressable>)}
-          {canDeleteQuotations && b.quotationId ? <Pressable accessibilityRole="button" accessibilityLabel="Delete quotation" onPress={() => { setActionsOpen(false); setDeleteOpen(true); }} style={styles.actionRow}>
+          {canDeleteQuotations && b.quotationId ? <Pressable accessibilityRole="button" accessibilityLabel="Delete quotation" onPress={() => { setActionsOpen(false); setDeleteTarget(b.quotationId); }} style={styles.actionRow}>
             <Feather name="trash-2" size={18} color={colors.error} /><Text style={[styles.actionLabel, { color: colors.error }]}>Delete quotation</Text>
           </Pressable> : null}
         </View>
@@ -244,13 +244,13 @@ export function BuilderTopbar({
         </View>
       </BottomSheet>
       <ConfirmDialog
-        visible={deleteOpen}
-        onClose={() => { if (!deleting) setDeleteOpen(false); }}
+        visible={Boolean(canDeleteQuotations && deleteTarget && deleteTarget === b.quotationId)}
+        onClose={() => { if (!deleting) setDeleteTarget(null); }}
         onConfirm={async () => {
+          if (!canDeleteQuotations || !deleteTarget || deleteTarget !== b.quotationId || deleting) return;
           setDeleting(true);
           try {
-            await b.deleteQuotation();
-            setDeleteOpen(false);
+            if (await b.deleteQuotation(deleteTarget)) setDeleteTarget(null);
           } finally {
             setDeleting(false);
           }

@@ -21,6 +21,7 @@ const TOKEN_KIND_KEY = "forge.jwt.kind";
 const REQUEST_TIMEOUT_MS = 30_000;
 type SharedGet = { key: string; promise: Promise<unknown>; controller: AbortController; consumers: number; settled: boolean };
 const inflightGets = new Map<string, SharedGet>();
+const inflightDeletes = new Map<string, Promise<unknown>>();
 const responseCache = new Map<string, { expiresAt: number; value: unknown }>();
 const MAX_RESPONSE_CACHE_ENTRIES = 64;
 type CacheInvalidation = "identity" | "workspace" | "mutation";
@@ -317,6 +318,17 @@ async function mutate<T>(method: string, path: string, body?: unknown, opts?: Re
   }
 }
 
+function deleteOnce<T>(path: string, opts?: RequestOptions): Promise<T> {
+  // Screen-owned signals retain their own cancellation and lifecycle guards.
+  if (opts?.signal) return mutate<T>("DELETE", path, undefined, opts);
+  const key = JSON.stringify([requestContextVersion, opts?.floorId ?? floorCache, path]);
+  const existing = inflightDeletes.get(key);
+  if (existing) return existing as Promise<T>;
+  const operation = mutate<T>("DELETE", path, undefined, opts).finally(() => { inflightDeletes.delete(key); });
+  inflightDeletes.set(key, operation);
+  return operation;
+}
+
 export const api = {
   get: <T>(path: string, opts?: RequestOptions) => {
     if (opts?.signal?.aborted) return Promise.reject(new DOMException("Request cancelled by this view.", "AbortError"));
@@ -350,7 +362,7 @@ export const api = {
   post: <T>(path: string, body?: unknown, opts?: RequestOptions) => { return mutate<T>("POST", path, body, opts); },
   put: <T>(path: string, body?: unknown, opts?: RequestOptions) => { return mutate<T>("PUT", path, body, opts); },
   patch: <T>(path: string, body?: unknown, opts?: RequestOptions) => { return mutate<T>("PATCH", path, body, opts); },
-  delete: <T>(path: string, opts?: RequestOptions) => { return mutate<T>("DELETE", path, undefined, opts); },
+  delete: deleteOnce,
   upload: <T>(p: string, form: FormData, opts?: RequestOptions) => mutate<T>("POST", p, form, opts),
   authenticatedUrl: async (path: string, floorId?: string) => {
     const { token } = await request<{ token: string }>("POST", "/downloads/token", { target: `/api${path}` }, { floorId });

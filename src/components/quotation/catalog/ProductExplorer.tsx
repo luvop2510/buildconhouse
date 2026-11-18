@@ -10,11 +10,12 @@ import { ActivityIndicator, FlatList, LayoutChangeEvent, Platform, Pressable, Sc
 import { Text, TextInput } from "@/src/components/AppText";
 
 import { Button, EmptyState, ErrorState } from "@/src/components/ui";
+import { toast } from "@/src/components/Toast";
 import { ProductImage } from "@/src/components/ProductImage";
 import { colors, money, PRODUCT_IMAGE_ASPECT_RATIO, radius, spacing } from "@/src/theme/tokens";
 import { color as ds } from "@/src/design/tokens";
 import { storage } from "@/src/utils/storage";
-import { useBuilder } from "../context/BuilderContext";
+import { useBuilder, type BuilderCatalogSort } from "../context/BuilderContext";
 import { ProductFilterSheet } from "../sheets/ProductFilterSheet";
 import { VariantSwatchStrip } from "../shared/VariantChip";
 import { QuickAddButton } from "../shared/QuickAddButton";
@@ -25,14 +26,15 @@ import type { Product, ProductVariant } from "../helpers/types";
 import { catalogPriceUnknown } from "../helpers/catalogSource";
 import { catalogProductQuantity, roomProductQuantities } from "../helpers/catalogMetrics";
 import { isNearScrollEnd } from "@/src/utils/scrollEnd";
-import { catalogGridRows, catalogReferences, catalogItemKey } from "@/src/services/catalogService";
+import { catalogGridRows, catalogReferences, catalogItemKey, supportsCatalogOrdering } from "@/src/services/catalogService";
+import { CatalogReorderList } from "./CatalogReorderList";
+import { useCatalogProductOrder } from "./useCatalogProductOrder";
 
 const RECENT_SEARCHES_KEY = "forge.builder.recentSearches.v1";
 const MAX_RECENT_SEARCHES = 8;
 
-type SortKey = "popular" | "recent" | "price_asc" | "price_desc" | "name";
-
-const SORT_OPTIONS: { k: SortKey; label: string; icon: React.ComponentProps<typeof Feather>["name"] }[] = [
+const SORT_OPTIONS: { k: BuilderCatalogSort; label: string; icon: React.ComponentProps<typeof Feather>["name"] }[] = [
+  { k: "custom", label: "Custom Order", icon: "list" },
   { k: "popular", label: "Most used", icon: "trending-up" },
   { k: "recent", label: "Recent", icon: "clock" },
   { k: "price_asc", label: "Price ↑", icon: "arrow-up" },
@@ -42,6 +44,17 @@ const SORT_OPTIONS: { k: SortKey; label: string; icon: React.ComponentProps<type
 
 export function ProductExplorer({ showCompactFilters = true, scrollHeader }: { showCompactFilters?: boolean; scrollHeader?: ReactNode }) {
   const b = useBuilder();
+  const { activeFloorId, selectedBrandId, selectedCategoryId, setSortKey, retryProducts } = b;
+  const orderScope = useMemo(() => supportsCatalogOrdering(activeFloorId)
+    ? { floorId: activeFloorId, brandId: selectedBrandId, categoryId: selectedCategoryId } : null,
+  [activeFloorId, selectedBrandId, selectedCategoryId]);
+  const finishOrdering = useCallback(() => {
+    setSortKey(null);
+    retryProducts();
+    toast.success("Catalog order saved");
+  }, [setSortKey, retryProducts]);
+  const order = useCatalogProductOrder(orderScope, finishOrdering);
+  const sortOptions = orderScope ? SORT_OPTIONS : SORT_OPTIONS.filter((option) => option.k !== "custom");
   const [paneWidth, setPaneWidth] = useState(0);
   const [facets, setFacets] = useState<Record<string, { value: string }[]>>({});
   useEffect(() => { let active = true; if (!b.activeFloorId) return; setFacets({}); void catalogReferences.facets<Record<string, { value: string }[]>>({ floorId: b.activeFloorId }).then(value => { if (active) setFacets(value); }).catch(() => {}); return () => { active = false; }; }, [b.activeFloorId]);
@@ -132,6 +145,10 @@ export function ProductExplorer({ showCompactFilters = true, scrollHeader }: { s
           ) : null}
         </View>
 
+        {order.canReorder ? <View style={styles.reorderEntry}>
+          <Button label="Reorder Products" icon="move" variant="secondary" size="sm" testID="reorder-catalog-products" onPress={() => void order.start()} />
+        </View> : null}
+
         {showCompactFilters ? <View style={styles.filterToolbar}>
           <Pressable accessibilityRole="button" accessibilityState={{ expanded: filtersOpen }}
             accessibilityLabel="Filters and sort" testID="explorer-filter-toggle" onPress={() => setFiltersOpen(v => !v)} style={styles.filterTrigger}>
@@ -162,12 +179,12 @@ export function ProductExplorer({ showCompactFilters = true, scrollHeader }: { s
             contentContainerStyle={styles.mobileSortContent}
             testID="mobile-sort-selector"
           >
-            {SORT_OPTIONS.map((opt) => {
+            {sortOptions.map((opt) => {
               const on = b.sortKey === opt.k;
               return (
                 <Pressable
                   key={opt.k}
-                  accessibilityRole="button" accessibilityState={{ selected: on }}
+                  accessibilityRole="button" accessibilityState={{ selected: on }} aria-pressed={on}
                   onPress={() => b.setSortKey(opt.k)}
                   style={[styles.sortChip, on && styles.sortChipActive]}
                   testID={`sort-${opt.k}`}
@@ -180,12 +197,12 @@ export function ProductExplorer({ showCompactFilters = true, scrollHeader }: { s
           </ScrollView>
         ) : (
           <View style={styles.sortRow}>
-            {SORT_OPTIONS.map((opt) => {
+            {sortOptions.map((opt) => {
               const on = b.sortKey === opt.k;
               return (
                 <Pressable
                   key={opt.k}
-                  accessibilityRole="button" accessibilityState={{ selected: on }}
+                  accessibilityRole="button" accessibilityState={{ selected: on }} aria-pressed={on}
                   onPress={() => b.setSortKey(opt.k)}
                   style={[styles.sortChip, on && styles.sortChipActive]}
                   testID={`sort-${opt.k}`}
@@ -222,6 +239,31 @@ export function ProductExplorer({ showCompactFilters = true, scrollHeader }: { s
         </ScrollView> : null}
       </View>
     </>;
+
+  if (order.draft) {
+    const { products, phase, error, reloadRequired } = order.draft;
+    return <View style={styles.panel} testID="catalog-reorder-mode">
+      <View style={styles.reorderHeader}>
+        <Text accessibilityRole="header" style={styles.reorderTitle}>Reorder Products</Text>
+        <Text numberOfLines={2} style={styles.crumb}>{brandName} · {catName || "All Products"}</Text>
+        {products.length > 1 && phase === "ready" && !reloadRequired
+          ? <Text style={styles.crumb}>{showCompactFilters ? "Touch and hold a card, then drag to move it." : "Drag a card to move it."}</Text>
+          : null}
+        <View style={styles.reorderActions}>
+          <Button label="Cancel" variant="secondary" size="sm" onPress={order.cancel} disabled={phase === "saving"} testID="catalog-cancel-order" />
+          {reloadRequired ? <Button label="Reload Order" size="sm" onPress={() => void order.start()} testID="catalog-reload-order" />
+            : <Button label="Save Order" size="sm" onPress={() => void order.save()} loading={phase === "saving"}
+                disabled={phase !== "ready" || !products.length} testID="catalog-save-order" />}
+        </View>
+        {error ? <Text accessibilityRole="alert" style={styles.reorderError}>{error}</Text> : null}
+      </View>
+      {phase === "loading" ? <View style={styles.reorderLoading} accessibilityRole="progressbar" accessibilityLabel="Loading the catalog order">
+        <ActivityIndicator color={ds.brass} />
+      </View> : products.length ? <CatalogReorderList products={products} onReorder={order.reorder}
+        disabled={phase === "saving" || reloadRequired} renderCard={renderReorderCard} columns={numCols} />
+        : !error ? <EmptyState icon="package" title="No products in this catalog view" /> : null}
+    </View>;
+  }
 
   return (
     <View style={styles.panel} onLayout={(event: LayoutChangeEvent) => {
@@ -304,6 +346,18 @@ export function ProductExplorer({ showCompactFilters = true, scrollHeader }: { s
       />
     </View>
   );
+}
+
+function renderReorderCard(product: Product) {
+  const web = Platform.OS === "web";
+  return <View style={web ? styles.reorderGridCard : styles.reorderCard}>
+    <ProductImage source={product.images} style={styles.reorderImage} contentFit="contain" fallbackLabel={product.sku} disableSkeleton />
+    <View style={styles.reorderCardText}>
+      <Text numberOfLines={2} style={styles.cardName}>{product.name}</Text>
+      <Text numberOfLines={1} style={styles.cardSku}>{product.sku}</Text>
+    </View>
+    <Text numberOfLines={1} style={[styles.reorderPrice, web && styles.reorderGridPrice]}>{catalogPriceUnknown(product) ? "Price unavailable" : money(product.price)}</Text>
+  </View>;
 }
 
 // -----------------------------------------------------------------------------
@@ -423,6 +477,18 @@ function FilterPill({ label, active, onPress }: { label: string; active?: boolea
 
 const styles = StyleSheet.create({
   panel: { flex: 1, minHeight: 0, overflow: "hidden", backgroundColor: colors.surface },
+  reorderEntry: { alignItems: "flex-start" },
+  reorderHeader: { gap: 6, paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1, borderColor: colors.border },
+  reorderTitle: { fontSize: 16, fontWeight: "700", color: colors.onSurface },
+  reorderActions: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  reorderError: { fontSize: 13, color: colors.onSurface },
+  reorderLoading: { padding: 24, alignItems: "center" },
+  reorderCard: { flexDirection: "row", alignItems: "center", gap: 8, minWidth: 0, paddingVertical: 5 },
+  reorderGridCard: { alignItems: "stretch", gap: 4, minWidth: 0 },
+  reorderImage: { width: 42, height: 42, borderRadius: radius.sm, backgroundColor: colors.surfaceSecondary },
+  reorderCardText: { flex: 1, minWidth: 0 },
+  reorderPrice: { fontSize: 12, color: colors.onSurfaceSecondary, flexShrink: 1, maxWidth: "32%" },
+  reorderGridPrice: { maxWidth: "100%" },
   head: {
     paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.md,
     borderBottomWidth: StyleSheet.hairlineWidth, borderColor: colors.border,

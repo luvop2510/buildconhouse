@@ -47,6 +47,7 @@ function fixture() {
     '@/src/utils/walkinSummary': { walkinSummaryFilters: view => view ? { summary: view } : {} },
     '@/src/theme/tokens': { colors: {}, spacing: {}, type: {} },
     '@/src/utils/phone': { formatDepartmentPhone: value => value },
+    '@/src/components/useDeletionConfirmation': { useDeletionConfirmation: () => ({}) },
     '@/src/components/Toast': { toast: { success: message => notices.push({ success: message }), error: message => notices.push({ error: message }) } },
     '@/src/api/walkins': { walkinsApi: { remove: request('remove'), list: request('export'), page: (params, cursor, options) => request('list')(params, options, cursor).then(result => Array.isArray(result) ? { items: result, next_cursor: null } : result), dashboard: request('dashboard'), update: request('update'), listSources: async () => ({ sources: [] }) } },
   };
@@ -203,18 +204,18 @@ test('A to B to A and unmount cannot revive the first scope or publish notices',
   assert.equal(f.calls('update').length, 1); assert.equal(f.notices.length, 0);
 });
 
-test('walk-in deletion is immediate, coalesced and visibly restored on failure', async () => {
+test('walk-in deletion coalesces taps and retains the row until confirmed', async () => {
   const f = fixture(); await f.ready(); const record = f.state.items[0];
   const remove = f.state.deleteWalkin;
   const pending = remove(record), duplicate = remove(record); await f.settle();
   assert.equal(f.calls('remove').length, 1);
-  assert.equal(f.state.items.length, 0);
+  assert.equal(f.state.items.length, 1);
   assert.equal(f.state.confirmedItems.length, 1);
   await f.state.scheduleSelection(record); assert.equal(f.calls('update').length, 0);
   f.calls('remove')[0].reject({ detail: 'Fixture unavailable' });
   await Promise.all([pending, duplicate]); await f.settle();
   assert.equal(f.state.items[0].id, record.id);
-  assert.match(f.notices.at(-1).error, /restored/);
+  assert.match(f.notices.at(-1).error, /Fixture unavailable/);
   f.unmount();
 });
 

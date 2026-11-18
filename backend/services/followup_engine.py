@@ -479,9 +479,13 @@ async def followup_worker() -> None:
 
 
 async def reconcile_followups_admitted() -> dict:
-    from services.mutation_admission import admission, finish_on_cancel
-    async with admission(db, operation="background:followup-reconciliation"):
-        return await finish_on_cancel(reconcile_followups())
+    from services.mutation_admission import AdmissionBusy, admission, finish_on_cancel
+    from services.mutation_scopes import FOLLOWUP_AUTOMATION
+    try:
+        async with admission(db, operation="background:followup-reconciliation", scope=FOLLOWUP_AUTOMATION):
+            return await finish_on_cancel(reconcile_followups())
+    except AdmissionBusy:
+        return {"skipped": True, "reason": "conflicting deletion"}
 
 
 async def reconcile_followups() -> dict:

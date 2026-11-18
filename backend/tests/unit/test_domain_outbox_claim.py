@@ -2,12 +2,24 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
 from copy import deepcopy
 from types import SimpleNamespace
 
 import pytest
 
 import services.domain_outbox as domain_outbox
+
+
+@pytest.fixture(autouse=True)
+def isolated_dispatch_gate(monkeypatch):
+    from services import mutation_admission
+
+    @asynccontextmanager
+    async def admitted(*args, **kwargs):
+        yield
+
+    monkeypatch.setattr(mutation_admission, "admission", admitted)
 
 
 def test_claim_event_uses_compare_and_set_pending_filter(monkeypatch):

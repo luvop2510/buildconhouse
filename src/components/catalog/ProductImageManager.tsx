@@ -49,6 +49,7 @@ export function ProductImageManagerBody({
   const cols = isPhone ? 2 : 3;
   const lifecycle = useRef<AbortController | null>(null);
   const uploading = useRef(false);
+  const deleting = useRef(false);
   const [media, setMedia] = useState<MediaItem[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [pending, setPending] = useState<Pending | null>(null);
@@ -136,8 +137,9 @@ export function ProductImageManagerBody({
   };
 
   const doDelete = async () => {
-    if (!confirmDeleteId) return;
+    if (!confirmDeleteId || deleting.current || uploading.current) return;
     const controller = lifecycle.current;
+    deleting.current = true;
     setBusy(true);
     try {
       await api.delete(`/media/${confirmDeleteId}`, { signal: controller?.signal });
@@ -149,6 +151,7 @@ export function ProductImageManagerBody({
     } catch (e: any) {
       if (!controller?.signal.aborted) toast.error(e?.message || "Couldn't delete");
     } finally {
+      deleting.current = false;
       if (!controller?.signal.aborted) setBusy(false);
     }
   };

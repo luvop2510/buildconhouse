@@ -18,6 +18,7 @@ export default defineConfig({
     'responsive-navigation-recovery.spec.ts',
     'responsive-catalog.spec.ts',
     'redesign-catalog-families.spec.ts',
+    'redesign-catalog-product-order.spec.ts',
     'redesign-command-palette.spec.ts',
     'redesign-delegated-walkins.spec.ts',
     'redesign-customer-completion.spec.ts',

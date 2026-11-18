@@ -75,6 +75,7 @@ function screen(newStockId) {
     '@/src/state/auth': { useAuth: () => ({ staff: { role: 'owner' } }) },
     '@/src/design/responsive': { useBp: () => ({ isPhone: false, isDesktop: true }) },
     '@/src/theme/tokens': { colors: {}, radius: {}, spacing: {}, type: {} },
+    '@/src/components/useDeletionConfirmation': { useDeletionConfirmation: () => ({}) },
     '@/src/components/Toast': { toast: { error: message => errors.push(message) } },
     '@/src/api/godownStock': {
       getGodownStock: (params, requestFloor) => { const pending = deferred(); stocks.push({ ...pending, floor: requestFloor, params }); return pending.promise; },

@@ -17,6 +17,7 @@ import { api } from "@/src/api/client";
 import { ProductImage } from "@/src/components/ProductImage";
 import { LazyProductEditor as ProductEditor } from "@/src/components/catalog/LazyProductEditor";
 import { toast } from "@/src/components/Toast";
+import { useDeletionConfirmation } from "@/src/components/useDeletionConfirmation";
 import { useAuth } from "@/src/state/auth";
 import { useFloorAccess } from "@/src/hooks/use-floor-access";
 import { useActionAccess } from "@/src/hooks/use-permissions";
@@ -153,7 +154,7 @@ export function ProductModal() {
   }, [product, selectedVariant]);
 
   const deleteProduct = async () => {
-    if (!selectedProduct || !product || !mayDeleteProduct || !["first-floor", "ground-floor"].includes(activeFloorId) || deletingProduct.current) return;
+    if (!selectedProduct || !product || !mayDeleteProduct || !["first-floor", "ground-floor"].includes(activeFloorId) || deletingProduct.current) return false;
     const selection = activeSelectionRef.current;
     deletingProduct.current = true;
     try {
@@ -163,8 +164,10 @@ export function ProductModal() {
       await api.delete(path, { floorId: activeFloorId });
       b.retryProducts();
       if (selection === activeSelectionRef.current) b.closeProductModal();
+      return true;
     } catch (error: any) {
       if (selection === activeSelectionRef.current) toast.error(error?.detail || "Could not delete product");
+      return false;
     } finally { deletingProduct.current = false; }
   };
 
@@ -212,8 +215,9 @@ export function ProductModal() {
     }
   };
 
-  const selectionKey = `${staff?.id || ""}:${activeFloorId}:${product?.id || ""}:${selectedProduct?.id || ""}`;
+  const selectionKey = `${staff?.id || ""}:${activeFloorId}:${product?.id || ""}:${selectedProduct?.id || ""}:${selectedProduct?.sku || ""}`;
   activeSelectionRef.current = selectionKey;
+  const productDeletion = useDeletionConfirmation(selectionKey, "confirm-delete-builder-product", deleteProduct, variantNameBusy);
 
   useEffect(() => {
     setSourceEntries(selectedProduct?.catalog_entries || []);
@@ -373,6 +377,7 @@ export function ProductModal() {
 
   return (
     <>
+    {productDeletion.dialog}
     <Overlay open={open && !editorOpen} onClose={b.closeProductModal} title={selectedProduct.name} width={960} presentation={isPhone ? "fullscreen" : "dialog"} scroll={false} header={false}>
         <View style={{ flex: 1, minHeight: 0 }}>
           {/* Header */}
@@ -388,7 +393,7 @@ export function ProductModal() {
                 {!isPhone ? <Text style={styles.editBtnLabel}>Edit product</Text> : null}
               </Pressable>
             ) : null}
-            {mayDeleteProduct && ["first-floor", "ground-floor"].includes(activeFloorId) ? <Pressable accessibilityRole="button" accessibilityLabel="Delete product" testID="product-modal-delete" onPress={() => { void deleteProduct(); }} style={styles.editBtn} hitSlop={6}><Feather name="trash-2" size={16} color={colors.error} /></Pressable> : null}
+            {mayDeleteProduct && ["first-floor", "ground-floor"].includes(activeFloorId) ? <Pressable accessibilityRole="button" accessibilityLabel="Delete product" testID="product-modal-delete" onPress={() => productDeletion.prompt(undefined, `Delete ${selectedProduct.name}?`, selectedProduct.sku)} style={styles.editBtn} hitSlop={6}><Feather name="trash-2" size={16} color={colors.error} /></Pressable> : null}
             <Pressable accessibilityRole="button" accessibilityLabel="Close product details" onPress={b.closeProductModal} style={styles.close} hitSlop={6}>
               <Feather name="x" size={18} color={colors.onSurface} />
             </Pressable>

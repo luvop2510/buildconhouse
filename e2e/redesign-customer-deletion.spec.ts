@@ -29,6 +29,35 @@ test('critical customer deletion requires named review and keeps other customers
   expect(deletes).toBe(1);
 });
 
+test('critical Edit Customer uses the same named and signed deletion review', async ({ page }) => {
+  await mockSession(page, '/customers/edit-target/edit', false, { floorId: 'ground-floor' });
+  const customer = { id: 'edit-target', name: 'Synthetic edit customer', floor_id: 'ground-floor', portal_enabled: false };
+  const token = 'b'.repeat(64);
+  let deletes = 0;
+  await page.route('**/api/customers/edit-target/deletion-preview?**', route => route.fulfill({ json: {
+    customer_id: customer.id, confirmation: token, counts: { customers: 1 }, shared_records_preserved: 0, private_files: 0,
+  } }));
+  await page.route(/\/api\/customers\/edit-target(?:\?.*)?$/, route => {
+    if (route.request().method() === 'GET') return route.fulfill({ json: customer });
+    expect(route.request().method()).toBe('DELETE');
+    expect(new URL(route.request().url()).searchParams.get('confirmation')).toBe(token);
+    expect(route.request().headers()['x-floor-id']).toBe('ground-floor');
+    deletes++;
+    return route.fulfill({ json: { ok: true } });
+  });
+  await page.route('**/api/customers?**', route => route.fulfill({ json: deletes ? [] : [customer] }));
+  await page.goto('/customers/edit-target/edit');
+  await page.getByTestId('delete-customer-edit').click();
+  const dialog = page.getByTestId('confirm-delete-customer-list');
+  await expect(dialog).toContainText(customer.name);
+  expect(deletes).toBe(0);
+  await dialog.getByTestId('confirm-delete-customer-list-confirm').click();
+  await expect(page).toHaveURL(/\/customers$/);
+  await page.reload();
+  await expect(page.getByTestId('customer-edit-target')).toHaveCount(0);
+  expect(deletes).toBe(1);
+});
+
 for (const floor of ['first-floor', 'ground-floor']) test(`critical ${floor} customer reset sends one stable command and reloads the list`, async ({ page }) => {
   await mockSession(page, '/customers', false, { floorId: floor });
   let reset = false;
@@ -72,9 +101,9 @@ test('critical new Furniture ledger carries the selected canonical customer thro
   await page.goto('/notebook/furniture-quotations');
   await page.getByRole('button',{name:'New RNB quotation',exact:true}).click();
   await page.getByRole('button',{name:'Link customer profile',exact:true}).click();
-  await page.getByRole('button',{name:'Linked showroom customer · 987-654-32-10',exact:true}).click();
+  await page.getByRole('button',{name:'Linked showroom customer · 9876543210',exact:true}).click();
   await expect(page.getByRole('textbox',{name:'Customer name / quotation heading (RDCL)',exact:true})).toHaveValue('Linked showroom customer');
-  await expect(page.getByRole('textbox',{name:'Customer WhatsApp mobile',exact:true})).toHaveValue('987-654-32-10');
+  await expect(page.getByRole('textbox',{name:'Customer WhatsApp mobile',exact:true})).toHaveValue('9876543210');
   await page.getByRole('textbox',{name:'Charge 1 RNB',exact:true}).fill('100');
   await page.getByRole('button',{name:'Remove charge 2',exact:true}).click();
   await page.getByRole('button',{name:'Save quotation',exact:true}).click();
@@ -83,7 +112,7 @@ test('critical new Furniture ledger carries the selected canonical customer thro
   await page.getByRole('button',{name:'Open Linked showroom customer',exact:true}).click();
   await expect(page.getByRole('button',{name:'Change linked customer',exact:true})).toBeVisible();
   await expect(page.getByRole('textbox',{name:'Customer name / quotation heading (RDCL)',exact:true})).toHaveValue('Linked showroom customer');
-  await expect(page.getByRole('textbox',{name:'Customer WhatsApp mobile',exact:true})).toHaveValue('987-654-32-10');
+  await expect(page.getByRole('textbox',{name:'Customer WhatsApp mobile',exact:true})).toHaveValue('9876543210');
 });
 
 for (const allowed of [false, true]) test(`critical employee customer deletion controls follow explicit permission ${allowed}`, async ({ page }) => {

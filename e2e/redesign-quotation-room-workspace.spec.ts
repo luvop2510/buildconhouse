@@ -71,6 +71,50 @@ async function fixture(page: Page, failFirstRead = false) {
   return { document, roomWrites: () => roomWrites, postCount: () => posts };
 }
 
+test("critical quotation deletion waits for an interrupted same-record autosave", async ({ page }) => {
+  await fixture(page);
+  await expect(page.getByTestId("room-header-Master Bathroom")).toBeAttached();
+  await openReview(page);
+  const requests: string[] = [];
+  let releaseSave = () => {};
+  let deleted = false;
+  await page.route(/\/api\/quotations\/room-workspace(?:\?.*)?$/, async route => {
+    if (route.request().method() === "PATCH") {
+      requests.push("save started");
+      await new Promise<void>(resolve => { releaseSave = resolve; });
+      requests.push("save interrupted");
+      return route.abort("failed");
+    }
+    if (route.request().method() === "DELETE") {
+      requests.push("delete");
+      deleted = true;
+      return route.fulfill({ json: { ok: true } });
+    }
+    if (deleted) return route.fulfill({ status: 404, json: { detail: "Quotation not found" } });
+    return route.fallback();
+  });
+  const quantity = page.getByTestId("qty-basin");
+  await quantity.fill("5");
+  await quantity.press("Tab");
+  await expect.poll(() => requests).toEqual(["save started"]);
+
+  const deleteButton = page.getByTestId("builder-delete-quotation");
+  if (await deleteButton.isVisible()) await deleteButton.click();
+  else {
+    await page.getByTestId("builder-actions").click();
+    await page.getByRole("button", { name: "Delete quotation", exact: true }).click();
+  }
+  const confirmation = page.getByTestId("confirm-delete-active-builder-quotation-confirm");
+  await confirmation.click();
+  await expect(confirmation).toBeDisabled();
+  expect(requests).toEqual(["save started"]);
+  releaseSave();
+  await expect.poll(() => requests).toEqual(["save started", "save interrupted", "delete"]);
+  await expect(confirmation).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByText("Quotation not found", { exact: true })).toBeVisible();
+});
+
 test("critical quotation opens an individual bathroom, previews additive changes and recovers a lost save acknowledgement", async ({ page }, testInfo) => {
   const fixtureData = await fixture(page);
   await expect(page.getByTestId("room-header-Master Bathroom")).toBeAttached();

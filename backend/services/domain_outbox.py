@@ -649,6 +649,20 @@ async def dispatch_pending(limit: int = 100) -> list[dict]:
         },
         {"_id": 0, "id": 1, "attempts": 1},
     ).sort("created_at", 1).to_list(limit)
+    if not events:
+        return []
+    from services.mutation_admission import AdmissionBusy, admission, finish_on_cancel
+    from services.mutation_scopes import OUTBOX_DISPATCH
+    try:
+        async with admission(db, operation="background:outbox-dispatch", scope=OUTBOX_DISPATCH):
+            return await finish_on_cancel(_dispatch_batch(events))
+    except AdmissionBusy:
+        # The next pass can claim these still-pending events. If deletion
+        # removes a source and its event, no obsolete ID will be claimed.
+        return []
+
+
+async def _dispatch_batch(events) -> list[dict]:
     results = []
     for event in events:
         claimed = None
@@ -686,8 +700,7 @@ async def outbox_worker() -> None:
     while True:
         try:
             from services.mutation_admission import admission, finish_on_cancel
-            async with admission(db, operation="background:outbox-dispatch"):
-                await finish_on_cancel(dispatch_pending())
+            await dispatch_pending()
             now = datetime.now(timezone.utc).timestamp()
             if not customer_reset_maintenance() and now >= next_share_cleanup:
                 await cleanup_expired_shares()

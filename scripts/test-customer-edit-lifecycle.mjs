@@ -41,7 +41,7 @@ function fixture() {
     '@/src/design/responsive': { useBp: () => ({ isPhone: false, gutter: 16 }) },
     '@/src/state/auth': { useAuth: () => ({ staff: account ? { id: account, role: 'owner' } : null }) },
     '@/src/hooks/use-floor-access': { useFloorAccess: () => ({ selectedFloorId: floor }) },
-    '@/src/hooks/use-permissions': { useActionAccess: () => true },
+    '@/src/hooks/use-customer-delete-access': { useCustomerDeleteAccess: () => true },
     '@/src/constants/roles': { canManageDestructiveData: () => true },
     '@/src/theme/tokens': { colors: {}, radius: {}, spacing: {}, type: {} },
     '@/src/components/Toast': { toast: { error: text => notices.push(text), success: text => notices.push(text) } },
