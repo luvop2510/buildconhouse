@@ -385,6 +385,7 @@ function ProductGridCardImpl({ product, compact, width, favourite, addedQty, onT
   const selectedSku = selectedVariant?.sku ?? product.sku;
   const selectedPrice = selectedVariant?.price ?? product.price;
   const selectedMrp = selectedVariant?.mrp ?? product.mrp;
+  const mrpOverride = selectedVariant ? selectedVariant.catalog_mrp_override : product.catalog_mrp_override;
 
   return (
     <View
@@ -439,8 +440,8 @@ function ProductGridCardImpl({ product, compact, width, favourite, addedQty, onT
         <View style={styles.priceRow}>
           <View style={styles.priceCol}>
             <Text style={styles.price} numberOfLines={1} ellipsizeMode="clip">{catalogPriceUnknown(product, selectedVariant) ? "Price unavailable" : money(selectedPrice)}</Text>
-            {!catalogPriceUnknown(product, selectedVariant) && selectedMrp && selectedMrp > selectedPrice ? (
-              <Text style={styles.mrp} numberOfLines={1} ellipsizeMode="clip">{money(selectedMrp)}</Text>
+            {mrpOverride || (!catalogPriceUnknown(product, selectedVariant) && selectedMrp > selectedPrice) ? (
+              <Text style={[styles.mrp, mrpOverride && styles.currentMrp]} numberOfLines={1} ellipsizeMode="clip">{mrpOverride ? "MRP " : ""}{money(selectedMrp)}</Text>
             ) : null}
           </View>
         </View>
@@ -586,6 +587,7 @@ const styles = StyleSheet.create({
   priceCol: { flex: 1, minWidth: 0 },
   price: { fontSize: 14, fontWeight: "600", color: colors.onSurface, fontVariant: ["tabular-nums"], letterSpacing: -0.1 },
   mrp: { fontSize: 10, color: colors.onSurfaceMuted, textDecorationLine: "line-through", fontVariant: ["tabular-nums"] },
+  currentMrp: { textDecorationLine: "none" },
   variantSlot: { minHeight: 26, justifyContent: "center" },
   variantSlotCompact: { minHeight: 22 },
   endOfList: {

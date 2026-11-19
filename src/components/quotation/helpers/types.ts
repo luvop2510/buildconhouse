@@ -18,6 +18,7 @@ export type ProductVariant = {
   /** `colour` is the catalog API spelling; `color` remains for old clients. */
   colour?: string | null; color?: string | null; variant_label?: string | null;
   mrp: number; price: number; stock?: number;
+  catalog_mrp_override?: boolean;
   price_unknown?: boolean;
   listing_id?: string | null;
   dimensions?: string | null; material?: string | null; warranty?: string | null;
@@ -33,6 +34,7 @@ export type ProductVariant = {
 
 export type Product = {
   id: string; name: string; sku: string; price: number; mrp: number;
+  catalog_mrp_override?: boolean;
   price_unknown?: boolean; listing_id?: string | null;
   catalog_entry?: CatalogEntry | null; catalog_entries?: CatalogEntry[];
   finish?: string | null; finish_code?: string | null; variant_label?: string | null;
