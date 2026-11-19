@@ -802,10 +802,8 @@ def _product_listing(product: dict, entry: dict) -> dict:
         if field in entry and (field == "subcategory" or entry[field] is not None):
             row[field] = entry[field]
     row["source_price_unspecified"] = entry.get("mrp") is None
-    if entry.get("mrp") is not None:
-        row.update(price=entry["mrp"], price_status="known", price_source="supplier")
-        if not product.get("catalog_mrp_override"):
-            row["mrp"] = entry["mrp"]
+    if not product.get("catalog_mrp_override") and entry.get("mrp") is not None:
+        row.update(price=entry["mrp"], mrp=entry["mrp"], price_status="known", price_source="supplier")
     else:
         row["price_source"] = "existing" if product.get("price_status") != "unspecified" else "unspecified"
     return row
