@@ -102,6 +102,21 @@ def test_family_card_variant_switching_exposes_each_skus_business_fields(monkeyp
     }
 
 
+def test_current_mrp_overrides_supplier_placement_mrp_only():
+    product = _product("a")
+    entry = {"entry_id": "supplier-a", "mrp": 300}
+    snapshot = _build_snapshot([product], [], [], [], [])
+
+    source_listing = catalog_service._product_listing(product, entry)
+    assert source_listing["mrp"] == source_listing["price"] == 300
+
+    product["catalog_mrp_override"] = True
+    current_listing = catalog_service._product_listing(product, entry)
+    assert current_listing["mrp"] == product["mrp"]
+    assert current_listing["price"] == entry["mrp"] == 300
+    assert catalog_service._variant_summary(current_listing, snapshot)["catalog_mrp_override"] is True
+
+
 def test_variant_hydration_never_crosses_a_floor_or_catalog_namespace():
     a = _product("a")
     same = _product("b")
