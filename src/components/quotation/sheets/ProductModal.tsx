@@ -40,6 +40,7 @@ function productAsVariant(product: Product): ProductVariant {
     variant_label: product.variant_label ?? null,
     price: product.price, mrp: product.mrp, stock: product.stock ?? 0,
     price_unknown: product.price_unknown,
+    catalog_mrp_override: product.catalog_mrp_override,
     dimensions: product.dimensions ?? null, material: product.material ?? null,
     dimension_image_urls: product.dimension_image_urls ?? [],
     seat_cover_image_urls: product.seat_cover_image_urls ?? [],
@@ -140,6 +141,7 @@ export function ProductModal() {
       listing_id: variant.listing_id,
       catalog_entries: variant.id === product.id ? product.catalog_entries : undefined,
       mrp: variant.mrp ?? product.mrp,
+      catalog_mrp_override: variant.catalog_mrp_override,
       stock: variant.stock ?? product.stock,
       dimensions: variant.dimensions ?? product.dimensions,
       dimension_image_urls: variant.dimension_image_urls ?? product.dimension_image_urls,
@@ -433,8 +435,8 @@ export function ProductModal() {
                 <View style={styles.priceCard}>
                   <View style={{ flexDirection: "row", alignItems: "baseline", gap: 8 }}>
                     <Text style={styles.priceBig} numberOfLines={1}>{catalogPriceUnknown(product, selectedVariant) && manualCatalogPrice(priceOverride) === null ? "Price unavailable" : money(currentPrice)}</Text>
-                    {!catalogPriceUnknown(product, selectedVariant) && selectedProduct.mrp && selectedProduct.mrp > currentPrice ? (
-                      <Text style={styles.mrpBig} numberOfLines={1}>{money(selectedProduct.mrp)}</Text>
+                    {selectedProduct.catalog_mrp_override || (!catalogPriceUnknown(product, selectedVariant) && selectedProduct.mrp > currentPrice) ? (
+                      <Text style={[styles.mrpBig, selectedProduct.catalog_mrp_override && styles.currentMrp]} numberOfLines={1}>{selectedProduct.catalog_mrp_override ? "MRP " : ""}{money(selectedProduct.mrp)}</Text>
                     ) : null}
                   </View>
                   <Text style={styles.priceHint}>Editable selling price · MRP shown for reference</Text>
@@ -878,6 +880,7 @@ const styles = StyleSheet.create({
   },
   priceBig: { fontSize: 22, fontWeight: "600", color: colors.onSurface, fontVariant: ["tabular-nums"], letterSpacing: -0.3 },
   mrpBig: { fontSize: 12, color: colors.onSurfaceMuted, textDecorationLine: "line-through", fontVariant: ["tabular-nums"] },
+  currentMrp: { textDecorationLine: "none" },
   priceHint: { fontSize: 10, color: colors.onSurfaceMuted },
   priceInput: {
     marginTop: 4, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
