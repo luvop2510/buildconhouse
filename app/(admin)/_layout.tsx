@@ -200,7 +200,7 @@ function FloorSwitcher({ compact = false }: { compact?: boolean }) {
 }
 
 const FLOOR_ROUTE_SEGMENTS: Record<string, string[]> = {
-  [SANITARY_FLOOR_ID]: ["quotations", "godown-stock", "purchases", "purchases-completed", "purchase-orders"],
+  [SANITARY_FLOOR_ID]: ["quotations", "godown-stock", "purchases", "purchases-completed", "purchase-orders", "sanitary-sales"],
   [TILES_FLOOR_ID]: ["tiles", "orders"],
   [KITCHEN_FLOOR_ID]: ["kitchen"],
   [FURNITURE_FLOOR_ID]: ["furniture", "furniture-quotations"],

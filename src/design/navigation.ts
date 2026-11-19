@@ -40,6 +40,7 @@ export const PRIMARY: NavItem[] = [
 
 export const SECONDARY: NavItem[] = [
   { href: "/(admin)/sales-data", label: "Sales Data", icon: "trending-up", match: "sales-data", roles: ["owner"] },
+  { href: "/(admin)/sanitary-sales", label: "Sanitary Sales Data", icon: "bar-chart-2", match: "sanitary-sales", roles: ["owner"], floors: [SANITARY_FLOOR_ID] },
   { href: "/(admin)/team-assign", label: "Team assign", icon: "users", match: "team-assign", roles: ["owner"] },
   { href: "/(admin)/team", label: "Team", icon: "user-check", match: "team", roles: ["owner"] },
   { href: "/(admin)/settings", label: "Settings", icon: "settings", match: "settings" },

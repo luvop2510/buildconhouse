@@ -133,6 +133,18 @@ def test_revocation_invalidates_links_before_storage_deletion(monkeypatch):
     assert calls[1][0] == "storage"
 
 
+def test_sanitary_link_revocation_does_not_remove_the_staff_archive(monkeypatch):
+    database, storage = fake_share_database(monkeypatch)
+    database.quotation_shares.find = lambda *args: SimpleNamespace(to_list=AsyncMock(return_value=[]))
+    database.quotation_shares.update_many = AsyncMock()
+    asyncio.run(shares.revoke_shares("q1", "first-floor"))
+    database.quotation_shares.update_many.assert_awaited_once_with(
+        {"quotation_id": "q1", "floor_id": "first-floor", "kind": {"$ne": "sanitary_staff_pdf"}},
+        {"$set": {"revoked": True}},
+    )
+    storage.delete.assert_not_awaited()
+
+
 def test_cleanup_retains_failed_object_metadata_for_retry(monkeypatch):
     database, storage = fake_share_database(monkeypatch)
     cursor = SimpleNamespace(to_list=AsyncMock(return_value=[share_record()]))

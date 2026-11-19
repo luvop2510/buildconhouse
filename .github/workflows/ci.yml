@@ -133,7 +133,7 @@ jobs:
       - name: Verify four-department sales and reference accounting
         env:
           SALES_TEST_MONGO_URL: mongodb://127.0.0.1:27017
-        run: python -m pytest tests/integration/test_sales_summary_mongo.py tests/integration/test_furniture_reference_analytics_mongo.py -v
+        run: python -m pytest tests/integration/test_sales_summary_mongo.py tests/integration/test_furniture_reference_analytics_mongo.py tests/integration/test_sanitary_sales_mongo.py -v
       - name: Verify stock receipt races, catalog reuse and reference walk-ins
         env:
           DISPOSABLE_MONGO_TEST_URL: mongodb://127.0.0.1:27017
@@ -344,6 +344,9 @@ jobs:
       - name: Seven-size tablet, catalog and WhatsApp acceptance
         if: ${{ !cancelled() && steps.audit-browsers.outcome == 'success' }}
         run: npx playwright test --config playwright.responsive.config.ts responsive-
+      - name: Sanitary Sales Data filters, exports and floor isolation
+        if: ${{ !cancelled() && steps.audit-browsers.outcome == 'success' }}
+        run: npx playwright test --config playwright.sanitary-sales.config.ts
       - name: Member credentials and furniture touch-device acceptance
         if: ${{ !cancelled() && steps.audit-browsers.outcome == 'success' }}
         run: npx playwright test --config playwright.devices.config.ts
