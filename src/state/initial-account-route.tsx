@@ -7,7 +7,7 @@ import { personalAccountPath } from "@/src/team-delegation";
 // group to its default /access child and otherwise lose a personal deep link.
 const initialRoute = typeof window === "undefined" ? undefined : (window as Window & { __FORGE_INITIAL_ROUTE__?: string }).__FORGE_INITIAL_ROUTE__;
 const browserPath = initialRoute?.split('?')[0] || (typeof window === "undefined" ? undefined : window.location?.pathname);
-const adminRoots = new Set(["access", "dashboard", "catalog", "customers", "quotations", "purchases", "purchases-completed", "purchase-orders", "payments", "payments-list", "walkins", "followups", "notebook", "tiles", "godown-stock", "sales-data", "team", "notifications", "reports"]);
+const adminRoots = new Set(["access", "dashboard", "catalog", "customers", "quotations", "purchases", "purchases-completed", "purchase-orders", "payments", "payments-list", "walkins", "followups", "notebook", "tiles", "godown-stock", "sales-data", "sanitary-sales", "team", "notifications", "reports"]);
 const isAdminPath = (path: string) => path.startsWith('/') && !path.startsWith('//') && (adminRoots.has(path.split('/')[1]) || /^\/settings(?:-[a-z-]+)?$/.test(path));
 const capturedPath = personalAccountPath(browserPath) || (browserPath && isAdminPath(browserPath)
   ? initialRoute || `${browserPath}${typeof window === "undefined" ? "" : window.location.search}` : null);

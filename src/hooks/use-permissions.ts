@@ -91,7 +91,7 @@ export function useModuleAccess() {
     (moduleKey: string) => {
       const kitchenStage = moduleKey.startsWith("kitchen-") && !["kitchen-projects", "kitchen-dashboard", "kitchen-lost"].includes(moduleKey);
       if (moduleKey === "dashboard" && staff) return true;
-      if (moduleKey === "sales-data") return staff?.role === "owner";
+      if (moduleKey === "sales-data" || moduleKey === "sanitary-sales") return staff?.role === "owner";
       if (!staff) return true;
       if (staff.role === "owner") return true;
       if (moduleKey === "team") return false;

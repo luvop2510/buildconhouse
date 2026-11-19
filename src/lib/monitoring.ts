@@ -7,7 +7,7 @@ const DEFAULT_TRACE_SAMPLE_RATE = 0.05;
 const DEFAULT_WEB_VITAL_SAMPLE_RATE = 0.1;
 const SAFE_ROUTE_SEGMENTS = new Set([
   "admin", "auth", "customer", "catalog", "customers", "dashboard", "followups",
-  "login", "notifications", "payments", "purchases", "quotations", "sales-data",
+  "login", "notifications", "payments", "purchases", "quotations", "sales-data", "sanitary-sales",
   "settings", "tiles", "walkins", "privacy", "terms", "new", "edit", "index",
   "brands", "orders", "selection", "quotation", "notebook", "today", "executive",
 ]);

@@ -1890,10 +1890,30 @@ async def quotation_pdf(quotation_id: str, include_dimensions: bool = False, use
         # The outbox row is already durable. Its worker will retry follow-up
         # automation; a transient dispatcher failure must not discard the PDF.
         logger.exception("Quotation PDF outbox dispatch deferred: quotation_id=%s", quotation_id)
+    async def sanitary_file():
+        # Deliver the known-length response before the optional storage copy.
+        # Archiving remains inside the same ASGI request and admission token.
+        yield pdf_bytes
+        from services.mutation_admission import finish_on_cancel
+        from services.sanitary_sales_pdf import save_quotation_pdf
+
+        try:
+            await finish_on_cancel(save_quotation_pdf(db, doc, pdf_bytes, filename))
+        except Exception as exc:
+            logger.warning("Sanitary staff PDF archive unavailable (%s)", type(exc).__name__)
+
+    headers = {"Content-Disposition": _pdf_content_disposition(filename)}
+    if doc.get("floor_id") == "first-floor" and doc_type == "standard":
+        headers.update({
+            "Content-Length": str(len(pdf_bytes)),
+            "Content-Encoding": "identity",
+            "Cache-Control": "private, no-store",
+        })
+        return StreamingResponse(sanitary_file(), media_type="application/pdf", headers=headers)
     return StreamingResponse(
         iter([pdf_bytes]),
         media_type="application/pdf",
-        headers={"Content-Disposition": _pdf_content_disposition(filename)},
+        headers=headers,
     )
 
 

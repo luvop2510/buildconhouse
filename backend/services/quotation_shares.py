@@ -89,6 +89,8 @@ async def read_share(token: str) -> tuple[bytes, str]:
 
 async def revoke_shares(quotation_id: str, floor_id: str | None) -> None:
     query = {"quotation_id": quotation_id, "floor_id": floor_id}
+    if floor_id == "first-floor":
+        query["kind"] = {"$ne": "sanitary_staff_pdf"}
     # Revoke first but retain object keys until deletion succeeds, so storage
     # downtime cannot leave live links or undiscoverable customer snapshots.
     await db.quotation_shares.update_many(query, {"$set": {"revoked": True}})
