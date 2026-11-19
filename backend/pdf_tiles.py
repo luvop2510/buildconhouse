@@ -5,12 +5,9 @@ printed forms supplied by the business (Selection / Tile Quotation):
   (Quotation only) a PRICE SUMMARY box, the OUR BRAND
   PARTNERS grid, 12 Terms & Conditions, a contact line and a customer
   signature box.
-* Page 2+ — PRODUCT DETAILS: a single flowing product grid (SR NO / PRODUCT
-  IMAGE / AREA / PRODUCT DETAIL / SIZE / RATE-SQFT [+ OFFER RATE / RATE-BOX /
-  TOTAL BOX / PCS-BOX / TOTAL for the Quotation]) that paginates on its own
-  via reportlab's normal Table-splitting (repeatRows repeats the column
-  header on every continuation page) — no manual per-page chunking, so any
-  number of products just flows across as many pages as it needs.
+* Page 2+ — PRODUCT DETAILS: a flowing product grid with repeating headers.
+  Quotations show the saved offer and box rates, followed by Transportation
+  when charged and the quotation totals.
 
 Both reuse the shared image fetch/placeholder/escaping/footer helpers from
 pdf_generator so there is exactly one implementation of those in the codebase.
@@ -18,6 +15,7 @@ pdf_generator so there is exactly one implementation of those in the codebase.
 from __future__ import annotations
 from services.product_display import tile_product_name
 from services.phone_format import format_department_phone
+from services.pricing import saved_tile_unit_price
 from services.referrer_identity import pdf_reference_label
 
 import functools
@@ -339,16 +337,16 @@ def _brand_terms_signature_block(styles: dict, branding: dict, *, density: str =
     return flow
 
 
-def _price_summary_table(total_quantity: str, subtotal: float, transportation_fee: float, total_quote: float, styles: dict) -> Table:
-    """Quotation-only PRICE SUMMARY box on page 1 — TOTAL QUANTITY / SUBTOTAL /
-    TRANSPORTATION / TOTAL QUOTE."""
+def _price_summary_table(total_quantity: str, subtotal: float, transportation_fee: float | None, total_quote: float, styles: dict) -> Table:
+    """Cover summary. PO Final retains its Transportation row here."""
     rows = [
         [Paragraph("TOTAL QUANTITY", styles["sumLabel"]), Paragraph(total_quantity, styles["sumValue"])],
         [Paragraph(f"SUBTOTAL ({_currency_symbol()})", styles["sumLabel"]), _SingleLineParagraph(_rupee(subtotal), styles["sumValue"])],
-        [Paragraph("TRANSPORTATION", styles["sumLabel"]), _SingleLineParagraph(_rupee(transportation_fee), styles["sumValue"])],
-        [Paragraph(f"TOTAL QUOTE ({_currency_symbol()})", styles["sumRed"]), _SingleLineParagraph(_rupee(total_quote), styles["sumRed"])],
     ]
-    table = Table(rows, colWidths=[130 * mm, 64 * mm], rowHeights=[5.5 * mm] * 4, hAlign="CENTER")
+    if transportation_fee is not None:
+        rows.append([Paragraph("TRANSPORTATION", styles["sumLabel"]), _SingleLineParagraph(_rupee(transportation_fee), styles["sumValue"])])
+    rows.append([Paragraph(f"TOTAL QUOTE ({_currency_symbol()})", styles["sumRed"]), _SingleLineParagraph(_rupee(total_quote), styles["sumRed"])])
+    table = Table(rows, colWidths=[130 * mm, 64 * mm], rowHeights=[5.5 * mm] * len(rows), hAlign="CENTER")
     table.setStyle(TableStyle([
         ("GRID", (0, 0), (-1, -1), 0.6, GRID),
         ("ALIGN", (0, 0), (-1, -1), "CENTER"),
@@ -465,8 +463,9 @@ def build_tiles_selection_pdf(quotation: dict, customer: dict, branding: dict | 
 # ===========================================================================
 # TILES QUOTATION
 # ===========================================================================
-# Preserve all original product-detail columns and their order on portrait A4.
-_QUO_COLS = [width * mm for width in (7, 32, 18, 34, 16, 15, 19, 14, 11, 28)]
+# Keep the original photo frame and fit the additional rate on portrait A4.
+_QUO_COLS = [width * mm for width in (7, 32, 14, 27, 15, 12, 15, 22, 14, 10, 26)]
+_PO_FINAL_COLS = [width * mm for width in (7, 32, 18, 34, 16, 15, 19, 14, 11, 28)]
 QUOTATION_PRODUCT_IMAGE_WIDTH_MM = 28.0
 QUOTATION_PRODUCT_IMAGE_HEIGHT_MM = QUOTATION_PRODUCT_IMAGE_WIDTH_MM / (16 / 10)
 
@@ -483,9 +482,14 @@ def build_tiles_quotation_pdf(quotation: dict, customer: dict, branding: dict | 
     )
     styles = _tiles_styles()
     product_quotation = quotation.get("_po_final") is None
+    columns = _QUO_COLS if product_quotation else _PO_FINAL_COLS
     serial_style = styles["cell"]
     if product_quotation:
         serial_style = ParagraphStyle("quoteSerial", parent=serial_style, fontSize=10, textColor=QUOTATION_SERIAL_GREY)
+    area_style = (
+        ParagraphStyle("quoteArea", parent=styles["cell"], fontSize=8, leading=10)
+        if product_quotation else styles["cell"]
+    )
     items = quotation.get("items") or []
 
     quantity_totals = {
@@ -496,12 +500,33 @@ def build_tiles_quotation_pdf(quotation: dict, customer: dict, branding: dict | 
         _quantity_label(value, unit)
         for unit, value in quantity_totals.items() if value
     )
-    item_subtotal = float(quotation.get("subtotal") or sum(float(item.get("net_amount") or 0) for item in items))
+    unit_prices = [saved_tile_unit_price(item, per_piece=_quantity_unit(item.get("quantity_unit")) == "Pieces") for item in items]
+    gross_amounts = [
+        float(item.get("qty") or 0) * (rate or 0)
+        for item, rate in zip(items, unit_prices, strict=True)
+    ]
+    line_totals = [
+        float(item["net_amount"]) if item.get("net_amount") is not None
+        else round(gross * (1 - float(item.get("discount_pct") or 0) / 100), 2)
+        for item, gross in zip(items, gross_amounts, strict=True)
+    ]
+    item_subtotal = quotation.get("subtotal")
+    if item_subtotal is None:
+        item_subtotal = round(sum(gross_amounts), 2)
     transportation_fee = float(quotation.get("transportation_fee") or 0)
-    subtotal = item_subtotal
-    total_quote = float(quotation.get("grand_total") or (item_subtotal + transportation_fee))
+    discount_total = quotation.get("discount_total")
+    if discount_total is None:
+        discount_total = round(sum(gross_amounts) - sum(line_totals), 2)
+    total_quote = quotation.get("grand_total")
+    if total_quote is None:
+        total_quote = round(float(item_subtotal) - float(discount_total) + transportation_fee, 2)
 
     if quotation.get("_po_final") is not None:
+        item_subtotal = float(quotation.get("subtotal") or sum(float(item.get("net_amount") or 0) for item in items))
+        total_quote = float(quotation.get("grand_total") or (item_subtotal + transportation_fee))
+        unit_prices = [float(item.get("unit_price") or 0) for item in items]
+        line_totals = [float(item.get("net_amount") if item.get("net_amount") is not None else float(item.get("qty") or 0) * rate)
+                       for item, rate in zip(items, unit_prices, strict=True)]
         story: list = [
             _header_block("PRODUCT QUOTATION", "Tiles &amp; Sanitaryware Solutions", styles),
             Spacer(1, 2 * mm),
@@ -511,7 +536,7 @@ def build_tiles_quotation_pdf(quotation: dict, customer: dict, branding: dict | 
             Spacer(1, 4 * mm),
             Paragraph("PRICE &amp; PAYMENT SUMMARY", styles["sectionTitle"]),
             Spacer(1, 2 * mm),
-            _price_summary_table(total_quantity, subtotal, transportation_fee, total_quote, styles),
+            _price_summary_table(total_quantity, item_subtotal, transportation_fee, total_quote, styles),
             Spacer(1, 3 * mm),
             _po_final_payment_table(quotation, styles["cell"], PAGE_W_MM),
         ]
@@ -530,7 +555,7 @@ def build_tiles_quotation_pdf(quotation: dict, customer: dict, branding: dict | 
             Spacer(1, 2.5 * mm),
             Paragraph("PRICE SUMMARY", styles["sectionTitle"]),
             Spacer(1, 1 * mm),
-            _price_summary_table(total_quantity, subtotal, transportation_fee, total_quote, styles),
+            _price_summary_table(total_quantity, item_subtotal, None, total_quote, styles),
             Spacer(1, 2.5 * mm),
         ]
         story.extend(_brand_terms_signature_block(styles, b, density="compact"))
@@ -548,14 +573,22 @@ def build_tiles_quotation_pdf(quotation: dict, customer: dict, branding: dict | 
         _SingleLineParagraph("QUANTITY", styles["colHead"]), Paragraph("UNIT", styles["colHead"]),
         _SingleLineParagraph(f"TOTAL ({_currency_symbol()})", styles["colHead"]),
     ]
+    if product_quotation:
+        head.insert(7, Paragraph("RATE / BOX", styles["colHead"]))
     rows: list[list[object]] = [head]
-    for index, item in enumerate(items, 1):
+    for index, (item, unit_price, line_total) in enumerate(zip(items, unit_prices, line_totals, strict=True), 1):
         qty = float(item.get("qty") or 0)
-        offer_rate = float(item.get("offer_rate") if item.get("offer_rate") is not None else (item.get("rate_sqft") if item.get("rate_sqft") is not None else item.get("unit_price") or 0))
-        line_total = float(item.get("net_amount") if item.get("net_amount") is not None else qty * float(item.get("unit_price") or 0))
         quantity_unit = _quantity_unit(item.get("quantity_unit"))
-        rate_sqft_text = "" if quantity_unit == "Pieces" or item.get("price_basis") == "box" else _fmt_rate_sqft(item.get("rate_sqft"))
-        rows.append([
+        per_sqft = quantity_unit == "Box" and item.get("price_basis") != "box"
+        offer_rate = item.get("offer_rate")
+        if product_quotation and not per_sqft and unit_price is not None:
+            offer_rate = unit_price
+        if offer_rate is None:
+            offer_rate = item.get("rate_sqft") if item.get("rate_sqft") is not None else unit_price
+        rate_sqft_text = _fmt_rate_sqft(item.get("rate_sqft")) if per_sqft else ""
+        detail = Paragraph(_escape(tile_product_name(item.get("name"), item.get("size"))), styles["cellBold"])
+        size = Paragraph(_escape(item.get("size") or ""), styles["cell"])
+        row = [
             Paragraph(str(index), serial_style),
             _img(
                 item.get("image"), image_bytes=image_bytes, force_landscape=True,
@@ -563,56 +596,79 @@ def build_tiles_quotation_pdf(quotation: dict, customer: dict, branding: dict | 
                 height_mm=QUOTATION_PRODUCT_IMAGE_HEIGHT_MM,
                 cover=True,
             ),
-            Paragraph(_escape(item.get("room") or ""), styles["cell"]),
-            Paragraph(_escape(tile_product_name(item.get("name"), item.get("size"))), styles["cellBold"]),
-            Paragraph(_escape(item.get("size") or ""), styles["cell"]),
+            Paragraph(_escape(item.get("room") or ""), area_style),
+            detail,
+            size,
             Paragraph(rate_sqft_text, styles["cellRed"]),
-            _SingleLineParagraph(_money(offer_rate) if offer_rate else "", styles["cellOffer"]),
+            _SingleLineParagraph(_money(offer_rate) if offer_rate is not None and (product_quotation or offer_rate) else "", styles["cellOffer"]),
             # The detail table separates the count from its fulfillment unit:
             # quantity stays numeric while the adjacent column says box/piece.
             # Keep _quantity_label for the summary, where the combined unit is
             # useful, but do not duplicate it in each product row.
             Paragraph(f"{qty:g}" if qty else "", styles["cellBold"]),
             Paragraph("piece" if quantity_unit == "Pieces" else "box", styles["cellBold"]),
-            _SingleLineParagraph(_money(line_total) if line_total else "", styles["cell"]),
-        ])
-    # Keep the grand total out of the flowing product table.  When a table
-    # splits immediately before its final row, ReportLab repeats the column
-    # header on the new page even though that page contains only the total.
-    # Rendering the total as its own table leaves an overflow page clean.
-    total_row = ["" for _ in head]
-    total_row[3] = Paragraph("<b>TOTAL</b>", styles["cell"])
-    total_row[-1] = _SingleLineParagraph(f"<b>{_money(item_subtotal)}</b>", styles["cell"])
-    style_cmds = [
+            _SingleLineParagraph(_money(line_total), styles["cell"]),
+        ]
+        if product_quotation:
+            if item.get("finish"):
+                row[3] = [detail, Paragraph(_escape(item["finish"]), styles["cell"])]
+            row[4] = _SingleLineParagraph(_escape(item.get("size")), styles["cell"])
+            if quantity_unit == "Box" and item.get("box_sqft"):
+                row[4] = [row[4], _SingleLineParagraph(_fmt_rate_sqft(item["box_sqft"], " sq. ft./box"), styles["sqftCaption"])]
+            rate_box = _money(unit_price) if quantity_unit == "Box" and unit_price is not None else ""
+            row.insert(7, _SingleLineParagraph(rate_box, styles["cell"]))
+        rows.append(row)
+
+    grid_style = [
         ("GRID", (0, 0), (-1, -1), 0.7, GRID),
         ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-        ("BACKGROUND", (0, 0), (-1, 0), HEADER_GREY),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("LEFTPADDING", (0, 0), (-1, -1), 2), ("RIGHTPADDING", (0, 0), (-1, -1), 2),
         ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
     ]
+    style_cmds = [*grid_style, ("BACKGROUND", (0, 0), (-1, 0), HEADER_GREY)]
     if not product_quotation:
         for r in range(2, len(rows), 2):
             style_cmds.append(("BACKGROUND", (0, r), (0, r), ZEBRA))
+    row_heights = [12 * mm] + [32 * mm] * len(items)
+    if product_quotation:
+        summary = []
+        if transportation_fee:
+            summary.append(("TRANSPORTATION", transportation_fee))
+        summary.append(("SUBTOTAL", item_subtotal))
+        if discount_total:
+            summary.append(("DISCOUNT", discount_total))
+        summary.append(("TOTAL QUOTE", total_quote))
+        summary_start = len(rows)
+        for label, value in summary:
+            rows.append([
+                Paragraph(label, styles["sumLabel"]), *([""] * (len(head) - 2)),
+                _SingleLineParagraph(_money(value), styles["sumValue"]),
+            ])
+            row_heights.append(8 * mm)
+        # Keep the final product and the totals on the same page.
+        style_cmds.extend([
+            ("NOSPLIT", (0, max(1, summary_start - 1)), (-1, -1)),
+            ("BACKGROUND", (0, summary_start), (-1, -1), HEADER_GREY),
+        ])
+        for row_index in range(summary_start, len(rows)):
+            style_cmds.append(("SPAN", (0, row_index), (-2, row_index)))
     table = Table(
         rows,
-        colWidths=_QUO_COLS,
-        minRowHeights=[12 * mm] + [32 * mm] * len(items),
+        colWidths=columns,
+        minRowHeights=row_heights,
         repeatRows=1,
     )
     table.setStyle(TableStyle(style_cmds))
     story.append(table)
 
-    total_table = Table([total_row], colWidths=_QUO_COLS, rowHeights=[8 * mm])
-    total_table.setStyle(TableStyle([
-        ("GRID", (0, 0), (-1, -1), 0.7, GRID),
-        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-        ("BACKGROUND", (0, 0), (-1, -1), HEADER_GREY),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 2), ("RIGHTPADDING", (0, 0), (-1, -1), 2),
-        ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-    ]))
-    story.append(total_table)
+    if not product_quotation:
+        total_row = ["" for _ in head]
+        total_row[3] = Paragraph("<b>TOTAL</b>", styles["cell"])
+        total_row[-1] = _SingleLineParagraph(f"<b>{_money(item_subtotal)}</b>", styles["cell"])
+        total_table = Table([total_row], colWidths=columns, rowHeights=[8 * mm])
+        total_table.setStyle(TableStyle([*grid_style, ("BACKGROUND", (0, 0), (-1, -1), HEADER_GREY)]))
+        story.append(total_table)
 
     doc.build(
         story,

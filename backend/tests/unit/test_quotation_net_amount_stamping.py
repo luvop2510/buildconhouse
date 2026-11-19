@@ -2,6 +2,8 @@
 even when the request body carried no items at all."""
 from __future__ import annotations
 
+import pytest
+
 from routes.quotation_routes import _stamped_items_for_update
 
 
@@ -56,7 +58,16 @@ def test_net_amount_list_keeps_duplicate_ids_separate():
     assert net_amount_list(items, project_discount_pct=10) == [90.0, 270.0]
 
 
-def test_update_quotation_restamps_items_via_the_real_route(monkeypatch):
+def test_tiles_legacy_unit_rate_fallback_preserves_explicit_zero():
+    from routes.quotation_routes import _with_saved_tile_unit_price
+
+    assert _with_saved_tile_unit_price({"rate_box": 1700, "offer_rate": 120, "box_sqft": 16})["unit_price"] == 1700
+    assert _with_saved_tile_unit_price({"offer_rate": 120, "box_sqft": 16})["unit_price"] == 1920
+    assert _with_saved_tile_unit_price({"unit_price": 0, "rate_box": 1700})["unit_price"] == 0
+
+
+@pytest.mark.parametrize("scenario", ["standard_discount", "tiles_transport", "tiles_discount_and_transport"])
+def test_update_quotation_restamps_items_via_the_real_route(monkeypatch, scenario):
     """Exercises the actual update_quotation handler end to end (fake db, no
     network) — would fail if `update["items"] = _stamped_items_for_update(...)`
     were ever deleted from the route, since update_calls[0]["update"]["items"]
@@ -74,6 +85,9 @@ def test_update_quotation_restamps_items_via_the_real_route(monkeypatch):
         "status": "draft", "project_discount_pct": 0, "category_discounts": {}, "room_discounts": {},
         "items": [_raw("a", 1, 100.0), _raw("b", 1, 200.0)],
     }
+    if scenario.startswith("tiles_"):
+        doc.update(doc_type="tiles_quotation", transportation_fee=100, subtotal=8500, discount_total=500, grand_total=8100,
+                   items=[_raw("a", 5, 1700, net_amount=8000, rate_box=1700, rate_sqft=120, box_sqft=16)])
 
     update_calls = []
 
@@ -106,10 +120,24 @@ def test_update_quotation_restamps_items_via_the_real_route(monkeypatch):
         email="sales@forge.app", full_name="Sales", role="sales",
         floor_ids=["ground-floor"], active_floor_id="ground-floor",
     )
-    payload = QuotationUpdate(project_discount_pct=10, silent=True)
+    payload = QuotationUpdate(
+        transportation_fee=240 if scenario.startswith("tiles_") else None,
+        project_discount_pct=None if scenario == "tiles_transport" else 10,
+        silent=True,
+    )
 
     asyncio.run(quotation_routes.update_quotation("q1", payload, user=user))
 
     assert len(update_calls) == 1
+    if scenario == "tiles_transport":
+        assert update_calls[0]["transportation_fee"] == 240
+        assert update_calls[0]["grand_total"] == 8240
+        assert not {"items", "subtotal", "discount_total"}.intersection(update_calls[0])
+        return
     persisted_items = update_calls[0]["items"]
+    if scenario == "tiles_discount_and_transport":
+        assert persisted_items[0]["unit_price"] == 1700
+        assert persisted_items[0]["net_amount"] == 7650
+        assert update_calls[0]["grand_total"] == 7890
+        return
     assert [i["net_amount"] for i in persisted_items] == [90.0, 180.0]

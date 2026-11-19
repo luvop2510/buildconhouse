@@ -18,6 +18,23 @@ from typing import Any
 from models import QuotationLineItem, RoomDiscountCfg
 
 
+def saved_tile_unit_price(item: dict, *, per_piece: bool) -> float | None:
+    """Resolve a quote snapshot's unit price without applying write-time pricing."""
+    for value in (item.get("unit_price"), item.get("rate_box")):
+        if value is not None:
+            return float(value)
+
+    offer = item.get("offer_rate")
+    if per_piece or item.get("price_basis") == "box":
+        return float(offer) if offer is not None else None
+
+    rate_sqft = offer if offer is not None else item.get("rate_sqft")
+    coverage = item.get("box_sqft")
+    if rate_sqft is not None and coverage and float(coverage) > 0:
+        return round(float(rate_sqft) * float(coverage), 2)
+    return None
+
+
 def normalize_tile_line_item(item: QuotationLineItem) -> QuotationLineItem:
     """Normalize tile-only display/pricing fields at the pricing boundary.
 

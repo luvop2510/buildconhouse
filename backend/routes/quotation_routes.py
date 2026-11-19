@@ -33,6 +33,7 @@ from pdf_tiles import build_tiles_quotation_pdf, build_tiles_selection_pdf, tile
 from services.quotation_catalog_prices import price_review, apply_price_choice, line_catalog_snapshot
 from services.quotation_ppt import build_product_ppt, presentation_filename
 from services.quotation_excel import build_quotation_excel, quotation_excel_filename
+from services.tiles_quotation_excel import build_tiles_quotation_excel
 from services.quotation_list import list_projection, list_search
 from services import catalog_service
 from services.customer_completion import completed_customer_ids
@@ -44,7 +45,7 @@ from services.domain_outbox import (
     enqueue_after_primary_commit,
 )
 from services.followup_engine import reconcile_followups
-from services.pricing import _resolve_line_rows, net_amount_list, normalize_tile_line_item, per_line_net_amounts, stamp_net_amounts
+from services.pricing import _resolve_line_rows, net_amount_list, normalize_tile_line_item, per_line_net_amounts, saved_tile_unit_price, stamp_net_amounts
 from services.pagination import normalize_pagination
 from services.multi_filters import filter_values
 from services.pricing import recalc_quotation_totals as _recalc
@@ -264,6 +265,24 @@ def _normalize_tile_items(items: list[QuotationLineItem], doc_type: str) -> list
     for item in items:
         normalize_tile_line_item(item)
     return items
+
+
+def _with_saved_tile_unit_price(item: dict) -> dict:
+    if item.get("unit_price") is not None:
+        return item
+    rate = saved_tile_unit_price(item, per_piece=item.get("quantity_unit") == "Pieces")
+    return {**item, "unit_price": rate} if rate is not None else item
+
+
+def _normalize_tiles_quotation_update(items: list[dict], saved_items: list[dict]) -> list[QuotationLineItem]:
+    saved_by_id = {item["id"]: QuotationLineItem(**_with_saved_tile_unit_price(item)) for item in saved_items}
+    pricing_fields = ("product_id", "unit_price", "rate_box", "rate_sqft", "offer_rate", "box_sqft", "price_basis", "quantity_unit")
+    normalized = [QuotationLineItem(**_with_saved_tile_unit_price(item)) for item in items]
+    for item in normalized:
+        saved = saved_by_id.get(item.id)
+        if saved is None or any(getattr(item, key) != getattr(saved, key) for key in pricing_fields):
+            normalize_tile_line_item(item)
+    return normalized
 
 
 def _require_finite_nonnegative_amount(value) -> float:
@@ -808,6 +827,8 @@ async def floor_reset_generation(user: UserPublic = Depends(get_current_user)):
 async def get_quotation(quotation_id: str, with_completion: bool = False, user: UserPublic = Depends(get_current_user)):
     doc = await get_floor_scoped_or_404(db.quotations, quotation_id, user, not_found="Quotation not found", projection={"_id": 0})
     doc = {**doc, "items": await _canonicalize_item_images(doc.get("items", []), floor_inherit(doc))}
+    if doc.get("doc_type") == "tiles_quotation" and doc.get("floor_id") == TILES_FLOOR_ID:
+        doc["items"] = [_with_saved_tile_unit_price(item) for item in doc["items"]]
     if with_completion:
         completion_user = user.model_copy(update={"active_floor_id": doc["floor_id"]})
         complete_ids = await completed_customer_ids(db, completion_user, [doc.get("customer_id")])
@@ -1041,6 +1062,7 @@ async def update_quotation(
     user: UserPublic = Depends(require_min_role("sales")),
 ):
     doc = await get_floor_scoped_or_404(db.quotations, quotation_id, user, not_found="Quotation not found", projection={"_id": 0})
+    is_ground_tiles_quote = doc.get("doc_type") == "tiles_quotation" and doc.get("floor_id") == TILES_FLOOR_ID
 
     if body.status == "sent":
         if body.model_fields_set - {"status", "reason", "silent", "expected_updated_at"}:
@@ -1103,7 +1125,7 @@ async def update_quotation(
             for key in ("catalog_price", "catalog_mrp", "catalog_version"):
                 setattr(it, key, snapshot.get(key))
         canonical_items = await _canonicalize_item_images(items_typed, floor_inherit(doc))
-        update["items"] = [i.model_dump() for i in _normalize_tile_items(
+        update["items"] = canonical_items if is_ground_tiles_quote else [i.model_dump() for i in _normalize_tile_items(
             [QuotationLineItem(**item) for item in canonical_items], doc.get("doc_type", "standard")
         )]
         usage_product_ids = [it.product_id for it in items_typed if not it.product_id.startswith("godown:")]
@@ -1175,10 +1197,20 @@ async def update_quotation(
         update["ui_state"] = body.ui_state
 
     # Recalc totals if anything pricing-related changed
-    if any(k in update for k in ("items", "project_discount_pct", "category_discounts", "room_discounts", "transportation_fee")):
-        items_for_calc = _normalize_tile_items([
-            QuotationLineItem(**i) for i in update.get("items", doc.get("items", []))
-        ], doc.get("doc_type", "standard"))
+    line_pricing_changed = any(k in update for k in ("items", "project_discount_pct", "category_discounts", "room_discounts"))
+    if (
+        is_ground_tiles_quote and "transportation_fee" in update
+        and not line_pricing_changed and doc.get("grand_total") is not None
+    ):
+        previous_fee = round(float(doc.get("transportation_fee") or 0), 2)
+        update["grand_total"] = round(float(doc["grand_total"]) - previous_fee + round(update["transportation_fee"], 2), 2)
+    elif line_pricing_changed or "transportation_fee" in update:
+        saved_items = doc.get("items", [])
+        items_to_price = update.get("items", saved_items)
+        if is_ground_tiles_quote:
+            items_for_calc = _normalize_tiles_quotation_update(items_to_price, saved_items)
+        else:
+            items_for_calc = _normalize_tile_items([QuotationLineItem(**item) for item in items_to_price], doc.get("doc_type", "standard"))
         update["items"] = [i.model_dump() for i in items_for_calc]
         project_discount_pct_for_calc = update.get("project_discount_pct", doc.get("project_discount_pct", 0))
         category_discounts_for_calc = update.get("category_discounts", doc.get("category_discounts", {}))
@@ -1798,6 +1830,12 @@ def _excel_response(data: bytes, filename: str) -> StreamingResponse:
 async def quotation_xlsx(quotation_id: str, user: UserPublic = Depends(get_current_user)):
     doc = await get_floor_scoped_or_404(db.quotations, quotation_id, user, not_found="Quotation not found", projection={"_id": 0})
     customer = await db.customers.find_one({"id": doc["customer_id"], "floor_id": floor_inherit(doc)}, {"_id": 0, "password_hash": 0}) or {}
+    if doc.get("doc_type") == "tiles_quotation" and doc.get("floor_id") == TILES_FLOOR_ID:
+        try:
+            data = await run_in_threadpool(build_tiles_quotation_excel, doc, customer)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return _excel_response(data, quotation_excel_filename(doc.get("customer_name") or customer.get("name")))
     return _excel_response(*await _build_quotation_excel_file(doc, customer))
 
 

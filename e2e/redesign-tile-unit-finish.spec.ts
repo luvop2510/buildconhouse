@@ -85,6 +85,48 @@ test('critical saved quotation corrects a piece unit and preserves the offer', a
   if (test.info().project.name === 'phone') await expect(page.getByTestId('mobile-piece-rate-0')).toContainText('220');
 });
 
+test('critical saved box rate and transportation stay in sync with the quotation export', async ({ page }) => {
+  await fixtures(page);
+  const doc = {
+    id: 'boxed-quote', number: 'T-3', doc_type: 'tiles_quotation', floor_id: 'ground-floor', status: 'draft',
+    customer_id: 'customer', customer_name: 'Customer', updated_at: '2026-11-01T00:00:00Z',
+    subtotal: 8500, discount_total: 500, grand_total: 8100, transportation_fee: 100,
+    items: [{ id: 'line', product_id: matt.id, sku: matt.sku, name: matt.name, image, size: matt.size, finish: 'Matt', rate_sqft: 140, offer_rate: 120, rate_box: 1700, unit_price: 1700, box_sqft: 16, qty: 5, net_amount: 8000, quantity_unit: 'Box', price_basis: 'sqft' }],
+  };
+  let saves = 0;
+  await page.route(/\/api\/quotations\/boxed-quote(?:\?.*)?$/, async route => {
+    if (route.request().method() === 'PATCH') {
+      saves += 1;
+      const payload = route.request().postDataJSON();
+      expect(payload).not.toHaveProperty('items');
+      expect(payload.transportation_fee).toBe(240);
+      await route.fulfill({ json: { ...doc, transportation_fee: 240, grand_total: 8240 } });
+    } else {
+      await route.fulfill({ json: doc });
+    }
+  });
+  await page.route('**/api/quotations/boxed-quote/xlsx', route => route.fulfill({ contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', body: 'mock workbook' }));
+  await page.goto('/tiles/quotation?id=boxed-quote');
+  const boxRate = page.locator('[data-testid="tiles-rate-box-0"], [data-testid="mobile-rate-box-0"]');
+  const transportation = page.locator('[data-testid="tiles-transportation-fee"], [data-testid="mobile-transportation-fee"]');
+  const grandTotal = page.getByText(/₹\s*8,100/).last();
+  await expect(boxRate).toContainText(/₹\s*1,700/);
+  await expect(transportation).toHaveValue('100');
+  await expect(grandTotal).toBeVisible();
+  expect((await boxRate.boundingBox())!.y).toBeLessThan((await transportation.boundingBox())!.y);
+  expect((await transportation.boundingBox())!.y).toBeLessThan((await grandTotal.boundingBox())!.y);
+
+  const download = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Download Excel' }).click();
+  expect((await download).suggestedFilename()).toMatch(/\.xlsx$/);
+  expect(saves).toBe(0);
+
+  await transportation.fill('240');
+  await expect(page.getByText(/₹\s*8,240/).last()).toBeVisible();
+  await expect.poll(() => saves).toBe(1);
+  await expect(boxRate).toContainText(/₹\s*1,700/);
+});
+
 test('critical offer changes replace a manually entered total', async ({ page }) => {
   await fixtures(page);
   const doc = { id: 'price-edit', number: 'T-2', doc_type: 'tiles_quotation', floor_id: 'ground-floor', status: 'draft', customer_name: 'Customer', updated_at: '2026-11-01T00:00:00Z', items: [{ id: 'line', product_id: matt.id, sku: matt.sku, name: matt.name, image, size: matt.size, offer_rate: 160, rate_box: 160, unit_price: 160, qty: 2, quantity_unit: 'Pieces', price_basis: 'piece' }] };

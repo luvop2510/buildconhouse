@@ -7,16 +7,29 @@ export type TilePriceRow = {
   offerRate: string; rateSqft: string; rateBox: string; boxSqft: string; totalBox: string;
   total: string; totalEdited: boolean; quantityUnit: "Box" | "Pieces"; priceBasis?: "box" | "sqft" | "piece";
   inferredCoverage?: number;
+  savedUnitRate?: number;
+  savedLineTotal?: number;
+  savedDiscountPct?: number;
 };
 const number = (value: string) => {
   const parsed = Number.parseFloat(value.replace(/,/g, ""));
   return Number.isFinite(parsed) ? parsed : 0;
 };
 export function tileUnitRate(row: TilePriceRow): number {
+  if (row.savedUnitRate != null) return row.savedUnitRate;
   const offer = row.offerRate.trim() ? number(row.offerRate) : number(row.rateSqft);
   const coverage = number(row.boxSqft);
   if (row.quantityUnit === "Box" && row.priceBasis !== "box" && coverage > 0) return Math.round(offer * coverage * 100) / 100;
   return number(row.rateBox) || offer;
+}
+export function savedTileUnitRate(item: { unit_price?: number | null; rate_box?: number | null }): number | undefined {
+  const savedRate = item.unit_price ?? item.rate_box;
+  return savedRate == null ? undefined : Number(savedRate);
+}
+export function tileQuotationBoxRate(row: TilePriceRow): number | null {
+  if (row.quantityUnit !== "Box") return null;
+  if (row.savedUnitRate != null || number(row.boxSqft) > 0 || row.rateBox.trim() || row.priceBasis === "box") return tileUnitRate(row);
+  return null;
 }
 export function tileRateWithoutCoverage(previous: TilePriceRow, offer: string): string {
   const previousOffer = previous.offerRate.trim() ? number(previous.offerRate) : number(previous.rateSqft);
@@ -27,5 +40,5 @@ export function tileRateWithoutCoverage(previous: TilePriceRow, offer: string): 
 }
 export function tileLineTotal(row: TilePriceRow): number {
   const manual = number(row.total);
-  return row.totalEdited && manual > 0 ? manual : number(row.totalBox) * tileUnitRate(row);
+  return row.totalEdited && manual > 0 ? manual : row.savedLineTotal ?? Math.round(number(row.totalBox) * tileUnitRate(row) * (1 - (row.savedDiscountPct ?? 0) / 100) * 100) / 100;
 }
