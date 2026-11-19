@@ -84,6 +84,11 @@ def listing_pipeline(filters=None, *, floor_ids=None, q=None, per_category=False
     for key in ("brand_id", "family_key", "finish", "colour", "series"):
         if key in filters:
             query[key] = filters[key]
+    use_supplier_price = {"$and": [
+        {"$ne": [{"$ifNull": ["$catalog_mrp_override", False]}, True]},
+        {"$ne": [{"$ifNull": ["$_placement.mrp", None]}, None]},
+    ]}
+    listing_price = {"$cond": [use_supplier_price, "$_placement.mrp", "$price"]}
     pipeline = [
         {"$match": query},
         {"$lookup": {"from": "brands", "localField": "brand_id", "foreignField": "id", "as": "_brand"}},
@@ -99,16 +104,15 @@ def listing_pipeline(filters=None, *, floor_ids=None, q=None, per_category=False
             "subcategory": {"$cond": [{"$ne": [{"$type": "$_placement.subcategory"}, "missing"]}, "$_placement.subcategory", "$subcategory"]},
             "listing_id": {"$ifNull": ["$_placement.entry_id", "$$REMOVE"]},
             "catalog_entry": {"$ifNull": ["$_placement", "$$REMOVE"]},
-            "price": {"$ifNull": ["$_placement.mrp", "$price"]},
-            "mrp": {"$cond": [{"$eq": ["$catalog_mrp_override", True]},
-                              "$mrp", {"$ifNull": ["$_placement.mrp", "$mrp"]}]},
-            "price_status": {"$cond": [{"$ne": [{"$ifNull": ["$_placement.mrp", None]}, None]}, "known", "$price_status"]},
+            "price": listing_price,
+            "mrp": {"$cond": [use_supplier_price, "$_placement.mrp", "$mrp"]},
+            "price_status": {"$cond": [use_supplier_price, "known", "$price_status"]},
             "source_price_unspecified": {"$and": [{"$ne": ["$_placement", None]}, {"$eq": [{"$ifNull": ["$_placement.mrp", None]}, None]}]},
-            "price_source": {"$cond": [{"$ne": [{"$ifNull": ["$_placement.mrp", None]}, None]}, "supplier", {"$cond": [{"$eq": ["$price_status", "unspecified"]}, "unspecified", "existing"]}]},
+            "price_source": {"$cond": [use_supplier_price, "supplier", {"$cond": [{"$eq": ["$price_status", "unspecified"]}, "unspecified", "existing"]}]},
             "_catalog_database_listing": True,
             "_source_rank": {"$cond": [{"$ne": ["$_placement", None]}, 0, 1]},
             "_brand_order": {"$ifNull": ["$_brand.catalog_order", 999]},
-            "_sort_price": {"$ifNull": ["$_placement.mrp", {"$ifNull": ["$price", 0]}]},
+            "_sort_price": {"$ifNull": [listing_price, 0]},
         }},
     ]
     if filters:
