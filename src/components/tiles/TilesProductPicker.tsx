@@ -294,10 +294,10 @@ function TileCatalogCard({
               </View>
             </View>
           ) : null}
-          {alternateRates.map(variant => (
+          {alternateRates.filter(variant => !hasDifferentPackaging(variant)).map(variant => (
             <Pressable key={variant.id} accessibilityRole="button" testID={`tiles-picker-rate-${variant.id}`}
               style={styles.sizeChoice} onPress={event => { event.stopPropagation(); selectVariant(variant); }}>
-              <Text style={styles.sizeChoiceText}>{hasDifferentPackaging(variant) ? variant.variant_label : variant.sku} · {money(variant.price)} {tilePriceUnit(tileSourcePriceUnit(variant.specs))}</Text>
+              <Text style={styles.sizeChoiceText}>{variant.sku} · {money(variant.price)} {tilePriceUnit(tileSourcePriceUnit(variant.specs))}</Text>
             </Pressable>
           ))}
           <View style={styles.cardFooter}>
@@ -306,6 +306,16 @@ function TileCatalogCard({
           </View>
         </View>
       </Pressable>
+      {packaging ? (
+        <View style={[styles.sizeChoices, styles.finishChoices]}>
+          {alternateRates.filter(hasDifferentPackaging).map(variant => (
+            <Pressable key={variant.id} accessibilityRole="button" testID={`tiles-picker-rate-${variant.id}`}
+              style={[styles.sizeChoice, styles.finishChoice]} onPress={() => selectVariant(variant)}>
+              <Text style={styles.sizeChoiceText}>{variant.variant_label} · {money(variant.price)} {tilePriceUnit(tileSourcePriceUnit(variant.specs))}</Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
       {alternateFinishes.length ? (
         <View style={[styles.sizeChoices, styles.finishChoices]}>
           {alternateFinishes.map(variant => {
