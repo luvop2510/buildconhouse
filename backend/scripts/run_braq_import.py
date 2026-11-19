@@ -58,7 +58,7 @@ def extract(data: bytes, filename: str) -> tuple[list[ProductRow], ExtractionRep
         # The catalog requires a SKU. Use the workbook's NO as its internal
         # import key, preserving both listings even when name and size repeat.
         rows.append(ProductRow(
-            brand=BRAND, sku=f"BRAQ-2026-{serial:03d}", name=name, size=size,
+            brand=BRAND, sku=str(serial), name=name, size=size,
             category=CATEGORY, family_key=f"braq:{_slug(name)}", family_name=name,
             variant=f"{pieces} pcs/box" if listings[name, size] > 1 else MISSING,
             mrp=price, dealer_price=price, images=[image.data_url],
