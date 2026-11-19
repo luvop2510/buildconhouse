@@ -151,7 +151,7 @@ def _logo_flowable(width_mm: float) -> Flowable:
     )
 
 
-def _fmt_rate_sqft(value, suffix: str = "") -> str:
+def _fmt_rate_sqft(value) -> str:
     """300.0 → "300", 132.5 → "132.5" — the reference sheets never print
     trailing zeros on the per-sqft rate."""
     if value in (None, ""):
@@ -160,8 +160,7 @@ def _fmt_rate_sqft(value, suffix: str = "") -> str:
         num = float(value)
     except (TypeError, ValueError):
         return _escape(value)
-    text = f"{num:g}"
-    return f"{text}{suffix}"
+    return f"{num:g}"
 
 
 
@@ -208,7 +207,6 @@ def _tiles_styles() -> dict:
         "cellBold": ParagraphStyle("cellBold", parent=base, fontName="Helvetica-Bold", fontSize=9, leading=11, textColor=INK, alignment=1),
         "cellRed": ParagraphStyle("cellRed", parent=base, fontName="Helvetica-Bold", fontSize=9, leading=11, textColor=RED, alignment=1),
         "cellOffer": ParagraphStyle("cellOffer", parent=base, fontName="Helvetica-Bold", fontSize=9, leading=11, textColor=GREEN, alignment=1),
-        "sqftCaption": ParagraphStyle("sqftCaption", parent=base, fontName="Helvetica", fontSize=6, leading=7.2, textColor=colors.HexColor("#666666"), alignment=1),
     }
 
 
@@ -613,8 +611,6 @@ def build_tiles_quotation_pdf(quotation: dict, customer: dict, branding: dict | 
             if item.get("finish"):
                 row[3] = [detail, Paragraph(_escape(item["finish"]), styles["cell"])]
             row[4] = _SingleLineParagraph(_escape(item.get("size")), styles["cell"])
-            if quantity_unit == "Box" and item.get("box_sqft"):
-                row[4] = [row[4], _SingleLineParagraph(_fmt_rate_sqft(item["box_sqft"], " sq. ft./box"), styles["sqftCaption"])]
             rate_box = _money(unit_price) if quantity_unit == "Box" and unit_price is not None else ""
             row.insert(7, _SingleLineParagraph(rate_box, styles["cell"]))
         rows.append(row)

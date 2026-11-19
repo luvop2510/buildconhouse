@@ -53,6 +53,11 @@ async def import_source(
 ) -> dict:
     data = source.read_bytes()
     rows, extraction = TileCatalog2026Adapter(brand).extract(data, source.name)
+    return await import_rows(brand, source, data, rows, extraction, dry_run=dry_run,
+                             force_landscape_images=force_landscape_images)
+
+
+async def import_rows(brand, source, data, rows, extraction, *, dry_run, force_landscape_images=False):
     rows, certification = validate(rows)
     rows = auto_accept(rows)
     public_rows = [row.to_public() for row in rows]
@@ -94,7 +99,7 @@ async def import_source(
         force_landscape_images=force_landscape_images,
     )
     status = "imported" if not result["failed"] and not result["skipped"] else "failed"
-    await db.catalog_imports.update_one({"id": job["id"]}, {"$set": {"status": status, "accepted_rows": result["imported"] + result["updated"], "rejected_rows": result["skipped"]}})
+    await db.catalog_imports.update_one({"id": job["id"]}, {"$set": {"status": status, "accepted_rows": result["imported"] + result["updated"] + result["unchanged"], "rejected_rows": result["skipped"]}})
     if status != "imported":
         raise RuntimeError(f"{brand}: incomplete import: {result}")
     return {**summary, "job_id": job["id"], "source_asset": source_asset, "import_result": result}

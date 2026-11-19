@@ -254,20 +254,26 @@ function TileCatalogCard({
   const variants = (product.variants || []).filter((variant): variant is ProductVariant & { id: string } =>
     Boolean(variant.id && variant.id !== product.id));
   const alternateFinishes = variants.filter(variant => variant.finish && variant.finish !== product.finish);
+  const hasDifferentPackaging = (variant: ProductVariant) => Boolean(
+    variant.variant_label && product.variant_label && variant.variant_label !== product.variant_label
+    && (variant.specs?.pcs_per_box !== product.specs?.pcs_per_box
+      || variant.specs?.sqft_per_box !== product.specs?.sqft_per_box),
+  );
   const alternateRates = variants.filter(variant => (variant.size || variant.dimensions) === selectedSize && !variant.finish && !product.finish
-    && variant.price > 0 && variant.price !== product.price);
+    && ((variant.price > 0 && variant.price !== product.price) || hasDifferentPackaging(variant)));
+  const packaging = alternateRates.some(hasDifferentPackaging) ? product.variant_label : null;
   const selectVariant = (variant: ProductVariant & { id: string }) => onPickVariant({
     ...product, ...variant, name: variant.name || product.name,
     hero_image_url: variant.image || null, images: variant.image ? [variant.image] : [], gallery: [],
   });
   return (
     <View style={[styles.card, { width: cardWidth }]}>
-      <Pressable onPress={onPress} style={({ pressed }) => [compact && styles.phoneCard, pressed && styles.cardPressed]} testID={`tiles-picker-card-${product.id}`} accessibilityRole="button" accessibilityLabel={`Add ${[name, selectedSize, product.finish].filter(Boolean).join(" · ")}`}>
+      <Pressable onPress={onPress} style={({ pressed }) => [compact && styles.phoneCard, pressed && styles.cardPressed]} testID={`tiles-picker-card-${product.id}`} accessibilityRole="button" accessibilityLabel={`Add ${[name, selectedSize, product.finish, packaging].filter(Boolean).join(" · ")}`}>
         <ProductImage source={productImageList(product)} style={[styles.image, ...(compact ? [styles.phoneImage] : [])]} fallbackLabel={product.sku} disableSkeleton contentFit="contain" />
         <View style={styles.cardBody}>
           <Text style={styles.brand} numberOfLines={1}>{product.brand_name || "Tile"}</Text>
           <Text style={styles.name} numberOfLines={2}>{name}</Text>
-          <Text style={styles.meta} numberOfLines={2}>{[selectedSize, product.finish, product.sku].filter(Boolean).join(" · ")}</Text>
+          <Text style={styles.meta} numberOfLines={2}>{[selectedSize, product.finish, packaging, product.sku].filter(Boolean).join(" · ")}</Text>
           {canSwitchSize ? (
             <View style={styles.sizePicker} accessibilityLabel={`${sizes.length} sizes available for ${name}`}>
               <Text style={styles.sizeLabel}>{sizes.length} sizes</Text>
@@ -291,7 +297,7 @@ function TileCatalogCard({
           {alternateRates.map(variant => (
             <Pressable key={variant.id} accessibilityRole="button" testID={`tiles-picker-rate-${variant.id}`}
               style={styles.sizeChoice} onPress={event => { event.stopPropagation(); selectVariant(variant); }}>
-              <Text style={styles.sizeChoiceText}>{variant.sku} · {money(variant.price)} {tilePriceUnit(tileSourcePriceUnit(variant.specs))}</Text>
+              <Text style={styles.sizeChoiceText}>{hasDifferentPackaging(variant) ? variant.variant_label : variant.sku} · {money(variant.price)} {tilePriceUnit(tileSourcePriceUnit(variant.specs))}</Text>
             </Pressable>
           ))}
           <View style={styles.cardFooter}>

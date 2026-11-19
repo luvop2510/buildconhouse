@@ -228,7 +228,7 @@ def test_tiles_pdf_uses_box_basis_and_preserves_saved_prices(line, offer, rate_b
                    "qty": 5, "quantity_unit": "Box", **line}],
     })
     assert "Sandstone Matt 600x1200" in text
-    assert f'{line["box_sqft"]:g} sq. ft./box' in text
+    assert "sq. ft./box" not in text.lower()
     assert f"₹ {offer:,.2f} ₹ {rate_box:,.2f} 5 box ₹ {net:,.2f}" in text
 
 
