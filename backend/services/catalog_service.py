@@ -610,7 +610,6 @@ def _variant_summary(product: dict, snapshot: CatalogSnapshot) -> dict:
         "variant_label": product.get("variant_label"), "size": _product_size(product),
         "colour": colour, "color": colour,
         "price": product.get("price"), "mrp": product.get("mrp"),
-        "catalog_mrp_override": product.get("catalog_mrp_override", False),
         "stock": product.get("stock", 0), "dimensions": product.get("dimensions"),
         "dimension_image_urls": product.get("dimension_image_urls") or [],
         "seat_cover_image_urls": product.get("seat_cover_image_urls") or [],
@@ -619,6 +618,8 @@ def _variant_summary(product: dict, snapshot: CatalogSnapshot) -> dict:
         "image": _primary_product_image(snapshot, product["id"], product.get("family_key")),
         "configuration_options": _configuration_options(product, snapshot),
     }
+    if product.get("catalog_mrp_override"):
+        summary["catalog_mrp_override"] = True
     if product.get("price_status") is not None:
         summary["price_unknown"] = product["price_status"] == "unspecified"
     if product.get("catalog_entries"):
