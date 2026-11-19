@@ -135,8 +135,7 @@ export function moduleForRoute(segments: string[]): string | null {
     if (segments.includes(module)) return module;
   }
   if (segments.includes("purchases-completed") || segments.includes("purchase-orders")) return "purchases";
-  if (segments.includes("sanitary-sales")) return "sanitary-sales";
-  if (segments.includes("reports")) return "sales-data";
+  if (segments.includes("sanitary-sales") || segments.includes("reports")) return "sales-data";
   return "restricted";
 }
 

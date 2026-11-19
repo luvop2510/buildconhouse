@@ -70,6 +70,7 @@ assert.equal(moduleForRoute(['(admin)', 'notebook', 'furniture']), 'walkins');
 assert.equal(moduleForRoute(['(admin)', 'tiles', 'quotation']), 'tiles');
 assert.equal(moduleForRoute(['(admin)', 'tiles', 'orders']), 'orders');
 assert.equal(moduleForRoute(['(admin)', 'team']), 'restricted');
+assert.equal(moduleForRoute(['(admin)', 'sanitary-sales']), 'sales-data');
 assert.equal(moduleForRoute(['(admin)', 'settings-company']), 'restricted');
 assert.equal(moduleForRoute(['(admin)', 'settings-password']), null);
 assert.equal(hasRouteDestination([]), false);
