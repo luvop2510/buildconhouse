@@ -39,9 +39,10 @@ def test_tiles_pdf_uses_offer_rate_and_quantity_unit():
         "grand_total": 4440,
     })
 
-    assert "RATE/ SQ.FT OFFER RATE QUANTITY UNIT" in text
+    assert "RATE/ SQ.FT OFFER RATE RATE / BOX QUANTITY UNIT" in text
     assert "RATE/ UNIT" not in text
     assert "₹ 70.00" in text
+    assert "₹ 2,170.00 2 box ₹ 4,340.00" in text
     assert "QUANTITY UNIT" in text
     assert "PIECES/ BOX" not in text
     assert "2 box ₹ 4,340.00" in text
@@ -64,6 +65,7 @@ def test_tiles_pdf_keeps_large_amounts_and_currency_header_on_single_lines():
     symbol = "₹" if pdf_generator.RUPEE_FONT else "Rs."
     assert f"TOTAL ({symbol})" in detail_lines
     assert f"{symbol} 2,46,91,357.80" in detail_lines
+    assert f"{symbol} 1,23,45,678.90" in detail_lines
     assert f"{symbol} 1,23,456.70" in detail_lines
 
 
@@ -86,7 +88,10 @@ def test_tiles_pdf_renders_piece_as_the_quantity_unit():
     })
 
     assert "1 piece ₹ 900.00" in text
+    assert text.count("₹ 900.00 1 piece") == 1
+    assert "₹ 900.00 ₹ 900.00 1 piece" not in text
     assert "N/A" not in text
+    assert "TRANSPORTATION" not in text
 
 
 def test_tiles_pdf_renders_box_as_the_quantity_unit_and_preserves_box_metadata():
@@ -207,8 +212,27 @@ def test_tiles_quotation_keeps_the_cover_on_page_one_and_starts_details_on_page_
     assert pdf_tiles.QUOTATION_PRODUCT_IMAGE_WIDTH_MM == 28
 
 
-def test_tiles_quotation_does_not_repeat_detail_columns_before_an_overflow_total():
-    """A page containing only the trailing total must not show product columns."""
+@pytest.mark.parametrize(("line", "offer", "rate_box", "net"), [
+    ({"rate_sqft": 120, "box_sqft": 16}, 120, 1920, 9600),
+    ({"rate_sqft": 170, "offer_rate": 120, "box_sqft": 12.5}, 120, 1500, 7500),
+    ({"rate_sqft": 170, "offer_rate": 120, "box_sqft": 12.5,
+      "rate_box": 1900, "unit_price": 1800, "net_amount": 8550,
+      "catalog_price": 6000}, 120, 1800, 8550),
+    ({"price_basis": "box", "rate_box": 200, "rate_sqft": 120, "box_sqft": 16}, 200, 200, 1000),
+    ({"rate_sqft": 120, "box_sqft": 16, "unit_price": 0, "net_amount": 0}, 120, 0, 0),
+])
+def test_tiles_pdf_uses_box_basis_and_preserves_saved_prices(line, offer, rate_box, net):
+    text = _pdf_text({
+        "customer_name": "Rate Basis",
+        "items": [{"name": "Sandstone", "finish": "Matt", "size": "600x1200",
+                   "qty": 5, "quantity_unit": "Box", **line}],
+    })
+    assert "Sandstone Matt 600x1200" in text
+    assert f'{line["box_sqft"]:g} sq. ft./box' in text
+    assert f"₹ {offer:,.2f} ₹ {rate_box:,.2f} 5 box ₹ {net:,.2f}" in text
+
+
+def test_tiles_quotation_paginates_products_and_places_saved_transport_before_totals():
     items = [
         {
             "qty": 10,
@@ -218,24 +242,74 @@ def test_tiles_quotation_does_not_repeat_detail_columns_before_an_overflow_total
             "rate_box": 11160,
             "quantity_unit": "Box",
             "pcs_per_box": "3",
-            "name": f"Tile {index}",
+            "name": f"Tile-{index:02}",
             "room": "Living",
             "size": "1200X2400",
         }
-        for index in range(1, 5)
+        for index in range(1, 15)
     ]
     total = sum(item["qty"] * item["unit_price"] for item in items)
+    items[-1]["net_amount"] = 111100
+    transportation_fee = 450
+    discount = 500
+    grand_total = total + transportation_fee - discount
     pages = PdfReader(BytesIO(build_tiles_quotation_pdf({
         "customer_name": "Overflow Contract",
         "items": items,
         "subtotal": total,
-        "grand_total": total,
+        "transportation_fee": transportation_fee,
+        "discount_total": discount,
+        "grand_total": grand_total,
     }, {"name": "Overflow Contract"}))).pages
 
-    final_page = pages[-1].extract_text() or ""
-    assert "TOTAL" in final_page
-    if not any(item["name"] in final_page for item in items):
-        assert "PRODUCT IMAGE" not in final_page
+    page_text = [" ".join((page.extract_text() or "").split()) for page in pages]
+    assert len(pages) >= 3
+    assert all("RATE / BOX" in detail for detail in page_text[1:])
+    text = " ".join(page_text)
+    assert all(text.count(item["name"]) == 1 for item in items)
+    assert text.count("TRANSPORTATION") == 1
+    assert text.count("₹ 450.00") == 1
+    assert (
+        "Tile-14 1200X2400 360 ₹ 360.00 ₹ 11,160.00 10 box ₹ 1,11,100.00 "
+        "TRANSPORTATION ₹ 450.00 SUBTOTAL ₹ 15,62,400.00 DISCOUNT ₹ 500.00 TOTAL QUOTE ₹ 15,62,350.00"
+    ) in page_text[-1]
+
+
+def test_tiles_quotation_preserves_zero_saved_total():
+    text = _pdf_text({
+        "customer_name": "Zero Total",
+        "items": [{"name": "Tile", "qty": 1, "unit_price": 100, "net_amount": 0}],
+        "subtotal": 100,
+        "discount_total": 100,
+        "grand_total": 0,
+    })
+    assert "1 box ₹ 0.00 SUBTOTAL ₹ 100.00 DISCOUNT ₹ 100.00 TOTAL QUOTE ₹ 0.00" in text
+
+
+def test_tiles_quotation_fills_in_missing_legacy_discount_totals():
+    text = _pdf_text({
+        "customer_name": "Legacy Discount",
+        "items": [{"name": "Tile", "qty": 2, "unit_price": 150, "discount_pct": 10}],
+        "transportation_fee": 50,
+    })
+    assert "2 box ₹ 270.00 TRANSPORTATION ₹ 50.00 SUBTOTAL ₹ 300.00 DISCOUNT ₹ 30.00 TOTAL QUOTE ₹ 320.00" in text
+
+
+def test_tiles_po_final_retains_its_cover_and_detail_layout():
+    pdf = build_tiles_quotation_pdf({
+        "customer_name": "PO Final",
+        "items": [{"name": "Tile", "qty": 2, "unit_price": 150}],
+        "subtotal": 300,
+        "transportation_fee": 50,
+        "grand_total": 350,
+        "_po_final": {"total": 350, "payable_total": 350},
+    }, {})
+    cover, detail = [" ".join((page.extract_text() or "").split()) for page in PdfReader(BytesIO(pdf)).pages]
+    assert "PRICE & PAYMENT SUMMARY" in cover
+    assert "TRANSPORTATION ₹ 50.00" in cover
+    assert "RATE / BOX" not in detail
+    assert "TRANSPORTATION" not in detail
+    assert "2 box ₹ 300.00 TOTAL ₹ 300.00" in detail
 
 
 def test_both_tile_documents_paginate_many_products_on_a4_without_stretching(monkeypatch):

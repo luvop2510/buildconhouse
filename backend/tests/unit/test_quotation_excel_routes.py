@@ -74,3 +74,61 @@ def test_tiles_excel_is_explicitly_rejected():
     with pytest.raises(HTTPException) as error:
         asyncio.run(routes._build_quotation_excel_file({"doc_type": "tiles_selection"}, {}))
     assert error.value.status_code == 400
+
+
+def test_staff_tiles_excel_downloads_saved_ground_quotation(monkeypatch):
+    from io import BytesIO
+
+    from openpyxl import load_workbook
+
+    document = {
+        "id": "q2", "floor_id": "ground-floor", "customer_id": "c2", "doc_type": "tiles_quotation",
+        "customer_name": "Saved customer", "subtotal": 1800, "transportation_fee": 100, "grand_total": 1900,
+        "items": [{"name": "Tile", "qty": 1, "unit_price": 1800, "net_amount": 1800}],
+    }
+
+    async def quotation(query, projection, *, session):
+        assert query == {"id": "q2"}
+        return document
+
+    async def customer(query, projection):
+        assert query == {"id": "c2", "floor_id": "ground-floor"}
+        return {"name": "Current customer"}
+
+    monkeypatch.setattr(routes, "db", SimpleNamespace(quotations=SimpleNamespace(find_one=quotation),
+                                                       customers=SimpleNamespace(find_one=customer)))
+    user = UserPublic(email="sales@forge.app", full_name="Sales", role="sales", floor_ids=["ground-floor"])
+
+    async def download():
+        response = await routes.quotation_xlsx("q2", user=user)
+        return response, b"".join([chunk async for chunk in response.body_iterator])
+
+    response, data = asyncio.run(download())
+    assert response.headers["cache-control"] == "private, no-store"
+    assert response.headers["content-disposition"].endswith("Saved%20customer%20Quotation.xlsx")
+    sheet = load_workbook(BytesIO(data))["Tiles Quotation"]
+    assert sheet["L5"].value == 1800
+    assert sheet["J6"].value == "Transportation"
+    assert sheet["L6"].value == 100
+    assert sheet["L8"].value == 1900
+
+
+@pytest.mark.parametrize(("doc_type", "floor", "allowed_floor", "status"), [
+    ("tiles_selection", "ground-floor", "ground-floor", 400),
+    ("tiles_quotation", "first-floor", "first-floor", 400),
+    ("tiles_quotation", "ground-floor", "first-floor", 404),
+])
+def test_staff_tiles_excel_enforces_document_type_and_floor(monkeypatch, doc_type, floor, allowed_floor, status):
+    async def quotation(query, projection, *, session):
+        return {"id": "q2", "customer_id": "c2", "floor_id": floor, "doc_type": doc_type}
+
+    async def customer(query, projection):
+        assert status != 404
+        return {}
+
+    monkeypatch.setattr(routes, "db", SimpleNamespace(quotations=SimpleNamespace(find_one=quotation),
+                                                       customers=SimpleNamespace(find_one=customer)))
+    user = UserPublic(email="sales@forge.app", full_name="Sales", role="sales", floor_ids=[allowed_floor])
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(routes.quotation_xlsx("q2", user=user))
+    assert error.value.status_code == status
