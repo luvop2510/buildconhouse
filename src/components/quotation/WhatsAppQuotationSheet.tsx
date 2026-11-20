@@ -6,6 +6,7 @@ import { api } from "@/src/api/client";
 import { Text } from "@/src/components/AppText";
 import { Alert, Button, TextField } from "@/src/components/ui";
 import { BottomSheet } from "@/src/components/BottomSheet";
+import { DEFAULT_QUOTATION_FOLLOWUP_DAYS, QuotationFollowupInterval } from "@/src/components/MarkQuotationSentSheet";
 import { shareApiPdf } from "@/src/utils/downloadFile";
 import { defaultQuotationMessage, quotationPdfPath } from "@/src/utils/quotationWhatsApp";
 import { spacing, type } from "@/src/theme/tokens";
@@ -14,6 +15,7 @@ type DeliveryReceipt = { status: string; updated_at?: string; error_code?: strin
 export type WhatsAppQuotationDraft = {
   id: string; floor_id: string; phone: string | null; customer_name: string; filename: string;
   expected_updated_at: string; include_dimensions: boolean; direct_send_configured: boolean;
+  needs_followup_schedule?: boolean;
 };
 
 export async function prepareQuotationWhatsAppDraft(id: string, floorId: string, includeDimensions = false): Promise<WhatsAppQuotationDraft> {
@@ -27,22 +29,28 @@ export function WhatsAppQuotationSheet({ draft, onClose, onSent }: {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [receipt, setReceipt] = useState<DeliveryReceipt | null>(null);
+  const [followupDays, setFollowupDays] = useState<number | null>(DEFAULT_QUOTATION_FOLLOWUP_DAYS);
+  const sending = useRef(false);
   const requestKey = useRef("");
   const activeDraft = useRef(draft);
   activeDraft.current = draft;
   useEffect(() => {
     setMessage(draft ? defaultQuotationMessage(draft.customer_name) : "");
+    setFollowupDays(DEFAULT_QUOTATION_FOLLOWUP_DAYS);
     setError(null); setReceipt(null); setBusy(false); requestKey.current = "";
   }, [draft]);
 
   const send = async () => {
-    if (!draft || busy || receipt || !message.trim() || !draft.direct_send_configured || !draft.phone) return;
+    if (!draft || busy || sending.current || receipt || !message.trim() || !draft.direct_send_configured || !draft.phone
+      || (draft.needs_followup_schedule && followupDays == null)) return;
+    sending.current = true;
     setBusy(true); setError(null);
     if (!requestKey.current) requestKey.current = `quotation_${Date.now()}_${Math.random().toString(36).slice(2)}_${Math.random().toString(36).slice(2)}`;
     try {
       const result = await api.post<DeliveryReceipt>(`/quotations/${encodeURIComponent(draft.id)}/whatsapp-send`, {
         message: message.trim(), expected_updated_at: draft.expected_updated_at,
         idempotency_key: requestKey.current, include_dimensions: draft.include_dimensions,
+        ...(draft.needs_followup_schedule ? { followup_days: followupDays } : {}),
       }, { floorId: draft.floor_id });
       if (activeDraft.current === draft) {
         setReceipt(result);
@@ -55,7 +63,10 @@ export function WhatsAppQuotationSheet({ draft, onClose, onSent }: {
         setReceipt({ status: "unknown" });
         setError(typeof failure?.detail === "string" ? failure.detail : "Delivery is unconfirmed. Refresh the status before trying again.");
       }
-    } finally { if (activeDraft.current === draft) setBusy(false); }
+    } finally {
+      sending.current = false;
+      if (activeDraft.current === draft) setBusy(false);
+    }
   };
   const refresh = async () => {
     if (!draft || busy || !requestKey.current) return;
@@ -84,7 +95,11 @@ export function WhatsAppQuotationSheet({ draft, onClose, onSent }: {
       }} testID="share-quotation-pdf-file" />
       {draft?.direct_send_configured && draft.phone ? <>
         <TextField label="Message" value={message} onChangeText={setMessage} multiline maxLength={1024} editable={!busy && !receipt} testID="quotation-whatsapp-message" />
-        <Button label="Send PDF to WhatsApp" icon="send" onPress={() => void send()} disabled={!message.trim() || busy || !!receipt} loading={busy} testID="send-quotation-pdf-whatsapp" />
+        {draft.needs_followup_schedule && !receipt ? <QuotationFollowupInterval key={draft.id}
+          disabled={busy} onChange={setFollowupDays} /> : null}
+        <Button label="Send PDF to WhatsApp" icon="send" onPress={() => void send()}
+          disabled={!message.trim() || busy || !!receipt || (draft.needs_followup_schedule && followupDays == null)}
+          loading={busy} testID="send-quotation-pdf-whatsapp" />
       </> : <Text style={type.bodyMuted}>{!draft?.phone ? "Add a valid customer WhatsApp number to enable direct delivery." : "Direct WhatsApp delivery is unavailable. Use Share PDF file to send the attachment from your device."}</Text>}
       {receipt ? <>
         {receipt.quotation_mark_pending_error ? <Alert tone="warning" title={receipt.quotation_mark_pending_error} /> : null}

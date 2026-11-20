@@ -1,25 +1,25 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { useRef, useState } from 'react';
+import { Pressable, StyleSheet, View } from 'react-native';
 import {
   sanitarySalesApi, type SanitaryBrand, type SanitaryFilters,
-  type SanitaryMetrics, type SanitaryReport, type SanitarySort,
+  type OverviewFilters, type SanitaryReport, type SanitarySort,
 } from '@/src/api/sanitarySales';
 import { SANITARY_FLOOR_ID } from '@/src/constants/floors';
 import { AdminPage } from '@/src/components/AdminPage';
 import { Text } from '@/src/components/AppText';
-import { subscribeAnalyticsRevocation } from '@/src/components/salesAnalytics/readCache';
 import { useAnalyticsRead } from '@/src/components/salesAnalytics/useAnalytics';
 import { Button } from '@/src/design/components';
 import { color, font, radius, space } from '@/src/design/tokens';
-import { subscribeApiCacheInvalidation } from '@/src/api/client';
 import { downloadApiFile } from '@/src/utils/downloadFile';
-import { InlineError, LedgerRow, LoadNotice } from './LedgerUI';
+import { InlineError, LoadNotice } from './LedgerUI';
 import { ReportChoice, SharedSanitaryFilters } from './SanitaryFilters';
 import { ReportResults } from './ReportResults';
-import { REPORT_GROUPS, amount, type ReportDefinition } from './reportPresentation';
+import { SanitaryOverview } from './SanitaryOverview';
+import { REPORT_GROUPS, type ReportDefinition } from './reportPresentation';
 
 const TITLE = 'Sanitary Floor Sales Data';
-const ALL_COMPANIES = { id: '', name: 'All companies' };
+const ALL_COMPANIES = { id: '', name: 'All brands' };
+const OTHER_COMPANIES = { id: 'other', name: 'Other' };
 const PRODUCT_SORTS: { id: SanitarySort; name: string }[] = [
   { id: 'quantity', name: 'Best by quantity' },
   { id: 'value', name: 'Best by sales value' },
@@ -31,55 +31,69 @@ const INTERIOR_SORTS: { id: SanitarySort; name: string }[] = [
 ];
 
 export default function SanitarySalesDashboard() {
-  const [filters, setFilters] = useState<SanitaryFilters>({ preset: 'all_time', value_basis: 'offer' });
+  const [filters, setFilters] = useState<OverviewFilters>({
+    preset: 'all_time', value_basis: 'offer', architect_sort: 'value', product_sort: 'quantity',
+  });
+  const [showReports, setShowReports] = useState(false);
   const [active, setActive] = useState<SanitaryReport>();
   const brandRead = useAnalyticsRead('/sanitary-sales/brands', sanitarySalesApi.brands);
+  const brands = [ALL_COMPANIES, ...(brandRead.data?.items || []).filter(brand => brand.id !== 'other'), OTHER_COMPANIES];
+  const { preset, date_from, date_to, value_basis, brand_id } = filters;
+  const reportFilters = { preset, date_from, date_to, value_basis, brand_id };
+  const report = REPORT_GROUPS.flatMap(group => group.reports).find(row => row.id === active);
 
-  return <AdminPage title={TITLE}>
-    <SharedSanitaryFilters filters={filters}
-      onDateChange={next => setFilters(old => ({ value_basis: old.value_basis, ...next }))}
-      onBasisChange={next => setFilters(old => ({ ...old, value_basis: next }))} />
-    <View style={styles.groups} testID="sanitary-reports">
-      {REPORT_GROUPS.map(group => <View key={group.label} style={styles.group}>
-        <Text accessibilityRole="header" aria-level={2} style={styles.groupLabel}>{group.label}</Text>
-        <View style={styles.surface}>
-          {group.reports.map((report, index) => <ReportSection
-            key={report.id} report={report} filters={filters} open={active === report.id} divided={index > 0}
-            brandRead={brandRead} onToggle={() => setActive(current => current === report.id ? undefined : report.id)}
-          />)}
-        </View>
-      </View>)}
+  return <AdminPage key={showReports ? 'reports' : 'overview'} title={TITLE}>
+    <View style={styles.tabs}>
+      <Pressable accessibilityRole="button" aria-pressed={!showReports} style={[styles.reportTab, !showReports && styles.selectedTab]}
+        onPress={() => setShowReports(false)}><Text style={styles.tabLabel}>Overview</Text></Pressable>
+      <Pressable accessibilityRole="button" aria-pressed={showReports} style={[styles.reportTab, showReports && styles.selectedTab]}
+        onPress={() => setShowReports(true)}><Text style={styles.tabLabel}>Detailed reports</Text></Pressable>
     </View>
+    <View style={styles.reportFilters}>
+    <SharedSanitaryFilters filters={filters}
+      onDateChange={next => setFilters(old => ({ ...old, date_from: undefined, date_to: undefined, ...next }))}
+      onBasisChange={next => setFilters(old => ({ ...old, value_basis: next }))} />
+    {!showReports && <ReportChoice label="Brand" value={brand_id || ''} options={brands}
+      onChange={brand_id => setFilters(old => ({ ...old, brand_id }))} testID="sanitary-overview-brand" />}
+    </View>
+    {showReports ? <View style={styles.groups} testID="sanitary-reports">
+      <View style={styles.tabs}>
+        {REPORT_GROUPS.flatMap(group => group.reports).map(row => <Pressable key={row.id}
+          testID={`sanitary-report-${row.id}`} accessibilityRole="button"
+          accessibilityState={{ expanded: active === row.id }} aria-expanded={active === row.id}
+          style={[styles.reportTab, active === row.id && styles.selectedTab]}
+          onPress={() => setActive(current => current === row.id ? undefined : row.id)}>
+          <Text style={styles.tabLabel}>{row.title}</Text>
+        </Pressable>)}
+      </View>
+      {report ? <View style={styles.surface}><ReportSection
+        key={`${report.id}:${brand_id || ''}`} report={report} filters={reportFilters} brandRead={brandRead}
+        initialSort={report.id === 'products' ? filters.product_sort : report.defaultSort}
+      /></View> : null}
+    </View> : <>
+      {!brandRead.data && brandRead.error ? <LoadNotice section="brands" loading={false}
+        error={brandRead.error} retry={brandRead.refresh} /> : null}
+      <SanitaryOverview filters={filters} setFilters={next => setFilters(old => ({ ...old, ...next }))}
+        onProducts={() => { setActive('products'); setShowReports(true); }}
+        onReports={() => setShowReports(true)} />
+    </>}
   </AdminPage>;
 }
 
-function ReportSection({ report, filters, open, onToggle, brandRead, divided }: {
-  report: ReportDefinition; filters: SanitaryFilters; open: boolean; onToggle: () => void;
-  brandRead: ReturnType<typeof useAnalyticsRead<{ items: SanitaryBrand[] }>>; divided: boolean;
+function ReportSection({ report, filters, initialSort, brandRead }: {
+  report: ReportDefinition; filters: SanitaryFilters; initialSort?: SanitarySort;
+  brandRead: ReturnType<typeof useAnalyticsRead<{ items: SanitaryBrand[] }>>;
 }) {
-  const [brand, setBrand] = useState(ALL_COMPANIES.id);
-  const [sort, setSort] = useState(report.defaultSort);
+  const [brand, setBrand] = useState(filters.brand_id || '');
+  const [sort, setSort] = useState(initialSort);
   const params = { ...filters, brand_id: brand, sort };
   const filterKey = sanitarySalesApi.reportKey(report.id, params);
-  const [summary, setSummary] = useState<{ key: string; totals: SanitaryMetrics } | null>(null);
-  const receiveTotals = useCallback((totals: SanitaryMetrics | null) => {
-    setSummary(totals ? { key: filterKey, totals } : null);
-  }, [filterKey]);
-  useEffect(() => subscribeAnalyticsRevocation(() => setSummary(null)), []);
-  useEffect(() => subscribeApiCacheInvalidation(() => setSummary(null)), []);
-
-  const options = [ALL_COMPANIES, ...(brandRead.data?.items || [])];
+  const options = [ALL_COMPANIES, ...(brandRead.data?.items || []).filter(brand => brand.id !== 'other'), OTHER_COMPANIES];
   const selectedCompany = options.find(option => option.id === brand);
   if (!selectedCompany) options.push({ id: brand, name: 'Selected company' });
   const selectedSorts = report.id === 'products' ? PRODUCT_SORTS : INTERIOR_SORTS;
-  const currentSummary = summary?.key === filterKey ? summary.totals : null;
-  return <View style={divided ? styles.divided : undefined}>
-    <LedgerRow section title={report.label} label={report.title} open={open}
-      subtitle={!open && brand ? selectedCompany?.name : undefined}
-      displayValue={!open && currentSummary ? amount(currentSummary.value) : undefined}
-      valueNote={!open && currentSummary?.value != null && currentSummary.missing_value_lines > 0 ? 'Recorded subtotal' : undefined}
-      onPress={onToggle} testID={`sanitary-report-${report.id}`} />
-    {open && <View style={styles.section}>
+  return <View style={styles.section}>
+      <Text accessibilityRole="header" aria-level={2} style={styles.groupLabel}>{report.title}</Text>
       <View style={styles.toolbar}>
         <View style={styles.reportFilters}>
           <ReportChoice label="Company" value={brand} options={options} onChange={setBrand} testID={`sanitary-brand-${report.id}`} />
@@ -89,8 +103,7 @@ function ReportSection({ report, filters, open, onToggle, brandRead, divided }: 
         <ExportExcel report={report} filters={params} brandName={selectedCompany?.name || 'Company'} />
       </View>
       {!brandRead.data && <LoadNotice section="companies" loading={brandRead.loading} error={brandRead.error} retry={brandRead.refresh} />}
-      <ReportResults key={filterKey} report={report.id} filters={params} onTotals={receiveTotals} />
-    </View>}
+      <ReportResults key={filterKey} report={report.id} filters={params} />
   </View>;
 }
 
@@ -130,11 +143,14 @@ function ExportExcel({ report, filters, brandName }: { report: ReportDefinition;
 
 const styles = StyleSheet.create({
   groups: { gap: space.x4 },
-  group: { gap: space.x2 },
   groupLabel: { color: color.ink, fontFamily: font.semibold, fontSize: 18, fontWeight: '600', lineHeight: 26 },
   surface: { borderColor: color.line, borderWidth: 1, borderRadius: radius.lg, backgroundColor: color.surface },
-  divided: { borderTopColor: color.line, borderTopWidth: 1 },
-  section: { paddingHorizontal: space.x4, paddingBottom: space.x4, gap: space.x3 },
+  section: { padding: space.x4, gap: space.x3 },
+  tabs: { flexDirection: 'row', flexWrap: 'wrap', gap: space.x2 },
+  reportTab: { minHeight: 44, justifyContent: 'center', borderRadius: radius.md, borderWidth: 1,
+    borderColor: color.line, backgroundColor: color.surface, paddingHorizontal: space.x3, paddingVertical: space.x2 },
+  selectedTab: { backgroundColor: color.accentTint },
+  tabLabel: { color: color.action, fontWeight: '500', fontSize: 14, flexShrink: 1 },
   toolbar: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'flex-end', gap: space.x3 },
   reportFilters: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-end', gap: space.x3, maxWidth: '100%' },
   export: { gap: space.x2, flexShrink: 1 },

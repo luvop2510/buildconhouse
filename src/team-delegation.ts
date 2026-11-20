@@ -119,7 +119,7 @@ export function personalAccountPath(pathname: string | undefined): string | null
 }
 
 export function moduleForRoute(segments: string[]): string | null {
-  if (isPersonalAccountRoute(segments)) return null;
+  if (isPersonalAccountRoute(segments) || segments.includes("customer-profile")) return null;
   if (segments.includes("notebook")) {
     if (segments.includes("furniture-quotations")) return "furniture-quotations";
     if (segments.includes("quotation-follow-up") || segments.includes("quotation")) return "followups";

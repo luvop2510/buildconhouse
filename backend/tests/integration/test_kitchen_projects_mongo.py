@@ -315,10 +315,39 @@ def test_inline_lead_intake_keeps_distinct_contacts_and_retries_without_duplicat
                                                       "lead": body["lead"], "idempotency_key": str(uuid4())}, headers=headers(env))
             assert reused.status_code == 200 and reused.json()["customer_id"] == env["ids"]["customer"]
             assert await env["db"].customers.count_documents({"floor_id": "second-floor"}) == 3
-            # A contact in another department must never be linked across floors.
+            # Typing the same phone does not confirm the same person across floors.
             scoped = await env["api"].post(path, json={**body, "customer": {"name": "Separate Kitchen contact", "phone": "9900000032", "address": "Another inline site"},
                                                       "idempotency_key": str(uuid4())}, headers=headers(env))
             assert scoped.status_code == 200 and scoped.json()["customer_id"] != env["ids"]["other_customer"]
+    asyncio.run(run())
+
+
+def test_kitchen_explicit_identity_choice_reuses_one_floor_record_and_enforces_source_access():
+    async def run():
+        async with environment() as env:
+            from services.canonical_customers import linked_customer_ids
+
+            source = env["ids"]["other_customer"]
+            body = {
+                "customer": {"name": "Typed name", "phone": "9900000032", "address": "Kitchen site"},
+                "identity_source_customer_id": source, "identity_source_floor_id": "first-floor",
+                "lead": {"status": "New"}, "idempotency_key": str(uuid4()),
+            }
+            path = "/api/kitchen-projects"
+            denied = await env["api"].post(path, json=body, headers=headers(env, "worker"))
+            assert denied.status_code in {403, 404}, denied.text
+            assert await env["db"].customers.count_documents({"identity_source_customer_id": source}) == 0
+            first = await env["api"].post(path, json=body, headers=headers(env))
+            exact = await env["api"].post(path, json=body, headers=headers(env))
+            second = await env["api"].post(path, json={**body, "idempotency_key": str(uuid4())}, headers=headers(env))
+            assert first.status_code == exact.status_code == second.status_code == 200, (first.text, exact.text, second.text)
+            saved = first.json()
+            assert exact.json()["id"] == saved["id"] and second.json()["id"] != saved["id"]
+            assert second.json()["customer_id"] == saved["customer_id"]
+            assert set(await linked_customer_ids(env["db"], source)) == {source, saved["customer_id"]}
+            assert saved["customer"]["name"] == "Wrong floor customer"
+            assert saved["customer"]["address"] == "Kitchen site"
+            assert await env["db"].customers.count_documents({"identity_source_customer_id": source}) == 1
     asyncio.run(run())
 
 

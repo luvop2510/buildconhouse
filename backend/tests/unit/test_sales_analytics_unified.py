@@ -247,8 +247,11 @@ def test_http_routes_enforce_role_floor_input_and_export_record_scope(monkeypatc
         assert client.get("/api/sales-analytics/export?format=pdf").status_code == 403
 
 
-def test_custom_profile_redacts_contact_fields_in_identity_read():
-    from services.analytics.unified_profiles import identity_for
+def test_custom_profile_redacts_contact_fields_in_identity_read(monkeypatch):
+    from services.analytics import unified_profiles
+    async def linked(_db, identity):
+        return identity, [identity]
+    monkeypatch.setattr(unified_profiles, "linked_customer_scope", linked)
     captured = []
     class Collection:
         async def find_one(self, match, fields):
@@ -257,7 +260,7 @@ def test_custom_profile_redacts_contact_fields_in_identity_read():
     class DB:
         def __getitem__(self, key):
             return Collection()
-    identity = asyncio.run(identity_for(DB(), sales.Query(), None, "customers", "c1", [], contacts=False))
+    identity = asyncio.run(unified_profiles.identity_for(DB(), sales.Query(), None, "customers", "c1", [], contacts=False))
     assert not {"phone", "email", "address"}.intersection(captured[0])
     assert not any(a["label"] in {"Phone", "Email", "Address"} for a in identity["attributes"])
 
@@ -279,8 +282,11 @@ def test_confirmation_extra_costs_use_append_only_history_over_stale_cache():
     assert row["outstanding"] == 95
 
 
-def test_profile_has_actual_draft_quotation_history_without_adding_sales():
-    from services.analytics.unified_profiles import profile_history
+def test_profile_has_actual_draft_quotation_history_without_adding_sales(monkeypatch):
+    from services.analytics import unified_profiles
+    async def linked(_db, identity):
+        return [identity]
+    monkeypatch.setattr(unified_profiles, "linked_customer_ids", linked)
     class Cursor:
         def __init__(self, rows):
             self.rows = rows
@@ -299,11 +305,11 @@ def test_profile_has_actual_draft_quotation_history_without_adding_sales():
         activity_events = Collection([{"id": "event", "quotation_id": "draft", "created_at": "2026-10-02T10:00:00+00:00", "event_type": "quotation.created"}])
     database = DB()
     q = sales.Query(floor_id="ground-floor", customer_id="c1")
-    history = asyncio.run(profile_history(database, q, ["ground-floor"]))
+    history = asyncio.run(unified_profiles.profile_history(database, q, ["ground-floor"]))
     assert history["quotations"][0]["id"] == "draft" and history["quotations"][0]["quotation_amount"] == 2000
     assert history["quotations"][0]["order_id"] is None
     assert history["activity"][0]["id"] == "event"
-    assert database.quotations.query["customer_id"] == "c1"
+    assert database.quotations.query["customer_id"] == {"$in": ["c1"]}
     assert "status" not in database.quotations.query
     report = sales.dashboard([], q, ["ground-floor"], NOW)
     assert report["kpis"]["sales"] == 0 and report["kpis"]["orders"] == 0

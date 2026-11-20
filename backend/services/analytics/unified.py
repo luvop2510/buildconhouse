@@ -16,6 +16,7 @@ from fastapi import HTTPException
 from services.analytics.filters import AnalyticsFilter, build_match
 from services.analytics.kitchen_referrals import kitchen_referral_pipeline
 from services.analytics.periods import Period, buckets, previous, resolve
+from services.canonical_customers import canonical_customer_ids, linked_customer_ids
 
 FLOORS = {"ground-floor": "Tiles", "first-floor": "Sanitary / Bathroom", "second-floor": "Kitchen", "third-floor": "Furniture"}
 MAX_RECORDS = 20_000
@@ -138,7 +139,9 @@ async def load_model(db, q, floors):
     selected = scope["floor_id"]["$in"]
     if q.source and q.source not in {"catalog", "kitchen", "furniture"}:
         raise HTTPException(422, "Unknown sales source")
-    common = {key: value for key, value in (("customer_id", q.customer_id), ("referrer_id", q.architect_id), ("id", q.order_id)) if value}
+    common = {key: value for key, value in (("referrer_id", q.architect_id), ("id", q.order_id)) if value}
+    if q.customer_id:
+        common["customer_id"] = {"$in": await linked_customer_ids(db, q.customer_id)}
     company_products = None
     if q.company_id:
         company_products = await _bounded(db.products.find({"brand_id": q.company_id, "floor_id": scope["floor_id"]}, {"_id": 0, "id": 1}), "Company products", MAX_LINES)
@@ -186,6 +189,13 @@ async def load_model(db, q, floors):
     for event in events:
         by_event_order[(event.get("floor_id"), event.get("quotation_id"))].append(event)
     result = [normalize(source, {**doc, "_events": by_event_order.get((doc.get("floor_id"), doc.get("id")), [])}, product_map, brand_map, by_order.get((doc.get("floor_id"), doc.get("id")), [])) for source, doc in raw]
+    identities = await canonical_customer_ids(db, [q.customer_id, *(row.get("customer_id") for row in result)])
+    for row in result:
+        customer_id = row.get("customer_id")
+        if customer_id:
+            row["customer_id"] = identities[customer_id]
+    if q.customer_id:
+        q = replace(q, customer_id=identities[q.customer_id])
     return [r for r in result if matches(r, q)]
 
 

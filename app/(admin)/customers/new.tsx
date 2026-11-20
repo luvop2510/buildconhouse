@@ -7,7 +7,8 @@ import { Disclosure } from "@/src/design/Disclosure";
 // was simply never built. DS-aligned with the rest of this folder
 // (theme/tokens + components/ui, matching customers/index.tsx + [id].tsx).
 import { useRouter } from "expo-router";
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { randomUUID } from "expo-crypto";
 import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -16,6 +17,8 @@ import {
   Alert, Button, PageHeader, TextField,
 } from "@/src/components/ui";
 import { toast } from "@/src/components/Toast";
+import { CustomerIdentityChoice } from "@/src/components/customer/CustomerIdentityChoice";
+import type { CustomerMatch } from "@/src/components/HomeCustomerSearch";
 import { ReferrerField } from "@/src/components/customer/ReferrerField";
 import { useBp } from "@/src/design/responsive";
 import { colors, spacing } from "@/src/theme/tokens";
@@ -24,6 +27,9 @@ export default function NewCustomer() {
   const router = useRouter();
   const { isPhone, gutter } = useBp();
   const [saving, setSaving] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const request = useRef<{ fingerprint: string; key: string } | null>(null);
+  const pending = useRef(false);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -33,35 +39,43 @@ export default function NewCustomer() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const save = async () => {
-    if (!name.trim()) {
-      setError("Name is required");
-      toast.error("Enter a customer name");
-      return;
-    }
-    if (saving) return;
+  const save = async (existing?: CustomerMatch) => {
+    if (pending.current) return;
+    pending.current = true;
+    setChecking(false);
     setSaveError(null);
     setSaving(true);
     try {
       const payload = {
         name: name.trim(),
-
         email: email.trim() || null,
         phone: phone.trim() || null,
-
         address: address.trim() || null,
         property_name: propertyName.trim() || null,
-
         referrer_id: referrer?.id || null,
+        identity_source_customer_id: existing?.id,
+        identity_source_floor_id: existing?.floor_id,
       };
-      const created = await api.post<{ id: string }>("/customers", payload);
-      toast.success("Customer added");
+      const fingerprint = JSON.stringify(payload);
+      if (request.current?.fingerprint !== fingerprint) request.current = { fingerprint, key: randomUUID() };
+      const created = await api.post<{ id: string }>("/customers", { ...payload, request_key: request.current.key });
+      toast.success(existing ? "Customer selected" : "Customer added");
       router.replace(`/(admin)/customers/${created.id}` as any);
     } catch (e: any) {
       setSaveError(e?.detail || "Could not save customer. Your entries are still here.");
     } finally {
+      pending.current = false;
       setSaving(false);
     }
+  };
+
+  const check = () => {
+    if (!name.trim()) {
+      setError("Name is required");
+      toast.error("Enter a customer name");
+      return;
+    }
+    if (!saving) setChecking(true);
   };
 
   return (
@@ -138,11 +152,13 @@ export default function NewCustomer() {
             disabled={saving}
             loading={saving}
             fullWidth
-            onPress={save}
+            onPress={check}
             testID="new-customer-save"
           />
         </View>
       </KeyboardAvoidingView>
+      {checking ? <CustomerIdentityChoice name={name.trim()} phone={phone.trim()} autoContinueIfNoMatches onClose={() => setChecking(false)}
+        onSelect={row => void save(row)} onSeparate={() => void save()} /> : null}
     </SafeAreaView>
   );
 }

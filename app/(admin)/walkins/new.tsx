@@ -4,12 +4,14 @@ import type { LeadScope } from "@/src/api/leads";
 import { Disclosure } from "@/src/design/Disclosure";
 // Keep intake short; existing customer matching and explicit floor assignments remain shared.
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { randomUUID } from "expo-crypto";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from "react-native";
 import { Text } from "@/src/components/AppText";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { type CustomerMatch, type DuplicateMatches, parseDuplicateConflict, walkinsApi } from "@/src/api/walkins";
+import { CustomerIdentityChoice } from "@/src/components/customer/CustomerIdentityChoice";
 import { toast } from "@/src/components/Toast";
 import {
   Alert, Avatar, Button, Card, Chip, ListRow, PageHeader, SearchField, Sheet, TextField,
@@ -61,6 +63,8 @@ export default function NewWalkIn() {
   const [resolvedCustomerId, setResolvedCustomerId] = useState<string | null>(null); // "Use Existing" chosen
   const [forceNew, setForceNew] = useState(false); // "Create New Anyway" chosen
   const [dupSheetOpen, setDupSheetOpen] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const customerRequest = useRef<{ key: string; signature: string } | null>(null);
 
   useEffect(() => {
     setOptionsError(false);
@@ -122,7 +126,7 @@ export default function NewWalkIn() {
     return () => { active = false; clearTimeout(t); };
   }, [phone, name, address, floorId]);
 
-  const resolvedHigh = matches.high[0] || null;
+  const candidates = [...matches.high, ...matches.medium];
 
   const filteredAssignees = useMemo(() => {
     const q = spSearch.trim().toLowerCase();
@@ -146,17 +150,20 @@ export default function NewWalkIn() {
     setForceNew(true); setResolvedCustomerId(null); setDupSheetOpen(false);
   };
 
-  const submit = async (useExistingId?: string, force?: boolean) => {
+  const submit = async (useExistingId?: string, force?: boolean, sourceFloor?: string) => {
     if (saving) return;
     setError(null);
     setSaving(true);
+    const signature = JSON.stringify([floorId, name.trim(), phone.trim(), address.trim()]);
+    if (customerRequest.current?.signature !== signature) customerRequest.current = { key: randomUUID(), signature };
     try {
       const created = await walkinsApi.create({
         customer_name: name.trim(), customer_phone: phone.trim(),
         address: address.trim(), source,
         salesperson_id: ["first-floor", "ground-floor", "third-floor"].includes(floorId) ? scope.assignments.find(a => a.floor_id === floorId)?.user_id : salespersonId, floor_id: floorId,
         ...scope,
-        use_existing_customer_id: useExistingId, force_new_customer: force,
+        use_existing_customer_id: useExistingId, use_existing_customer_floor_id: sourceFloor,
+        force_new_customer: force, customer_request_key: customerRequest.current.key,
       });
       toast.success("Walk-in logged");
       router.replace(`/(admin)/walkins/${created.id}?floor_id=${created.floor_id}` as any);
@@ -183,11 +190,11 @@ export default function NewWalkIn() {
     if (!floorId) { setError("Department is required"); toast.error("Select an interested department"); return; }
     if (["first-floor", "ground-floor", "third-floor"].includes(floorId) ? !scope.assignments.some(a => a.floor_id === floorId) : !salespersonId) { setError("Salesperson is required"); toast.error("Assign a salesperson for this floor"); return; }
     setError(null);
-    if (matches.medium.length && !resolvedCustomerId && !forceNew) {
-      setDupSheetOpen(true);
-      return;
+    if (resolvedCustomerId || forceNew) {
+      await submit(resolvedCustomerId || undefined, forceNew);
+    } else {
+      setChecking(true);
     }
-    await submit(resolvedCustomerId || undefined, forceNew);
   };
 
   return (
@@ -201,24 +208,16 @@ export default function NewWalkIn() {
 
           <TextField label="Address *" error={error === "Address is required" ? error : undefined} value={address} onChangeText={setAddress} placeholder="Street, area and city" autoComplete="street-address" multiline numberOfLines={2} testID="walkin-address" />
 
-          {resolvedHigh ? (
-            <Card variant="outlined" style={{ backgroundColor: colors.brandTint, gap: 2 }}>
-              <Text style={type.bodySm}>Existing customer found: <Text style={type.bodyStrong}>{resolvedHigh.name}</Text>. This walk-in will be linked to their profile — no duplicate will be created.</Text>
-            </Card>
-          ) : null}
-          {!resolvedHigh && matches.medium.length && !resolvedCustomerId && !forceNew ? (
+          {candidates.length > 0 && !resolvedCustomerId && !forceNew ? (
             <Card variant="outlined" style={{ backgroundColor: colors.warningBg, borderColor: colors.warningBorder, gap: 6 }}>
-              <Text style={type.bodySm}>A similar customer may already exist ({matches.medium.length} possible match{matches.medium.length > 1 ? "es" : ""}).</Text>
+              <Text style={type.bodySm}>Possible existing customers on this floor.</Text>
               <Button label="Review matches" variant="secondary" size="sm" onPress={() => setDupSheetOpen(true)} testID="walkin-review-matches" />
             </Card>
           ) : null}
-          {!resolvedHigh && resolvedCustomerId ? (
+          {resolvedCustomerId ? (
             <Card variant="outlined" style={{ backgroundColor: colors.brandTint }} testID="walkin-linked-customer-confirmation">
-              <Text style={type.bodySm}>Linking to existing customer: <Text style={type.bodyStrong}>{matches.medium.find((m) => m.id === resolvedCustomerId)?.name}</Text></Text>
+              <Text style={type.bodySm}>Linking to existing customer · {candidates.find(m => m.id === resolvedCustomerId)?.name}</Text>
             </Card>
-          ) : null}
-          {!resolvedHigh && !matches.medium.length && matches.low.length && !forceNew ? (
-            <Text style={type.caption}>Similar name on file: {matches.low.map((m) => m.name).join(", ")} — not blocking, review if unsure.</Text>
           ) : null}
 
           {optionsError ? <Alert tone="error" title="Some intake options are unavailable" description="Retry to load the configured lead sources and salespeople." action={<Button label="Try again" variant="secondary" onPress={() => setOptionsRetry(value => value + 1)} />} /> : null}
@@ -278,7 +277,7 @@ export default function NewWalkIn() {
       >
         <View style={{ padding: spacing.lg, gap: spacing.md, flex: 1 }}>
           <ScrollView>
-            {matches.medium.map((m) => (
+            {candidates.map((m) => (
               <Card key={m.id} variant="outlined" style={{ gap: spacing.xs, marginBottom: spacing.sm }}>
                 <Text style={type.bodyStrong}>{m.name}</Text>
                 <Text style={type.bodyMuted}>{[formatDepartmentPhone(m.phone, floorId), m.city].filter(Boolean).join(" · ") || "No details on file"}</Text>
@@ -296,6 +295,9 @@ export default function NewWalkIn() {
           <Button label="Create New Customer Anyway" variant="secondary" onPress={createNewAnyway} testID="walkin-create-new-anyway" />
         </View>
       </Sheet>
+      {checking ? <CustomerIdentityChoice name={name.trim()} phone={phone.trim()} autoContinueIfNoMatches onClose={() => setChecking(false)}
+        onSelect={row => { setChecking(false); void submit(row.id, false, row.floor_id); }}
+        onSeparate={() => { setChecking(false); if (candidates.length) setDupSheetOpen(true); else void submit(undefined, true); }} /> : null}
     </SafeAreaView>
   );
 }

@@ -53,12 +53,15 @@ def test_send_schedule_postpone_history_and_contact_outcome(monkeypatch):
                 "id": employee.id, "full_name": employee.full_name, "role": "sales",
                 "active": True, "floor_ids": ["first-floor"],
             })
+            first_date, _ = followup_engine.quotation_send_schedule(sent_at, 7)
             async def send(session):
-                return await followup_engine.schedule_sent_quotation_followup(quote, sent_at=sent_at, actor=employee, session=session)
+                await followup_engine.schedule_sent_quotation_followup(
+                    quote, sent_at=sent_at, actor=employee, due_date=first_date, session=session,
+                )
             async with await client.start_session() as session:
-                first_date = await session.with_transaction(send)
-                assert await session.with_transaction(send) == first_date
-            assert first_date == (today - timedelta(days=1)).isoformat()
+                await session.with_transaction(send)
+                await session.with_transaction(send)
+            assert first_date == today - timedelta(days=1)
             assert await database.followups.count_documents({"scheduled_from_send": True}) == 1
             original = await database.followups.find_one({"scheduled_from_send": True})
             previous = await database.followups.find_one({"id": legacy["id"]})
@@ -87,6 +90,9 @@ def test_send_schedule_postpone_history_and_contact_outcome(monkeypatch):
                 first_saved = replies[0].json()
                 assert first_saved["bucket"] == "tomorrow"
                 assert len(first_saved["postponement_history"]) == 1
+                assert first_saved["original_due_at"] == original["due_at"]
+                # An older reminder may have the audit entries without the explicit original field.
+                await database.followups.update_one({"id": original["id"]}, {"$unset": {"original_due_at": ""}})
 
                 third_day = await http.post(path + "/postpone", json={
                     "expected_due_at": first_saved["due_at"], "new_due_date": (today + timedelta(days=4)).isoformat(),
@@ -103,6 +109,7 @@ def test_send_schedule_postpone_history_and_contact_outcome(monkeypatch):
                 history = (await http.get(path)).json()["followup"]["postponement_history"]
                 assert [row["reason"] for row in history] == [first["reason"], "Requested three more days", "Available after handover"]
                 assert all(row["actor_id"] == employee.id and row["actor_name"] == employee.full_name and row["changed_at"] for row in history)
+                assert history[0]["previous_due_at"] == original["due_at"] == custom.json()["original_due_at"]
 
                 outcome = {
                     "outcome": "pending", "notes": "Shared revised delivery estimate",

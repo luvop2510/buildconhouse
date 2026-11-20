@@ -9,6 +9,8 @@ import { useInputActive } from "@/src/hooks/use-input-active";
 import { canManageDestructiveData } from "@/src/constants/roles";
 import { documentReferenceText } from "@/src/utils/referrer";
 import { ReferrerField, type ReferrerValue } from "@/src/components/customer/ReferrerField";
+import { CustomerIdentityChoice } from "@/src/components/customer/CustomerIdentityChoice";
+import type { CustomerMatch } from "@/src/components/HomeCustomerSearch";
 // TilesDocBuilder — Ground Floor → Tiles → Selection / Quotation.
 // -----------------------------------------------------------------------------
 // Each page renders as an editable on-screen replica of its official printed
@@ -75,9 +77,10 @@ import { TILE_IMAGE_ASPECT_RATIO } from "./tilePresentation";
 import { tileQuantityUnit, tileSourcePriceUnit } from "./tileQuantityUnit";
 import { followupLegacyReference } from "./followupReference";
 import { canPlaceOrder, nextTilesAction, normalizeTilesStatus, tilesStage, tilesStageLabel } from "./tilesStage";
-import { readTileDraft, writeTileDraft, removeTileDraft, tileDraftMatchesServer, type TileDraft } from "./tileDraftStorage";
+import { readTileDraft, writeTileDraft, removeTileDraft, tileDraftMatchesServer, type TileCustomerIntent, type TileDraft } from "./tileDraftStorage";
 
 export type TilesDocType = "tiles_selection" | "tiles_quotation";
+type TileSaveState = "idle" | "local" | "saving" | "saved" | "review" | "error";
 
 const MAX_ROWS = 300; // soft cap only — the PDF auto-paginates, so this just guards against runaway input
 const PAPER_W = 820;
@@ -285,6 +288,9 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
   const [completionSnapshot, setCompletionSnapshot] = useState<{ id: string; customerId: string; completed: boolean } | null>(null);
   const [customerId, setCustomerId] = useState<string | null>(null);
   const customerIdRef = useRef<string | null>(null);
+  const customerIntentRef = useRef<TileCustomerIntent | null>(null);
+  const pausedCustomerReview = useRef<string | null>(null);
+  const [customerReview, setCustomerReview] = useState<{ generation: number; name: string; phone: string; matches: CustomerMatch[] } | null>(null);
   const [customerSnapshot, setCustomerSnapshot] = useState<{ name: string; phone: string }>({ name: "", phone: "" });
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [customerLookupOwner, setCustomerLookupOwner] = useState<object | null>(null);
@@ -301,7 +307,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
     attendedBy: "", preparedBy: "", address: "", docNumber: "", transportationFee: "0",
   });
   const [rows, setRows] = useState<TileRow[]>([emptyRow()]);
-  const [saveState, setSaveState] = useState<"idle" | "local" | "saving" | "saved" | "error">("idle");
+  const [saveState, setSaveState] = useState<TileSaveState>("idle");
   const [serverTotals, setServerTotals] = useState<{ subtotal: number; discount: number; grandTotal: number; transportation: number } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [whatsappDraft, setWhatsappDraft] = useState<WhatsAppQuotationDraft | null>(null);
@@ -334,7 +340,8 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
   const localSnapshot = {
     version: 1 as const, accountId, docType, routeId: draftRouteId, at: Date.now(),
     documentId: persistedIdRef.current || docId, number: docNumberServer, serverSavedAt: serverSavedAtRef.current,
-    customerId: customerIdRef.current || customerId, customerSnapshot, header, rows, partner, legacyPartnerLabel,
+    customerId: customerIdRef.current || customerId, customerSnapshot, customerIntent: customerIntentRef.current,
+    header, rows, partner, legacyPartnerLabel,
     partnerEdited: partnerEditVersion > partnerSavedVersion.current, clientDraftId: clientDraftIdRef.current,
   };
   const localSnapshotRef = useRef(localSnapshot);
@@ -345,6 +352,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
     setHeader(draft.header);
     setRows(draft.rows.map(row => ({ ...row, ...(asCopy ? { lineId: null } : {}), availableSizes: undefined, finishVariants: undefined })));
     setCustomerId(draft.customerId); customerIdRef.current = draft.customerId;
+    customerIntentRef.current = asCopy ? null : draft.customerIntent || null;
     setCustomerSnapshot(draft.customerSnapshot); setPartner(draft.partner); setLegacyPartnerLabel(draft.legacyPartnerLabel);
     setPartnerEditVersion(draft.partnerEdited ? 1 : 0); partnerSavedVersion.current = 0;
     serverSavedAtRef.current = asCopy ? null : draft.serverSavedAt;
@@ -369,6 +377,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
     let alive = true;
     const controller = new AbortController();
     setLocalReady(false); setRecoveryDraft(null); setBusy(null);
+    setCustomerReview(null); pausedCustomerReview.current = null; customerIntentRef.current = null;
     draftEpoch.current = builderDraftEpoch();
     const local = accountId ? readTileDraft(accountId, docType, draftRouteId) : Promise.resolve(null);
     itemEditRevision.current = 0;
@@ -778,7 +787,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
     };
   }, [rows, header.transportationFee, docType, serverTotals, hasUnsavedItemEdits]);
 
-  const persist = useCallback(async ({ silent = true }: { silent?: boolean } = {}): Promise<string | null> => {
+  const persist = useCallback(async ({ silent = true, review = false }: { silent?: boolean; review?: boolean } = {}): Promise<string | null> => {
     const savingRevision = editRevisionRef.current;
     const savingItemRevision = itemEditRevision.current;
     const run = async (): Promise<string | null> => {
@@ -789,12 +798,14 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
       }
       if (loading || !localReady || restoreError || recoveryDraft || !current() || (routeId && docId !== routeId)) return null;
       let id = persistedIdRef.current || docId;
-      const name = header.customerName.trim();
+      let name = header.customerName.trim();
+      let phone = header.phone.trim();
+      let address = header.address.trim();
       if (!name) {
         if (!silent) toast.show("Enter the customer name first");
         return null;
       }
-      if (!silent && docType === "tiles_quotation" && !header.address.trim()) {
+      if (!silent && docType === "tiles_quotation" && !address) {
         toast.show("Enter the address before saving or generating the quotation");
         return null;
       }
@@ -805,43 +816,78 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
         if (!silent) toast.show("Enter a quantity greater than zero for every product.");
         return null;
       }
+      if (customerIdRef.current && customerIdRef.current !== customerId) return null;
       setSaveState("saving");
       try {
-      // 1. Resolve the customer — reuse an explicit pick, else create one.
       let cid = customerIdRef.current || customerId;
+      let reusedCustomer = false;
       if (!cid) {
-        if (accountId) await writeTileDraft(localSnapshotRef.current, draftEpoch.current);
+        const currentContact = () => current() && !customerIdRef.current
+          && localSnapshotRef.current.header.customerName.trim() === name && localSnapshotRef.current.header.phone.trim() === phone;
+        if (!currentContact()) return null;
+        let intent = customerIntentRef.current;
+        if (!intent || (intent.source && (intent.name !== name || intent.phone !== phone))) {
+          customerIntentRef.current = null;
+          const reviewKey = JSON.stringify([name, phone]);
+          if (silent && !review && pausedCustomerReview.current === reviewKey) {
+            setSaveState("review");
+            return null;
+          }
+          const matches = await api.get<CustomerMatch[]>(`/customer-search/candidates?name=${encodeURIComponent(name)}&phone=${encodeURIComponent(phone)}`,
+            { floorId: TILES_FLOOR_ID, cacheMs: 0 });
+          if (!currentContact()) return null;
+          if (matches.length) {
+            pausedCustomerReview.current = reviewKey;
+            setCustomerReview({ generation: documentGeneration, name, phone, matches });
+            setSaveState("review");
+            return null;
+          }
+          intent = { name, phone };
+        }
+        customerIntentRef.current = intent;
+        if (accountId) await writeTileDraft({ ...localSnapshotRef.current, customerIntent: intent }, draftEpoch.current);
         if (!current()) return null;
-        const created = await api.post<Customer>("/customers", { name, phone: header.phone.trim() || null, client_draft_id: clientDraftIdRef.current }, { floorId: TILES_FLOOR_ID });
+        const created = await api.post<Customer>("/customers", {
+          name: intent.name, phone: intent.phone || null, client_draft_id: clientDraftIdRef.current,
+          ...(intent.source ? { identity_source_customer_id: intent.source.id, identity_source_floor_id: intent.source.floor_id } : {}),
+        }, { floorId: TILES_FLOOR_ID });
         if (!current()) return null;
+        if (intent.source) {
+          if (!currentContact()) return null;
+          reusedCustomer = true;
+          name = created.name;
+          phone = created.phone || "";
+          address = address || created.address || "";
+          setHeader(cur => ({ ...cur, customerName: name, phone, address: cur.address || address }));
+        }
         cid = created.id;
         customerIdRef.current = created.id;
         setCustomerId(created.id);
         // A lost first response can replay the original contact after the
         // user corrected its name/phone. Save those corrections before the
         // quotation takes its customer snapshot; retain the ID on failure.
-        if (created.name !== name || (created.phone || "") !== header.phone.trim()) {
-          await api.patch(`/customers/${cid}`, { name, phone: header.phone.trim() || null }, { floorId: TILES_FLOOR_ID });
+        if (!intent.source && (created.name !== name || (created.phone || "") !== phone)) {
+          await api.patch(`/customers/${cid}`, { name, phone: phone || null }, { floorId: TILES_FLOOR_ID });
           if (!current()) return null;
         }
-        setCustomerSnapshot({ name, phone: header.phone.trim() });
-        setCustomers((cur) => [{ ...created, name, phone: header.phone.trim() }, ...cur]);
-      } else if (name !== customerSnapshot.name || header.phone.trim() !== customerSnapshot.phone) {
+        setCustomerSnapshot({ name, phone });
+        setCustomers((cur) => cur.some(item => item.id === created.id) ? cur : [{ ...created, name, phone }, ...cur]);
+      } else if (name !== customerSnapshot.name || phone !== customerSnapshot.phone) {
         // Header edits correct the customer record (typo fixes stay in sync).
-        await api.patch(`/customers/${cid}`, { name, phone: header.phone.trim() || null }, { floorId: TILES_FLOOR_ID });
+        await api.patch(`/customers/${cid}`, { name, phone: phone || null }, { floorId: TILES_FLOOR_ID });
         if (!current()) return null;
-        setCustomerSnapshot({ name, phone: header.phone.trim() });
+        setCustomerSnapshot({ name, phone });
       }
 
       const payload: any = {
         customer_id: cid,
         ...(!id || docType !== "tiles_quotation" || savingItemRevision > savedItemRevision.current ? { items: buildItems() } : {}),
         rooms: [],
-        phone_snapshot: header.phone.trim() || null,
+        phone_snapshot: phone || null,
         reference_source: header.reference.trim() || null,
         attended_by: header.attendedBy.trim() || null,
         prepared_by: header.preparedBy.trim() || null,
-        address_snapshot: header.address.trim() || null,
+        address_snapshot: address || null,
         doc_date: header.docDate.trim() || null,
         doc_number: header.docNumber.trim() || null,
         transportation_fee: docType === "tiles_quotation" ? num(header.transportationFee) : 0,
@@ -852,7 +898,12 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
       if (!id) {
         // Persist the stable create identity before POST, including when the
         // user taps an action before the next local-storage effect runs.
-        if (accountId) await writeTileDraft({ ...localSnapshotRef.current, customerId: cid, customerSnapshot: { name, phone: header.phone.trim() } }, draftEpoch.current);
+        if (accountId) {
+          const draft = localSnapshotRef.current;
+          await writeTileDraft({ ...draft, customerId: cid, customerSnapshot: { name, phone },
+            header: reusedCustomer ? { ...draft.header, customerName: name, phone, address: draft.header.address || address } : draft.header,
+          }, draftEpoch.current);
+        }
         if (!current()) return null;
         const created = await api.post<{ id: string; number: string; updated_at?: string; status?: string; doc_type?: string; create_replayed?: boolean; create_original_updated_at?: string }>("/quotations", { ...payload, doc_type: docType, client_draft_id: clientDraftIdRef.current }, { floorId: TILES_FLOOR_ID });
         if (!current()) return null;
@@ -986,7 +1037,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
   const [markSentOpen, setMarkSentOpen] = useState(false);
   const [markSentError, setMarkSentError] = useState<string | null>(null);
   const markingSent = useRef(false);
-  const markSent = async (followupDate?: string) => {
+  const markSent = async (followupDays: number) => {
     if (busy || markingSent.current || !docId || docType !== "tiles_quotation" || status !== "draft") return;
     markingSent.current = true;
     setBusy("mark-sent");
@@ -1000,7 +1051,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
         return;
       }
       const saved = await api.post<{ status: string; updated_at: string }>(`/quotations/${id}/mark-sent`, {
-        expected_updated_at: serverSavedAtRef.current, followup_date: followupDate,
+        expected_updated_at: serverSavedAtRef.current, followup_days: followupDays,
       }, { floorId: TILES_FLOOR_ID });
       if (!current()) return;
       serverSavedAtRef.current = saved.updated_at;
@@ -1147,6 +1198,16 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
     markDirty();
   }, [markDirty]);
 
+  const confirmCustomerReview = (source?: CustomerMatch) => {
+    if (!customerReview || customerReview.generation !== documentGeneration || customerIdRef.current
+      || customerReview.name !== header.customerName.trim() || customerReview.phone !== header.phone.trim()
+      || customerIntentRef.current) return;
+    customerIntentRef.current = { name: customerReview.name, phone: customerReview.phone,
+      ...(source ? { source: { id: source.id, floor_id: source.floor_id } } : {}) };
+    setCustomerReview(null);
+    void persistRef.current();
+  };
+
   // A follow-up gets its own local draft scope, so opening it cannot replace an
   // unrelated unsaved selection. Never overwrite a recovered or edited draft.
   useEffect(() => {
@@ -1198,7 +1259,9 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
     updateRow, addRow, removeRow, applyProduct, selectRowSize, selectRowFinish, loadRowSizes,
     customers, customerId, pickCustomer, setCustomerId, setCustomerLookupActive, partner, legacyPartnerLabel, referenceScope: documentScope,
     pickPartner: (value: ReferrerValue) => { setPartner(value); setLegacyPartnerLabel(""); setPartnerEditVersion(version => version + 1); markDirty(); },
-    saveState, retrySave: () => persist({ silent: true }), busy, generatePdf, generateExcel, placeOrder, serverTotals, previewTotals,
+    saveState, retrySave: () => persist({ silent: true, review: true }), busy, generatePdf, generateExcel, placeOrder, serverTotals, previewTotals,
+    customerReview: customerReview?.generation === documentGeneration ? customerReview : null,
+    cancelCustomerReview: () => setCustomerReview(null), confirmCustomerReview,
     recoveryDraft, recoverDraft,
     dismissRecovery: () => { setRecoveryDraft(null); if (accountId) void removeTileDraft(accountId, docType, draftRouteId); },
     whatsappDraft, closeWhatsApp: () => setWhatsappDraft(null), prepareWhatsApp, reloadSentStatus,
@@ -2144,12 +2207,13 @@ const MOBILE_FIELDS: Record<TilesDocType, MobileFieldDef[]> = {
   ],
 };
 
-function SaveStatusPill({ state, onRetry }: { state: "idle" | "local" | "saving" | "saved" | "error"; onRetry: () => void }) {
+function SaveStatusPill({ state, onRetry }: { state: TileSaveState; onRetry: () => void }) {
   if (state === "idle") return null;
   const meta = {
     local: { label: "Draft saved on this device", tone: colors.onSurfaceMuted, icon: "save" as const },
     saving: { label: "Saving…", tone: colors.onSurfaceMuted, icon: "loader" as const },
     saved: { label: "All changes saved", tone: colors.success, icon: "check-circle" as const },
+    review: { label: "Review the customer to sync this draft.", tone: colors.onSurfaceMuted, icon: "user" as const },
     error: { label: "Could not sync this draft. Retry save.", tone: colors.error, icon: "alert-circle" as const },
   }[state];
   return (
@@ -2157,6 +2221,7 @@ function SaveStatusPill({ state, onRetry }: { state: "idle" | "local" | "saving"
       <Feather name={meta.icon} size={12} color={meta.tone} />
       <Text style={[mobileStyles.savePillText, { color: meta.tone }]}>{meta.label}</Text>
       {state === "error" ? <Button label="Retry save" variant="secondary" onPress={onRetry} /> : null}
+      {state === "review" ? <Button label="Review customer" variant="secondary" onPress={onRetry} /> : null}
     </View>
   );
 }
@@ -2589,7 +2654,10 @@ export function TilesDocBuilder({ docType, initialProductId, initialQuotationId 
       ) : <>
       <WhatsAppQuotationSheet draft={doc.whatsappDraft} onClose={doc.closeWhatsApp} onSent={() => void doc.reloadSentStatus()} />
       <MarkQuotationSentSheet visible={doc.markSentOpen} error={doc.markSentError} saving={doc.busy === "mark-sent"}
-        onClose={doc.closeMarkSent} onConfirm={date => void doc.markSent(date)} />
+        onClose={doc.closeMarkSent} onConfirm={followupDays => void doc.markSent(followupDays)} />
+      {doc.customerReview ? <CustomerIdentityChoice name={doc.customerReview.name} phone={doc.customerReview.phone}
+        prefetched={doc.customerReview.matches} onClose={doc.cancelCustomerReview}
+        onSelect={doc.confirmCustomerReview} onSeparate={() => doc.confirmCustomerReview()} /> : null}
       {useResponsiveEditor ? <MobileTilesEditor docType={docType} doc={doc} router={router} onDelete={confirmDelete} canDelete={canDelete} canMarkSent={canMarkSent} workspaceWidth={workspaceWidth} /> : (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.surfaceSecondary }} edges={["top"]}>
       <View style={shellStyles.topbar}>

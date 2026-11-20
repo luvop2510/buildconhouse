@@ -82,7 +82,12 @@ export type KitchenQuery = {
 };
 export type KitchenFileTransfer = { transfer_id: string; filename?: string; size_bytes: number; chunk_bytes: number; part_count: number; state: "open" | "finishing" | "completed"; expires_at: string };
 export type KitchenOwnFileTransfer = KitchenFileTransfer & { project_id: string };
-export type KitchenCreate = { assigned_to?: string | null; customer_id?: string; customer_address?: string; customer?: Omit<KitchenCustomer, "id"> & { phone: string }; idempotency_key: string; lead: KitchenLead };
+export type KitchenCreate = {
+  assigned_to?: string | null; customer_id?: string; customer_address?: string;
+  customer?: Omit<KitchenCustomer, "id"> & { phone: string };
+  identity_source_customer_id?: string; identity_source_floor_id?: string;
+  idempotency_key: string; lead: KitchenLead;
+};
 export type KitchenCommand = "attachment_date" | "mark_lost" | "assign" | "move_stage" | "review_duplicate" | "edit_lead" | "convert" | "save_visit" | "save_cad" | "advance_stage" | "metadata" | "design_present" | "design_update" | "design_share" | "design_response" | "design_revision" | "design_handoff" | "quotation_receive" | "quotation_update" | "quotation_share" | "quotation_response" | "order_confirm" | "order_confirmation" | "order_update" | "order_document" | "order_advance" | "order_installment" | "order_installment_edit" | "order_installment_delete" | "order_material_arrived" | "installation_material_photos" | "order_amend" | "order_status" | "exception" | "production_update" | "production_document" | "installation_update" | "site_visit" | "approval";
 const options = { floorId: KITCHEN_FLOOR_ID, cacheMs: 0 };
 const query = (values: Record<string, string | number | undefined>) => {

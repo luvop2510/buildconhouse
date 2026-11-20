@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 import re
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response
 from pymongo.errors import ExecutionTimeout
@@ -16,8 +16,9 @@ from services.sanitary_sales import (
     report_page, report_sort, sales_window,
 )
 from services.sanitary_sales_excel import workbook_bytes
+from services.sanitary_sales_overview import Section, load_overview, overview_result, resolve_customers
 from services.sanitary_sales_pdf import SANITARY_FLOOR, SavedQuotationPdfUnavailable, load_saved_pdf
-from services.sanitary_sales_source import SanitarySalesLimitError, list_brands, load_records
+from services.sanitary_sales_source import OTHER_BRANDS, SanitarySalesLimitError, list_brands, load_records
 
 router = APIRouter(prefix="/sanitary-sales", tags=["sanitary-sales"])
 NO_STORE = {"Cache-Control": "private, no-store"}
@@ -72,6 +73,7 @@ async def _ledger(report: Report, params: Filters, *, include_pdfs: bool = False
                 db, kind=kind, start=params.window.start, end=params.window.end,
                 brand_id=params.brand_id, include_pdfs=include_pdfs,
             )
+            await resolve_customers(db, records)
     except SanitarySalesLimitError as exc:
         raise HTTPException(422, str(exc)) from exc
     except (TimeoutError, ExecutionTimeout) as exc:
@@ -95,6 +97,47 @@ async def brands(response: Response, _owner: Owner):
         raise HTTPException(503, "The company list took too long. Try again.") from exc
     response.headers.update(NO_STORE)
     return {"items": items}
+
+
+ArchitectSort = Literal["value", "orders", "customers"]
+ProductSort = Literal["quantity", "value"]
+
+
+async def _overview(filters: Filters, architect_sort: ArchitectSort, product_sort: ProductSort, *, section=None, group_id=None):
+    try:
+        async with asyncio.timeout(20):
+            data = await load_overview(db, filters.window, filters.brand_id)
+            return await asyncio.to_thread(overview_result, data, filters.basis, architect_sort, product_sort,
+                                           section=section, group_id=group_id)
+    except SanitarySalesLimitError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except GroupUnavailable as exc:
+        raise HTTPException(404, "This group is unavailable under the current filters.") from exc
+    except (TimeoutError, ExecutionTimeout) as exc:
+        raise HTTPException(503, "The sales overview took too long. Try again with a shorter date range.") from exc
+
+
+@router.get("/overview")
+async def sales_overview(response: Response, filters: FilterParams, _owner: Owner,
+                         architect_sort: ArchitectSort = "value", product_sort: ProductSort = "quantity"):
+    result = await _overview(filters, architect_sort, product_sort)
+    response.headers.update(NO_STORE)
+    return {**result, "date_from": filters.window.first, "date_to": filters.window.last}
+
+
+@router.get("/overview/{section}")
+async def sales_overview_records(
+    section: Section, response: Response, filters: FilterParams, _owner: Owner,
+    group_id: Annotated[str | None, Query(min_length=1, max_length=256)] = None,
+    page: Annotated[int, Query(ge=1, le=100_000)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 25,
+):
+    if section in {"brand", "architect"} and group_id is None:
+        raise HTTPException(422, "Choose a brand or architect to view their records.")
+    rows = await _overview(filters, "value", "quantity", section=section, group_id=group_id)
+    first = (page - 1) * page_size
+    response.headers.update(NO_STORE)
+    return {"items": rows[first:first + page_size], "total": len(rows), "page": page, "page_size": page_size}
 
 
 @router.get("/quotation-pdfs/{quotation_id}")
@@ -153,7 +196,9 @@ async def export_report(report: Report, filters: FilterParams, _owner: Owner):
     brand = "All companies"
     if filters.brand_id:
         catalog = await list_brands(db)
-        brand = next((record["name"] for record in catalog if record["id"] == filters.brand_id), filters.brand_id)
+        brand = "Other companies" if filters.brand_id == OTHER_BRANDS else next(
+            (record["name"] for record in catalog if record["id"] == filters.brand_id), filters.brand_id,
+        )
     data = await asyncio.to_thread(workbook_bytes, ledger, report, filters.basis, sort, filters.window, brand, filters.preset)
     dates = f"{filters.window.first}_{filters.window.last}" if filters.window.first else "all-time"
     name = f"Sanitary_{report}_{_filename_part(brand) or 'brand'}_{dates}_{filters.basis}.xlsx"

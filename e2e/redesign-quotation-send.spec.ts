@@ -28,14 +28,16 @@ for (const width of [390, 1440]) {
     }));
     await page.route("**/api/quotations/synthetic-send/mark-sent", async route => {
       const input = route.request().postDataJSON();
-      expect(input.followup_date).toBe("2026-11-30");
+      expect(input.followup_days).toBe(width === 390 ? 3 : 12);
+      expect(input).not.toHaveProperty("followup_date");
       expect(input.expected_updated_at).toBe(quotation.updated_at);
       if (++sendRequests === 1) {
         await route.fulfill({ status: 503, json: { detail: "Try again in a moment." } });
         return;
       }
       quotation = { ...quotation, status: "sent", sent_at: "2026-11-18T10:00:00Z", sent_by_name: "Sales employee",
-        first_followup_due_date: "2026-11-30", updated_at: "2026-11-18T10:00:00Z" };
+        first_followup_due_date: width === 390 ? "2026-11-21" : "2026-11-30",
+        first_followup_interval_days: input.followup_days, updated_at: "2026-11-18T10:00:00Z" };
       await route.fulfill({ json: quotation });
     });
 
@@ -53,19 +55,34 @@ for (const width of [390, 1440]) {
     expect(sendRequests).toBe(0);
 
     await page.getByTestId("mark-quotation-sent").click();
+    const sheet = page.getByTestId("mark-quotation-sent-sheet");
+    await expect(sheet.getByText("Send Quotation")).toBeVisible();
+    for (const days of [3, 6, 7, 9]) await expect(sheet.getByRole("button", { name: `${days} days` })).toBeVisible();
+    await sheet.getByRole("button", { name: "Cancel" }).click();
+    await expect(summary.getByText("Draft", { exact: true })).toBeVisible();
+    expect(sendRequests).toBe(0);
+    await page.getByTestId("mark-quotation-sent").click();
     const confirm = page.getByTestId("confirm-mark-quotation-sent");
-    const date = page.getByTestId("quotation-first-followup-date");
-    await date.fill("2026-02-30");
-    await expect(confirm).toBeDisabled();
-    await date.fill("2026-11-30");
+    const custom = page.getByTestId("quotation-followup-custom-days");
+    if (width === 390) {
+      await page.getByTestId("quotation-followup-3").click();
+      await expect(custom).toHaveCount(0);
+    } else {
+      await page.getByTestId("quotation-followup-custom").click();
+      await custom.fill("0");
+      await expect(confirm).toBeDisabled();
+      await custom.fill("12");
+    }
     await confirm.focus();
     await page.keyboard.press("Enter");
     await expect(page.getByText("Try again in a moment.", { exact: true })).toBeVisible();
-    await expect(date).toHaveValue("2026-11-30");
+    if (width !== 390) await expect(custom).toHaveValue("12");
     await page.screenshot({ path: info.outputPath("mark-sent-error.png") });
     await confirm.click();
     await expect(summary.getByText("Pending", { exact: true })).toBeVisible();
-    await expect(page.getByTestId("quotation-sent-at")).toContainText("First follow-up 30 Nov 2026");
+    await expect(page.getByTestId("quotation-sent-at")).toContainText(
+      width === 390 ? "First follow-up 21 Nov 2026 (3 days)" : "First follow-up 30 Nov 2026 (12 days)",
+    );
     expect(sendRequests).toBe(2);
     await page.reload();
     await expect(summary.getByText("Pending", { exact: true })).toBeVisible();

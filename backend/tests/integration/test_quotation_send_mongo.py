@@ -16,11 +16,11 @@ def test_saved_order_exports_and_explicit_send(monkeypatch):
     async def exercise():
         import db as connection
         from routes import quotation_routes
-        from services import domain_outbox, followup_engine, sequence
+        from services import catalog_database, domain_outbox, followup_engine, sequence
 
         async with environment() as fixture:
             database = fixture["db"]
-            for module in (quotation_routes, domain_outbox, followup_engine, sequence):
+            for module in (quotation_routes, catalog_database, domain_outbox, followup_engine, sequence):
                 monkeypatch.setattr(module, "db", database)
             monkeypatch.setattr(connection, "client", database.client)
             monkeypatch.setattr(domain_outbox, "client", database.client)
@@ -137,10 +137,12 @@ def test_saved_order_exports_and_explicit_send(monkeypatch):
                 workbook.close()
             assert (await api.get(path, headers=actor)).json()["status"] == "draft"
 
-            command = {"expected_updated_at": refreshed["updated_at"]}
+            command = {"expected_updated_at": refreshed["updated_at"], "followup_days": 3}
             assert (await api.post(path + "/mark-sent", json=command, headers=viewer)).status_code in {403, 404}
-            invalid = await api.post(path + "/mark-sent", json={**command, "followup_date": "2025-01-01"}, headers=actor)
-            assert invalid.status_code == 422
+            for invalid_days in (0, -1, 1.5, "3", True, 999999999):
+                invalid = await api.post(path + "/mark-sent", json={**command, "followup_days": invalid_days}, headers=actor)
+                assert invalid.status_code == 422
+            assert (await api.get(path, headers=actor)).json()["status"] == "draft"
             sent = await asyncio.gather(*[
                 api.post(path + "/mark-sent", json=command, headers=actor) for _ in range(3)
             ])
@@ -150,8 +152,12 @@ def test_saved_order_exports_and_explicit_send(monkeypatch):
             assert pending["sent_by"] == fixture["ids"]["owner"]
             assert {response.json()["sent_at"] for response in sent} == {pending["sent_at"]}
             sent_day = datetime.fromisoformat(pending["sent_at"]).astimezone(ZoneInfo("Asia/Kolkata")).date()
-            due_day = sent_day + timedelta(days=7)
+            due_day = sent_day + timedelta(days=3)
             assert date.fromisoformat(pending["first_followup_due_date"]) == due_day
+            assert pending["first_followup_interval_days"] == 3
+            changed_retry = (await api.post(path + "/mark-sent", json={**command, "followup_days": 9}, headers=actor)).json()
+            for field in ("sent_at", "sent_by", "first_followup_due_date", "first_followup_interval_days"):
+                assert changed_retry[field] == pending[field]
             followups = await database.followups.find({"quotation_id": original["id"]}).to_list(None)
             assert len(followups) == 1
             assert datetime.fromisoformat(followups[0]["due_at"]).astimezone(ZoneInfo("Asia/Kolkata")).date() == due_day
@@ -165,7 +171,7 @@ def test_saved_order_exports_and_explicit_send(monkeypatch):
             assert (await api.post(empty_path + "/mark-sent", json={}, headers=actor)).status_code == 422
             assert (await api.get(empty_path, headers=actor)).json()["status"] == "draft"
 
-            # An explicit future date replaces the seven-day default.
+            # A non-preset interval also persists its server-derived date.
             custom = await api.post("/api/quotations", json={**body, "client_draft_id": str(uuid4())}, headers=actor)
             assert custom.status_code == 200, custom.text
             custom_quote = custom.json()
@@ -173,12 +179,20 @@ def test_saved_order_exports_and_explicit_send(monkeypatch):
             custom_day = sent_day + timedelta(days=11)
             custom_send = await api.post(
                 f"/api/quotations/{custom_quote['id']}/mark-sent",
-                json={"followup_date": custom_day.isoformat(), "expected_updated_at": custom_quote["updated_at"]},
+                json={"followup_days": 11, "expected_updated_at": custom_quote["updated_at"]},
                 headers=actor,
             )
             assert custom_send.status_code == 200, custom_send.text
             assert custom_send.json()["first_followup_due_date"] == custom_day.isoformat()
+            assert custom_send.json()["first_followup_interval_days"] == 11
             custom_reminder = await database.followups.find_one({"quotation_id": custom_quote["id"]})
             assert datetime.fromisoformat(custom_reminder["due_at"]).astimezone(ZoneInfo("Asia/Kolkata")).date() == custom_day
+
+            # Historical sent rows lack the new interval. Retrying never stamps one.
+            await database.quotations.update_one({"id": custom_quote["id"]}, {"$unset": {"first_followup_interval_days": ""}})
+            historical_retry = await api.post(f"/api/quotations/{custom_quote['id']}/mark-sent", json={"followup_days": 6}, headers=actor)
+            assert historical_retry.status_code == 200, historical_retry.text
+            assert historical_retry.json()["first_followup_interval_days"] is None
+            assert historical_retry.json()["first_followup_due_date"] == custom_day.isoformat()
 
     asyncio.run(exercise())

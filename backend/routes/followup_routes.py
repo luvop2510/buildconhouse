@@ -50,6 +50,7 @@ from models import (
 from services import automation_rules, workflow_transitions
 from services import lead_scope
 from services.activity_log import log_event, timeline_for
+from services.canonical_customers import canonical_customer_ids, identity_group_token
 from services.followup_engine import (
     IST, RULE_DEFINITIONS, _followup_sort_key, age_days,
     compute_bucket, ist_day_bounds_utc, money_short, parse_iso,
@@ -643,6 +644,7 @@ async def list_followups_page(
     completed_today: bool = False,
     page: int = Query(1, ge=1),
     page_size: int = Query(100, ge=25, le=200),
+    group_by_customer: bool = False,
     user: UserPublic = Depends(get_current_user),
 ):
     """Return one stable, floor-scoped follow-up page for the inbox."""
@@ -666,13 +668,42 @@ async def list_followups_page(
             "_inbox_overdue": 1, "_inbox_unresolved": 1, "_inbox_mine": 1,
             "priority_score": -1, "due_at": 1, "id": 1,
         }},
-        {"$skip": (page - 1) * page_size},
-        {"$limit": page_size + 1},
-        {"$project": {"_id": 0, "_inbox_overdue": 0, "_inbox_unresolved": 0, "_inbox_mine": 0}},
     ]
-    rows = await db.followups.aggregate(pipeline).to_list(page_size + 1)
-    has_more = len(rows) > page_size
-    rows = rows[:page_size]
+    start = (page - 1) * page_size
+    if group_by_customer:
+        # Sort lightweight references once so a customer's tasks remain on
+        # the same page, including tasks that span different due buckets.
+        maximum = 20000
+        references = await db.followups.aggregate([
+            *pipeline, {"$limit": maximum + 1}, {"$project": {"customer_id": 1}},
+        ], maxTimeMS=5000).to_list(maximum + 1)
+        if len(references) > maximum:
+            raise HTTPException(422, "Too many follow-ups in this view. Narrow the filters.")
+        identities = await canonical_customer_ids(db, (row.get("customer_id") for row in references))
+        groups = {}
+        for row in references:
+            identity = identities.get(row.get("customer_id"))
+            key = ("customer", identity) if identity else ("task", row["_id"])
+            groups.setdefault(key, []).append(row["_id"])
+        selected = dict(list(groups.items())[start:start + page_size])
+        ordered_ids = [item for items in selected.values() for item in items]
+        if len(ordered_ids) > 2000:
+            raise HTTPException(422, "Too many tasks on this page. Narrow the follow-up filters.")
+        documents = await db.followups.find({"$and": [pipeline[0]["$match"], {"_id": {"$in": ordered_ids}}]}).to_list(len(ordered_ids)) if ordered_ids else []
+        by_id = {doc.pop("_id"): doc for doc in documents}
+        rows = [by_id[item] for item in ordered_ids if item in by_id]
+        for row in rows:
+            identity = identities.get(row.get("customer_id"))
+            if identity:
+                row["customer_group"] = identity_group_token(identity)
+        has_more = len(groups) > start + page_size
+    else:
+        rows = await db.followups.aggregate([
+            *pipeline, {"$skip": start}, {"$limit": page_size + 1},
+            {"$project": {"_id": 0, "_inbox_overdue": 0, "_inbox_unresolved": 0, "_inbox_mine": 0}},
+        ]).to_list(page_size + 1)
+        has_more = len(rows) > page_size
+        rows = rows[:page_size]
     for row in rows:
         row["bucket"] = compute_bucket(row)
         row["effective_priority_level"] = row.get("manual_priority_override") or row.get("priority_level")
@@ -792,7 +823,10 @@ async def create_notebook_row(
     require_notebook_floor(floor_id, user)
     _reject_action_note(body.notes)
     _required_create_assignments(body.interested_floor_ids or [floor_id], body.assignments)
-    patch = body.model_dump(exclude_none=True, exclude={"notes", "interested_floor_ids", "assignments", "reference_source"})
+    from services.canonical_customers import create_intake_customer, reuse_customer_for_floor
+
+    command_fields = {"request_key", "customer_source_id", "customer_source_floor_id"}
+    patch = body.model_dump(exclude_none=True, exclude={"notes", "interested_floor_ids", "assignments", "reference_source", *command_fields})
     if body.interested_floor_ids or body.assignments is not None:
         await lead_scope.validate_scope(db, user, body.interested_floor_ids or [floor_id], [], source_floor=floor_id)
     requested_referrer_id = patch.pop("referrer_id", None)
@@ -803,10 +837,21 @@ async def create_notebook_row(
         )
     except NotebookValidationError as error:
         raise HTTPException(status_code=422, detail=str(error))
-    customer = await resolve_or_create_customer(
-        db, user=user, floor_id=floor_id, name=clean["customer_name"],
-        phone=clean["customer_phone"], address=clean.get("address"),
-    )
+    if bool(body.customer_source_id) != bool(body.customer_source_floor_id):
+        raise HTTPException(422, "Select a customer and their department")
+    if body.customer_source_id:
+        customer, _ = await reuse_customer_for_floor(db, user, body.customer_source_id, body.customer_source_floor_id, floor_id)
+        clean.update(customer_name=customer["name"], customer_phone=customer.get("phone") or clean["customer_phone"])
+    elif body.request_key:
+        intake_id = str(uuid5(NAMESPACE_URL, f"notebook-customer:{user.id}:{floor_id}:{body.request_key}"))
+        customer, _ = await create_intake_customer(db, identity=intake_id, floor=floor_id,
+            name=clean["customer_name"], phone=clean["customer_phone"], address=clean.get("address"))
+    else:
+        # Older direct clients can still retry their previously saved notebook row.
+        customer = await resolve_or_create_customer(
+            db, user=user, floor_id=floor_id, name=clean["customer_name"],
+            phone=clean["customer_phone"], address=clean.get("address"),
+        )
     referrer_fields = await _notebook_referrer_fields(requested_referrer_id, floor_id)
     # A customer has one notebook row per floor. Repeated creation requests
     # must resolve to that row instead of making the register appear to ignore
@@ -1247,7 +1292,12 @@ async def create_followup(body: FollowupCreate, user: UserPublic = Depends(get_c
     _reject_action_note(body.notes)
     floor_id = floor_for_write(user)
     request_id = str(uuid5(NAMESPACE_URL, f'followup-create:{user.id}:{floor_id}:{body.request_key}')) if body.request_key else None
-    fingerprint = hashlib.sha256(json.dumps(body.model_dump(mode='json', exclude={'request_key'}), sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+    from services.canonical_customers import LIVE_CUSTOMER, create_intake_customer, reuse_customer_for_floor
+
+    request_data = body.model_dump(mode='json', exclude={'request_key'})
+    if not body.customer_source_floor_id:
+        request_data.pop('customer_source_floor_id')
+    fingerprint = hashlib.sha256(json.dumps(request_data, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
     previous = await db.followups.find_one({'id': request_id, 'floor_id': floor_id}, {'_id': 0}) if request_id else None
     if previous:
         if previous.get('create_request_fingerprint') != fingerprint:
@@ -1264,7 +1314,11 @@ async def create_followup(body: FollowupCreate, user: UserPublic = Depends(get_c
     if body.customer_id and (body.new_customer_name or body.new_customer_phone):
         raise HTTPException(422, "Choose an existing customer or enter a new customer's details")
     if body.customer_id:
-        cust = await db.customers.find_one(floor_query(user, {"id": body.customer_id}), {"_id": 0})
+        source_floor = body.customer_source_floor_id or floor_id
+        if source_floor == floor_id:
+            cust = await db.customers.find_one(floor_query(user, {"id": body.customer_id, **LIVE_CUSTOMER}), {"_id": 0})
+        else:
+            cust, _ = await reuse_customer_for_floor(db, user, body.customer_id, source_floor, floor_id)
     elif body.new_customer_name and body.new_customer_phone:
         mobile = normalize_mobile(body.new_customer_phone)
         if not body.new_customer_name.strip():
@@ -1320,14 +1374,14 @@ async def create_followup(body: FollowupCreate, user: UserPublic = Depends(get_c
     if selected_assignments:
         await lead_scope.update_interests(db, user=user, source=f.model_dump(), floor_ids=interested_floors, assignments=selected_assignments, metadata=metadata, dry_run=True)
     if new_customer_details:
-        try:
-            cust, customer_created = await resolve_or_create_customer(
-                db, user=user, floor_id=floor_id,
-                name=new_customer_details[0], phone=new_customer_details[1], address=None,
-                return_created=True,
+        cust, created = await create_intake_customer(
+            db, identity=cust["id"], floor=floor_id, name=new_customer_details[0], phone=new_customer_details[1],
+        )
+        if created:
+            await log_event(
+                event_type="customer.created", entity_type="customer", entity_id=cust["id"],
+                customer_id=cust["id"], actor=user, summary="Customer Created with Follow-up",
             )
-        except NotebookValidationError as exc:
-            raise HTTPException(422, str(exc)) from exc
         f = f.model_copy(update={
             "customer_id": cust["id"],
             "customer_name": cust.get("name"),
@@ -1336,11 +1390,6 @@ async def create_followup(body: FollowupCreate, user: UserPublic = Depends(get_c
         })
         if await db.quotations.find_one({"customer_id": cust["id"], "floor_id": floor_id, "status": "ordered"}, {"_id": 0, "id": 1}):
             raise HTTPException(409, "This customer already placed an order")
-        if customer_created:
-            await log_event(
-                event_type="customer.created", entity_type="customer", entity_id=cust["id"],
-                customer_id=cust["id"], actor=user, summary="Customer Created with Follow-up",
-            )
     if request_id:
         identity = {'_id': f'followup-create:{request_id}'}
         await db.followups.update_one(identity, {'$setOnInsert': {**f.model_dump(), 'create_request_fingerprint': fingerprint}}, upsert=True)
@@ -1473,10 +1522,15 @@ async def postpone_followup(followup_id: str, body: FollowupPostponePayload, use
         "actor_id": user.id,
         "actor_name": user.full_name,
     }
+    past_postponements = current.get("postponement_history") or []
+    original_due = current.get("original_due_at") or (
+        past_postponements[0].get("previous_due_at") if past_postponements else current.get("due_at")
+    )
     lookup = {"id": followup_id, "floor_id": current["floor_id"]}
     updated = await db.followups.find_one_and_update(
         {**lookup, "status": {"$in": ["open", "snoozed"]}, "due_at": body.expected_due_at},
-        {"$set": {"due_at": new_due_at, "status": "open", "snoozed_until": None, "updated_at": now.isoformat(), "date_only_due": True},
+        {"$set": {"due_at": new_due_at, "original_due_at": original_due, "status": "open",
+                  "snoozed_until": None, "updated_at": now.isoformat(), "date_only_due": True},
          "$push": {"postponement_history": {**history, "changed_at": now.isoformat()}}},
         projection={"_id": 0}, return_document=ReturnDocument.AFTER,
     )

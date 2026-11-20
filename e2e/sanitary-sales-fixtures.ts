@@ -35,6 +35,48 @@ export async function mockSanitarySales(page: Page, options: Options = {}) {
     const [report, action] = url.pathname.replace('/api/sanitary-sales/', '').split('/');
     const q = url.searchParams;
     if (report === 'brands') return route.fulfill({ json: { items: brands } });
+    if (report === 'overview') {
+      const mrp = q.get('value_basis') === 'mrp';
+      const pendingValue = mrp ? 300000.01 : 200000.01;
+      const placedValue = mrp ? 150000.25 : 100000.25;
+      const quote = { id: 'q-103', target_id: 'q-103', target_type: 'quotation', customer_id: 'buyer-aarav',
+        customer_name: buyer, number: 'SQ-103', label: 'Pending quotation', date: '2026-10-10', value: pendingValue, status: 'sent' };
+      const payment = { id: 'q-204', target_id: 'q-204', target_type: 'payment', customer_id: 'buyer-aarav',
+        customer_name: buyer, number: 'SQ-204', label: 'Delivered but unpaid', value: placedValue,
+        order_amount: 118000, paid: 80000, outstanding: 38000, age_days: 6,
+        age_reference: 'order date', delivery_status: 'delivered', employee: 'Asha' };
+      const followup = { id: 'follow-1', target_id: 'follow-1', target_type: 'followup', customer_id: 'buyer-aarav',
+        customer_name: buyer, label: 'Overdue follow-up', due_date: '2026-10-19', days_overdue: 1, reason: 'Confirm finish' };
+      const customer = { id: 'buyer-aarav', customer_id: 'buyer-aarav', customer_name: buyer, items: [followup, quote, payment] };
+      if (action) {
+        const items = action === 'architect' || action === 'attention' ? [customer]
+          : action === 'outstanding' || action === 'delivered_unpaid' ? [payment] : [quote];
+        return route.fulfill({ json: { items, total: items.length, page: 1, page_size: 25 } });
+      }
+      const metrics = (value: number) => ({
+        value, mrp_value: value, offer_value: value, missing_value_lines: 0, missing_mrp_lines: 0, missing_offer_lines: 0,
+        customer_count: 1, document_count: 1,
+      });
+      return route.fulfill({ json: {
+        kpis: { pending_quotations: metrics(pendingValue), placed_orders: metrics(placedValue),
+          draft_customers: 1, pending_customers: 1, followups: { overdue: 1, today: 0, customer_count: 1 },
+          outstanding: { value: 38000, customer_count: 1, order_count: 1, missing_amounts: 0 },
+          delivered_unpaid: { value: 38000, order_count: 1, missing_amounts: 0 },
+          conversion: { rate: 50, converted: 1, opportunities: 2 } },
+        pipeline: [
+          { id: 'pending', name: 'Pending', ...metrics(pendingValue) },
+          { id: 'placed', name: 'Order placed', ...metrics(placedValue) },
+        ],
+        brands: [{ id: 'grohe', name: 'Grohe', pending_value: pendingValue, placed_value: placedValue,
+          order_count: 1, quantities: [{ unit: 'pcs', quantity: 8 }], share: 100 }],
+        architects: [{ id: 'architect-ria', name: architect, customer_count: 1, draft_customers: 1,
+          pending_customers: 1, order_count: 1, order_value: placedValue, outstanding: 38000 }],
+        products: [{ id: 'product-310', name: product, ...metrics(placedValue), quantity: 8, unit: 'pcs',
+          brand: 'Grohe', sku: 'RAIN-310', size: '310 mm', finish: 'Chrome' }],
+        attention: [customer], payments: { items: [payment],
+          aging: [{ id: 'undated', name: 'No due date recorded', order_count: 1, value: 38000 }] }, notes: [],
+      } });
+    }
     if (report === 'quotation-pdfs') {
       return route.fulfill({
         contentType: 'application/pdf',

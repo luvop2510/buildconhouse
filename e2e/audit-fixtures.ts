@@ -29,6 +29,7 @@ export async function mockSession(page: Page, path: string, failures = true, opt
     else if(p==='/api/settings/permission-matrix') body={modules:[],roles:[],matrix:{owner:{}}};
     else if(p==='/api/settings/roles') body=[];
     else if(!failures && p==='/api/customers') body=[];
+    else if(p==='/api/customer-search/candidates') body=[];
     else if(!failures && p==='/api/auth/sessions') body=[];
     else if(!failures && p==='/api/notifications') body=[];
     else if(!failures && p==='/api/portal/quotations') body=[];

@@ -78,6 +78,19 @@ export async function mockSalesAnalytics(page: Page, options: Options = {}) {
   await page.route('**/api/sales-data/referrers/*?**',route=>route.fulfill({json:{referrer:reference,customers_acquired:3,referred_people:[{customer_name:'Ananya Shah',confirmed:1,sources:['quotations'],floor_ids:['first-floor'],first_referred_at:'2026-10-10T06:00:00Z'},{customer_name:'Example walk-in',confirmed:0,sources:['walkins'],floor_ids:['first-floor'],first_referred_at:'2026-10-12T06:00:00Z'}],total_revenue:240000,total_revenue_rnb:0,trend:[{bucket:'October',revenue:240000}],quotations:[{id:'order-a',number:'SO-1001',customer_name:'Ananya Shah',grand_total:240000,updated_at:'2026-10-10T06:00:00Z'}]}}));
   await page.route('**/api/executive-analytics/**',route=>route.fulfill({json:{salesperson:{full_name:'Example salesperson'},kpis:{revenue:240000,orders:1,aov:240000,customers:1},brands:[{brand_id:'company-a',brand_name:'Hansgrohe',revenue:240000}],products:[],customers:[]}}));
   let review: Record<string, unknown> | null = null;
+  let identityReview: Record<string, unknown> | null = null;
+  await page.route('**/api/customer-search/identity-review**', route => {
+    if (route.request().method() === 'POST') {
+      const body = route.request().postDataJSON();
+      identityReview = { decision: body.decision, note: body.note, reviewed_at: '2026-10-29T00:30:00+05:30', actor_name: 'Audit Owner', revision: Number(identityReview?.revision || 0) + 1 };
+      return route.fulfill({ json: identityReview });
+    }
+    return route.fulfill({ json: { revision: Number(identityReview?.revision || 0), total: 1, rows: [{
+      id: 'duplicate-customers', evidence: 'phone', review: identityReview,
+      customers: [{ id: 'customer-a', name: 'Ananya Shah', floor_id: 'first-floor', phone: '9876543210' },
+        { id: 'customer-review-b', name: 'Ananya Shah', floor_id: 'ground-floor', phone: '9876543210' }],
+    }] } });
+  });
   await page.route('**/api/sales-analytics/**', async route => {
     const url = new URL(route.request().url());
     options.onRequest?.(url);

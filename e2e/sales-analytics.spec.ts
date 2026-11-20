@@ -249,44 +249,49 @@ test('keyboard navigation carries edited filters between analytics destinations'
   await analyticsFitsViewport(page);
 });
 
-test('owner reviews duplicate stable identities with an explicit note and no automatic merge', async ({ page }) => {
+test('owner can review same-phone identities without combining separate people', async ({ page }) => {
   const writes: { path: string; body: Record<string, unknown> }[] = [];
   await mockSalesAnalytics(page);
   page.on('request', request => {
-    if (request.method() !== 'GET' && new URL(request.url()).pathname.startsWith('/api/sales-analytics/')) writes.push({ path: new URL(request.url()).pathname, body: request.postDataJSON() });
+    const path = new URL(request.url()).pathname;
+    if (request.method() === 'POST' && path === '/api/customer-search/identity-review') writes.push({ path, body: request.postDataJSON() });
   });
-  await page.goto('/sales-data/data-quality?floor_id=first-floor&kind=customers');
-  const group = page.getByTestId('analytics-duplicate-duplicate-customers');
-  await page.getByTestId('analytics-duplicate-expand-duplicate-customers').click();
-  await expect(group).toContainText('customer-a');
-  await expect(group).toContainText('customer-review-b');
-  await page.getByTestId('analytics-duplicate-save-duplicate-customers').click();
-  await expect(page.getByRole('alert')).toContainText('Add a review note');
+  await page.goto('/sales-data/data-quality?kind=customers');
+  const group = page.getByTestId('customer-identity-review-duplicate-customers');
+  await group.getByRole('button', { name: 'Compare profiles' }).click();
+  await expect(group).toContainText('Sanitary / Bathroom');
+  await expect(group).toContainText('Tiles');
+  const save = group.getByRole('button', { name: 'Save identity decision' });
+  await expect(save).toBeDisabled();
   expect(writes).toHaveLength(0);
-  await page.getByTestId('analytics-duplicate-decision-duplicate-customers').click();
-  await page.getByTestId('analytics-duplicate-decision-duplicate-customers-distinct').click();
-  await page.getByTestId('analytics-duplicate-note-duplicate-customers').fill('Compared source records; these are distinct customer identities.');
-  await page.getByTestId('analytics-duplicate-save-duplicate-customers').click();
+  await group.getByTestId('customer-identity-decision').click();
+  await page.getByTestId('customer-identity-decision-distinct').click();
+  await group.getByRole('textbox', { name: 'Reason for decision' }).fill('Verified these are separate people.');
+  await save.click();
   await expect(group).toContainText('Revision 1');
-  expect(writes).toEqual([{ path: '/api/sales-analytics/duplicates/review', body: { kind: 'customers', entity_ids: ['customer-a', 'customer-review-b'], decision: 'distinct', note: 'Compared source records; these are distinct customer identities.', expected_revision: 0 } }]);
-  await expect(group).toContainText('customer-a');
-  await expect(group).toContainText('customer-review-b');
+  expect(writes).toEqual([{ path: '/api/customer-search/identity-review', body: {
+    customer_ids: ['customer-a', 'customer-review-b'], decision: 'distinct', note: 'Verified these are separate people.', expected_revision: 0,
+  } }]);
   await page.getByRole('button', { name: 'Refresh', exact: true }).click();
-  await expect(group).toContainText('Reviewed — distinct identities');
+  await expect(group).toContainText('Confirmed separate people');
   await analyticsFitsViewport(page);
 });
 
-test('duplicate review conflicts retain the entered note for explicit recovery', async ({ page }) => {
+test('canonical identity review conflicts retain the entered note for explicit recovery', async ({ page }) => {
   await mockSalesAnalytics(page);
-  await page.route('**/api/sales-analytics/duplicates/review?**', route => route.fulfill({ status: 409, json: { detail: 'Another owner updated this review. Refresh and compare the saved decision.' } }));
-  await page.goto('/sales-data/data-quality?floor_id=first-floor&kind=customers');
-  await page.getByTestId('analytics-duplicate-expand-duplicate-customers').click();
-  const note = page.getByTestId('analytics-duplicate-note-duplicate-customers');
+  await page.route('**/api/customer-search/identity-review**', route => route.request().method() === 'POST'
+    ? route.fulfill({ status: 409, json: { detail: 'Another owner updated this review. Refresh and compare the saved decision.' } })
+    : route.fallback());
+  await page.goto('/sales-data/data-quality?kind=customers');
+  const group = page.getByTestId('customer-identity-review-duplicate-customers');
+  await group.getByRole('button', { name: 'Compare profiles' }).click();
+  const note = group.getByRole('textbox', { name: 'Reason for decision' });
   await note.fill('Keep this source comparison note while reviewing the conflict.');
-  await page.getByTestId('analytics-duplicate-save-duplicate-customers').click();
+  const save = group.getByRole('button', { name: 'Save identity decision' });
+  await save.click();
   await expect(page.getByRole('alert')).toContainText('Another owner updated this review');
   await expect(note).toHaveValue('Keep this source comparison note while reviewing the conflict.');
-  await expect(page.getByTestId('analytics-duplicate-save-duplicate-customers')).toBeEnabled();
+  await expect(save).toBeEnabled();
   await analyticsFitsViewport(page);
 });
 

@@ -94,6 +94,23 @@ test('critical Follow-ups bulk partial failure retains failed records and retrie
   await expect(page.getByRole('button', { name: 'Retry failed', exact: true })).toHaveCount(0);
 });
 
+test('Follow-ups puts confirmed customer matches in one card across due buckets', async ({ page }) => {
+  await followupsSession(page);
+  await page.route('**/api/followups/page?**', route => {
+    expect(new URL(route.request().url()).searchParams.get('group_by_customer')).toBe('true');
+    return route.fulfill({ json: { items: [
+      { ...followup('first', 'One customer'), customer_group: 'confirmed', bucket: 'overdue' },
+      { ...followup('second', 'One customer'), customer_group: 'confirmed' },
+      followup('different', 'Different customer'),
+    ], page: 1, page_size: 100, has_more: false } });
+  });
+  await page.goto('/followups');
+  await expect(page.getByRole('link', { name: 'One customer', exact: true })).toHaveCount(1);
+  await expect(page.getByTestId('followup-first')).toBeVisible();
+  await expect(page.getByTestId('followup-second')).toBeVisible();
+  await expect(page.getByTestId('followup-different')).toBeVisible();
+});
+
 test('critical Follow-ups failed queue shows recovery and page navigation bounds mounted records', async ({ page }) => {
   await followupsSession(page);
   let fail = true;

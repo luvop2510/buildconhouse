@@ -5,10 +5,11 @@ import { captureRuntimeHealth } from './runtime-health';
 import { mockSanitarySales, reportIds } from './sanitary-sales-fixtures';
 
 const pagePath = '/sanitary-sales';
+const openReports = (page: Page) => page.getByRole('button', { name: 'Detailed reports', exact: true }).click();
 
 async function select(page: Page, id: string, value: string) {
   await page.getByTestId(id).click();
-  await page.getByTestId(`${id}-${value}`).click();
+  await page.getByTestId(`${id}-sheet`).getByTestId(`${id}-${value}`).click();
 }
 
 async function saveFile(page: Page, testId: string) {
@@ -20,11 +21,12 @@ async function saveFile(page: Page, testId: string) {
   return downloaded;
 }
 
-test('six collapsed reports, accessible drilldown, saved PDF and exact currency fit the viewport', async ({ page }, info) => {
+test('six report tabs, accessible drilldown, saved PDF and exact currency fit the viewport', async ({ page }, info) => {
   const health = captureRuntimeHealth(page);
   const requests = await mockSanitarySales(page);
   await page.goto(pagePath);
   await expect(page.getByRole('heading', { name: 'Sanitary Floor Sales Data' })).toBeVisible();
+  await openReports(page);
   const section = (id: string) => page.getByTestId(`sanitary-report-${id}`);
   for (const id of reportIds) {
     await expect(section(id)).toBeVisible();
@@ -65,8 +67,10 @@ test('six collapsed reports, accessible drilldown, saved PDF and exact currency 
 test('every Excel download applies report-specific brand and sorting plus shared dates and price basis', async ({ page }) => {
   const requests = await mockSanitarySales(page);
   await page.goto(pagePath);
+  await openReports(page);
   await page.getByTestId('sanitary-mrp').click();
-  await select(page, 'sanitary-period', 'custom');
+  await page.getByTestId('sanitary-period').click();
+  await page.getByTestId('sanitary-period-custom').click();
   await page.getByTestId('sanitary-date-from').fill('2026-10-10');
   await page.getByTestId('sanitary-date-to').fill('2026-10-20');
   await page.getByTestId('sanitary-apply-dates').click();
@@ -90,6 +94,7 @@ test('every Excel download applies report-specific brand and sorting plus shared
 test('a report error can be retried, and an empty brand keeps the report usable', async ({ page }) => {
   await mockSanitarySales(page, { failOnce: 'pending-company' });
   await page.goto(pagePath);
+  await openReports(page);
   await page.getByTestId('sanitary-report-pending-company').click();
   await page.getByRole('button', { name: /retry/i }).click();
   await expect(page.getByTestId('sanitary-row-buyer-aarav')).toBeVisible();
@@ -121,6 +126,7 @@ test('workspace navigation opens the dedicated report and date presets reset ser
   await expect(page).toHaveURL(/\/sanitary-sales(?:[/?]|$)/);
   await expect(page.getByRole('heading', { name: 'Sanitary Floor Sales Data' })).toBeVisible();
 
+  await openReports(page);
   await page.getByTestId('sanitary-report-pending-company').click();
   await expect(page.getByTestId('sanitary-row-buyer-1')).toBeVisible();
   await expect(page.getByText('1–15 of 17', { exact: true })).toBeVisible();
@@ -128,13 +134,16 @@ test('workspace navigation opens the dedicated report and date presets reset ser
   await expect(page.getByTestId('sanitary-row-buyer-16')).toBeVisible();
   await expect(page.getByTestId('sanitary-row-buyer-1')).toHaveCount(0);
 
-  await select(page, 'sanitary-period', 'last_7_days');
+  await page.getByTestId('sanitary-period').click();
+  await page.getByTestId('sanitary-period-last_7_days').click();
   await expect(page.getByTestId('sanitary-row-buyer-3')).toBeVisible();
   await expect(page.getByTestId('sanitary-row-buyer-4')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Next page', exact: true })).toHaveCount(0);
-  await select(page, 'sanitary-period', 'last_30_days');
+  await page.getByTestId('sanitary-period').click();
+  await page.getByTestId('sanitary-period-last_30_days').click();
   await expect(page.getByText('1–15 of 16', { exact: true })).toBeVisible();
-  await select(page, 'sanitary-period', 'all_time');
+  await page.getByTestId('sanitary-period').click();
+  await page.getByTestId('sanitary-period-all_time').click();
   await expect(page.getByText('1–15 of 17', { exact: true })).toBeVisible();
 
   const reads = requests.filter(url => url.pathname.endsWith('/pending-company'));
@@ -166,6 +175,7 @@ test('a late Sanitary response cannot reappear after leaving its workspace', asy
     } }).catch(() => { /* Leaving the route can abort the held browser request. */ });
   });
   await page.goto(pagePath);
+  await openReports(page);
   const section = page.getByTestId('sanitary-report-pending-company');
   try {
     const requested = page.waitForRequest(pendingCompany);
@@ -183,8 +193,47 @@ test('a late Sanitary response cannot reappear after leaving its workspace', asy
   await page.getByRole('menuitem', { name: 'The Sanitary Bathroom', exact: true }).click();
   if (page.viewportSize()!.width < 768) await page.getByTestId('bottom-nav-more').click();
   await page.getByRole('link', { name: 'Sanitary Sales Data', exact: true }).click();
+  await openReports(page);
   await section.click();
   await expect(page.getByTestId('sanitary-row-buyer-aarav')).toBeVisible();
   await expect(page.getByText('Late response customer', { exact: true })).toHaveCount(0);
+  await health.assertHealthy();
+});
+
+test('overview shows real report figures and opens supporting records with independent filters', async ({ page }, info) => {
+  const health = captureRuntimeHealth(page);
+  const requests = await mockSanitarySales(page);
+  await page.goto(pagePath);
+  const overview = page.getByTestId('sanitary-overview');
+  const metric = page.getByTestId('sanitary-kpi-pending_quote_value');
+  await expect(metric).toContainText('₹2L');
+  await expect(page.getByTestId('sanitary-kpi-delivered_unpaid')).toContainText('₹38,000.00');
+  await expect(page.getByTestId('sanitary-kpi-conversion')).toContainText('50%');
+  await expect(overview.getByText('Aarav Desai', { exact: true })).toHaveCount(2);
+  await expect(page.getByTestId('sanitary-overview-product-product-310')).toContainText('8 pcs');
+  await analyticsFitsViewport(page, [metric, page.getByTestId('sanitary-kpi-delivered_unpaid'), page.getByTestId('sanitary-period')]);
+  await page.screenshot({ path: info.outputPath('sales-overview.png'), fullPage: true });
+
+  await metric.click();
+  const records = page.getByTestId('sanitary-overview-records');
+  await expect(records.getByText('SQ-103', { exact: false })).toBeVisible();
+  await expect(records.getByRole('button', { name: 'Open quotation' })).toBeVisible();
+  await page.getByTestId('sanitary-overview-records-close').click();
+  await page.getByTestId('sanitary-overview-architect-architect-ria').click();
+  await expect(records.getByText('Aarav Desai', { exact: true })).toHaveCount(1);
+  await expect(records.getByRole('button', { name: 'Open follow-up' })).toBeVisible();
+  await page.getByTestId('sanitary-overview-records-close').click();
+
+  await select(page, 'sanitary-overview-brand', 'grohe');
+  await page.getByTestId('sanitary-mrp').click();
+  await expect(metric).toContainText('₹3L');
+  await select(page, 'sanitary-overview-product-sort', 'value');
+  await select(page, 'sanitary-overview-architect-sort', 'orders');
+  await expect.poll(() => requests.some(url => url.searchParams.get('brand_id') === 'grohe'
+    && url.searchParams.get('value_basis') === 'mrp' && url.searchParams.get('product_sort') === 'value'
+    && url.searchParams.get('architect_sort') === 'orders')).toBe(true);
+  await page.getByRole('button', { name: 'Complete product analysis' }).click();
+  await expect(page.getByTestId('sanitary-report-products')).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.getByTestId('sanitary-sort-products')).toContainText('Best by sales value');
   await health.assertHealthy();
 });

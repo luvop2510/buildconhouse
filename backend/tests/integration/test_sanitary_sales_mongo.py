@@ -421,3 +421,120 @@ def test_sanitary_uses_recorded_quotation_date_and_placed_date_separately(monkey
             ]
 
     asyncio.run(run())
+
+
+def test_overview_reconciles_report_facts_and_current_operational_actions(monkeypatch):
+    async def run():
+        async with _fixture(monkeypatch) as (http, db):
+            await _seed(db)
+            today = datetime.now(ZoneInfo("Asia/Kolkata")).date()
+            await db.quotations.update_one({"id": "pending-2"}, {"$set": {"sent_at": END}})
+            await db.quotations.update_one({"id": "lost"}, {"$set": {"sent_at": START}})
+            await db.quotations.update_one({"id": "placed-1"}, {"$set": {
+                "payment_due_date": (today - timedelta(days=47)).isoformat(),
+                "payment_extra_amount": 9_999,
+                "payment_extra_history": [{"amount": 22.38}],
+                "created_by_name": "Sanitary employee",
+            }})
+            # Same verified person across local IDs, plus a separate contact
+            # sharing the number. Canonical counts never collapse transactions.
+            await db.customers.update_one({"id": "c2", "floor_id": FLOOR}, {
+                "$set": {"imported_from_customer_id": "c1"},
+            })
+            await db.customers.update_one({"id": "c3"}, {"$set": {"phone": "9000000001"}})
+            await db.payments.insert_many([
+                {"quotation_id": "placed-1", "floor_id": FLOOR, "status": "completed", "amount": 50_000},
+                {"quotation_id": "placed-1", "floor_id": FLOOR, "status": "completed", "amount": 100, "entry_type": "godown_stock_credit"},
+                {"quotation_id": "placed-1", "floor_id": FLOOR, "status": "pending", "amount": 99_999},
+                {"quotation_id": "placed-1", "floor_id": "ground-floor", "status": "completed", "amount": 99_999},
+                {"quotation_id": "placed-2", "floor_id": FLOOR, "status": "completed", "amount": 250_000.02},
+            ])
+            await db.purchase_orders.update_one({"id": "supplier-a"}, {"$set": {"customer_id": "c1", "items": [
+                {"id": "pa-1", "quotation_line_id": "r-a", "qty": 60, "stage": "dispatched", "delivered_at": START},
+                {"id": "pa-2", "quotation_line_id": "r-b", "qty": 40, "stage": "dispatched", "delivered_at": END},
+            ]}})
+            await db.purchase_orders.update_one({"id": "supplier-b"}, {"$set": {"customer_id": "c1", "items": [
+                {"id": "pb", "quotation_line_id": "elbow-a", "qty": 2, "stage": "dispatched", "delivered_at": START},
+            ]}})
+            await db.followups.insert_many([
+                {"id": row_id, "customer_id": customer, "customer_name": customer, "floor_id": floor,
+                 "status": status, "due_at": (today + timedelta(days=offset)).isoformat(), "category": category}
+                for row_id, customer, offset, status, floor, category in [
+                    ("f1", "c1", -4, "open", FLOOR, "quotation"),
+                    ("f2", "c2", 0, "open", FLOOR, "sales"),
+                    ("f3", "c3", 1, "open", FLOOR, "sales"),
+                    ("f4", "c3", -5, "open", "ground-floor", "sales"),
+                    ("f5", "c3", -5, "done", FLOOR, "sales"),
+                    ("f6", "c3", -5, "open", FLOOR, "payment"),
+                ]
+            ])
+
+            data = await _report(http, "overview", **CUSTOM)
+            kpis = data["kpis"]
+            pending, placed = await asyncio.gather(
+                _report(http, "pending-company", **CUSTOM), _report(http, "placed-company", **CUSTOM),
+            )
+            assert pending["totals"] == kpis["pending_quotations"]
+            assert placed["totals"] == kpis["placed_orders"]
+            assert pending["total"] == 1 and kpis["pending_quotations"]["customer_count"] == 1
+            assert pending["totals"]["document_count"] == 2 and kpis["placed_orders"]["document_count"] == 2
+            assert kpis["draft_customers"] == 1 and kpis["pending_customers"] == 1
+            assert kpis["followups"] == {"customer_count": 1, "overdue": 1, "today": 1}
+            assert kpis["outstanding"] == {"customer_count": 1, "order_count": 1, "value": 49_972.4, "missing_amounts": 0}
+            assert kpis["delivered_unpaid"] == {"order_count": 1, "value": 49_972.4, "missing_amounts": 0}
+            assert kpis["conversion"] == {"rate": 50.0, "converted": 2, "opportunities": 4}
+            assert len(data["attention"]) == 1
+            assert {row["id"] for row in data["attention"][0]["items"]} == {"placed-1", "draft-1", "pending-2", "f1", "f2"}
+            amounts = {row["id"]: row["placed_value"] for row in data["brands"]}
+            assert amounts == {"hansgrohe": 250_050.03, "grohe": 100_000.01}
+            assert data["products"][0]["name"] == "Rainshower"
+            assert data["architects"][0]["order_count"] == 1 and data["architects"][0]["order_value"] == 250_000.02
+            assert {row["id"]: row["document_count"] for row in data["pipeline"]} == {
+                "draft": 1, "pending": 1, "placed": 2, "delivered": 1, "payment_pending": 1, "paid": 1,
+            }
+
+            money = await _report(http, "overview/delivered_unpaid", **CUSTOM)
+            item = money["items"][0]
+            assert item["target_type"] == "payment" and item["target_id"] == "placed-1"
+            assert item["order_amount"] == 100_072.4 and item["paid"] == 50_000 and item["credits"] == 100
+            assert item["days_overdue"] == 47 and item["aging"] == "31_60" and item["employee"] == "Sanitary employee"
+            assert item["delivery_status"] == "delivered"
+            grohe = await _report(http, "overview/brand", **CUSTOM, group_id="grohe")
+            assert grohe["total"] == 3
+            assert sum(_value(row) for row in grohe["items"]) == Decimal("300099.99")
+            architect = await _report(http, "overview/architect", **CUSTOM, group_id="interior:r1")
+            assert architect["total"] == 1
+            assert {row["id"] for row in architect["items"][0]["items"]} == {"placed-1", "draft-1", "pending-2"}
+            # Current follow-up workload is independent of period and basis.
+            mrp = await _report(http, "overview", **CUSTOM, brand_id="grohe", value_basis="mrp", product_sort="value")
+            assert mrp["kpis"]["followups"] == kpis["followups"]
+            assert mrp["kpis"]["placed_orders"]["value"] == 300_000
+            assert mrp["kpis"]["outstanding"] == kpis["outstanding"]
+            assert (await http.get(f"{BASE}/overview", headers={"QA-Role": "manager"})).status_code == 403
+            assert (await http.get(f"{BASE}/overview/outstanding", headers={"X-Floor-Id": "ground-floor"})).status_code == 403
+
+            await db.quotations.update_one({"id": "placed-2"}, {"$unset": {"grand_total": ""}})
+            await db.purchase_orders.update_one({"id": "supplier-b"}, {"$set": {"items.0.stage": "in_box"}})
+            assert (await _report(http, "overview/delivered_unpaid", **CUSTOM))["total"] == 0
+            after = await _report(http, "overview", **CUSTOM)
+            assert after["kpis"]["outstanding"]["missing_amounts"] == 1
+            assert after["kpis"]["delivered_unpaid"]["order_count"] == 0
+
+            await db.quotations.update_one({"id": "placed-1"}, {"$set": {
+                "historical_import": {"batch_id": "historical-order-without-payment-history"},
+            }})
+            imported = await _report(http, "overview", **CUSTOM)
+            assert imported["kpis"]["placed_orders"]["document_count"] == 2
+            assert imported["kpis"]["outstanding"] == {
+                "value": None, "order_count": 0, "customer_count": 0, "missing_amounts": 2,
+            }
+            assert any("Historical order imports" in note for note in imported["notes"])
+
+            await db.quotations.update_one({"id": "placed-2"}, {"$set": {"grand_total": 250_100.02}})
+            unknown_due = await _report(http, "overview/outstanding", **CUSTOM)
+            assert unknown_due["total"] == 1
+            assert unknown_due["items"][0]["aging"] == "no_due_date"
+            assert unknown_due["items"][0]["days_overdue"] is None
+            assert unknown_due["items"][0]["age_reference"] == "order date"
+
+    asyncio.run(run())

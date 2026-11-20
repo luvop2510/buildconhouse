@@ -1,3 +1,6 @@
+import { randomUUID } from "expo-crypto";
+import { CustomerIdentityChoice } from "@/src/components/customer/CustomerIdentityChoice";
+import type { CustomerMatch } from "@/src/components/HomeCustomerSearch";
 import { formatDepartmentPhone } from "@/src/utils/phone";
 import { filterValues, toggleFilterValue } from "@/src/utils/filters";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -50,6 +53,8 @@ export function NotebookScreen({ floorId, floorName, view }: { floorId: string; 
   const [formError, setFormError] = useState<string | null>(null);
   const fail = (message: string) => setFormError(message);
   const [loading, setLoading] = useState(true); const [loadingMore, setLoadingMore] = useState(false); const [saving, setSaving] = useState<string | null>(null);
+  const [checkingIdentity, setCheckingIdentity] = useState(false);
+  const intake = useRef<{ signature: string; key: string } | null>(null);
   const [draftOpen, setDraftOpen] = useState(false); const [draft, setDraft] = useState<NotebookCreate>({ ...EMPTY_DRAFT, interested_floor_ids: [floorId], assignments: [], ...(kitchen ? { kitchen_type: "GI" as const } : {}) }); const [draftPartner, setDraftPartner] = useState<Partner>(null);
   const [converting, setConverting] = useState<NotebookRow | null>(null); const [quotationPrice, setQuotationPrice] = useState("");
   const [outcomeRow, setOutcomeRow] = useState<NotebookRow | null>(null); const [lostReason, setLostReason] = useState("");
@@ -73,12 +78,17 @@ export function NotebookScreen({ floorId, floorName, view }: { floorId: string; 
   useEffect(() => { loadRef.current = load; }, [load]);
   const replace = (updated: NotebookRow) => setRows((current) => current.map((row) => row.id === updated.id ? updated : row));
 
-  const create = async () => {
+  const create = async (existing?: CustomerMatch, checked = false) => {
     if (!canCreate || saving || !mounted.current) return;
     if (!draft.customer_name.trim() || !draft.customer_phone.trim() || (kitchen && !draft.kitchen_type)) { fail("Enter the customer name, phone number, and kitchen type."); return; }
     if (!draft.interested_floor_ids?.length) { fail("Select at least one interested floor."); return; }
     if (draft.interested_floor_ids.some(floor => !draft.assignments?.some(a => a.floor_id === floor && a.user_id))) { fail("Select a team member for each interested floor."); return; }
-    setSaving("draft"); try { const row = await notebookApi.create(floorId, draft); if (!mounted.current) return; setDraft({ ...EMPTY_DRAFT, interested_floor_ids: [floorId], assignments: [], ...(kitchen ? { kitchen_type: "GI" as const } : {}) }); setDraftPartner(null); setDraftOpen(false); toast.success(row.is_converted ? "Customer already in quotation follow-ups" : "Follow-up added"); void loadRef.current(); } catch (error: any) { if (mounted.current) fail(error?.detail || "Could not add the follow-up"); } finally { if (mounted.current) setSaving(null); }
+    if (!checked) { setCheckingIdentity(true); return; }
+    setCheckingIdentity(false);
+    const signature = JSON.stringify([floorId, draft.customer_name, draft.customer_phone, draft.address, existing?.id]);
+    if (intake.current?.signature !== signature) intake.current = { signature, key: randomUUID() };
+    const payload = { ...draft, request_key: intake.current.key, customer_source_id: existing?.id, customer_source_floor_id: existing?.floor_id };
+    setSaving("draft"); try { const row = await notebookApi.create(floorId, payload); if (!mounted.current) return; setDraft({ ...EMPTY_DRAFT, interested_floor_ids: [floorId], assignments: [], ...(kitchen ? { kitchen_type: "GI" as const } : {}) }); setDraftPartner(null); setDraftOpen(false); intake.current = null; toast.success(row.is_converted ? "Customer already in quotation follow-ups" : "Follow-up added"); void loadRef.current(); } catch (error: any) { if (mounted.current) fail(error?.detail || "Could not add the follow-up"); } finally { if (mounted.current) setSaving(null); }
   };
   const contact = (row: NotebookRow, channel: "call" | "whatsapp") => { void (async () => {
     if (!canUpdate || saving || !mounted.current) return;
@@ -137,6 +147,8 @@ export function NotebookScreen({ floorId, floorName, view }: { floorId: string; 
     />
     <LeadScopeSheet lead={scopeLead} floorId={floorId} onClose={() => setScopeLead(null)} onSaved={() => void load()} />
     <BottomSheet visible={draftOpen} onClose={() => setDraftOpen(false)} title="New walk-in">{draftFields}</BottomSheet>
+    {draftOpen && checkingIdentity ? <CustomerIdentityChoice name={draft.customer_name} phone={draft.customer_phone} autoContinueIfNoMatches
+      onClose={() => setCheckingIdentity(false)} onSelect={match => void create(match, true)} onSeparate={() => void create(undefined, true)} /> : null}
     <BottomSheet visible={Boolean(converting)} onClose={() => setConverting(null)} title="Move to quotation follow-up"><View style={styles.sheetFields}>{formError ? <Alert tone="error" title={formError} /> : null}<Text style={type.body}>This keeps the client history together and starts an active quotation follow-up.</Text><TextField label="Quotation price *" value={quotationPrice} onChangeText={setQuotationPrice} keyboardType="decimal-pad" /><Button label="Move to quotation follow-up" icon="file-text" onPress={() => void convert()} loading={saving === `${converting?.id}:convert`} /></View></BottomSheet>
     <BottomSheet visible={Boolean(outcomeRow)} onClose={() => setOutcomeRow(null)} title="Mark lead as lost"><View style={styles.sheetFields}>{formError ? <Alert tone="error" title={formError} /> : null}<Text style={type.body}>Record why this client was lost. This reason is required and remains on the activity history.</Text><TextField label="Lost reason *" multiline value={lostReason} onChangeText={setLostReason} placeholder="Cannot afford the service, or we cannot work with this customer" /><Button label="Mark as lost" disabled={!lostReason.trim()} icon="user-x" variant="danger" onPress={() => void saveOutcome()} loading={saving === `${outcomeRow?.id}:lost`} /></View></BottomSheet>
     <BottomSheet visible={Boolean(editing)} onClose={() => setEditing(null)} title="Update quotation price"><View style={styles.sheetFields}>{formError ? <Alert tone="error" title={formError} /> : null}<TextField label="Quotation price *" keyboardType="decimal-pad" value={editValue} onChangeText={setEditValue} /><Button label="Save" icon="check" onPress={() => void saveEdit()} loading={saving === `${editing?.row.id}:${editing?.field}`} /></View></BottomSheet>

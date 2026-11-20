@@ -9,7 +9,7 @@ import { filterValues, toggleFilterValue } from "@/src/utils/filters";
 import { Disclosure } from "@/src/design/Disclosure";
 import { useReducedMotion } from "@/src/hooks/use-reduced-motion";
 import Feather from "@expo/vector-icons/Feather";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Linking, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { Text, TextInput } from "@/src/components/AppText";
@@ -23,6 +23,7 @@ import { useFloorAccess } from "@/src/hooks/use-floor-access";
 import { useAuth } from "@/src/state/auth";
 import { hasGrantAccess } from "@/src/team-delegation";
 import { quotationDestination } from "@/src/utils/quotationNavigation";
+import { SANITARY_FLOOR_ID } from "@/src/constants/floors";
 import { downloadApiFile } from "@/src/utils/downloadFile";
 import {
   Alert as UIAlert,
@@ -243,6 +244,8 @@ export default function PaymentsScreen() {
   const { staff } = useAuth();
   const deletingPayment = useRef(new Set<string>());
   const router = useRouter();
+  const { id: linkedOrderId } = useLocalSearchParams<{ id?: string }>();
+  const linkedOrder = useRef<string | null>(null);
   const [displayedFloor, setDisplayedFloor] = useState(selectedFloorId);
   const activeFloorRef = useRef(selectedFloorId);
   activeFloorRef.current = selectedFloorId;
@@ -360,7 +363,7 @@ export default function PaymentsScreen() {
         : true);
       if (request !== orderRequest.current || activeFloorRef.current !== selectedFloorId) return;
       setOrders(list);
-      setSelectedId((current) => list.some((order) => order.id === current) ? current : (list.length ? list[0].id : null));
+      setSelectedId((current) => linkedOrder.current ?? (list.some((order) => order.id === current) ? current : list[0]?.id ?? null));
       return list;
     } catch (e: any) {
       if (request === orderRequest.current && activeFloorRef.current === selectedFloorId) setListError(e?.detail || "Check your connection and try again.");
@@ -376,7 +379,7 @@ export default function PaymentsScreen() {
     setDetail(null);
     setDetailError(null);
     try {
-      const d = await api.get<OrderDetail>(`/payments/orders/${id}`, { floorId: selectedFloorId });
+      const d = await api.get<OrderDetail>(`/payments/orders/${encodeURIComponent(id)}`, { floorId: selectedFloorId });
       if (request !== detailRequest.current || activeFloorRef.current !== selectedFloorId) return;
       setDetail(d);
       setAmount(d.outstanding > 0 ? d.outstanding.toFixed(2) : "");
@@ -391,6 +394,7 @@ export default function PaymentsScreen() {
 
   useEffect(() => {
     orderRequest.current += 1; detailRequest.current += 1; statsRequest.current += 1; historyRequest.current += 1;
+    linkedOrder.current = null;
     setShowRecord(false); setPaymentError(null); paymentAttemptRef.current = null;
     setListError(null); setDetailError(null);
     setStats(null); setOrders([]); setSelectedId(null); setDetail(null); setHistoryRows([]); setHistoryTotal(0);
@@ -398,11 +402,23 @@ export default function PaymentsScreen() {
     loadStats();
   }, [selectedFloorId, loadStats]);
   useEffect(() => {
+    if (selectedFloorId !== SANITARY_FLOOR_ID || typeof linkedOrderId !== "string" || !linkedOrderId) return;
+    linkedOrder.current = linkedOrderId;
+    shouldFocusDetailRef.current = true;
+    setTab("collections");
+    setShowMobileQueue(false);
+    setSelectedCustomerId(null);
+    setSelectedId(linkedOrderId);
+  }, [linkedOrderId, selectedFloorId]);
+  useEffect(() => {
     if (!q) { void loadOrders(""); return; }
     const t = setTimeout(() => { loadOrders(q); }, 220);
     return () => clearTimeout(t);
   }, [q, loadOrders, selectedFloorId]);
-  useEffect(() => { if (selectedId) loadDetail(selectedId); else { detailRequest.current += 1; setDetail(null); } }, [selectedId, loadDetail]);
+  useEffect(() => {
+    if (selectedId && displayedFloor === selectedFloorId) loadDetail(selectedId);
+    else { detailRequest.current += 1; setDetail(null); }
+  }, [selectedId, displayedFloor, selectedFloorId, loadDetail]);
 
   // Tablet portrait keeps the queue above the detail. Phones show only one
   // panel at a time, so switching customers never pushes Record Payment down.
@@ -437,6 +453,7 @@ export default function PaymentsScreen() {
     || null;
 
   const selectCustomer = useCallback((customer: CustomerCollection) => {
+    linkedOrder.current = null;
     shouldFocusDetailRef.current = !isPhone;
     setSelectedCustomerId(customer.id);
     setSelectedId(customer.orders[0]?.id || null);
@@ -451,7 +468,8 @@ export default function PaymentsScreen() {
     // customer. Never race that selection with a detail request for the old order.
     void loadStats();
     const list = await loadOrders(q);
-    if (activeFloorRef.current === selectedFloorId && selectedOrderRef.current === orderId && (!list || list.some((order) => order.id === orderId))) await loadDetail(orderId);
+    if (activeFloorRef.current === selectedFloorId && selectedOrderRef.current === orderId
+      && (linkedOrder.current === orderId || !list || list.some((order) => order.id === orderId))) await loadDetail(orderId);
   };
   const refreshOnFocus = useRef(() => {});
   refreshOnFocus.current = () => {
@@ -670,6 +688,7 @@ export default function PaymentsScreen() {
   };
 
   const openCollectionSummary = (scope: CollectionScope) => {
+    linkedOrder.current = null;
     setQ(""); setAgingPeriod("all"); setCustomMinDays(""); setCustomMaxDays("");
     setCollectionScope(scope); setShowMobileQueue(true); setTab("collections");
     // The summary represents the entire queue, independent of a previous search.
@@ -894,6 +913,7 @@ export default function PaymentsScreen() {
                           aria-pressed={order.id === detail.id}
                           testID={`payment-select-order-${order.id}`}
                           onPress={() => {
+                            linkedOrder.current = null;
                             shouldFocusDetailRef.current = true;
                             setSelectedId(order.id);
                           }}

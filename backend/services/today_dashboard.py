@@ -11,6 +11,7 @@ from fastapi import HTTPException
 from access_profiles import PROFILE_MODULES
 from auth import accessible_floor_ids
 from services.access_grants import KITCHEN_STAGE_RESOURCES, RESOURCE_REGISTRY, grant_allows, grants_for_user
+from services.canonical_customers import canonical_customer_ids, identity_group_token
 from services.lead_scope import POST_ORDER_CATEGORIES, POST_ORDER_RULES
 
 INDIA = timezone(timedelta(hours=5, minutes=30))
@@ -256,10 +257,16 @@ async def today_dashboard(database, user, now=None):
     summary = {key: value + schedule_summary[key] for key, value in summary.items()}
     tasks.extend(scheduled_rows)
     tasks.sort(key=lambda row: (row["due_at"] is None, row["due_at"] or "", row["resource"], row["id"]))
+    preview = tasks[:TASK_LIMIT]
+    identities = await canonical_customer_ids(database, (task["customer_id"] for task in preview))
+    for task in preview:
+        identity = identities.get(task["customer_id"])
+        if identity:
+            task["customer_group"] = identity_group_token(identity)
     # Complete database counts remain independent of the bounded preview.
     return {"floor_id": floor, "floor_name": FLOOR_NAMES[floor], "generated_at": now.isoformat(),
             "full_floor_access": full, "resources": sorted(resources), "task_summary": summary,
-            "tasks": tasks[:TASK_LIMIT], "workflows": [], "payments": None,
+            "tasks": preview, "workflows": [], "payments": None,
             "truncated": truncated or schedule_truncated or len(tasks) > TASK_LIMIT, "unavailable_sections": []}
 
 

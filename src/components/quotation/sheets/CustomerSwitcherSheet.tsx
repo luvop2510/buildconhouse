@@ -4,11 +4,14 @@ import { formatDepartmentPhone } from "@/src/utils/phone";
 // item / room / discount already in the builder; only customer_id (and its
 // denormalised name snapshot) changes.
 import Feather from "@expo/vector-icons/Feather";
+import { randomUUID } from "expo-crypto";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Platform, Pressable, StyleSheet, View } from "react-native";
 import { Text, TextInput } from "@/src/components/AppText";
 
 import { BottomSheet } from "@/src/components/BottomSheet";
+import { CustomerIdentityChoice } from "@/src/components/customer/CustomerIdentityChoice";
+import type { CustomerMatch } from "@/src/components/HomeCustomerSearch";
 import { Button } from "@/src/components/ui";
 import { colors, radius, spacing, type } from "@/src/theme/tokens";
 import { color as ds } from "@/src/design/tokens";
@@ -40,6 +43,9 @@ export function CustomerSwitcherSheet() {
   const [project, setProject] = useState("");
   const [address, setAddress] = useState("");
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const [checkingIdentity, setCheckingIdentity] = useState(false);
+  const createRequest = useRef<{ details: string; key: string } | null>(null);
   const [showGroundSources, setShowGroundSources] = useState(false);
   const [groundAttempt, setGroundAttempt] = useState(0);
   const [groundResult, setGroundResult] = useState<{ generation: number; status: "loading" | "loaded" | "error"; rows: GroundSource[] } | null>(null);
@@ -68,8 +74,10 @@ export function CustomerSwitcherSheet() {
   }, [groundOpen, groundGeneration, b.activeFloorId]);
 
   const close = () => {
+    if (savingRef.current) return;
     b.setCustomerSwitcherOpen(false);
     setCreating(false); setShowGroundSources(false);
+    setCheckingIdentity(false); createRequest.current = null;
     setQ(""); setName(""); setPhone(""); setProject(""); setAddress("");
   };
 
@@ -95,16 +103,26 @@ export function CustomerSwitcherSheet() {
     if (applied) close();
   };
 
-  const save = async () => {
-    if (!name.trim() || !canCreateCustomer) return;
+  const save = async (source?: CustomerMatch) => {
+    if (!name.trim() || !canCreateCustomer || savingRef.current) return;
+    const details = JSON.stringify([staff?.id, b.activeFloorId, name.trim(), phone.trim(), address.trim()]);
+    if (createRequest.current?.details !== details) createRequest.current = { details, key: randomUUID() };
+    savingRef.current = true;
+    setCheckingIdentity(false);
     setSaving(true);
-    const id = await b.createCustomer({ name: name.trim(), phone: phone.trim(), address: address.trim() });
+    const id = await b.createCustomer({ name: name.trim(), phone: phone.trim(), address: address.trim(), requestKey: createRequest.current.key, source });
+    savingRef.current = false;
     setSaving(false);
     if (id) {
       if (project.trim()) b.setProjectName(project.trim());
       close();
     }
   };
+
+  if (b.customerSwitcherOpen && checkingIdentity) {
+    return <CustomerIdentityChoice name={name.trim()} phone={phone.trim()} autoContinueIfNoMatches onClose={() => setCheckingIdentity(false)}
+      onSelect={source => void save(source)} onSeparate={() => void save()} />;
+  }
 
   return (
     <BottomSheet
@@ -115,8 +133,9 @@ export function CustomerSwitcherSheet() {
       footer={
         creating ? (
           <View style={{ flexDirection: "row", gap: 8, justifyContent: "flex-end" }}>
-            <Button label="Cancel" variant="secondary" onPress={() => setCreating(false)} />
-            <Button label={saving ? "Saving…" : "Create & select"} onPress={save} disabled={!name.trim() || saving} testID="save-new-customer" />
+            <Button label="Cancel" variant="secondary" onPress={() => setCreating(false)} disabled={saving} />
+            <Button label={saving ? "Saving…" : "Check customer"} onPress={() => setCheckingIdentity(true)}
+              disabled={!name.trim() || saving} testID="save-new-customer" />
           </View>
         ) : undefined
       }

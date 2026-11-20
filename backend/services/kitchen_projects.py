@@ -20,6 +20,7 @@ from models_kitchen import (AdvancePayload, AttachmentDate, CadFields, Configure
                             LeadCustomer, LeadFields, LostPayload, MetadataPayload, PolicyFields, STAGES, VisitFields, AssignmentPayload)
 from services import kitchen_access as access
 from services import kitchen_workflow as workflow
+from services.canonical_customers import reuse_customer_for_floor
 from services.referrer_identity import referrer_query
 
 MAX_AGGREGATE_BYTES = 12 * 1024 * 1024
@@ -640,6 +641,9 @@ class KitchenProjectService:
             request_fields.pop("assigned_to", None)
         if body.customer_address is None:
             request_fields.pop("customer_address", None)
+        if body.identity_source_customer_id is None:
+            request_fields.pop("identity_source_customer_id", None)
+            request_fields.pop("identity_source_floor_id", None)
         digest = fingerprint(request_fields)
         previous = await self.db.kitchen_projects.find_one({"id": project_id, "floor_id": access.KITCHEN_FLOOR})
         if previous:
@@ -657,9 +661,16 @@ class KitchenProjectService:
         if body.customer is not None and not str(body.customer.address or "").strip():
             raise HTTPException(422, "Customer address is required before creating a lead")
         reference_fields = await self.referrer_fields(lead.get("referrer_id"))
-        customer = (await self.lead_customer(body.customer, project_id=project_id, creation_fingerprint=digest) if body.customer is not None else
-                    await self.db.customers.find_one({"id": body.customer_id, "floor_id": access.KITCHEN_FLOOR},
-                                                    CUSTOMER_PROJECTION))
+        if body.identity_source_customer_id:
+            linked, _ = await reuse_customer_for_floor(
+                self.db, user, body.identity_source_customer_id, body.identity_source_floor_id, access.KITCHEN_FLOOR,
+            )
+            customer = {key: value for key, value in linked.items() if key in CUSTOMER_PROJECTION and key != "_id"}
+        elif body.customer is not None:
+            customer = await self.lead_customer(body.customer, project_id=project_id, creation_fingerprint=digest)
+        else:
+            customer = await self.db.customers.find_one({"id": body.customer_id, "floor_id": access.KITCHEN_FLOOR},
+                                                        CUSTOMER_PROJECTION)
         if not customer:
             raise HTTPException(404, "Kitchen customer not found; select an existing customer")
         missing_address = not str(customer.get("address") or "").strip()

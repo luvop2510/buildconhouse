@@ -33,6 +33,12 @@ from services.analytics import cache
 from services.export import export_response
 from services.followup_engine import reconcile_followups
 from services.notifications import notify
+from services.payment_totals import (
+    aggregate_order_key as _aggregate_order_key,
+    completed_payment_totals,
+    order_pair_query as _order_pair_query,
+    recorded_collection_total,
+)
 from settings import settings
 
 logger = logging.getLogger(__name__)
@@ -60,41 +66,10 @@ MODE_LABELS = {
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-def _order_pair_query(order_keys: list[tuple[str, str | None]]) -> dict:
-    by_floor: dict[str | None, set[str]] = {}
-    for quotation_id, floor_id in order_keys:
-        by_floor.setdefault(floor_id, set()).add(quotation_id)
-    return {"$or": [{"floor_id": floor_id, "quotation_id": {"$in": sorted(ids)}}
-                    for floor_id, ids in by_floor.items()]} if by_floor else {"quotation_id": {"$in": []}}
-
-
-def _aggregate_order_key(value):
-    return (value["quotation_id"], value.get("floor_id")) if isinstance(value, dict) else value
-
-
 async def _paid_by_quotation(quotation_ids: list[str], *, floor_id: str | None = None, cash_only: bool = False,
                              order_keys: list[tuple[str, str | None]] | None = None) -> dict:
-    """Sum completed payment amounts per quotation.
-
-    A quotation context panel is anchored to one business unit.  Accepting
-    its already-authorized floor keeps an unrelated payment with a malformed
-    or reused quotation id from affecting that unit's balance.
-    """
-    if not quotation_ids:
-        return {}
-    match: dict = {"quotation_id": {"$in": quotation_ids}, "status": "completed"}
-    if cash_only:
-        match["entry_type"] = {"$ne": "godown_stock_credit"}
-    if floor_id is not None:
-        match["floor_id"] = floor_id
-    if order_keys is not None:
-        match.update(_order_pair_query(order_keys))
-    pipeline = [
-        {"$match": match},
-        {"$group": {"_id": {"quotation_id": "$quotation_id", "floor_id": "$floor_id"} if order_keys is not None else "$quotation_id", "total": {"$sum": "$amount"}}},
-    ]
-    rows = await db.payments.aggregate(pipeline).to_list(len(quotation_ids) + 5)
-    return {_aggregate_order_key(r["_id"]): float(r.get("total", 0)) for r in rows}
+    rows = await completed_payment_totals(db, quotation_ids, floor_id=floor_id, cash_only=cash_only, order_keys=order_keys)
+    return {key: float(row.get("total", 0)) for key, row in rows.items()}
 
 
 async def _mrp_for_quotation(quotation: dict) -> float:
@@ -130,15 +105,8 @@ def _payment_status(paid: float, grand: float) -> str:
 
 def _collection_total(quotation: dict) -> float:
     """Amount due in Collections, including all append-only added costs."""
-    history = quotation.get("payment_extra_history")
-    # A migration backfills the array, but retaining this fallback keeps an
-    # in-flight deployment and old exports correct.
-    extras = (
-        sum(float(entry.get("amount") or 0) for entry in history)
-        if isinstance(history, list)
-        else float(quotation.get("payment_extra_amount") or 0)
-    )
-    return round(float(quotation.get("grand_total") or 0) + extras, 2)
+    return float(recorded_collection_total(quotation, require_amount=False) or 0)
+
 
 
 async def _godown_value_by_quotation(

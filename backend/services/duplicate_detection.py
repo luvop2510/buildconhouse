@@ -2,8 +2,7 @@
 
 Confidence-tiered matching, per the CRM foundation spec:
   HIGH   — primary phone OR alternate phone matches (either direction).
-           Treated as the same customer automatically — callers should
-           reuse this customer, never create a new one, no staff prompt.
+           Requires explicit review because people may share a phone number.
   MEDIUM — email matches, OR (name + city) both match, OR (name + address)
            both match. Requires an explicit staff decision before either
            reusing or creating a new customer (ambiguous — could be a
@@ -22,6 +21,7 @@ import re
 from typing import Optional
 
 from db import db
+from services.canonical_customers import LIVE_CUSTOMER
 
 _PROJECTION = {
     "_id": 0, "id": 1, "name": 1, "company": 1, "phone": 1, "alternate_phone": 1,
@@ -62,14 +62,13 @@ async def find_customer_matches(
     anyone who could type a name, and let a HIGH-confidence phone match
     silently attach a walk-in to a customer belonging to the other business.
     """
-    floor_scope: list[dict] = [{"floor_id": {"$in": floor_ids}}] if floor_ids is not None else []
-
     def scoped(criteria: dict) -> dict:
-        return {"$and": [*floor_scope, criteria]} if floor_scope else criteria
+        floor = {"$and": [{"floor_id": {"$in": floor_ids}}, criteria]} if floor_ids is not None else criteria
+        return {**LIVE_CUSTOMER, **floor}
 
     phone_digits = _digits(phone)
     alt_digits = _digits(alternate_phone)
-    phone_candidates = [d for d in (phone_digits, alt_digits) if d]
+    phone_candidates = [d[-10:] for d in (phone_digits, alt_digits) if len(d) >= 7]
 
     high: list[dict] = []
     seen_ids: set[str] = set()

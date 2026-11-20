@@ -166,6 +166,9 @@ class CustomerBase(BaseModel):
 
 
 class CustomerCreate(CustomerBase):
+    request_key: Optional[str] = Field(default=None, min_length=1, max_length=100)
+    identity_source_customer_id: Optional[str] = Field(default=None, min_length=1, max_length=128)
+    identity_source_floor_id: Optional[str] = Field(default=None, min_length=1, max_length=128)
     client_draft_id: Optional[str] = Field(default=None, min_length=1, max_length=100)
     password: Optional[str] = Field(default=None, min_length=MIN_PASSWORD_LENGTH, max_length=72)  # for portal login
 
@@ -879,6 +882,7 @@ class Quotation(TimestampedModel):
     sent_by: Optional[str] = None
     sent_by_name: Optional[str] = None
     first_followup_due_date: Optional[str] = None
+    first_followup_interval_days: Optional[int] = None
     # Historical sales classification is independent of Place Order. Imported
     # won/lost quotations must not create purchase/payment projections.
     customer_outcome: Optional[Literal["won", "lost"]] = None
@@ -1538,6 +1542,7 @@ class FollowupCreate(BaseModel):
     reference_source: Optional[str] = Field(default=None, max_length=200)
     referrer_id: Optional[str] = None
     customer_id: Optional[str] = None
+    customer_source_floor_id: Optional[str] = None
     new_customer_name: Optional[str] = Field(default=None, min_length=1, max_length=200)
     new_customer_phone: Optional[str] = Field(default=None, min_length=1, max_length=40)
     quotation_id: Optional[str] = None
@@ -1594,6 +1599,9 @@ class FollowupContactPayload(BaseModel):
 
 
 class NotebookFollowupCreatePayload(BaseModel):
+    request_key: Optional[str] = Field(default=None, min_length=8, max_length=128)
+    customer_source_id: Optional[str] = Field(default=None, min_length=1, max_length=128)
+    customer_source_floor_id: Optional[str] = Field(default=None, min_length=1, max_length=128)
     interested_floor_ids: Optional[list[str]] = Field(default=None, min_length=1, max_length=20)
     assignments: Optional[list[FollowupAssignment]] = Field(default=None, max_length=100)
     reference_source: Optional[str] = Field(default=None, max_length=200)

@@ -4,6 +4,9 @@ import type { NotebookField, NotebookRow, NotebookView } from "@/src/components/
 export type NotebookList = { rows: NotebookRow[]; next_cursor: string | null };
 
 export type NotebookCreate = {
+  request_key?: string;
+  customer_source_id?: string;
+  customer_source_floor_id?: string;
   customer_name: string;
   customer_phone: string;
   address?: string;

@@ -644,22 +644,31 @@ test('lost customer-create response preserves corrected customer fields before c
   const fixture = builder(); fixture.render(); await fixture.settle();
   fixture.state.setHeaderField('customerName', 'Original name'); await fixture.settle();
   fixture.fireAutosave(); await fixture.settle();
-  assert.equal(fixture.requests[0].url, '/customers');
-  fixture.requests[0].reject({ detail: 'Response interrupted' }); await fixture.settle();
-  fixture.state.setHeaderField('customerName', 'Corrected name');
-  fixture.state.setHeaderField('phone', '9000000001'); await fixture.settle();
-  fixture.fireAutosave(); await fixture.settle();
-  assert.equal(fixture.requests[1].url, '/customers');
-  assert.equal(fixture.requests[1].payload.client_draft_id, fixture.requests[0].payload.client_draft_id);
-  fixture.requests[1].resolve({ id: 'created-customer', name: 'Original name', phone: '' }); await fixture.settle();
-  const correction = fixture.requests[2];
+  const lookup = fixture.requests[0];
+  assert.match(lookup.url, /^\/customer-search\/candidates\?/);
+  lookup.resolve([]); await fixture.settle();
+  const original = fixture.requests[1];
+  assert.equal(original.url, '/customers');
+  original.reject({ detail: 'Response interrupted' }); await fixture.settle();
+  fixture.unmount();
+
+  const restored = builder({ drafts: fixture.drafts }); restored.render(); await restored.settle();
+  restored.state.setHeaderField('customerName', 'Corrected name');
+  restored.state.setHeaderField('phone', '9000000001'); await restored.settle();
+  restored.fireAutosave(); await restored.settle();
+  const replay = restored.requests[0];
+  assert.equal(replay.url, '/customers', 'Retry the persisted intent without finding the very record it just created');
+  assert.equal(replay.payload.client_draft_id, original.payload.client_draft_id);
+  assert.equal(replay.payload.name, original.payload.name);
+  replay.resolve({ id: 'created-customer', name: 'Original name', phone: '' }); await restored.settle();
+  const correction = restored.requests[1];
   assert.equal(correction.method, 'PATCH');
   assert.equal(correction.url, '/customers/created-customer');
   assert.equal(correction.payload.name, 'Corrected name');
   assert.equal(correction.payload.phone, '9000000001');
-  correction.resolve({}); await fixture.settle();
-  assert.equal(fixture.requests[3].url, '/quotations');
-  assert.equal(fixture.requests[3].payload.customer_id, 'created-customer');
+  correction.resolve({}); await restored.settle();
+  assert.equal(restored.requests[2].url, '/quotations');
+  assert.equal(restored.requests[2].payload.customer_id, 'created-customer');
 });
 
 for (const docType of ['tiles_selection', 'tiles_quotation']) test(`${docType}: explicit customer choice fills saved walk-in contact/address and replaces stale identity`, async () => {
@@ -696,6 +705,9 @@ test('an obsolete name field cannot release a replacement field’s autosave gat
   assert.equal(fixture.requests.filter(r => r.method === 'POST').length, 0);
   fixture.state.setCustomerLookupActive(false, newOwner); await fixture.settle();
   fixture.fireAutosave(); await fixture.settle();
+  const lookup = fixture.requests[0];
+  assert.match(lookup.url, /^\/customer-search\/candidates\?/);
+  lookup.resolve([]); await fixture.settle();
   assert.equal(fixture.requests.filter(r => r.method === 'POST').length, 1);
 });
 

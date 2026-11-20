@@ -32,6 +32,7 @@ from models import Followup, FollowupAssignment, UserPublic, now_iso
 from models_walkins import WalkIn, WalkInCreate, WalkInUpdate, ReassignWalkInBody, WALKIN_OPEN_STATUSES
 from services.access_grants import grants_for_user, grant_allows
 from services.activity_log import log_event, timeline_for
+from services.canonical_customers import LIVE_CUSTOMER, reuse_customer_for_floor
 from services import lead_scope, walkin_interests
 from services.followup_engine import parse_iso, reconcile_followups
 from services.multi_filters import predicate, scoped_query, values
@@ -185,10 +186,7 @@ async def check_duplicate(
     address: Optional[str] = None,
     user: UserPublic = Depends(get_current_user),
 ):
-    """Confidence-tiered duplicate detection (see services/duplicate_detection.py):
-    high (phone/alt-phone) auto-links, medium (email / name+city / name+address)
-    requires an explicit staff decision, low (name only) is a soft suggestion
-    that never blocks creation."""
+    """Return scoped phone, address and name evidence for staff review."""
     from services.duplicate_detection import find_customer_matches
 
     # Scoped to the caller's business unit. Unscoped, this endpoint returned
@@ -257,44 +255,38 @@ async def create_walkin(body: WalkInCreate, user: UserPublic = Depends(require_m
         salesperson_doc = await _salesperson_for_floor(salesperson_id, body.floor_id)
 
     if body.use_existing_customer_id:
-        # Floor-checked against `body.floor_id`, which by this point has
-        # itself been verified above to be a floor the caller may access —
-        # not merely "exists": an id from the other business unit would
-        # otherwise attach this walk-in — and every quotation/order that
-        # follows — to a customer record that unit owns.
-        customer = await db.customers.find_one(
-            {"id": body.use_existing_customer_id, "floor_id": body.floor_id}, {"_id": 0},
-        )
-        if not customer:
-            raise HTTPException(status_code=404, detail="Selected existing customer not found")
+        source_floor = body.use_existing_customer_floor_id or body.floor_id
+        if source_floor == body.floor_id:
+            customer = await db.customers.find_one(
+                {"id": body.use_existing_customer_id, "floor_id": body.floor_id, **LIVE_CUSTOMER}, {"_id": 0},
+            )
+            if not customer:
+                raise HTTPException(404, "Selected existing customer not found")
+        else:
+            customer, _ = await reuse_customer_for_floor(db, user, body.use_existing_customer_id, source_floor, body.floor_id)
     else:
         from services.duplicate_detection import find_customer_matches
 
-        matches = await find_customer_matches(
-            phone=body.customer_phone, alternate_phone=body.alternate_phone,
-            email=body.email, name=body.customer_name,
-            city=body.city, address=body.address,
-            floor_ids=[body.floor_id],
-        )
-        if matches["high"]:
-            customer = matches["high"][0]
-        elif matches["medium"] and not body.force_new_customer:
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "message": "A similar customer may already exist — resolve before creating a new one.",
-                    "matches": matches,
-                },
+        if not body.force_new_customer:
+            matches = await find_customer_matches(
+                phone=body.customer_phone, alternate_phone=body.alternate_phone,
+                email=body.email, name=body.customer_name, city=body.city, address=body.address,
+                floor_ids=[body.floor_id],
             )
-        else:
-            try:
-                customer = await find_or_create_customer(
-                    name=body.customer_name, phone=body.customer_phone, alternate_phone=body.alternate_phone,
-                    email=body.email, floor_id=body.floor_id, user=user,
-                    address=body.address, city=body.city, state=body.state, pincode=body.pincode,
-                )
-            except DuplicateKeyError:
-                raise HTTPException(status_code=409, detail="That email is already used by another customer.")
+            if matches["high"] or matches["medium"]:
+                raise HTTPException(409, {
+                    "message": "Review possible existing customers before saving this walk-in.",
+                    "matches": matches,
+                })
+        try:
+            customer = await find_or_create_customer(
+                name=body.customer_name, phone=body.customer_phone, alternate_phone=body.alternate_phone,
+                email=body.email, floor_id=body.floor_id, user=user, address=body.address,
+                city=body.city, state=body.state, pincode=body.pincode,
+                request_key=body.customer_request_key, create_distinct=True,
+            )
+        except DuplicateKeyError:
+            raise HTTPException(409, "That email is already used by another customer.")
     walkin = WalkIn(
         number=await _next_walkin_number(),
         customer_id=customer["id"], customer_name=customer.get("name"),
@@ -315,7 +307,8 @@ async def create_walkin(body: WalkInCreate, user: UserPublic = Depends(require_m
     await db.walkins.insert_one(walkin.model_dump())
     profile_update = dict(referrer)
     address = (body.address or "").strip()
-    address_changed = bool(address and address != customer.get("address"))
+    same_department = not body.use_existing_customer_floor_id or body.use_existing_customer_floor_id == body.floor_id
+    address_changed = bool(address and address != customer.get("address") and (same_department or not customer.get("address")))
     if address_changed:
         profile_update.update(address=address, updated_at=now_iso())
     if profile_update:

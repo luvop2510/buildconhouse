@@ -3,7 +3,7 @@ from services.followup_engine import reconcile_followups_admitted
 import asyncio
 import logging
 from math import isfinite
-from typing import Literal
+from typing import Annotated, Literal
 from datetime import date, datetime, timezone
 from urllib.parse import quote
 from uuid import UUID, NAMESPACE_URL, uuid4, uuid5
@@ -44,7 +44,7 @@ from services.domain_outbox import (
     dispatch_event,
     enqueue_after_primary_commit,
 )
-from services.followup_engine import reconcile_followups
+from services.followup_engine import quotation_send_schedule, reconcile_followups
 from services.pricing import _resolve_line_rows, net_amount_list, normalize_tile_line_item, per_line_net_amounts, saved_tile_unit_price, stamp_net_amounts
 from services.pagination import normalize_pagination
 from services.multi_filters import filter_values
@@ -984,9 +984,14 @@ def _stamped_items_for_update(
     )
 
 
+FollowupDays = Annotated[int, Field(strict=True, gt=0)]
+
+
 class MarkQuotationSentInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     expected_updated_at: str | None = Field(default=None, max_length=100)
+    followup_days: FollowupDays | None = None
+    # Compatibility for browser sessions opened before the interval picker shipped.
     followup_date: date | None = None
 
 
@@ -1022,15 +1027,15 @@ async def _record_quotation_sent(
         if not customer:
             raise HTTPException(422, "Select a saved customer before marking this quotation as sent.")
         try:
-            due_date = await schedule_sent_quotation_followup(
-                doc, sent_at=sent_at, actor=user, followup_date=body.followup_date, session=session,
-            )
+            due_date, interval_days = quotation_send_schedule(sent_at, body.followup_days, body.followup_date)
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
+        await schedule_sent_quotation_followup(doc, sent_at=sent_at, actor=user, due_date=due_date, session=session)
         update = {
             "status": "sent", "sent_at": sent_at.isoformat(),
             "sent_by": user.id, "sent_by_name": user.full_name,
-            "first_followup_due_date": due_date,
+            "first_followup_due_date": due_date.isoformat(),
+            "first_followup_interval_days": interval_days,
             "updated_at": now_iso(),
         }
         await db.quotations.update_one({"id": doc["id"], "floor_id": doc["floor_id"]},
@@ -1043,7 +1048,10 @@ async def _record_quotation_sent(
         await log_event(
             event_type="quotation.status_changed", entity_type="quotation", entity_id=quotation_id,
             actor=user, floor_id=doc["floor_id"], customer_id=doc["customer_id"], quotation_id=quotation_id,
-            summary=f"{doc['number']} marked as sent", payload={"to": "sent", "first_followup_due_date": doc["first_followup_due_date"]},
+            summary=f"{doc['number']} marked as sent", payload={
+                "to": "sent", "first_followup_due_date": doc["first_followup_due_date"],
+                "first_followup_interval_days": doc["first_followup_interval_days"],
+            },
         )
     return Quotation(**doc)
 
@@ -2250,6 +2258,16 @@ class QuotationWhatsAppSendInput(BaseModel):
     expected_updated_at: str = Field(max_length=64)
     idempotency_key: str = Field(min_length=16, max_length=100)
     include_dimensions: bool = False
+    followup_days: FollowupDays | None = None
+
+
+def _needs_quotation_send_schedule(doc: dict) -> bool:
+    return (
+        doc.get("status", "draft") in {"draft", "pending_approval"}
+        and doc.get("doc_type") != "tiles_selection"
+        and not doc.get("customer_outcome")
+        and not doc.get("sent_at")
+    )
 
 
 async def _quotation_recipient(doc: dict):
@@ -2276,7 +2294,8 @@ async def quotation_whatsapp_draft(quotation_id: str, include_dimensions: bool =
     return {"id": doc["id"], "floor_id": doc.get("floor_id"), "phone": phone,
             "customer_name": customer.get("name") or doc.get("customer_name") or "Customer",
             "filename": filename, "expected_updated_at": doc.get("updated_at", ""),
-            "include_dimensions": include_dimensions, "direct_send_configured": configured()}
+            "include_dimensions": include_dimensions, "direct_send_configured": configured(),
+            "needs_followup_schedule": _needs_quotation_send_schedule(doc)}
 
 
 @router.post("/{quotation_id}/whatsapp-send")
@@ -2290,15 +2309,19 @@ async def send_quotation_whatsapp(quotation_id: str, body: QuotationWhatsAppSend
         raise HTTPException(409, "This quotation changed. Close sharing and prepare the PDF again.")
     if not phone:
         raise HTTPException(422, "Add a valid WhatsApp phone number to the customer's contact details first")
+    needs_schedule = _needs_quotation_send_schedule(doc)
+    if needs_schedule:
+        try:
+            quotation_send_schedule(datetime.now(timezone.utc), body.followup_days)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
     data, filename = await _build_quotation_file(doc, customer, body.include_dimensions)
     receipt = await send_document(pdf_bytes=data, filename=filename, recipient_phone=phone,
                                   message=body.message, idempotency_key=body.idempotency_key,
                                   floor_id=doc["floor_id"], source_id=doc["id"], actor_id=user.id)
     if (
         receipt.get("status") in {"accepted", "sent", "delivered", "read"}
-        and doc.get("status", "draft") in {"draft", "pending_approval"}
-        and doc.get("doc_type") != "tiles_selection"
-        and not doc.get("customer_outcome")
+        and needs_schedule
     ):
         # Delivery authorizes export only. Enforce update separately and keep
         # a provider-accepted receipt visible if the status write cannot finish.
@@ -2310,7 +2333,9 @@ async def send_quotation_whatsapp(quotation_id: str, body: QuotationWhatsAppSend
             )
             submitted_at = receipt.get("submitted_at") or receipt.get("updated_at")
             await _record_quotation_sent(
-                quotation_id, MarkQuotationSentInput(expected_updated_at=body.expected_updated_at), user,
+                quotation_id, MarkQuotationSentInput(
+                    expected_updated_at=body.expected_updated_at, followup_days=body.followup_days,
+                ), user,
                 sent_at=datetime.fromisoformat(submitted_at) if submitted_at else None,
             )
         except Exception as exc:

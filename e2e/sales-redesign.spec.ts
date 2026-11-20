@@ -32,7 +32,7 @@ test('sales layout directory at compact tablet and desktop widths', async ({ pag
   else if(name==='reference-profile')await expect(page.getByTestId('referrer-quote-row-order-a')).toBeVisible();
   else if(name==='people-profile')await expect(page.getByTestId('people-brand-company-a')).toBeVisible();
   else if(name==='order')await expect(page.getByText('Talis basin mixer',{exact:true})).toBeVisible();
-  else if(name==='data-quality')await expect(page.getByTestId('analytics-duplicate-duplicate-customers')).toBeVisible();
+  else if(name==='data-quality')await expect(page.getByTestId('customer-identity-review-duplicate-customers')).toBeVisible();
   else if(['companies','products','customers','architects'].includes(name))await expect(page.getByTestId(`analytics-entity-${({companies:'company-a',products:'product-a',customers:'customer-a',architects:'architect-a'} as Record<string,string>)[name]}`)).toBeVisible();
   if(!process.env.SALES_CAPTURE_ONLY)await analyticsFitsViewport(page);
   await page.screenshot({path:resolve(directory,`${name}.png`),fullPage:true});

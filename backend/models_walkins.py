@@ -106,6 +106,8 @@ class WalkInCreate(BaseModel):
     # resolves a medium/low-confidence match prompt — see
     # services/duplicate_detection.py) ----
     use_existing_customer_id: Optional[str] = None
+    use_existing_customer_floor_id: Optional[str] = None
+    customer_request_key: Optional[str] = Field(default=None, min_length=1, max_length=100)
     force_new_customer: bool = False
 
 

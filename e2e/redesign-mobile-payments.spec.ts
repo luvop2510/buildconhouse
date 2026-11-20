@@ -38,6 +38,13 @@ async function openSummary(page: Page) {
   if ((await summary.getAttribute('aria-expanded')) === 'false') await summary.click();
 }
 
+test('a direct payment link opens the exact order even outside the outstanding queue', async ({ page }) => {
+  await fixture(page);
+  await page.goto('/payments?id=paid');
+  await expect(page.getByTestId('payments-order-detail')).toContainText('Q-PAID');
+  await expect(page.getByTestId('payments-order-detail')).not.toContainText('Q-DUE');
+});
+
 test('critical payment page heading keeps the same safe gutter as the collection content', async ({ page }) => {
   await fixture(page);
   await page.goto('/payments');

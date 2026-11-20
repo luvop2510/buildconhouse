@@ -37,7 +37,8 @@ type TaskGroup = { key: string; customerName?: string; tasks: TodayTask[] };
 function groupTasks(tasks: TodayTask[]): TaskGroup[] {
   const groups = new Map<string, TaskGroup>();
   for (const task of tasks) {
-    const key = task.customer_id ? `customer:${task.customer_id}` : `${task.resource}:${task.id}`;
+    const identity = task.customer_group || task.customer_id;
+    const key = identity ? `customer:${identity}` : `${task.resource}:${task.id}`;
     const group = groups.get(key) ?? { key, tasks: [] };
     if (task.customer_id && !group.customerName) group.customerName = task.customer_name || undefined;
     group.tasks.push(task);

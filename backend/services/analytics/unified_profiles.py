@@ -8,12 +8,17 @@ from fastapi import HTTPException
 from services.analytics.unified import (KINDS, dashboard, money, page_rows, period_for,
                                        ranking, record_public, scope_for, select_period, totals)
 from services.referrer_identity import referrer_query
+from services.canonical_customers import canonical_customer_ids, linked_customer_scope, linked_customer_ids
 
 
 async def identity_for(db, q, floors, kind, identity, rows, *, contacts=False):
     scope = scope_for(q, floors)
     collection = {"companies": "brands", "products": "products", "architects": "referrers", "customers": "customers"}[kind]
     match = {"id": identity, "floor_id": scope["floor_id"], "is_deleted": {"$ne": True}}
+    if kind == "customers":
+        identity, aliases = await linked_customer_scope(db, identity)
+        match["id"] = {"$in": aliases}
+        match["deleted_at"] = {"$in": [None, ""]}
     if kind == "architects":
         match = referrer_query({"floor_id": scope["floor_id"]}, {"id": identity})
     fields = {"_id": 0, **{key: 1 for key in ("id", "name", "floor_id", "status", "active", "sku", "brand_id", "category_id", "size", "finish", "series", "company", "city", "code")}}
@@ -92,16 +97,18 @@ async def profile(db, rows, q, floors, kind, identity, *, contacts=False, table_
         tables["products"] = await directory(db, rows, q, floors, "products", page=table_page, page_size=table_page_size)
     if kind in {"companies", "architects", "customers"}:
         linked_customers = {row["id"]: row for row in ranking(selected, "customers")}
-        for source in [*history["quotations"], *history["projects"]]:
-            if source.get("customer_id"):
-                linked_customers.setdefault(source["customer_id"], {"id": source["customer_id"], "name": source.get("customer_name") or "Recorded customer", "sales": 0, "sales_rnb": 0, "orders": 0})
+        people = [{"id": source["customer_id"], "name": source.get("customer_name")}
+                  for source in [*history["quotations"], *history["projects"]] if source.get("customer_id")]
         if kind == "architects":
             from services.analytics.unified import MAX_RECORDS, _bounded
             reference_scope = scope_for(q, floors)
             reference_people = await _bounded(db.customers.find({"referrer_id": identity, "floor_id": reference_scope["floor_id"], "is_deleted": {"$ne": True}}, {"_id": 0, "id": 1, "name": 1}), "Linked customers", MAX_RECORDS)
-            for customer in reference_people:
-                if customer.get("id"):
-                    linked_customers.setdefault(customer["id"], {"id": customer["id"], "name": customer.get("name") or "Recorded customer", "sales": 0, "sales_rnb": 0, "orders": 0})
+            people.extend(customer for customer in reference_people if customer.get("id"))
+        ids = await canonical_customer_ids(db, (customer["id"] for customer in people))
+        for customer in people:
+            identity = ids[customer["id"]]
+            linked_customers.setdefault(identity, {"id": identity, "name": customer.get("name") or "Recorded customer",
+                                                    "sales": 0, "sales_rnb": 0, "orders": 0})
         tables["customers"] = paginate(list(linked_customers.values()))
     if kind in {"products", "companies"}:
         tables["payments"] = paginate([])
@@ -141,13 +148,13 @@ async def directory(db, rows, q, floors, kind, *, page=1, page_size=25):
     elif kind == "companies" and q.company_id:
         match["id"] = q.company_id
     elif kind == "customers" and q.customer_id:
-        match["id"] = q.customer_id
+        match["id"] = {"$in": await linked_customer_ids(db, q.customer_id)}
     elif kind == "architects" and q.architect_id:
         match["id"] = q.architect_id
     collection = {"companies": "brands", "products": "products", "architects": "referrers", "customers": "customers"}[kind]
     selected_performance = ranking(select_period(rows, q, period_for(q)), kind)
     related_filter = any((q.customer_id and kind != "customers", q.architect_id and kind != "architects", q.product_id and kind != "products", q.company_id and kind not in {"companies", "products"}, q.dimension in {"new", "repeat"}))
-    if related_filter:
+    if related_filter and kind != "customers":
         match = {"$and": [match, {"id": {"$in": [row["id"] for row in selected_performance]}}]}
     if q.search:
         needle = {"$regex": re.escape(q.search), "$options": "i"}
@@ -155,16 +162,25 @@ async def directory(db, rows, q, floors, kind, *, page=1, page_size=25):
     docs = await _bounded(db[collection].find(match, {"_id": 0, "id": 1, "name": 1, "floor_id": 1, "sku": 1, "brand_id": 1, "category_id": 1, "size": 1, "finish": 1, "series": 1}), "Entity directory", MAX_RECORDS)
     performance = {row["id"]: row for row in selected_performance}
     items = []
-    visible_ids = set()
-    for doc in docs:
+    visible_ids = {}
+    identities = await canonical_customer_ids(db, (doc.get("id") for doc in docs)) if kind == "customers" else {}
+    for doc in sorted(docs, key=lambda row: (identities.get(row.get("id"), row.get("id")) != row.get("id"), row.get("id") or "")):
         identity = doc.get("id")
         if not identity:
             continue
-        visible_ids.add(identity)
+        identity = identities.get(identity, identity)
+        if related_filter and identity not in performance:
+            continue
+        if identity in visible_ids:
+            entry = visible_ids[identity]
+            entry["floor_ids"] = sorted({*entry["floor_ids"], doc["floor_id"]})
+            continue
         base = {"id": identity, "name": doc.get("name") or "Recorded identity", "sales": 0, "sales_rnb": 0, "orders": 0, "customers": 0,
                 "average_order_value": None, "average_order_value_rnb": None, "floor_ids": [doc["floor_id"]] if doc.get("floor_id") else [],
                 "quantity": 0 if kind == "products" else None, "unit": None, "quantities": [], "last_order_date": None}
-        items.append({**base, **{key: value for key, value in doc.items() if key != "floor_id"}, **performance.get(identity, {})})
+        entry = {**base, **{key: value for key, value in doc.items() if key not in ("id", "floor_id")}, **performance.get(identity, {})}
+        visible_ids[identity] = entry
+        items.append(entry)
     for identity, row in performance.items():
         if identity in visible_ids:
             continue
@@ -186,7 +202,9 @@ async def profile_history(db, q, floors):
     selected_floors = scope["floor_id"]["$in"]
     period = period_for(q)
     bounds = {key: value for key, value in (("$gte", period.start), ("$lt", period.end)) if value}
-    shared = {key: value for key, value in (("customer_id", q.customer_id), ("referrer_id", q.architect_id)) if value}
+    shared = {"referrer_id": q.architect_id} if q.architect_id else {}
+    if q.customer_id:
+        shared["customer_id"] = {"$in": await linked_customer_ids(db, q.customer_id)}
     product_ids = None
     if q.company_id:
         products = await _bounded(db.products.find({"floor_id": scope["floor_id"], "brand_id": q.company_id}, {"_id": 0, "id": 1}), "Company products", MAX_RECORDS)

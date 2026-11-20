@@ -5,10 +5,10 @@ reminder 4 days after a quotation/selection is created; First Floor
 docs/superpowers/specs/2026-07-27-followups-revamp-design.md."""
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from services.followup_engine import (
-    quotation_followup_delay_days, quotation_followup_due_at,
+    quotation_followup_delay_days, quotation_followup_due_at, quotation_send_schedule,
 )
 
 
@@ -44,3 +44,10 @@ def test_first_floor_due_at_seven_days():
     created_at = datetime.now(timezone.utc) - timedelta(days=7)
     due = quotation_followup_due_at(created_at, "first-floor")
     assert due == created_at + timedelta(days=7)
+
+
+def test_send_schedule_uses_india_calendar_day_across_utc_midnight_and_month_end():
+    sent_at = datetime(2026, 11, 29, 19, 30, tzinfo=timezone.utc)
+    assert quotation_send_schedule(sent_at, 3) == (date(2026, 12, 3), 3)
+    assert quotation_send_schedule(sent_at, None) == (date(2026, 12, 7), 7)
+    assert quotation_send_schedule(sent_at, None, date(2026, 12, 11)) == (date(2026, 12, 11), 11)

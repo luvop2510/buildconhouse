@@ -18,7 +18,9 @@ def install(monkeypatch):
     updates = []
 
     async def find_customer(query, *_args):
-        return dict(customer) if all(customer.get(key) == value for key, value in query.items()) else None
+        assert query.get("is_deleted") == {"$ne": True}
+        assert query.get("deleted_at") == {"$in": [None, ""]}
+        return dict(customer) if all(customer.get(key) == query[key] for key in ("id", "floor_id")) else None
 
     async def update_customer(query, patch):
         assert query == {"id": "person", "floor_id": "ground-floor"}
@@ -51,24 +53,32 @@ def body(**changes):
                            "salesperson_id": "worker", "address": "  12 New Walk-in Road  ", **changes})
 
 
-@pytest.mark.parametrize("explicit", [True, False])
-def test_repeat_walkin_preserves_entered_address_for_exact_customer_and_audits_change(monkeypatch, explicit):
+def test_repeat_walkin_preserves_entered_address_for_explicit_customer_and_audits_change(monkeypatch):
     customer, updates, db, matches, log = install(monkeypatch)
     original = dict(customer)
-    result = asyncio.run(walkin_routes.create_walkin(body(use_existing_customer_id="person" if explicit else None), user()))
+    result = asyncio.run(walkin_routes.create_walkin(body(use_existing_customer_id="person"), user()))
     assert result.customer_id == "person"
     assert customer["address"] == "12 New Walk-in Road"
     assert len(updates) == 1
     assert set(updates[0]) == {"address", "updated_at"}
     assert all(customer[key] == original[key] for key in ("name", "phone", "email", "alternate_phone", "floor_id"))
     assert db.walkins.insert_one.await_count == 1
-    if explicit:
-        matches.assert_not_awaited()
-    else:
-        assert matches.call_args.kwargs["floor_ids"] == ["ground-floor"]
+    matches.assert_not_awaited()
     audit = next(call.kwargs for call in log.await_args_list if call.kwargs["event_type"] == "customer.updated")
     assert audit["floor_id"] == "ground-floor"
     assert audit["payload"] == {"before": {"address": "Old address"}, "after": {"address": "12 New Walk-in Road"}, "walkin_id": result.id}
+
+
+def test_phone_only_match_requires_review_before_changing_another_customer(monkeypatch):
+    customer, updates, db, matches, _log = install(monkeypatch)
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(walkin_routes.create_walkin(body(customer_name="Different visitor"), user()))
+    assert error.value.status_code == 409
+    assert error.value.detail["matches"]["high"][0]["id"] == "person"
+    assert matches.call_args.kwargs["floor_ids"] == ["ground-floor"]
+    assert customer["address"] == "Old address"
+    assert not updates
+    db.walkins.insert_one.assert_not_awaited()
 
 
 @pytest.mark.parametrize("address", [None, "", "   ", "Old address"])

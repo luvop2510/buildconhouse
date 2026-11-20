@@ -4,7 +4,7 @@ import { mockSession } from './audit-fixtures';
 const draft = {
   id: 'wa-quotation', floor_id: 'first-floor', phone: '919909906652', customer_name: 'Mira Shah',
   filename: 'Mira Shah.pdf', expected_updated_at: '2026-10-01T10:00:00Z',
-  include_dimensions: false, direct_send_configured: true,
+  include_dimensions: false, direct_send_configured: true, needs_followup_schedule: true,
 };
 
 async function installFileSharing(page: import('@playwright/test').Page) {
@@ -46,6 +46,7 @@ test('quotation sends PDF directly with current contact and editable message wit
     expect(body.message).toBe('Hey Mira, please review Basin & Shower #2.');
     expect(body.expected_updated_at).toBe(draft.expected_updated_at);
     expect(body.idempotency_key).toMatch(/^quotation_/);
+    expect(body.followup_days).toBe(6);
     expect(body).not.toHaveProperty('url');
     return route.fulfill({ json: { status: 'accepted' } });
   });
@@ -54,9 +55,10 @@ test('quotation sends PDF directly with current contact and editable message wit
   await page.getByTestId('quotation-whatsapp-draft').click();
   await expect(page.getByTestId('quotation-whatsapp-sheet')).toBeVisible();
   await expect(page.getByTestId('quotation-whatsapp-message')).toHaveValue('Hey Mira Shah, here is your quotation.');
-  await expect(page.getByText('Mira Shah · +919909906652')).toBeVisible();
+  await expect(page.getByText('Mira Shah · +91 9909906652')).toBeVisible();
   await expect(page.getByRole('button', { name: /link|draft/i })).toHaveCount(0);
   await page.getByTestId('quotation-whatsapp-message').fill('Hey Mira, please review Basin & Shower #2.');
+  await page.getByTestId('quotation-followup-6').click();
   await page.getByTestId('send-quotation-pdf-whatsapp').click();
   await expect(page.getByText('PDF submitted to WhatsApp')).toBeVisible();
   await expect(page.getByTestId('send-quotation-pdf-whatsapp')).toBeDisabled();

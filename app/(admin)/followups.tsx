@@ -1,3 +1,5 @@
+import { CustomerIdentityChoice } from "@/src/components/customer/CustomerIdentityChoice";
+import type { CustomerMatch } from "@/src/components/HomeCustomerSearch";
 import { formatDepartmentPhone } from "@/src/utils/phone";
 import { referrerLabel } from "@/src/utils/referrer";
 // ═══════════════════════════════════════════════════════════════════════════
@@ -64,6 +66,7 @@ type Followup = {
   rule_type: string;
   category: string;
   customer_id: string;
+  customer_group?: string;
   customer_name: string;
   customer_phone?: string | null;
   customer_tier: "retail" | "trade" | "vip";
@@ -414,7 +417,7 @@ function FollowupsWorkspace() {
     const requestVersion = ++listRequestVersion.current;
     const mutation = mutationVersion.current;
     try {
-      const params = new URLSearchParams({ page: String(nextPage), page_size: String(FOLLOWUP_PAGE_SIZE), view: followupView });
+      const params = new URLSearchParams({ page: String(nextPage), page_size: String(FOLLOWUP_PAGE_SIZE), view: followupView, group_by_customer: "true" });
       if (searchQuery) params.set("q", searchQuery);
       if (priorityFilter !== "all") params.set("priority", priorityFilter);
       if (categoryFilter !== "all") params.set("category", categoryFilter);
@@ -818,12 +821,28 @@ function FollowupsWorkspace() {
   }, [rawItems, q, kpiFilter, followupView, priorityFilter, categoryFilter, workspace, tierFilter, ownerFilter, staff]);
 
   const sections = useMemo(() => {
-    const map: Record<string, Followup[]> = {};
-    for (const f of filtered) (map[f.bucket] ||= []).push(f);
-    return SECTION_ORDER.filter((b) => map[b]?.length).map((b) => ({ bucket: b, data: map[b] }));
+    const groups = new Map<string, Followup[]>();
+    for (const bucket of SECTION_ORDER) {
+      for (const followup of filtered) {
+        if (followup.bucket !== bucket) continue;
+        const identity = followup.customer_group || followup.customer_id;
+        const id = identity ? `customer:${identity}` : `followup:${followup.id}`;
+        const group = groups.get(id);
+        if (group) group.push(followup);
+        else groups.set(id, [followup]);
+      }
+    }
+    const buckets = new Map<Bucket, { id: string; tasks: Followup[] }[]>();
+    for (const [id, tasks] of groups) {
+      const bucket = tasks[0].bucket;
+      const items = buckets.get(bucket) || [];
+      items.push({ id, tasks });
+      buckets.set(bucket, items);
+    }
+    return [...buckets].map(([bucket, data]) => ({ bucket, data }));
   }, [filtered]);
   const visibleSections = useMemo(
-    () => sections.map((section) => ({ ...section, itemCount: section.data.length, data: followupView === "active" && collapsed.has(section.bucket) ? [] : section.data })),
+    () => sections.map((section) => ({ ...section, itemCount: section.data.reduce((sum, customer) => sum + customer.tasks.length, 0), data: followupView === "active" && collapsed.has(section.bucket) ? [] : section.data })),
     [collapsed, followupView, sections],
   );
 
@@ -1237,7 +1256,31 @@ function FollowupsWorkspace() {
       renderSectionFooter={({ section }) =>
         section.bucket === visibleSections[visibleSections.length - 1]?.bucket ? paginationFooter : null
       }
-      renderItem={({ item: f }) => <View pointerEvents={pendingPatches.has(f.id) ? "none" : "auto"} accessibilityState={{ busy: pendingPatches.has(f.id) }} style={{ paddingHorizontal: horizontalPadding, marginBottom: spacing.sm }}><MemoFollowupCard f={f} floorNames={floors} active={f.id === selectedId} assignees={assignees} rank={isSanitary ? undefined : rankMap.get(f.id)} checked={selectedIds.has(f.id)} onToggleSelect={toggleSelect} onPress={selectCard} onCall={contact} onWhatsApp={contact} onEmail={contact} onComplete={completeFollowup} onSnooze={snoozeFollowup} onPostpone={canUpdateFollowups ? openPostpone : undefined} onRecordOutcome={canUpdateFollowups ? openRecordOutcome : undefined} onAssign={assignFollowup} onMarkLost={(item) => { setLossActionFor(item); openRecordOutcome(item); }} onDismiss={dismissFollowup} canDelete={canDeleteFollowups && !f.postponement_history?.length && !f.call_history?.length} onDelete={setDeleteTarget} onOpenDoc={openRelatedDocument} onCreateSelection={canCreateTileSelection ? createSelection : undefined} /></View>}
+      renderItem={({ item: group }) => {
+        const grouped = group.tasks.length > 1;
+        return <View style={{ paddingHorizontal: horizontalPadding, marginBottom: spacing.sm }}>
+          {grouped ? <View style={{ padding: spacing.sm, gap: spacing.xs }}>
+            <Pressable accessibilityRole="link" onPress={() => {
+              const source = group.tasks[0];
+              router.push(`/(admin)/customer-profile?kind=followup&id=${encodeURIComponent(source.id)}&floorId=${encodeURIComponent(source.floor_id || selectedFloorId || "")}` as never);
+            }}>
+              <Text style={type.titleSm}>{group.tasks[0].customer_name}</Text>
+            </Pressable>
+            <Text style={type.caption}>{group.tasks.length} follow-ups</Text>
+          </View> : null}
+          {group.tasks.map(f => <View key={f.id} pointerEvents={pendingPatches.has(f.id) ? "none" : "auto"}
+            accessibilityState={{ busy: pendingPatches.has(f.id) }} style={grouped ? { marginLeft: spacing.sm, marginBottom: spacing.sm } : undefined}>
+            <MemoFollowupCard f={f} customerGrouped={grouped} floorNames={floors} active={f.id === selectedId}
+              assignees={assignees} rank={isSanitary ? undefined : rankMap.get(f.id)} checked={selectedIds.has(f.id)}
+              onToggleSelect={toggleSelect} onPress={selectCard} onCall={contact} onWhatsApp={contact} onEmail={contact}
+              onComplete={completeFollowup} onSnooze={snoozeFollowup} onPostpone={canUpdateFollowups ? openPostpone : undefined}
+              onRecordOutcome={canUpdateFollowups ? openRecordOutcome : undefined} onAssign={assignFollowup}
+              onMarkLost={(item) => { setLossActionFor(item); openRecordOutcome(item); }} onDismiss={dismissFollowup}
+              canDelete={canDeleteFollowups && !f.postponement_history?.length && !f.call_history?.length}
+              onDelete={setDeleteTarget} onOpenDoc={openRelatedDocument} onCreateSelection={canCreateTileSelection ? createSelection : undefined} />
+          </View>)}
+        </View>;
+      }}
     />
     );
   };
@@ -1632,10 +1675,10 @@ function IconMenuButton({ icon, tone = "surface", accessibilityLabel, items, tes
 // Long-press = quick Assign. Left-edge color bar = instant priority scan.
 // ─────────────────────────────────────────────────────────────────────────────
 function FollowupCard({
-  f, active, assignees, rank, checked, floorNames, onToggleSelect,
+  f, customerGrouped, active, assignees, rank, checked, floorNames, onToggleSelect,
   onPress, onCall, onWhatsApp, onEmail, onComplete, onSnooze, onPostpone, onRecordOutcome, onAssign, onMarkLost, onDismiss, canDelete, onDelete, onOpenDoc, onCreateSelection,
 }: {
-  floorNames: { id: string; name: string }[]; f: Followup; active: boolean; assignees: Assignee[]; rank?: number; checked: boolean; onToggleSelect: (id: string) => void;
+  floorNames: { id: string; name: string }[]; f: Followup; customerGrouped?: boolean; active: boolean; assignees: Assignee[]; rank?: number; checked: boolean; onToggleSelect: (id: string) => void;
   onPress: (f: Followup) => void; onCall: (f: Followup, channel: Channel) => void; onWhatsApp: (f: Followup, channel: Channel) => void; onEmail: (f: Followup, channel: Channel) => void;
   onComplete: (f: Followup) => void; onSnooze: (f: Followup, preset: "15m" | "1h") => void;
   onPostpone?: (f: Followup) => void; onRecordOutcome?: (f: Followup) => void;
@@ -1669,7 +1712,7 @@ function FollowupCard({
               <Feather name={checked ? "check-square" : "square"} size={18} color={checked ? colors.brand : colors.onSurfaceMuted} />
             </Pressable>
           ) : null}
-          <Avatar name={f.customer_name} size={38} tone="brand" />
+          {!customerGrouped ? <Avatar name={f.customer_name} size={38} tone="brand" /> : null}
           <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
               {rank ? (
@@ -1677,7 +1720,7 @@ function FollowupCard({
                   <Text style={styles.rankChipText}>#{rank}</Text>
                 </View>
               ) : null}
-              <Text style={type.titleSm} numberOfLines={1}>{f.customer_name}</Text>
+              <Text style={type.titleSm} numberOfLines={1}>{customerGrouped ? BUCKET_META[f.bucket].label : f.customer_name}</Text>
               {f.is_automated ? <Badge label="Auto" tone="info" size="sm" icon="zap" /> : null}
             </View>
             <Text style={type.caption} numberOfLines={1}>
@@ -2098,6 +2141,7 @@ function NewFollowupSheet({ visible, onClose, customers, assignees, defaultAssig
   const [scope, setScope] = useState<LeadScope>({ interested_floor_ids: [], assignments: [] });
   const [partner, setPartner] = useState<LeadPartner>(null);
   const [saving, setSaving] = useState(false);
+  const [checking, setChecking] = useState(false);
 
   useEffect(() => {
     if (visible) { createRequestKey.current = newLeadRequestKey(); createRequestSignature.current = null; setCustomerMode("existing"); setCustomerId(null); setChosenCustomer(null); setCustomerQuery(""); setNewCustomerName(""); setNewCustomerPhone(""); setCategory("general"); setChannel("call"); setReason(""); setPartner(null); setScope({ interested_floor_ids: selectedFloorId ? [selectedFloorId] : [], assignments: [] }); }
@@ -2122,15 +2166,22 @@ function NewFollowupSheet({ visible, onClose, customers, assignees, defaultAssig
   }, [customers, customerQuery, searchedCustomers]);
   const selectedCustomer = chosenCustomer || customers.find((c) => c.id === customerId);
 
-  const submit = async () => {
+  const submit = async (identity?: CustomerMatch, checked = false) => {
+    if (saving) return;
     if (customerMode === "existing" && !customerId) { toast.error("Choose an existing customer"); return; }
     if (customerMode === "new" && !newCustomerName.trim()) { toast.error("Enter the customer's name"); return; }
     if (customerMode === "new" && !newCustomerPhone.trim()) { toast.error("Enter the customer's mobile number"); return; }
     if (!reason.trim()) { toast.error("Add a reason"); return; }
     if (!scope.interested_floor_ids.length) { toast.error("Choose at least one interested floor"); return; }
     if (scope.interested_floor_ids.some(floorId => !scope.assignments.some(a => a.floor_id === floorId && a.user_id))) { toast.error("Select a team member for each interested floor"); return; }
+    if (customerMode === "new" && !checked) {
+      setChecking(true);
+      return;
+    }
+    setChecking(false);
     const payload = {
-      ...(customerMode === "existing" ? { customer_id: customerId } : {
+      ...(identity ? { customer_id: identity.id, customer_source_floor_id: identity.floor_id }
+        : customerMode === "existing" ? { customer_id: customerId } : {
         new_customer_name: newCustomerName.trim(), new_customer_phone: newCustomerPhone.trim(),
       }),
       category, channel, reason: reason.trim(), ...scope,
@@ -2147,11 +2198,11 @@ function NewFollowupSheet({ visible, onClose, customers, assignees, defaultAssig
   };
 
   return (
-    <Sheet visible={visible} onClose={onClose} variant={isPhone ? "bottom" : "drawer"} title="New Follow-up" subtitle={simpleInbox ? "Add a customer reminder and assign a salesperson." : "Manually add a reminder — the workspace will rank it alongside automated cards."}
+    <><Sheet visible={visible} onClose={onClose} variant={isPhone ? "bottom" : "drawer"} title="New Follow-up" subtitle={simpleInbox ? "Add a customer reminder and assign a salesperson." : "Manually add a reminder — the workspace will rank it alongside automated cards."}
       footer={<>
         <Button label="Cancel" variant="secondary" onPress={onClose} size="md" />
         <View style={{ flex: 1 }} />
-        <Button label="Create Follow-up" variant="primary" icon="plus" loading={saving} onPress={submit} size="md" testID="create-followup" />
+        <Button label="Create Follow-up" variant="primary" icon="plus" loading={saving} onPress={() => void submit()} size="md" testID="create-followup" />
       </>}
     >
       <View style={{ flex: 1 }}>
@@ -2216,6 +2267,9 @@ function NewFollowupSheet({ visible, onClose, customers, assignees, defaultAssig
         </ScrollView>
       </View>
     </Sheet>
+    {checking && visible ? <CustomerIdentityChoice name={newCustomerName.trim()} phone={newCustomerPhone.trim()} autoContinueIfNoMatches
+      onClose={() => setChecking(false)} onSelect={match => void submit(match, true)} onSeparate={() => void submit(undefined, true)} /> : null}
+    </>
   );
 }
 

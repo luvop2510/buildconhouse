@@ -1,6 +1,7 @@
 """Customer CRUD (admin) + customer-portal self-serve endpoints."""
 import asyncio
 import re
+from hashlib import sha256
 from uuid import UUID, NAMESPACE_URL, uuid5
 from pymongo.errors import DuplicateKeyError
 
@@ -8,9 +9,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
+from services.canonical_customers import reuse_customer_for_floor
 from services.referrer_identity import resolve_referrer, referrer_query
 from auth import (
-    TILES_FLOOR_ID, accessible_floor_ids, floor_for_write, floor_inherit, floor_query, get_current_customer, get_current_user,
+    TILES_FLOOR_ID, accessible_floor_ids, authorize_staff_resource, floor_for_write, floor_inherit, floor_query, get_current_customer, get_current_user,
     get_floor_scoped_or_404, hash_password, invalidate_principal_cache, require_floor_access, require_min_role, revoke_all_sessions,
 )
 from db import db
@@ -100,6 +102,25 @@ async def create_customer(
     body: CustomerCreate,
     user: UserPublic = Depends(require_min_role("sales")),
 ):
+    floor = floor_for_write(user)
+    if bool(body.identity_source_customer_id) != bool(body.identity_source_floor_id):
+        raise HTTPException(422, "Select a customer and its department")
+    if body.identity_source_customer_id:
+        customer, _ = await reuse_customer_for_floor(db, user, body.identity_source_customer_id, body.identity_source_floor_id, floor)
+        return CustomerPublic(**customer)
+    request_id = str(uuid5(NAMESPACE_URL, f"customer-intake:{user.id}:{floor}:{body.request_key}")) if body.request_key else None
+    request_fingerprint = sha256(body.model_dump_json(exclude={"request_key"}).encode()).hexdigest() if request_id else None
+
+    async def replay():
+        current = await db.customers.find_one({"_id": request_id, "floor_id": floor})
+        if current and current.get("intake_request_fingerprint") != request_fingerprint:
+            raise HTTPException(409, "This customer request was already used for different details")
+        if current and (current.get("deleted_at") or current.get("is_deleted")):
+            raise HTTPException(410, "This customer was removed. Start a new entry.")
+        return CustomerPublic(**current) if current else None
+
+    if request_id and (existing := await replay()):
+        return existing
     draft_receipt_id = None
     if body.client_draft_id:
         if floor_for_write(user) != TILES_FLOOR_ID:
@@ -116,7 +137,7 @@ async def create_customer(
         raise HTTPException(status_code=409, detail="Customer email already exists")
     if not body.name or not body.name.strip():
         raise HTTPException(status_code=400, detail="Customer name is required")
-    data = body.model_dump(exclude={"client_draft_id"})
+    data = body.model_dump(exclude={"client_draft_id", "request_key", "identity_source_customer_id", "identity_source_floor_id"})
     data["floor_id"] = floor_for_write(user)
     data.update(await _referrer_fields(body.referrer_id, user))
     if data.get("email"):
@@ -128,7 +149,11 @@ async def create_customer(
     cust = CP(**data)
     if draft_receipt_id:
         cust.id = str(uuid5(NAMESPACE_URL, draft_receipt_id))
+    if request_id:
+        cust.id = request_id
     to_store = cust.model_dump()
+    if request_id:
+        to_store.update(_id=request_id, intake_request_fingerprint=request_fingerprint)
     if password:
         to_store["password_hash"] = await run_in_threadpool(hash_password, password)
     # customers_email_unique is sparse, but sparse only skips ABSENT fields —
@@ -154,7 +179,14 @@ async def create_customer(
                 return replay
             raise
     else:
-        await db.customers.insert_one(to_store)
+        try:
+            await db.customers.insert_one(to_store)
+        except DuplicateKeyError:
+            if request_id and (existing := await replay()):
+                return existing
+            if body.email:
+                raise HTTPException(409, "Customer email already exists")
+            raise
     await log_event(
         event_type="customer.created", entity_type="customer", entity_id=cust.id,
         customer_id=cust.id, actor=user, summary="Customer Created",
@@ -216,60 +248,12 @@ async def import_customer_from_floor(
     body: ImportCustomerFromFloorPayload,
     user: UserPublic = Depends(require_min_role("sales")),
 ):
-    """Create or select the target-floor customer matching a Ground Floor
-    profile.  The returned header defaults let the caller populate a fresh
-    quotation without copying incompatible tile line items."""
     require_floor_access(TILES_FLOOR_ID, user)
     require_floor_access(body.target_floor_id, user)
-    source = await get_floor_scoped_or_404(
-        db.customers, body.source_customer_id, user,
-        not_found="Customer not found", projection={"_id": 0, "password_hash": 0},
-    )
-    if source.get("floor_id") != TILES_FLOOR_ID:
-        raise HTTPException(status_code=400, detail="Only Ground Floor customers can be imported")
-
-    latest = await _latest_floor_quotation(source["id"], TILES_FLOOR_ID)
-    identity = []
-    if source.get("phone"):
-        identity.append({"phone": source["phone"]})
-    if source.get("email"):
-        identity.append({"email": str(source["email"]).lower()})
-    if not identity:
-        identity.append({"name": source["name"], "company": source.get("company")})
-    target = await db.customers.find_one(
-        {"floor_id": body.target_floor_id, "$or": identity}, {"_id": 0, "password_hash": 0},
-    )
-    if target:
-        return {
-            "customer": CustomerPublic(**target).dict(),
-            "defaults": _import_defaults(source, latest),
-            "created": False,
-        }
-
-    copied = {
-        key: source.get(key) for key in (
-            "name", "company", "phone", "address", "city", "state", "pincode", "gstin", "tier", "notes",
-            "avatar_url", "alternate_phone", "preferred_contact_method", "preferred_contact_time", "assigned_branch",
-            "tags", "lead_temperature",
-        )
-    }
-    # The current database protects customer email globally, while profiles
-    # are floor-local. Preserve the usable contact details (phone/address)
-    # and avoid an index conflict; a later per-floor email migration can add
-    # this field back without changing the import contract.
-    target_customer = CustomerPublic(floor_id=body.target_floor_id, **copied)
-    await db.customers.insert_one({**target_customer.dict(exclude={"email"}), "imported_from_customer_id": source["id"]})
-    await log_event(
-        event_type="customer.imported", entity_type="customer", entity_id=target_customer.id,
-        customer_id=target_customer.id, actor=user, floor_id=body.target_floor_id,
-        summary=f"Imported customer profile from Ground Floor: {target_customer.name}",
-        payload={"source_customer_id": source["id"], "source_quotation_id": (latest or {}).get("id")},
-    )
-    return {
-        "customer": target_customer.dict(),
-        "defaults": _import_defaults(source, latest),
-        "created": True,
-    }
+    await authorize_staff_resource(user, method="POST", path="/api/customers", floor_id=body.target_floor_id)
+    target, created = await reuse_customer_for_floor(db, user, body.source_customer_id, TILES_FLOOR_ID, body.target_floor_id)
+    latest = await _latest_floor_quotation(body.source_customer_id, TILES_FLOOR_ID)
+    return {"customer": CustomerPublic(**target).model_dump(), "defaults": _import_defaults(target, latest), "created": created}
 
 
 @router.get("/customers/{customer_id}", response_model=CustomerPublic)

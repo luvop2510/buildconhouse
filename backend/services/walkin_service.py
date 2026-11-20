@@ -4,7 +4,13 @@ without a route-to-route import.
 """
 from __future__ import annotations
 
+from hashlib import sha256
+import json
 from typing import Optional
+from uuid import NAMESPACE_URL, uuid5
+
+from fastapi import HTTPException
+from pymongo.errors import DuplicateKeyError
 
 from db import db
 from models import UserPublic, now_iso
@@ -16,25 +22,15 @@ async def find_or_create_customer(
     floor_id: str, user: UserPublic,
     address: Optional[str] = None, city: Optional[str] = None,
     state: Optional[str] = None, pincode: Optional[str] = None,
+    request_key: str | None = None, create_distinct: bool = False,
 ) -> dict:
-    """Duplicate detection per the Walk-ins spec: search existing customers
-    by phone OR alternate phone (either direction — a new walk-in's phone
-    might match an existing customer's alternate_phone, or vice versa)
-    before ever creating a new Customer record. This is the HIGH-confidence
-    tier only (see services/duplicate_detection.py for the full tiered
-    matcher used by the check-duplicate endpoint / create-walkin decision
-    tree in routes/walkin_routes.py — medium/low confidence matches require
-    an explicit staff decision made BEFORE this function is ever called)."""
-    from services.duplicate_detection import find_customer_matches
+    """Write the explicitly selected new walk-in customer once per intake key."""
+    if not create_distinct:
+        from services.duplicate_detection import find_customer_matches
 
-    # Scoped to the department this walk-in is for: matching across business
-    # units would reuse (and then attach revenue to) the other unit's
-    # customer record.
-    matches = await find_customer_matches(
-        phone=phone, alternate_phone=alternate_phone, floor_ids=[floor_id],
-    )
-    if matches["high"]:
-        return matches["high"][0]
+        matches = await find_customer_matches(phone=phone, alternate_phone=alternate_phone, floor_ids=[floor_id])
+        if matches["high"]:
+            return matches["high"][0]
 
     from models import CustomerPublic
     data: dict = {
@@ -47,7 +43,22 @@ async def find_or_create_customer(
     to_store["lifecycle"] = "prospect"
     if not to_store.get("email"):
         to_store.pop("email", None)  # customers_email_unique is a sparse index — omit the key entirely, not null
-    await db.customers.insert_one(to_store)
+    if request_key:
+        customer_id = str(uuid5(NAMESPACE_URL, f"walkin-customer:{user.id}:{floor_id}:{request_key}"))
+        fingerprint = sha256(json.dumps(data, sort_keys=True).encode()).hexdigest()
+        cust.id = customer_id
+        to_store.update(_id=customer_id, id=customer_id, walkin_customer_fingerprint=fingerprint)
+    try:
+        await db.customers.insert_one(to_store)
+    except DuplicateKeyError:
+        if not request_key:
+            raise
+        existing = await db.customers.find_one({"_id": cust.id, "floor_id": floor_id})
+        if not existing:
+            raise
+        if existing.get("walkin_customer_fingerprint") != fingerprint or existing.get("deleted_at") or existing.get("is_deleted"):
+            raise HTTPException(409, "The saved walk-in customer has changed. Start a new entry.")
+        return existing
     await log_event(
         event_type="customer.created", entity_type="customer", entity_id=cust.id,
         customer_id=cust.id, actor=user, summary="Customer Created (via Walk-in)",

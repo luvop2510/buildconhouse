@@ -32,7 +32,8 @@ async function followups(page: Page, floorId: string, role = 'owner') {
 }
 
 test('desktop follow-up and saved view deletions wait for explicit confirmation', async ({ page }) => {
-  test.skip(page.viewportSize()!.width < 768, 'Saved views has a desktop toolbar action.');
+  // The desktop toolbar is the behavior under test, including when the gate uses a mobile browser engine.
+  if (page.viewportSize()!.width < 768) await page.setViewportSize({ width: 834, height: 900 });
   const { card } = await followups(page, 'first-floor');
   let viewDeleted = false;
   let followupDeleted = false;
@@ -56,7 +57,9 @@ test('desktop follow-up and saved view deletions wait for explicit confirmation'
   await page.getByTestId('confirm-delete-followup-view-confirm').click();
   await expect(page.getByText('Sales fixture view', { exact: true })).toHaveCount(0);
   expect(viewDeleted).toBe(true);
-  await page.keyboard.press('Escape');
+  const savedViews = page.getByRole('dialog', { name: 'Saved Views', exact: true });
+  await savedViews.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(savedViews).toBeHidden();
   await card.getByTestId('delete-followup-menu-customer').click();
   expect(followupDeleted).toBe(false);
   await page.getByTestId('confirm-delete-followup-confirm').click();

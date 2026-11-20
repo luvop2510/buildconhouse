@@ -298,7 +298,7 @@ def test_direct_send_delivers_pdf_bytes_for_document_floor(monkeypatch, floor_id
     monkeypatch.setattr(whatsapp_delivery, "send_document", send)
     monkeypatch.setattr(shares, "create_share", create)
     body = quotation_routes.QuotationWhatsAppSendInput(message="Please review", expected_updated_at=doc["updated_at"],
-        idempotency_key="quotation_request_123", include_dimensions=True)
+        idempotency_key="quotation_request_123", include_dimensions=True, followup_days=9)
     from auth import UserPublic
     record_sent = AsyncMock()
     monkeypatch.setattr(quotation_routes, "_record_quotation_sent", record_sent)
@@ -308,7 +308,8 @@ def test_direct_send_delivers_pdf_bytes_for_document_floor(monkeypatch, floor_id
         record_sent.assert_not_awaited()
     else:
         record_sent.assert_awaited_once_with(
-            "q1", quotation_routes.MarkQuotationSentInput(expected_updated_at=doc["updated_at"]), user, sent_at=None,
+            "q1", quotation_routes.MarkQuotationSentInput(expected_updated_at=doc["updated_at"], followup_days=9),
+            user, sent_at=None,
         )
     renderer.assert_awaited_once_with(doc, customer, True)
     send.assert_awaited_once_with(pdf_bytes=b"%PDF-private", filename="Customer.pdf", recipient_phone="919909906652",

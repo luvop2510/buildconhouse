@@ -6,6 +6,7 @@ separate projects can legitimately share a contact number.
 from __future__ import annotations
 
 import asyncio
+from collections import defaultdict
 import os
 import re
 from typing import get_args, get_origin
@@ -16,6 +17,8 @@ from models import Followup, Quotation
 from models_walkins import WalkIn
 from models_tile_orders import TileCustomerOrder
 from services import kitchen_access
+from services.canonical_customers import canonical_customer_ids, linked_customer_scope, normalized_phone
+from services.today_dashboard import access_for
 from services.lead_scope import POST_ORDER_CATEGORIES, POST_ORDER_RULES
 from services.kitchen_projects import KitchenProjectService
 from services.kitchen_projects import current_status
@@ -140,7 +143,7 @@ def current_stage(kind, row):
     if kind == "walkin":
         return "lead" if status in {"new", "contacted", "selection_scheduled", ""} else None
     if kind == "followup":
-        return "lead" if status in {"open", "pending", ""} and row.get("notebook_status") not in {"won", "lost"} else None
+        return "followup" if status in {"open", "pending", "snoozed", ""} and row.get("notebook_status") not in {"won", "lost"} else None
     return None
 
 
@@ -178,7 +181,7 @@ def current_data(kind, row, stage):
     elif kind == "walkin":
         data.update({key: row[key] for key in ("interested_products", "next_followup_at") if row.get(key)})
     elif kind == "followup":
-        data.update({key: row[key] for key in ("followup_date", "next_followup_at", "notebook_status") if row.get(key)})
+        data.update({key: row[key] for key in ("due_at", "snoozed_until", "followup_date", "next_followup_at", "notebook_status", "next_action") if row.get(key)})
     elif kind == "furniture":
         data.update({key: row[key] for key in ("total_payable_rmb", "balance_rmb") if row.get(key) is not None})
     return data
@@ -188,24 +191,25 @@ class CustomerSearchService:
     def __init__(self, database):
         self.db = database
 
-    async def linked_customer_ids(self, customer_id, scopes):
-        # Explicit imports form the only cross-floor identity edge. A matching
-        # name or phone never merges unrelated customer profiles.
-        allowed_floors = sorted({floor for _, floor, _ in scopes})
-        found, pending = {customer_id}, {customer_id}
-        for _ in range(100):
-            rows = await self.db.customers.find({"floor_id": {"$in": allowed_floors},
-                "is_deleted": {"$ne": True}, "deleted_at": {"$in": [None, ""]},
-                "$or": [{"id": {"$in": list(pending)}}, {"imported_from_customer_id": {"$in": list(pending)}}]},
-                {"_id": 0, "id": 1, "imported_from_customer_id": 1}).max_time_ms(5000).limit(101).to_list(101)
-            identities = {value for row in rows for value in (row.get("id"), row.get("imported_from_customer_id")) if value}
-            pending = identities - found
-            found.update(identities)
-            if len(found) > 100 or len(rows) > 100:
-                raise HTTPException(422, "Linked customer history exceeds its supported bound")
-            if not pending:
-                return sorted(found)
-        raise HTTPException(422, "Linked customer history exceeds its supported bound")
+    async def intake_candidates(self, user, name, phone):
+        name, phone = name.strip(), normalized_phone(phone)
+        clauses = []
+        if len(name) >= 3:
+            clauses.append({"name": {"$regex": f"^{re.escape(name)}$", "$options": "i"}})
+        if phone:
+            suffix = r"[^0-9]*".join(phone) + r"[^0-9]*$"
+            clauses.extend({field: {"$regex": suffix}} for field in ("phone", "alternate_phone"))
+        if not clauses:
+            return []
+        scopes = [(floor, actor) for kind, floor, actor in await self.scopes(user) if kind == "customer"]
+        batches = await asyncio.gather(*(self.rows("customer", floor, actor, {"$or": clauses}, summary_only=True)
+                                         for floor, actor in scopes))
+        rows = [summary("customer", row) for batch in batches for row in batch]
+        identities = await canonical_customer_ids(self.db, (row["id"] for row in rows))
+        grouped = {}
+        for row in sorted(rows, key=lambda row: (row["floor_id"] != user.active_floor_id, row["name"].casefold(), row["id"])):
+            grouped.setdefault(identities[row["id"]], row)
+        return list(grouped.values())[:20]
 
     async def scopes(self, user):
         account = account_scope(user)
@@ -251,6 +255,8 @@ class CustomerSearchService:
             query = {"$and": [query, {"customer_id": {"$nin": deleted_ids}}]}
         if kind == "kitchen":
             query = {"$and": [query, kitchen_access.scope_query(actor, {})]}
+        if kind == "furniture":
+            query.update({"is_archived": {"$ne": True}, "archived_at": {"$in": [None, ""]}})
         projection = {"_id": 0, **{field: 1 for field in ("id", "floor_id", "customer_id", "customer", "name", "customer_name", "customer_name_snapshot", "phone", "customer_phone", "phone_snapshot", "project_reference", "reference", "number", "stage", "status", "updated_at", "doc_type")}} if summary_only else {"_id": 0}
         result = await getattr(self.db, collection).find(query, projection).max_time_ms(5000).sort([("updated_at", -1), ("id", 1)]).limit(cap + 1).to_list(cap + 1)
         if len(result) > cap:
@@ -282,11 +288,13 @@ class CustomerSearchService:
         batches = await asyncio.gather(*(matching_rows(kind, floor, actor) for kind, floor, actor in scopes))
         rows = [summary(kind, row) for (kind, _, _), batch in zip(scopes, batches) for row in batch]
         priority = {"kitchen": 0, "order": 1, "quotation": 2, "furniture": 3, "walkin": 4, "followup": 5, "customer": 6}
-        grouped = {}
+        identities = await canonical_customer_ids(self.db, (row.get("customer_id") for row in rows))
+        grouped = defaultdict(list)
         for row in sorted(rows, key=lambda row: (priority[row["kind"]], row["id"])):
-            key = (row["floor_id"], row.get("customer_id") or f"{row['kind']}:{row['id']}")
-            grouped.setdefault(key, row)
-        rows = list(grouped.values())
+            customer_id = identities.get(row.get("customer_id"))
+            key = ("customer", customer_id) if customer_id else (row["kind"], row["floor_id"], row["id"])
+            grouped[key].append(row)
+        rows = [{**matches[0], "floor_ids": sorted({row["floor_id"] for row in matches})} for matches in grouped.values()]
         rows.sort(key=lambda row: (row["name"].casefold(), row["floor_id"], row["kind"], row["id"]))
         return {"rows": rows[(page - 1) * limit:page * limit], "total": len(rows), "page": page, "limit": limit}
 
@@ -301,8 +309,9 @@ class CustomerSearchService:
         source = rows[0]
         customer_id = source.get("customer_id") or (identity if kind == "customer" else None)
         linked = [(kind, source, actor)]
+        canonical = None
         if customer_id:
-            identities = await self.linked_customer_ids(customer_id, scopes)
+            canonical, identities = await linked_customer_scope(self.db, customer_id)
             batches = await asyncio.gather(*(self.rows(candidate, scope, source_actor,
                 {"id": {"$in": identities}} if candidate == "customer" else {"customer_id": {"$in": identities}})
                 for candidate, scope, source_actor in scopes))
@@ -371,9 +380,9 @@ class CustomerSearchService:
         rank = {"order": 4, "quotation": 3, "selection": 2, "lead": 1}
         highest = {}
         for candidate, row, _, stage in candidates:
-            if candidate != "kitchen":
+            if candidate not in {"kitchen", "followup"}:
                 highest[row["floor_id"]] = max(highest.get(row["floor_id"], 0), rank.get(stage, 0))
-        candidates = [entry for entry in candidates if entry[0] == "kitchen" or rank.get(entry[3], 0) == highest[entry[1]["floor_id"]]]
+        candidates = [entry for entry in candidates if entry[0] in {"kitchen", "followup"} or rank.get(entry[3], 0) == highest[entry[1]["floor_id"]]]
 
         async def record(source_kind, row, source_actor, stage):
             # Reuse Kitchen's own canonical-contact and stage/financial redaction.
@@ -384,12 +393,62 @@ class CustomerSearchService:
                 source_summary["status"] = row.get("status") or current_status({"design_versions": [], "quotation_versions": [], "orders": [], **row})
             return {"kind": source_kind, "summary": source_summary, "data": current_data(source_kind, value, stage)}
         records = await asyncio.gather(*(record(*entry) for entry in candidates))
-        contact = next((row for candidate, row, _ in linked if candidate == "customer" and row["id"] == customer_id), None)
+        contacts = [row for candidate, row, _ in linked if candidate == "customer"]
+        contact = next((row for row in contacts if row["id"] == canonical), None) or next((row for row in contacts if row["id"] == customer_id), None)
         customer = summary("customer", contact) if contact else summary(kind, source)
-        if not contact and kind == "kitchen" and records:
-            customer = records[0]["summary"]
+        if not contact and kind == "kitchen":
+            project_record = next((record for record in records if record["kind"] == kind and record["summary"]["id"] == identity), None)
+            if project_record:
+                customer = project_record["summary"]
         workflows = []
         for scope in sorted({record["summary"]["floor_id"] for record in records}):
             department = [record for record in records if record["summary"]["floor_id"] == scope]
             workflows.append({"floor_id": scope, "records": department})
-        return {"customer": customer, "records": records, "workflows": workflows}
+        active = {(record["kind"], record["summary"]["floor_id"], record["summary"]["id"]) for record in records}
+        authorized_history = []
+        for candidate, row, _ in linked:
+            if candidate == "customer" or (candidate, row["floor_id"], row["id"]) in active:
+                continue
+            if (candidate != "kitchen" and row["floor_id"] == kitchen_access.KITCHEN_FLOOR
+                    and row.get("customer_id") in kitchen_customer_ids):
+                continue
+            historical_stage = row.get("stage") if candidate == "kitchen" else current_stage(candidate, row)
+            authorized_history.append({"kind": candidate, "summary": {
+                **summary(candidate, row), "stage": historical_stage,
+            }, "data": {}})
+        departments = sorted({row["floor_id"] for candidate, row, _ in linked
+                              if candidate == "customer" or row["floor_id"] != kitchen_access.KITCHEN_FLOOR
+                              or candidate == "kitchen" or row.get("customer_id") not in kitchen_customer_ids})
+        payments = await self.payment_summary(user, linked)
+        return {"customer": customer, "records": records, "workflows": workflows,
+                "departments": departments, "history": authorized_history, "payments": payments}
+
+    async def payment_summary(self, user, linked):
+        checks = defaultdict(list)
+        for kind, row, _ in linked:
+            if kind == "quotation" and row.get("status") == "ordered" and not row.get("customer_outcome"):
+                checks[row["floor_id"]].append(row)
+        results = []
+        for floor, orders in checks.items():
+            actor = account_scope(user, floor)
+            resources, _ = await access_for(self.db, actor, floor)
+            if "payments" not in resources:
+                continue
+            try:
+                await authorize_staff_resource(actor, method="GET", path="/api/payments/orders", floor_id=floor)
+            except HTTPException as error:
+                if error.status_code in {403, 404}:
+                    continue
+                raise
+            from decimal import Decimal
+            from services.payment_totals import completed_payment_totals, recorded_collection_total
+            balances = await completed_payment_totals(self.db, [row["id"] for row in orders], floor_id=floor, include_cash=True)
+            for row in orders:
+                total = recorded_collection_total(row)
+                paid = balances.get(row["id"], {})
+                recorded = Decimal(str(paid.get("total", 0)))
+                outstanding = float(max(Decimal(0), total - recorded)) if total is not None and not paid.get("invalid_count") else None
+                if outstanding is None or outstanding > 0:
+                    results.append({"id": row["id"], "floor_id": floor, "number": display_reference(row.get("number")),
+                                    "outstanding": outstanding, "currency": "INR"})
+        return results

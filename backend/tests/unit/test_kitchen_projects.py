@@ -304,7 +304,10 @@ async def test_optional_existing_address_preserves_old_creation_fingerprints(set
     database, service, owner = setup
     body = create_request(customer_id="customer-a", idempotency_key="old-address-contract")
     first = await service.create(owner, body)
-    old_fields = body.model_dump(exclude={"idempotency_key", "customer", "assigned_to", "customer_address"})
+    old_fields = body.model_dump(exclude={
+        "idempotency_key", "customer", "assigned_to", "customer_address",
+        "identity_source_customer_id", "identity_source_floor_id",
+    })
     for field in ("referrer_id", "referrer_name", "referrer_type", "referrer_company"):
         if old_fields["lead"].get(field) is None:
             old_fields["lead"].pop(field, None)

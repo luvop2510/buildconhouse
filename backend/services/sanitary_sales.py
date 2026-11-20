@@ -89,6 +89,9 @@ class Ledger:
         for document in self.documents:
             yield from document["lines"]
 
+    def customers(self) -> set[str]:
+        return {customer_key(doc) for doc in self.documents if doc["customer_identity_known"]}
+
     def metrics(self, basis: Basis) -> dict:
         totals = {"mrp": ZERO, "offer": ZERO}
         missing = dict.fromkeys(totals, 0)
@@ -109,7 +112,7 @@ class Ledger:
             "value": values[basis], "mrp_value": values["mrp"], "offer_value": values["offer"],
             "missing_value_lines": missing[basis], "missing_mrp_lines": missing["mrp"],
             "missing_offer_lines": missing["offer"],
-            "customer_count": len({doc["customer_id"] for doc in self.documents if doc["customer_identity_known"]}),
+            "customer_count": len(self.customers()),
             "document_count": len({doc["id"] for doc in self.documents}),
         }
 
@@ -126,7 +129,7 @@ class Ledger:
                 key = document["interior_id"]
                 grouped[f"interior:{key}" if key else UNASSIGNED].append(document)
             else:
-                key = document["customer_id"]
+                key = customer_key(document)
                 grouped[f"customer:{key}" if document["customer_identity_known"] else f"document:{document['id']}"].append(document)
         return {key: Ledger(documents) for key, documents in grouped.items()}
 
@@ -135,6 +138,10 @@ class Ledger:
 
     def statuses(self) -> list[str]:
         return sorted({document["status"] for document in self.documents if document["status"]})
+
+
+def customer_key(document: dict) -> str:
+    return document.get("canonical_customer_id", document["customer_id"])
 
 
 def product_key(document: dict, line: dict) -> str:

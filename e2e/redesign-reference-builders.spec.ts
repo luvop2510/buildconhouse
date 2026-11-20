@@ -66,6 +66,33 @@ async function tilesDetails(page: Page) {
   await expect(control).toBeVisible();
 }
 
+test('sanitary quotation associates the chosen existing profile from another floor', async ({ page }) => {
+  const state = await fixture(page, false);
+  const source = { id: 'ground-contact', floor_id: 'ground-floor', name: 'Confirmed Ground contact', phone: '9888801234' };
+  await page.route('**/api/customer-search/candidates?**', route => route.fulfill({ json: [source] }));
+  const requests: Record<string, unknown>[] = [];
+  await page.route('**/api/customers', route => {
+    if (route.request().method() === 'GET') return route.fallback();
+    expect(route.request().method()).toBe('POST');
+    expect(route.request().headers()['x-floor-id']).toBe('first-floor');
+    requests.push(route.request().postDataJSON());
+    return route.fulfill({ json: { ...source, id: 'linked-sanitary-contact', floor_id: 'first-floor' } });
+  });
+  await sanitaryDetails(page);
+  await page.getByTestId('compact-hdr-customer').click();
+  await page.getByTestId('open-create-customer').click();
+  await page.getByTestId('new-cust-name').fill('Shared contact');
+  await page.getByTestId('new-cust-phone').fill(source.phone);
+  await page.getByTestId('save-new-customer').click();
+  const picker = page.getByRole('dialog', { name: 'Check for an existing customer' });
+  await expect(picker).toBeVisible();
+  expect(requests).toHaveLength(0);
+  await picker.getByRole('button', { name: 'Use Confirmed Ground contact', exact: true }).click();
+  await expect(page.getByTestId('compact-hdr-customer')).toContainText('Confirmed Ground contact');
+  await expect.poll(() => state.saved.some(payload => payload.customer_id === 'linked-sanitary-contact')).toBe(true);
+  expect(requests).toEqual([expect.objectContaining({ identity_source_customer_id: source.id, identity_source_floor_id: source.floor_id })]);
+});
+
 test('critical sanitary quotation selects both existing reference types from All and restores saved identity', async ({ page }) => {
   const state = await fixture(page, false);
   for (const reference of references) {

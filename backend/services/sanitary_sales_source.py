@@ -15,6 +15,8 @@ from services.analytics.unified import INDIA
 from services.pricing import net_amount_list
 from services.sanitary_sales_pdf import SANITARY_FLOOR, archive_availability
 OPEN_STATUSES = ("draft", "pending", "pending_approval", "approved", "sent", "won", None)
+OTHER_BRANDS = "other"
+HIGHLIGHT_BRANDS = {"grohe", "hansgrohe", "vitra"}
 MAX_RECORDS = 20_000
 MAX_LINES = 100_000
 READ_BATCH = 500
@@ -33,6 +35,8 @@ QUOTE_FIELDS = (
     "customer_name", "phone_snapshot", "referrer_id", "referrer_name", "referrer_type",
     "project_discount_pct", "category_discounts", "room_discounts",
     "historical_import.batch_id", "quotation_import.batch_id",
+    "sent_at", "customer_outcome", "source", "grand_total", "payment_extra_history.amount", "payment_extra_amount",
+    "payment_due_date", "payment_due_at", "created_by_name", "sent_by_name",
 )
 REFERRER_TYPES = {"architect", "interior_designer"}
 PRINTED_DATE_FORMATS = ("%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y", "%d-%b-%y", "%d-%b-%Y", "%d %b %Y")
@@ -290,29 +294,49 @@ def _record(doc, timestamp, customers, referrers, pdf_ids, products, brands, pur
         _line_fact(doc, item, index, offer, products, brands, purchased_brands)
         for index, (item, offer) in enumerate(zip(items, _offers(doc, items), strict=True))
     ]
+    def matches_brand(line):
+        if brand_id == OTHER_BRANDS:
+            name = brands.get(line["brand_id"], line["brand_name"])
+            return line["brand_id"] and name.casefold() not in HIGHLIGHT_BRANDS
+        return not brand_id or line["brand_id"] == brand_id
+
     return {
         "id": doc["id"],
         "number": _text(doc.get("doc_number")) or _text(doc.get("number")) or doc["id"],
         "date": _calendar_date(timestamp),
         "quotation_date": _calendar_date(_quotation_stamp(doc)),
         "status": _text(doc.get("status")) or "draft",
+        "sent_at": doc.get("sent_at"),
+        "outcome": doc.get("customer_outcome"),
+        "source": doc.get("source"),
+        "historical_order": bool(doc.get("historical_import")),
+        "created_at": doc.get("created_at"),
+        "employee": _text(doc.get("sent_by_name")) or _text(doc.get("created_by_name")),
+        "grand_total": doc.get("grand_total"),
+        "payment_extra_history": doc.get("payment_extra_history"),
+        "payment_extra_amount": doc.get("payment_extra_amount"),
+        "payment_due_date": doc.get("payment_due_date") or doc.get("payment_due_at"),
+        "fulfillment_line_ids": {_text(item.get("id")) for item in items},
+        "fulfillment_products": {_text(item.get("product_id")) for item in items},
         "customer_id": customer_id or f"unlinked:{doc['id']}",
         "customer_identity_known": customer_id is not None,
         "customer_name": _text(doc.get("customer_name")) or _text(customer.get("name")) or "Unknown customer",
         "phone": _text(doc.get("phone_snapshot")) or _text(customer.get("phone")),
         "interior_id": interior_id,
         "interior_name": interior_name,
+        "interior_type": referrer_type if interior_id else None,
         "pdf_available": doc["id"] in pdf_ids,
-        "lines": [line for line in lines if not brand_id or line["brand_id"] == brand_id],
+        "lines": [line for line in lines if matches_brand(line)],
     }
 
 
 async def load_records(
-    db, *, kind: Literal["pending", "placed"], start: str | None = None,
+    db, *, kind: Literal["pending", "placed", "opportunities"], start: str | None = None,
     end: str | None = None, brand_id: str | None = None, include_pdfs: bool = True,
 ) -> list[dict]:
     """Retrieve only the exact floor, lifecycle and date range for a report."""
     placed = kind == "placed"
+    opportunities = kind == "opportunities"
     field = "ordered_at" if placed else "created_at"
     first, after_last = _stamp(start), _stamp(end)
     match = {
@@ -330,11 +354,14 @@ async def load_records(
         # the canonical, indexed creation timestamp.
         dates["$or"].append({"doc_date": {"$type": "string", "$ne": ""}})
     match_filters = [dates]
-    if brand_id:
-        match_filters.append(await _brand_candidates(db, brand_id, placed))
+    if brand_id and brand_id != OTHER_BRANDS:
+        match_filters.append(await _brand_candidates(db, brand_id, placed or opportunities))
     if clauses := [clause for clause in match_filters if clause]:
         match["$and"] = clauses
-    if not placed:
+    if opportunities:
+        match["status"] = {"$in": [*OPEN_STATUSES, "ordered", "lost", "rejected"]}
+        match.pop("customer_outcome")
+    elif not placed:
         match["ordered_at"] = {"$in": [None, ""]}
     projection = _projection((*QUOTE_FIELDS, *(f"items.{field}" for field in LINE_FIELDS)))
     selected = {}
@@ -381,7 +408,8 @@ async def load_records(
         }
 
     async def load_purchase_brands():
-        return await _purchase_brands(db, selected) if placed else {}
+        ids = {doc["id"] for doc in docs if doc.get("status") == "ordered"}
+        return await _purchase_brands(db, ids) if ids else {}
 
     async def load_pdfs():
         return await archive_availability(db, docs) if include_pdfs and not placed else set()

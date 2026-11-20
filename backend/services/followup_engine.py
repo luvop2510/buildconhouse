@@ -61,16 +61,28 @@ def quotation_followup_due_at(created_at: datetime, floor_id: str) -> Optional[d
     return due if datetime.now(timezone.utc) >= due else None
 
 
-async def schedule_sent_quotation_followup(
-    quotation: dict, *, sent_at: datetime, actor: UserPublic,
-    followup_date: date | None = None, session: Any,
-) -> str:
-    """Create one first follow-up in the same transaction that records the send."""
+def quotation_send_schedule(
+    sent_at: datetime, days: int | None, legacy_date: date | None = None,
+) -> tuple[date, int]:
     sent_day = sent_at.astimezone(IST).date()
-    due_date = followup_date or sent_day + timedelta(days=FOLLOWUP_DEFAULT_DAYS)
-    if due_date <= sent_day:
-        raise ValueError("Choose a follow-up date after the send date")
+    if legacy_date is not None:
+        if days is not None:
+            raise ValueError("Choose a single follow-up interval")
+        days = (legacy_date - sent_day).days
+    elif days is None:
+        days = FOLLOWUP_DEFAULT_DAYS
+    if days <= 0:
+        raise ValueError("Choose a positive number of days")
+    try:
+        return sent_day + timedelta(days=days), days
+    except OverflowError as exc:
+        raise ValueError("Choose a shorter follow-up interval") from exc
 
+
+async def schedule_sent_quotation_followup(
+    quotation: dict, *, sent_at: datetime, actor: UserPublic, due_date: date, session: Any,
+) -> None:
+    """Create one first follow-up in the same transaction that records the send."""
     floor = floor_inherit(quotation)
     customer_id = quotation["customer_id"]
     customer = await db.customers.find_one(
@@ -100,7 +112,10 @@ async def schedule_sent_quotation_followup(
         assigned_to_name=actor.full_name if actor.role != "owner" else None,
     ).model_dump()
     await db.followups.update_one(
-        {"_id": key}, {"$setOnInsert": {**reminder, "scheduled_from_send": True, "date_only_due": True}}, upsert=True, session=session,
+        {"_id": key}, {"$setOnInsert": {
+            **reminder, "scheduled_from_send": True, "date_only_due": True,
+            "original_due_at": reminder["due_at"],
+        }}, upsert=True, session=session,
     )
     # Keep older review reminders and their notes as history. Their original
     # date was derived from creating a draft or exporting a PDF.
@@ -120,18 +135,17 @@ async def schedule_sent_quotation_followup(
         }},
         session=session,
     )
-    return due_date.isoformat()
 
 
 DELIVERED_RECENCY_DAYS = 5
 
 RULE_DEFINITIONS = [
     {"rule_type": "quotation_followup", "label": "Quotation/selection follow-up", "category": "quotation",
-     "description": "First reminder seven calendar days after sending a quotation, unless the sender chooses another date."},
+     "description": "First reminder scheduled from the calendar-day interval chosen when the quotation is sent."},
     {"rule_type": "selection_waiting", "label": "Tile Selection waiting", "category": "selection",
      "description": "Escalating reminder while a Tile Selection awaits conversion to a Quotation. Day thresholds configurable in Settings → Automation Rules (default 2/4/7/10 days)."},
     {"rule_type": "quotation_tiles_waiting", "label": "Tile Quotation waiting", "category": "quotation",
-     "description": "First reminder seven calendar days after sending a Tile Quotation, unless the sender chooses another date."},
+     "description": "First reminder scheduled from the calendar-day interval chosen when the Tile Quotation is sent."},
     {"rule_type": "walk_in_new", "label": "Walk-in waiting", "category": "walk_in",
      "description": "Escalating reminder while a Walk-in has not yet reached a Selection. Day thresholds configurable in Settings → Automation Rules (default 1/3/7/14 days). Auto-closes the moment a Selection is created for that customer."},
     {"rule_type": "order_confirmed_ops", "label": "Order confirmed — Operations handoff", "category": "operations",

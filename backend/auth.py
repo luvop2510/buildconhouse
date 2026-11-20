@@ -238,7 +238,7 @@ async def authorize_staff_request(user: UserPublic, request: Request | None) -> 
     # custom page grant must not authorize its direct API or export URLs.
     if resource_for_api_path(path) == "sales_data" or path == "/api/dashboard/stats":
         raise HTTPException(status_code=403, detail="Sales Data is available only to the owner")
-    if request.method == "GET" and path in {"/api/dashboard/today", "/api/dashboard/today/overview", "/api/customer-search", "/api/customer-search/profile"}:
+    if request.method == "GET" and path in {"/api/dashboard/today", "/api/dashboard/today/overview", "/api/customer-search", "/api/customer-search/profile", "/api/customer-search/candidates"}:
         # The DTO applies current department grants before any business read.
         # It is also the safe landing page for narrowly scoped profiles.
         return user

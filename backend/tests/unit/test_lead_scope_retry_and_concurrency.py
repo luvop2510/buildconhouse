@@ -305,7 +305,7 @@ def test_generic_manual_create_supports_kitchen_and_furniture_inboxes(monkeypatc
     assert db.followups.writes >= 1 and db.customers.writes == 0
 
 
-def test_new_customer_followup_creates_floor_scoped_profile_with_mobile_and_reuses_it(monkeypatch):
+def test_new_customer_followup_keeps_two_people_sharing_a_number_separate(monkeypatch):
     async def run():
         db = database()
         actor = principal(floors=('first-floor',))
@@ -322,16 +322,16 @@ def test_new_customer_followup_creates_floor_scoped_profile_with_mobile_and_reus
         assert first.customer_phone == '+91 98765 43210'
         assert len(db.customers.rows) == 1
         assert db.customers.rows[0]['floor_id'] == 'first-floor'
-        assert db.customers.rows[0]['phone_normalized'] == '9876543210'
+        assert db.customers.rows[0]['phone'] == '+91 98765 43210'
         assert events.await_args_list[0].kwargs['event_type'] == 'customer.created'
 
         second = await routes.create_followup(FollowupCreate(
             new_customer_name='Another spelling', new_customer_phone='9876543210',
             reason='Follow up again', assignments=assignments,
         ), actor)
-        assert second.customer_id == first.customer_id
-        assert len(db.customers.rows) == 1
-        assert sum(call.kwargs['event_type'] == 'customer.created' for call in events.await_args_list) == 1
+        assert second.customer_id != first.customer_id
+        assert len(db.customers.rows) == 2
+        assert sum(call.kwargs['event_type'] == 'customer.created' for call in events.await_args_list) == 2
 
     asyncio.run(run())
 

@@ -75,3 +75,45 @@ test('critical tile quotation auto saves without address and survives reload wit
   await expect(page.getByRole('button', { name: 'Place Order', exact: true })).toHaveCount(1);
   await page.screenshot({ path: info.outputPath('saved-quotation.png'), animations: 'disabled' });
 });
+
+test('tile draft waits for confirmation before associating a cross-floor customer', async ({ page }) => {
+  await mockSession(page, '/tiles/quotation', false);
+  const source = { id: 'sanitary-contact', floor_id: 'first-floor', name: 'Confirmed profile', phone: '9888801234' };
+  await page.route('**/api/customer-search/candidates?**', route => {
+    expect(new URL(route.request().url()).searchParams.get('name')).toBe('Typed contact name');
+    return route.fulfill({ json: [source] });
+  });
+  const customerWrites: Record<string, unknown>[] = [];
+  await page.route('**/api/customers**', route => {
+    if (route.request().method() === 'GET') return route.fulfill({ json: [] });
+    expect(route.request().method()).toBe('POST');
+    customerWrites.push(route.request().postDataJSON());
+    expect(route.request().headers()['x-floor-id']).toBe('ground-floor');
+    return route.fulfill({ json: { ...source, id: 'linked-ground-contact', floor_id: 'ground-floor' } });
+  });
+  const quotationWrites: Record<string, unknown>[] = [];
+  const updatedAt = '2026-10-27T03:00:00Z';
+  await page.route('**/api/quotations', route => {
+    quotationWrites.push(route.request().postDataJSON());
+    return route.fulfill({ json: { id: 'linked-draft', number: 'TQ-LINKED', updated_at: updatedAt } });
+  });
+  await page.route('**/api/quotations/linked-draft', route => route.fulfill({ json: { updated_at: updatedAt, grand_total: 0 } }));
+  await page.goto('/tiles/quotation');
+  await address(page).fill('Quotation project address');
+  await customerName(page).fill('Typed contact name');
+  await customerName(page).blur();
+  const picker = page.getByRole('dialog', { name: 'Check for an existing customer' });
+  await expect(picker).toBeVisible();
+  expect(customerWrites).toHaveLength(0);
+  expect(quotationWrites).toHaveLength(0);
+  await picker.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(picker).toBeHidden();
+  await page.getByRole('button', { name: 'Review customer', exact: true }).click();
+  await picker.getByRole('button', { name: 'Use Confirmed profile', exact: true }).click();
+  await expect(page).toHaveURL(/id=linked-draft/);
+  await expect(customerName(page)).toHaveValue('Confirmed profile');
+  expect(customerWrites).toHaveLength(1);
+  expect(customerWrites[0]).toMatchObject({ identity_source_customer_id: source.id, identity_source_floor_id: source.floor_id, client_draft_id: expect.any(String) });
+  expect(quotationWrites).toHaveLength(1);
+  expect(quotationWrites[0]).toMatchObject({ customer_id: 'linked-ground-contact', phone_snapshot: source.phone, address_snapshot: 'Quotation project address' });
+});

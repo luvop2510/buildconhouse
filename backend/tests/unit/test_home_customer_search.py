@@ -48,10 +48,13 @@ class Collection:
         self.queries.append(query)
         return Cursor([row for row in self.rows if matches(row, query)])
 
+    async def find_one(self, query, projection=None):
+        return next((row for row in self.rows if matches(row, query)), None)
+
 
 class Database:
     def __init__(self, **rows):
-        for name in ("floors", "customers", "kitchen_projects", "walkins", "followups", "quotations", "furniture_quotations", "customer_orders", "kitchen_stage_followups", "purchase_orders", "dispatches"):
+        for name in ("floors", "settings", "customers", "kitchen_projects", "walkins", "followups", "quotations", "furniture_quotations", "customer_orders", "kitchen_stage_followups", "purchase_orders", "dispatches"):
             setattr(self, name, Collection(rows.get(name, ())))
 
 
@@ -212,6 +215,9 @@ async def test_explicit_customer_import_links_permitted_floors_without_phone_mer
     ], quotations=[{"id": "quote", "floor_id": "first-floor", "customer_id": "imported", "name": "Saved quotation"}])
     result = await module.CustomerSearchService(database).profile(principal(), "customer", "original", "ground-floor")
     assert {row["summary"]["id"] for row in result["records"]} == {"quote"}
+    matches = await module.CustomerSearchService(database).search(principal(), "9000000000")
+    assert matches["total"] == 2
+    assert {tuple(row["floor_ids"]) for row in matches["rows"]} == {("first-floor",), ("first-floor", "ground-floor")}
 
 
 @pytest.mark.asyncio

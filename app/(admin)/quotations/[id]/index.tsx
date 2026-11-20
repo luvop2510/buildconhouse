@@ -29,6 +29,7 @@ type Quotation = {
   customer_id?: string; referrer_id?: string | null; referrer_name?: string | null; referrer_type?: string | null;
   updated_at?: string;
   sent_at?: string | null; sent_by_name?: string | null; first_followup_due_date?: string | null;
+  first_followup_interval_days?: number | null;
   items: Line[]; rooms: string[]; subtotal: number; discount_total: number;
   grand_total: number; created_at: string; notes?: string;
   created_by_name: string;
@@ -95,7 +96,7 @@ export default function QuotationDetail() {
   contextRef.current = context;
   const breakdownByLine = useMemo(() => new Map(breakdown?.lines.map(line => [line.line_id, line]) || []), [breakdown]);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (background = false) => {
     if (!activeRef.current || !id || !floorReady || contextRef.current !== context) return;
     abortRef.current?.abort();
     const controller = new AbortController();
@@ -103,17 +104,21 @@ export default function QuotationDetail() {
     const requestId = ++requestRef.current;
     const isCurrent = () => !controller.signal.aborted && requestId === requestRef.current && contextRef.current === context;
     const options = { floorId: "first-floor", signal: controller.signal };
-    setLoading(true);
     setLoadError(null);
     setRelatedError(false);
     setBreakdownLoading(true); setRelatedLoading(true);
-    setBreakdown(null); setTimeline([]); setLinkedPos([]);
+    if (!background) {
+      setLoading(true);
+      setBreakdown(null); setTimeline([]); setLinkedPos([]);
+    }
     const quotationId = encodeURIComponent(id);
     const primary = api.get<Quotation>(`/quotations/${quotationId}?with_completion=true`, options)
       .then(doc => { if (isCurrent()) setQ(doc); })
       .catch((e: any) => {
-        if (isCurrent()) { setQ(null); setLoadError(e?.detail || "Could not load this quotation"); }
-      }).finally(() => { if (isCurrent()) setLoading(false); });
+        if (!isCurrent()) return;
+        if (background) setRelatedError(true);
+        else { setQ(null); setLoadError(e?.detail || "Could not load this quotation"); }
+      }).finally(() => { if (isCurrent() && !background) setLoading(false); });
     // Render the authoritative document summary immediately; secondary reads
     // fill their own sections without holding the whole page behind a barrier.
     const prices = api.get<Breakdown>(`/quotations/${quotationId}/breakdown`, options)
@@ -160,18 +165,19 @@ export default function QuotationDetail() {
     }
   };
 
-  const markSent = async (followupDate?: string) => {
+  const markSent = async (followupDays: number) => {
     if (!q || !canMarkSent || sentRequest.current) return;
     sentRequest.current = true;
     setMarkingSent(true);
     setMarkSentError(null);
     try {
       const updated = await api.post<Quotation>(`/quotations/${encodeURIComponent(q.id)}/mark-sent`, {
-        expected_updated_at: q.updated_at, followup_date: followupDate,
+        expected_updated_at: q.updated_at, followup_days: followupDays,
       }, { floorId: q.floor_id || "first-floor" });
       if (contextRef.current !== context) return;
       setQ(previous => ({ ...previous, ...updated, purchase_completion_status: previous?.purchase_completion_status }));
       setMarkSentOpen(false);
+      void load(true);
     } catch (error: any) {
       if (contextRef.current === context) setMarkSentError(typeof error?.detail === "string" ? error.detail : "Could not mark this quotation as sent. Try again.");
     } finally {
@@ -260,6 +266,7 @@ export default function QuotationDetail() {
             Sent {new Date(q.sent_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}
             {q.sent_by_name ? ` by ${q.sent_by_name}` : ""}
             {q.first_followup_due_date ? ` · First follow-up ${new Date(q.first_followup_due_date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" })}` : ""}
+            {q.first_followup_interval_days ? ` (${q.first_followup_interval_days} ${q.first_followup_interval_days === 1 ? "day" : "days"})` : ""}
           </Text> : null}
           {q.referrer_id || q.referrer_name ? <View style={{ marginTop: spacing.sm, gap: spacing.xs }}>
             <Text style={type.bodyMuted}>Architect / interior designer: {referrerLabel(q)}</Text>
@@ -436,10 +443,10 @@ export default function QuotationDetail() {
           </View>
         </Card>
       </ScrollView>
-      <WhatsAppQuotationSheet draft={whatsappDraft} onClose={() => setWhatsappDraft(null)} onSent={() => void load()} />
+      <WhatsAppQuotationSheet draft={whatsappDraft} onClose={() => setWhatsappDraft(null)} onSent={() => void load(true)} />
       <MarkQuotationSentSheet visible={markSentOpen} error={markSentError} saving={markingSent}
         onClose={() => { if (!sentRequest.current) setMarkSentOpen(false); }}
-        onConfirm={followupDate => void markSent(followupDate)} />
+        onConfirm={followupDays => void markSent(followupDays)} />
       <BottomSheet visible={pdfOptionsOpen} onClose={() => setPdfOptionsOpen(false)} title="Download quotation PDF" testID="quotation-detail-pdf-options">
         <View style={{ gap: spacing.sm, paddingBottom: spacing.lg }}>
           <Text style={type.bodyMuted}>Include Vitra dimension diagrams in this PDF?</Text>

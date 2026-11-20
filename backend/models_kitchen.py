@@ -120,6 +120,8 @@ class CreateProject(StrictModel):
     customer_id: Identifier | None = None
     customer_address: Text | None = None
     customer: LeadCustomer | None = None
+    identity_source_customer_id: Identifier | None = None
+    identity_source_floor_id: Identifier | None = None
     idempotency_key: CommandKey
     lead: LeadFields = Field(default_factory=LeadFields)
 
@@ -129,6 +131,10 @@ class CreateProject(StrictModel):
             raise ValueError("Select an existing customer or enter the new customer's details")
         if self.customer_address is not None and self.customer_id is None:
             raise ValueError("An existing customer address requires a selected customer")
+        if bool(self.identity_source_customer_id) != bool(self.identity_source_floor_id) or (
+            self.identity_source_customer_id and self.customer is None
+        ):
+            raise ValueError("A confirmed customer link requires a source department and contact")
         return self
 
 

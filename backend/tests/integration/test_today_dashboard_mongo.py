@@ -24,6 +24,12 @@ async def test_today_dates_counts_floor_scope_and_department_projection():
                 "customer_name": "Customer", "due_at": "2026-10-29T01:00:00Z", "value": 1234, "customer_phone": "private", **extra}
     actor = UserPublic(id="person", email="person@example.com", full_name="Person", role="owner", active_floor_id=floor)
     try:
+        await db.customers.insert_many([
+            {"id": "customer-a", "floor_id": floor, "name": "Customer", "phone": "9000000000"},
+            {"id": "customer-a-copy", "floor_id": floor, "name": "Customer", "phone": "+91 90000 00000",
+             "imported_from_customer_id": "customer-a"},
+            {"id": "customer-b", "floor_id": floor, "name": "Customer", "phone": "9000000000"},
+        ])
         await db.followups.insert_many([
             followup("today", customer_id="customer-a", project_name="Apartment renovation"),
             followup("overdue", customer_id="customer-b", due_at="2026-10-28T18:29:59Z"),
@@ -46,7 +52,7 @@ async def test_today_dates_counts_floor_scope_and_department_projection():
             {"id": "debt", "floor_id": floor, "customer_name": "Collect", "status": "ordered", "grand_total": 100,
              "payment_extra_amount": 999, "payment_extra_history": [{"amount": 20}]},
             {"id": "settled", "floor_id": floor, "status": "ordered", "grand_total": 100},
-            {"id": "draft", "floor_id": floor, "status": "draft", "customer_id": "customer-a", "customer_name": "Customer", "project_name": "Guest bathroom", "valid_until": "2026-10-29T02:00:00Z", "grand_total": 900},
+            {"id": "draft", "floor_id": floor, "status": "draft", "customer_id": "customer-a-copy", "customer_name": "Customer", "project_name": "Guest bathroom", "valid_until": "2026-10-29T02:00:00Z", "grand_total": 900},
             {"id": "debt", "floor_id": "ground-floor", "status": "ordered", "grand_total": 900},
         ])
         await db.payments.insert_many([
@@ -69,7 +75,10 @@ async def test_today_dates_counts_floor_scope_and_department_projection():
         assert result["unavailable_sections"] == []
         assert {task["id"] for task in result["tasks"]} == {"today", "overdue", "snoozed", "walkin", "no-date", "purchase", "debt", "draft", "shortage", "loan"}
         tasks = {task["id"]: task for task in result["tasks"]}
-        assert tasks["today"]["customer_id"] == tasks["draft"]["customer_id"] == "customer-a"
+        assert tasks["today"]["customer_id"] == "customer-a"
+        assert tasks["draft"]["customer_id"] == "customer-a-copy"
+        assert tasks["today"]["customer_group"] == tasks["draft"]["customer_group"]
+        assert tasks["overdue"]["customer_group"] != tasks["today"]["customer_group"]
         assert tasks["today"]["reference"] == "Apartment renovation"
         assert tasks["draft"]["reference"] == "Guest bathroom"
         assert tasks["overdue"]["customer_id"] == "customer-b"
@@ -122,4 +131,38 @@ async def test_today_dates_counts_floor_scope_and_department_projection():
         assert {task["id"] for task in overview["tasks"]} == {"kitchen", "other-worker", "unassigned", "own-cad"}
     finally:
         await client.drop_database(name)
+        client.close()
+
+
+@pytest.mark.asyncio
+async def test_followup_pages_keep_linked_tasks_together_and_keep_floor_scope(monkeypatch):
+    from routes import followup_routes
+
+    client = AsyncIOMotorClient(os.environ["TEST_TODAY_MONGO_URL"], serverSelectionTimeoutMS=3000)
+    database = client["forge_followup_group_test_" + uuid4().hex]
+    monkeypatch.setattr(followup_routes, "db", database)
+    actor = UserPublic(id="owner", email="owner@example.com", full_name="Owner", role="owner",
+                       active_floor_id="first-floor")
+    try:
+        await database.customers.insert_many([
+            {"id": "source", "floor_id": "ground-floor", "name": "Same name"},
+            {"id": "alias", "floor_id": "first-floor", "name": "Same name", "imported_from_customer_id": "source"},
+            {"id": "same-floor-alias", "floor_id": "first-floor", "name": "Same name", "identity_source_customer_id": "source"},
+        ])
+        rows = [{"id": f"t-{number:02d}", "floor_id": "first-floor", "customer_id": f"customer-{number:02d}",
+                 "status": "open", "category": "general", "due_at": "2099-01-01T00:00:00+00:00", "priority_score": 100 - number}
+                for number in range(28)]
+        rows[0]["customer_id"] = "alias"
+        rows[-1]["customer_id"] = "same-floor-alias"
+        await database.followups.insert_many([*rows, {**rows[0], "id": "foreign", "floor_id": "ground-floor"}])
+        first = await followup_routes.list_followups_page(user=actor, view="active", page=1, page_size=25, group_by_customer=True)
+        second = await followup_routes.list_followups_page(user=actor, view="active", page=2, page_size=25, group_by_customer=True)
+        first_ids = {row["id"]: row for row in first["items"]}
+        assert len(first_ids) == 26 and first["has_more"]
+        assert first_ids["t-00"]["customer_group"] == first_ids["t-27"]["customer_group"]
+        assert first_ids["t-00"]["customer_id"] != first_ids["t-27"]["customer_id"]
+        assert {row["id"] for row in second["items"]} == {"t-25", "t-26"}
+        assert "foreign" not in first_ids and not second["has_more"]
+    finally:
+        await client.drop_database(database.name)
         client.close()

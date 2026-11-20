@@ -3,11 +3,16 @@ import { api } from "@/src/api/client";
 import { DRAFT_TTL_MS } from "@/src/components/quotation/helpers/draftRecovery";
 import { removeRegisteredBuilderDraft, writeRegisteredBuilderDraft } from "@/src/components/quotation/helpers/draftStorage";
 
+export type TileCustomerIntent = {
+  name: string; phone: string; source?: { id: string; floor_id: string };
+};
+
 export type TileDraft<Header = any, Row = any, Partner = any> = {
   version: 1; accountId: string; docType: string; routeId: string | null; at: number;
   resetGeneration?: string;
   documentId: string | null; number: string | null; serverSavedAt: string | null; clientDraftId: string;
   customerId: string | null; customerSnapshot: { name: string; phone: string };
+  customerIntent?: TileCustomerIntent | null;
   header: Header; rows: Row[]; partner: Partner; legacyPartnerLabel: string; partnerEdited: boolean;
 };
 const keyFor = (accountId: string, docType: string, routeId: string | null) => `forge.builder.draft.v1.tiles.${encodeURIComponent(accountId)}.${encodeURIComponent(docType)}.${encodeURIComponent(routeId || "new")}`;
@@ -27,6 +32,8 @@ export function parseTileDraft(raw: string | null, accountId: string, docType: s
         && ["Box", "Pieces"].includes(row.quantityUnit))
       || new Set(draft.rows.map((row: any) => row.key)).size !== draft.rows.length
       || !draft.customerSnapshot || typeof draft.customerSnapshot.name !== "string" || typeof draft.customerSnapshot.phone !== "string"
+      || (draft.customerIntent != null && (typeof draft.customerIntent.name !== "string" || typeof draft.customerIntent.phone !== "string"
+        || (draft.customerIntent.source != null && (typeof draft.customerIntent.source.id !== "string" || typeof draft.customerIntent.source.floor_id !== "string"))))
       || typeof draft.legacyPartnerLabel !== "string" || typeof draft.partnerEdited !== "boolean"
       || ![draft.documentId, draft.number, draft.serverSavedAt, draft.customerId].every(value => value === null || typeof value === "string")
       || (draft.partner !== null && (!draft.partner || typeof draft.partner.id !== "string" || typeof draft.partner.name !== "string" || !["architect", "interior_designer"].includes(draft.partner.type)))) return null;

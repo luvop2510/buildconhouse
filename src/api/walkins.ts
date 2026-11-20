@@ -74,7 +74,7 @@ export const walkinsApi = {
     interested_floor_ids?: string[]; assignments?: import("./leads").LeadAssignment[]; referrer_id?: string | null; reference_source?: string | null;
     interested_products?: string[]; budget?: number; notes?: string;
     priority?: "low" | "medium" | "high" | "critical"; next_followup_at?: string;
-    use_existing_customer_id?: string; force_new_customer?: boolean;
+    use_existing_customer_id?: string; use_existing_customer_floor_id?: string; customer_request_key?: string; force_new_customer?: boolean;
   }) => api.post<WalkIn>("/walkins", body, { floorId: body.floor_id }),
 
   update: (id: string, body: Partial<{

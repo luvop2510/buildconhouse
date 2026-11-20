@@ -64,6 +64,11 @@ type CatalogFamily = {
   catalog_entry?: Product["catalog_entry"]; catalog_entries?: Product["catalog_entries"];
 };
 
+type QuotationCustomerInput = {
+  name: string; phone: string; address: string; requestKey: string;
+  source?: { id: string; floor_id: string };
+};
+
 // The catalog family endpoint deliberately returns one record per product
 // family. Adapt that compact API shape at the boundary so every picker, modal
 // and variant chip still works with the existing Product contract.
@@ -234,7 +239,7 @@ export type BuilderApi = {
 
   // Mutations — customers/lines
   setCustomer: (id: string) => void;
-  createCustomer: (data: { name: string; phone?: string; project?: string; address?: string }) => Promise<string | null>;
+  createCustomer: (data: QuotationCustomerInput) => Promise<string | null>;
   importCustomerFromGround: (sourceCustomerId: string) => Promise<boolean>;
   customerSwitcherOpen: boolean; setCustomerSwitcherOpen: (v: boolean) => void;
   setReferrer: (type: "architect" | "interior_designer", id: string, name: string) => void;
@@ -1159,11 +1164,11 @@ export function BuilderProvider({ onFinalize, onStartNew, initialProductId, init
   }, [s, lineBreakdownById]);
 
   // ---------- Mutations ----------
-  const setCustomer = useCallback((id: string) => {
+  const setCustomer = useCallback((id: string, selected?: Customer) => {
     const mutationKey = quotationMutationKey();
     if (id === history.state.customerId || mutations.isDeleting(mutationKey)) return;
     Haptics.selectionAsync();
-    const customer = customers.find((item) => item.id === id);
+    const customer = selected || customers.find((item) => item.id === id);
     history.apply((cur) => ({
       ...cur,
       customerId: id,
@@ -1203,25 +1208,24 @@ export function BuilderProvider({ onFinalize, onStartNew, initialProductId, init
     }
   }, [history, quotationId, customers, activeFloorId, mutations, quotationMutationKey]);
 
-  const createCustomer = useCallback(async (data: { name: string; phone?: string; project?: string; address?: string }) => {
+  const createCustomer = useCallback(async (data: QuotationCustomerInput) => {
+    const generation = documentGeneration.current;
     try {
       const created = await api.post<Customer>("/customers", {
-        name: data.name, phone: data.phone || null, project: data.project || null, address: data.address || null,
+        name: data.name, phone: data.phone || null, address: data.address || null,
+        ...(data.source ? { identity_source_customer_id: data.source.id, identity_source_floor_id: data.source.floor_id }
+          : { request_key: data.requestKey }),
       }, { floorId: activeFloorId });
-      setCustomers((cur) => [created, ...cur]);
-      setCustomer(created.id);
-      // React has not applied setCustomers yet, so setCustomer cannot see the
-      // new profile in its closure. Preserve the created contact snapshot.
-      history.apply((current) => ({ ...current, header: {
-        ...current.header, phone: created.phone || current.header.phone, address: created.address || "",
-      } }));
-      toast.success(`${created.name} added`);
+      if (generation !== documentGeneration.current) return null;
+      setCustomers((cur) => cur.some(item => item.id === created.id) ? cur : [created, ...cur]);
+      setCustomer(created.id, created);
+      toast.success(data.source ? `${created.name} selected` : `${created.name} added`);
       return created.id;
     } catch (e: any) {
       toast.error(e?.detail || "Could not create customer");
       return null;
     }
-  }, [setCustomer, activeFloorId, history]);
+  }, [setCustomer, activeFloorId]);
 
   const importCustomerFromGround = useCallback(async (sourceCustomerId: string) => {
     try {
