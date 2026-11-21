@@ -70,7 +70,7 @@ jobs:
       - name: Preserve required hosted evidence
         id: hosted-evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: hosted-readiness-${{ github.sha }}
           path: output/playwright/hosted-readiness/
