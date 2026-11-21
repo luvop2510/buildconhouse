@@ -855,6 +855,11 @@ class TileTransportation(BaseModel):
     amount: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
     note: str = Field(default="", max_length=500)
 
+    @field_validator("amount")
+    @classmethod
+    def normalize_amount(cls, value: float | None) -> float | None:
+        return round(value, 2) if value is not None else None
+
     @field_validator("note")
     @classmethod
     def normalize_note(cls, value: str) -> str:

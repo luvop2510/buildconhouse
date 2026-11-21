@@ -86,3 +86,8 @@ async def test_saved_transportation_matches_pdf_and_excel(monkeypatch, caplog, s
 def test_transportation_rejects_invalid_amounts(amount):
     with pytest.raises(ValidationError):
         TileTransportation(amount=amount)
+
+
+def test_transportation_uses_the_existing_billing_precision():
+    transportation = TileTransportation(amount=2.675, status="pending")
+    assert transportation.amount == routes._tile_totals({"grand_total": 0}, 2.675, "tiles_quotation")["grand_total"]
