@@ -36,7 +36,7 @@ import { downloadApiFile } from "@/src/utils/downloadFile";
 
 import { computeTotals, computeLineBreakdown, type LineBreakdown } from "../helpers/pricing";
 import { QuotationMutations } from "../helpers/autosave";
-import { productImageList } from "../helpers/media";
+import { quotationProductImages } from "../helpers/media";
 import { moveQuotationLine, reorderQuotationRoom } from "../helpers/reorder";
 import { cloneRoomProducts, hasReservedStock, matchesSavedRoomSnapshot, previewQuantityIncrease, quotationRoom, quotationRoomLines, validQuantityIncrease, type SavedRoomSnapshot } from "../helpers/roomProducts";
 import { restoreSingleCatalogChoice } from "../helpers/catalogFilters";
@@ -93,7 +93,7 @@ function familyCardToProduct(family: CatalogFamily): Product | null {
     catalog_entry: family.catalog_entry,
     catalog_entries: family.catalog_entries,
     price_unknown: family.price_unknown ?? representative.price_unknown,
-    images: family.sample_image ? [family.sample_image] : representative.image ? [representative.image] : [],
+    images: [representative.image || family.sample_image, ...(representative.image_candidates ?? [])].filter((image): image is string => !!image),
     finish: representative.finish ?? null,
     finish_code: representative.finish_code ?? null,
     variant_label: representative.variant_label ?? null,
@@ -1313,7 +1313,7 @@ export function BuilderProvider({ onFinalize, onStartNew, initialProductId, init
         lines: addProductAndConcealedPart(
           cur.lines, p, variant, cur.activeRoom,
           (productId) => `${productId}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-          productImageList(p)[0] ?? null, quantity, notes,
+          quotationProductImages(p, variant), quantity, notes,
         ).map((line) => existingIds.has(line.id) || line.area ? line : {
           ...line,
           area: suggestedProductArea(line.name, categoryById[line.category_id || ""]),
@@ -1674,14 +1674,14 @@ export function BuilderProvider({ onFinalize, onStartNew, initialProductId, init
         : target.name;
       const next = [...c.lines];
       const selectedProductId = variant?.id ?? target.id;
+      const photos = quotationProductImages(target, variant);
       next[idx] = {
         ...src,
         product_id: selectedProductId,
         sku: variant?.sku ?? target.sku,
         name: displayName,
-        // Do not retain the old line image or the representative card image
-        // when a selected variant has no own media.
-        image: variant ? variant.image ?? null : productImageList(target)[0] ?? null,
+        image: photos[0] ?? null,
+        image_candidates: photos.slice(1),
         category_id: target.category_id,
         unit_price: variant?.price ?? target.price,
         mrp: variant?.mrp ?? target.mrp,

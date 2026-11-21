@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { quotationGridColumns } from "../src/components/quotation/helpers/responsive.ts";
-import { productImageList, resolveVariantImages } from "../src/components/quotation/helpers/media.ts";
+import { productImageList, quotationProductImages, resolveVariantImages } from "../src/components/quotation/helpers/media.ts";
 
 // Phones retain two touch-friendly columns. Tablet picker widths use the
 // available space to keep five complete choices in the first row.
@@ -49,7 +49,7 @@ assert.deepEqual(productImageList({
   images: [],
 }), ["original", "thumbnail"]);
 const chromeBase = {
-  sku: "CHROME", hero_image_url: "chrome-hero", gallery: [{ url: "chrome-hero" }], images: ["chrome-hero"],
+  id: "chrome", sku: "CHROME", hero_image_url: "chrome-hero", gallery: [{ url: "chrome-hero" }], images: ["chrome-hero"],
   variants: [{ sku: "BROWN-RED", image: "brown-red-hero", mrp: 1, price: 1 }],
 };
 assert.deepEqual(resolveVariantImages(chromeBase, chromeBase.variants[0]), {
@@ -58,6 +58,9 @@ assert.deepEqual(resolveVariantImages(chromeBase, chromeBase.variants[0]), {
 assert.deepEqual(resolveVariantImages(chromeBase, { ...chromeBase.variants[0], image: null }), {
   images: ["chrome-hero"], isFallback: true,
 });
+assert.deepEqual(quotationProductImages(chromeBase, { ...chromeBase.variants[0], image: null }), []);
+assert.deepEqual(quotationProductImages(chromeBase, { ...chromeBase.variants[0], image_candidates: ["brown-red-gallery"] }), ["brown-red-hero", "brown-red-gallery"]);
+assert.deepEqual(quotationProductImages(chromeBase, { sku: "CHROME", image: null }), ["chrome-hero"]);
 
 // Keep this zero-config Node contract free of app-runtime imports. Importing
 // tilePresentation used its @/ alias, which Node's strip-types runner cannot
@@ -77,7 +80,7 @@ assert.match(productImageSource, /preferOriginal/);
 // Tile document frames are horizontal, but source media must remain upright
 // and fully visible instead of being mirrored, rotated, or cropped.
 const tilesDocBuilderSource = readFileSync(new URL("../src/components/tiles/TilesDocBuilder.tsx", import.meta.url), "utf8");
-assert.match(tilesDocBuilderSource, /function TileImageCell\(\{ uri \}/);
+assert.match(tilesDocBuilderSource, /function TileImageCell\(\{ uri, sku \}/);
 assert.match(tilesDocBuilderSource, /contentFit="contain"/);
 assert.doesNotMatch(tilesDocBuilderSource, /forceLandscape|tileNeedsLandscapeRotation|rotation=\{/);
 const lineRowSource = readFileSync(new URL("../src/components/quotation/canvas/LineRow.tsx", import.meta.url), "utf8");
@@ -111,11 +114,11 @@ assert.match(builderSource, /controller\.abort\(\)/);
 // as its own SKU/product so the saved quotation and PDF resolve its own media.
 assert.match(builderSource, /addProductAndConcealedPart\(/);
 assert.match(concealedPartSource, /const productId = variant\?\.id \|\| product\.id/);
-assert.match(concealedPartSource, /image: variant\?\.image \|\| primaryImage/);
+assert.match(concealedPartSource, /image: photoUrls\[0\] \?\? null, image_candidates: photoUrls\.slice\(1\)/);
 assert.match(builderSource, /const selectedProductId = variant\?\.id \?\? target\.id/);
-assert.match(builderSource, /image: variant \? variant\.image \?\? null : productImageList\(target\)\[0\] \?\? null/);
+assert.match(builderSource, /const photos = quotationProductImages\(target, variant\)/);
 const assistantSource = readFileSync(new URL("../src/components/quotation/panes/AssistantPane.tsx", import.meta.url), "utf8");
-assert.match(assistantSource, /focusedLine\?\.image/);
+assert.match(assistantSource, /quotationLineImages\(focusedLine\)/);
 assert.match(assistantSource, /height: 148/);
 
-console.log("quotation media/layout helpers: 46 assertions passed");
+console.log("Quotation media/layout helpers passed");

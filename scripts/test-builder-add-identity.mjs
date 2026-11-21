@@ -26,7 +26,7 @@ const render = (history, categoryById) => {
       return previous.callback;
     },
     catalogPriceUnknown: () => false, Haptics: { selectionAsync() {} }, playAddProductSound() {},
-    productImageList: () => [], addProductAndConcealedPart, suggestedProductArea: (_name, category) => category,
+    quotationProductImages: () => [], addProductAndConcealedPart, suggestedProductArea: (_name, category) => category,
   });
   return output.callback;
 };

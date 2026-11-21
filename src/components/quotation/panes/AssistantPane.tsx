@@ -28,7 +28,7 @@ import { colors, money, PRODUCT_IMAGE_ASPECT_RATIO, radius, spacing, type } from
 
 import { useBuilder } from "../context/BuilderContext";
 import { effectivePct } from "../helpers/pricing";
-import { productImageList, resolveVariantImages } from "../helpers/media";
+import { productImageList, quotationLineImages, quotationProductImages, resolveVariantImages } from "../helpers/media";
 import { VariantChip } from "../shared/VariantChip";
 import type { Line, Product, ProductVariant } from "../helpers/types";
 
@@ -136,16 +136,15 @@ export function AssistantPane({ onClose }: { onClose?: () => void }) {
 
   const activeSku = focusedLine?.sku ?? product.sku;
   const activeVariant: ProductVariant | undefined = (product.variants || []).find((v) => v.sku === activeSku);
-  // Falls back to a sibling finish's photo when the active one has none of
-  // its own, rather than leaving the gallery empty (see helpers/media.ts).
-  const { images: heroImages, isFallback: heroIsFallback } = resolveVariantImages(product, activeVariant);
-  // A quotation retains the image selected at the time its line was added.
-  // Keep that snapshot as a final fallback so a deleted/migrated catalog
-  // media row cannot leave the right-pane preview as an empty frame.
+  // Product browsing can show a labelled representative photo. A quoted
+  // line uses only its own catalogue media and saved references.
+  const { images: heroImages, isFallback: heroIsFallback } = focusedLine
+    ? { images: quotationProductImages(product, activeVariant), isFallback: false }
+    : resolveVariantImages(product, activeVariant);
   const assistantImages = Array.from(new Set([
     ...heroImages,
-    focusedLine?.image || "",
-  ].filter(Boolean)));
+    ...(focusedLine ? quotationLineImages(focusedLine) : []),
+  ]));
   const price = focusedLine?.unit_price ?? activeVariant?.price ?? product.price;
   const mrp = activeVariant?.mrp ?? product.mrp ?? product.price;
   const brand = product.brand_name || product.brand_id;
@@ -165,13 +164,15 @@ export function AssistantPane({ onClose }: { onClose?: () => void }) {
       const displayName = (v.finish || v.color || v.size)
         ? `${product.name} · ${v.finish || v.color || v.size}`
         : product.name;
+      const photos = quotationProductImages(product, v);
       b.updateLine(focusedLine.id, {
         product_id: v.id ?? focusedLine.product_id,
         sku: v.sku,
         name: displayName,
         unit_price: v.price ?? product.price,
         finish,
-        image: resolveVariantImages(product, v).images[0] ?? focusedLine.image,
+        image: photos[0] ?? null,
+        image_candidates: photos.slice(1),
       });
     } else if (v.id) {
       b.setAssistantFocus({ kind: "product", product_id: v.id, product });

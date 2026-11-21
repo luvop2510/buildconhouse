@@ -29,7 +29,7 @@ from reportlab.platypus import (
     PageBreak, PageTemplate, Paragraph, SimpleDocTemplate,
     Spacer, Table, TableStyle,
 )
-from services.pdf_image_loader import image_loader_metrics, prefetch_urls, remote_image_bytes
+from services.pdf_image_loader import embedded_image_bytes, image_loader_metrics, prefetch_urls, remote_image_bytes
 
 logger = logging.getLogger("forge.pdf")
 
@@ -315,11 +315,18 @@ def prefetch_product_images(items: Iterable[dict], *, workers: int = 6, timeout:
     Rendering uses this snapshot without starting serial network retries.
     Missing, corrupt and timed-out images retain the existing placeholder.
     """
-    urls = list(dict.fromkeys(
-        str(item.get("image")) for item in items
-        if str(item.get("image") or "").startswith(("https://", "http://"))
-    ))
-    return prefetch_urls(urls, _remote_image_bytes, workers=workers, timeout=timeout)
+    rows = list(items)
+    references = dict.fromkeys(ref for ref in (
+        *(row.get("image") for row in rows),
+        *(url for row in rows for url in row.get("image_candidates") or []),
+    ) if isinstance(ref, str))
+    return {
+        **prefetch_urls(
+            [ref for ref in references if ref.startswith(("https://", "http://"))],
+            _remote_image_bytes, workers=workers, timeout=timeout,
+        ),
+        **{ref: embedded_image_bytes(ref) for ref in references if ref.startswith("data:image/")},
+    }
 
 
 def _media_urls(item: dict, field: str) -> list[str]:
@@ -372,6 +379,7 @@ class _ProductImageFrame(Flowable):
         if trim_whitespace:
             data = _trim_product_whitespace(data)
         self.reader = ImageReader(BytesIO(data))
+        self.reader.getRGBData()
         self.width = width_mm * mm
         self.height = height_mm * mm
         # Match ReportLab Image's public geometry attributes so instrumentation
@@ -476,8 +484,11 @@ def _img(
     table-cell alignment ambiguity and lets portrait and landscape products
     use the largest non-distorted fit without losing product detail.
     """
-    if url and str(url).startswith(("https://", "http://")):
-        data = image_bytes.get(str(url)) if image_bytes is not None else _remote_image_bytes(str(url))
+    if url and str(url).startswith(("https://", "http://", "data:image/")):
+        if image_bytes is not None:
+            data = image_bytes.get(url)
+        else:
+            data = embedded_image_bytes(url) if url.startswith("data:image/") else _remote_image_bytes(url)
         if data:
             try:
                 prepared = _prepare_image_bytes(data)
@@ -497,6 +508,33 @@ def _img(
             except Exception:
                 pass
     return _ImageUnavailableFrame(width_mm, height_mm)
+
+
+def _item_img(
+    item: dict,
+    *,
+    image_bytes: dict[str, bytes | None],
+    fallback_url: str | None = None,
+    width_mm: float = STANDARD_PRODUCT_IMAGE_WIDTH_MM,
+    height_mm: float = STANDARD_PRODUCT_IMAGE_HEIGHT_MM,
+    force_landscape: bool = False,
+    cover: bool = False,
+    trim_whitespace: bool = True,
+) -> Flowable:
+    references = tuple(ref for ref in (item.get("image"), *(item.get("image_candidates") or []), fallback_url)
+                       if isinstance(ref, str) and ref)
+    for url in references or (None,):
+        frame = _img(
+            url, width_mm=width_mm, height_mm=height_mm, force_landscape=force_landscape,
+            cover=cover, trim_whitespace=trim_whitespace, image_bytes=image_bytes,
+        )
+        if not isinstance(frame, _ImageUnavailableFrame):
+            return frame
+    logger.warning(
+        "quotation_product_image_unavailable product_id=%s sku=%s reason=%s",
+        item.get("product_id"), item.get("sku"), "unloadable" if references else "missing_reference",
+    )
+    return frame
 
 
 def _draw_footer(cv, doc, branding: dict | None = None, *, floor_id: str | None = None) -> None:
@@ -1074,11 +1112,14 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
                 description = _ellipsize(" | ".join(description_parts), 210)
                 seat_urls = _seat_cover_urls(item)
                 diagram_urls = _media_urls(item, "dimension_image_urls") if quotation.get("include_dimensions") and not item.get("exclude_dimension") else []
-                primary_image = item.get("image") or (seat_urls[0] if seat_urls else None)
-                product_images: list[Flowable] = [_img(primary_image, width_mm=image_width_mm, height_mm=image_height_mm, trim_whitespace=False, image_bytes=image_bytes)]
+                seat_fallback = seat_urls[0] if not item.get("image") and seat_urls else None
+                product_images: list[Flowable] = [_item_img(
+                    item, fallback_url=seat_fallback, width_mm=image_width_mm, height_mm=image_height_mm,
+                    trim_whitespace=False, image_bytes=image_bytes,
+                )]
                 product_images.extend(
                     _img(url, width_mm=image_width_mm, height_mm=image_height_mm, trim_whitespace=False, image_bytes=image_bytes)
-                    for url in seat_urls[:1] if url != primary_image
+                    for url in seat_urls[:1] if url != seat_fallback
                 )
                 diagram_images: list[Flowable] = [
                     _img(url, width_mm=image_width_mm, height_mm=image_height_mm, trim_whitespace=False, image_bytes=image_bytes)

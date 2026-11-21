@@ -11,6 +11,7 @@ import Feather from "@expo/vector-icons/Feather";
 import { useState } from "react";
 import { Platform, Pressable, StyleSheet, View } from "react-native";
 import { Text } from "@/src/components/AppText";
+import { ProductImage } from "@/src/components/ProductImage";
 import { StatusBadge } from "@/src/components/ui";
 
 import { colors, radius, spacing, type } from "@/src/theme/tokens";
@@ -26,6 +27,7 @@ import { useFloorAccess } from "@/src/hooks/use-floor-access";
 import { WhatsAppQuotationSheet, prepareQuotationWhatsAppDraft, type WhatsAppQuotationDraft } from "../WhatsAppQuotationSheet";
 
 import { useBuilder } from "../context/BuilderContext";
+import { quotationLineImages } from "../helpers/media";
 import { quotationDisplayStatus } from "@/src/utils/quotationStatus";
 
 // isPhone/isDesktop are measured off the builder's own container width by
@@ -239,7 +241,19 @@ export function BuilderTopbar({
       <BottomSheet visible={previewOpen} onClose={() => setPreviewOpen(false)} title="Quotation preview" testID="quotation-preview-sheet">
         <View style={{ gap: 12 }} accessibilityLiveRegion="polite">
           <Text style={type.caption}>{b.s.customerId ? "Review items before generating the PDF or placing the order." : "Choose a customer before saving this quotation."}</Text>
-          {b.s.lines.map(line => <View key={line.id} style={styles.previewRow}><View style={{ flex: 1, minWidth: 0 }}><Text style={styles.previewName} numberOfLines={2}>{line.name}</Text><Text style={type.caption}>{line.sku}{line.godown_stock_id ? ` · From godown${line.godown_source_customer_name ? ` · ${line.godown_source_customer_name}` : ""}` : ""}</Text></View><Text style={styles.previewQty}>{line.qty} × ₹{line.unit_price.toLocaleString("en-IN")}</Text></View>)}
+          {b.s.lines.map(line => (
+            <View key={line.id} style={styles.previewRow}>
+              <ProductImage
+                source={quotationLineImages(line)} style={styles.previewPhoto} fallbackLabel={line.sku}
+                accessibilityLabel={`${line.name} product image`} testID={`quotation-preview-photo-${line.id}`} disableSkeleton
+              />
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={styles.previewName} numberOfLines={2}>{line.name}</Text>
+                <Text style={type.caption}>{line.sku}{line.godown_stock_id ? ` · From godown${line.godown_source_customer_name ? ` · ${line.godown_source_customer_name}` : ""}` : ""}</Text>
+              </View>
+              <Text style={styles.previewQty}>{line.qty} × ₹{line.unit_price.toLocaleString("en-IN")}</Text>
+            </View>
+          ))}
           <View style={styles.previewTotal}><Text style={type.titleMd}>Total</Text><Text style={type.titleLg}>₹{b.totals.grand.toLocaleString("en-IN")}</Text></View>
         </View>
       </BottomSheet>
@@ -273,6 +287,7 @@ const styles = StyleSheet.create({
   actionRow: { minHeight: 48, flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 12 },
   actionLabel: { fontSize: 15, fontWeight: "600", color: colors.onSurface },
   previewRow: { minHeight: 48, flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: colors.border },
+  previewPhoto: { width: 48, height: 42 },
   previewName: { fontSize: 14, fontWeight: "600", color: colors.onSurface },
   previewQty: { fontSize: 12, fontWeight: "600", color: colors.onSurfaceMuted },
   previewTotal: { flexDirection: "row", justifyContent: "space-between", paddingTop: 8 },

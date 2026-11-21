@@ -89,7 +89,7 @@ const ZEBRA = "#F0F0F0";
 const GRID = "#8A8A8A";
 const SERIF = font.regular; // legacy field alias; document editing uses the app font
 
-function TileImageCell({ uri }: { uri: string }) {
+function TileImageCell({ uri, sku }: { uri: string[]; sku: string }) {
   const [cellWidth, setCellWidth] = useState(0);
   // A numeric size is intentional: percentage sizing in an RN-web table cell
   // can shrink to the source bitmap's intrinsic square. This guarantees every
@@ -106,6 +106,7 @@ function TileImageCell({ uri }: { uri: string }) {
         frameBackground="#FFFFFF"
         style={{ width: imageWidth, height: imageWidth / TILE_IMAGE_ASPECT_RATIO }}
         accessibilityLabel="Quotation product image"
+        fallbackLabel={sku}
       />
     </View>
   );
@@ -119,6 +120,7 @@ type TileRow = {
   categoryId: string | null;
   name: string;
   image: string | null;
+  imageCandidates?: string[];
   mrp: number | null;
   catalogRate?: number | null;
   area: string;
@@ -151,6 +153,19 @@ type TileRow = {
   finishVariants?: { id: string; finish: string }[];
 };
 
+function rowPhotoSources(row: TileRow): string[] {
+  return [row.image, ...(row.imageCandidates || [])].filter((url): url is string => !!url);
+}
+
+const TRANSPORTATION_STATUSES = {
+  paid: "Paid",
+  pending: "Not Paid / Pending",
+  to_be_decided: "Charges To Be Decided",
+  customer_arranged: "Customer Will Arrange Transportation",
+  custom: "Custom",
+} as const;
+type TransportationStatus = keyof typeof TRANSPORTATION_STATUSES;
+
 type TilesHeader = {
   customerName: string;
   phone: string;
@@ -161,7 +176,22 @@ type TilesHeader = {
   address: string;
   docNumber: string;
   transportationFee: string;
+  transportationStatus: TransportationStatus | "";
+  transportationNote: string;
 };
+
+const EMPTY_TRANSPORTATION = { transportationFee: "", transportationStatus: "", transportationNote: "" } as const;
+
+function transportationAcceptsAmount(status: TilesHeader["transportationStatus"]): boolean {
+  return status !== "to_be_decided" && status !== "customer_arranged";
+}
+
+function enteredTransportationAmount(header: TilesHeader): number | null {
+  const value = header.transportationFee.replace(/,/g, "").trim();
+  if (!transportationAcceptsAmount(header.transportationStatus) || !value) return null;
+  const amount = Number(value);
+  return Number.isFinite(amount) && /^(?:\d+(?:\.\d*)?|\.\d+)$/.test(value) ? amount : NaN;
+}
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -304,7 +334,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
   const partnerSavedVersion = useRef(0);
   const [header, setHeader] = useState<TilesHeader>({
     customerName: "", phone: "", reference: "", docDate: defaultDocDate(docType),
-    attendedBy: "", preparedBy: "", address: "", docNumber: "", transportationFee: "0",
+    attendedBy: "", preparedBy: "", address: "", docNumber: "", ...EMPTY_TRANSPORTATION,
   });
   const [rows, setRows] = useState<TileRow[]>([emptyRow()]);
   const [saveState, setSaveState] = useState<TileSaveState>("idle");
@@ -349,7 +379,12 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
 
   const applyLocalDraft = useCallback((draft: TileDraft<TilesHeader, TileRow, ReferrerValue>, asCopy = false) => {
     clientDraftIdRef.current = asCopy ? randomUUID() : draft.clientDraftId;
-    setHeader(draft.header);
+    setHeader({
+      ...EMPTY_TRANSPORTATION,
+      ...draft.header,
+      transportationFee: draft.header.transportationStatus === undefined && draft.header.transportationFee === "0" ? "" : draft.header.transportationFee,
+      transportationStatus: Object.prototype.hasOwnProperty.call(TRANSPORTATION_STATUSES, draft.header.transportationStatus) ? draft.header.transportationStatus : "",
+    });
     setRows(draft.rows.map(row => ({ ...row, ...(asCopy ? { lineId: null } : {}), availableSizes: undefined, finishVariants: undefined })));
     setCustomerId(draft.customerId); customerIdRef.current = draft.customerId;
     customerIntentRef.current = asCopy ? null : draft.customerIntent || null;
@@ -389,7 +424,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
       dirtyRef.current = false; persistedIdRef.current = null; customerIdRef.current = null; createdDraftDocumentId.current = null;
       serverSavedAtRef.current = null; clientDraftIdRef.current = randomUUID();
       setDocId(null); setDocNumberServer(null); setCustomerId(null); setCustomerSnapshot({ name: "", phone: "" });
-      setHeader({ customerName: "", phone: "", reference: "", docDate: defaultDocDate(docType), attendedBy: "", preparedBy: "", address: "", docNumber: "", transportationFee: "0" });
+      setHeader({ customerName: "", phone: "", reference: "", docDate: defaultDocDate(docType), attendedBy: "", preparedBy: "", address: "", docNumber: "", ...EMPTY_TRANSPORTATION });
       setRows([emptyRow()]); setPartner(null); setLegacyPartnerLabel(""); setPartnerEditVersion(0); partnerSavedVersion.current = 0;
       setStatus("draft"); setSaveState("idle");
       setRestoreError(null);
@@ -436,6 +471,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
         setCustomerSnapshot({ name: doc.customer_name || "", phone: doc.phone_snapshot || "" });
         setLegacyPartnerLabel(doc.referrer_name || "");
         setPartner(doc.referrer_id && doc.referrer_type ? { id: doc.referrer_id, type: doc.referrer_type, name: doc.referrer_name || "", company: doc.referrer_company } : null);
+        const transportAmount = doc.transportation ? doc.transportation.amount : doc.transportation_fee || null;
         setHeader({
           customerName: doc.customer_name || "",
           phone: doc.phone_snapshot || "",
@@ -445,7 +481,9 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
           preparedBy: doc.prepared_by || "",
           address: doc.address_snapshot || "",
           docNumber: doc.doc_number || doc.number || "",
-          transportationFee: doc.transportation_fee != null ? String(doc.transportation_fee) : "0",
+          transportationFee: transportAmount != null ? String(transportAmount) : "",
+          transportationStatus: doc.transportation?.status || "",
+          transportationNote: doc.transportation?.note || "",
         });
         const restored: TileRow[] = (doc.items || []).map((it: any): TileRow => ({
           key: it.id || `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -455,6 +493,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
           categoryId: it.category_id || null,
           name: it.name || "",
           image: it.image || null,
+          imageCandidates: it.image_candidates,
           mrp: it.mrp ?? null,
           area: it.room || "",
           size: it.size || "",
@@ -514,8 +553,17 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
     return () => { current = false; };
   }, [accountId, localReady, loading, restoreError, recoveryDraft, header, rows, partner, partnerEditVersion, customerId, customerSnapshot, docId, routeId, documentScope, mutations]);
 
-  const setHeaderField = useCallback((field: keyof TilesHeader, value: string) => {
+  const setHeaderField = useCallback((field: Exclude<keyof TilesHeader, "transportationStatus">, value: string) => {
     setHeader((cur) => ({ ...cur, [field]: value }));
+    markDirty();
+  }, [markDirty]);
+
+  const setTransportationStatus = useCallback((status: TransportationStatus) => {
+    setHeader((cur) => ({
+      ...cur,
+      transportationStatus: status,
+      transportationFee: transportationAcceptsAmount(status) ? cur.transportationFee : "",
+    }));
     markDirty();
   }, [markDirty]);
 
@@ -600,8 +648,8 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
   const applyProduct = useCallback((key: string, product: Product, history?: { size: string | null; rate_sqft: number | null; rate_box: number | null; pcs_per_box: string | null; box_sqft?: number | null }) => {
     variantRequests.current[key] = (variantRequests.current[key] || 0) + 1;
     if (pendingFinishes.current.delete(key)) setFinishRevision(value => value + 1);
-    const image = productImageList(product)[0] || null;
-    if (!image) {
+    const [image = null, ...imageCandidates] = productImageList(product);
+    if (!image && docType === "tiles_selection") {
       toast.error("This product has no image. Add a product image before including it in a tile selection.");
       return;
     }
@@ -638,6 +686,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
         categoryId: product.category_id || null,
         name: product.name,
         image,
+        imageCandidates,
         mrp: product.mrp ?? null,
         catalogRate: product.price ?? product.mrp ?? null,
         size: history?.size || product.size || product.dimensions || row.size,
@@ -669,7 +718,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
     // The full product response may already include the metadata; querying
     // this canonical endpoint also covers catalog pages that omit it.
     void loadRowSizes(key, product.id);
-  }, [markDirty, customerId, loadRowSizes]);
+  }, [markDirty, customerId, loadRowSizes, docType]);
 
   // Catalog's Ground Floor CTA deep-links here with a concrete product. Seed
   // only an unsaved document: an existing document URL always remains the
@@ -711,7 +760,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
     try {
       const product = await api.get<Product>(`/products/${encodeURIComponent(productId)}`, { floorId: TILES_FLOOR_ID });
       if (variantRequests.current[key] !== request) return false;
-      if (!productImageList(product)[0]) {
+      if (docType === "tiles_selection" && !productImageList(product)[0]) {
         toast.error("This product has no image. Add a product image before including it in a tile selection.");
         return false;
       }
@@ -723,7 +772,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
     } finally {
       if (variantRequests.current[key] === request && pendingFinishes.current.delete(key)) setFinishRevision(value => value + 1);
     }
-  }, [applyProduct]);
+  }, [applyProduct, docType]);
 
   // ---- Persistence -------------------------------------------------------
   const buildItems = useCallback(() => {
@@ -764,13 +813,13 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
   // Show the same subtotal/transport/grand-total relationship immediately
   // while the debounced autosave round-trip is in flight.
   const hasUnsavedItemEdits = itemEditRevision.current > savedItemRevision.current;
+  const previewTransportation = docType === "tiles_quotation" ? enteredTransportationAmount(header) || 0 : 0;
   const previewTotals = useMemo(() => {
     const lines = rows.flatMap((row) => {
       if (!row.productId || !row.name.trim()) return [];
       return [{ qty: 1, unitPrice: resolvedLineTotal(row) }];
     });
-    const transportation = docType === "tiles_quotation" ? num(header.transportationFee) : 0;
-    const totals = computeQuotationTotals(lines, transportation);
+    const totals = computeQuotationTotals(lines, previewTransportation);
     const discount = docType === "tiles_quotation" ? Math.round(rows.reduce((sum, row) => {
       if (!row.productId || !row.name.trim() || row.totalEdited) return sum;
       return sum + num(row.totalBox) * tileUnitRate(row) - resolvedLineTotal(row);
@@ -785,7 +834,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
       transportation: totals.transportation,
       grandTotal: totals.grandTotal,
     };
-  }, [rows, header.transportationFee, docType, serverTotals, hasUnsavedItemEdits]);
+  }, [rows, previewTransportation, docType, serverTotals, hasUnsavedItemEdits]);
 
   const persist = useCallback(async ({ silent = true, review = false }: { silent?: boolean; review?: boolean } = {}): Promise<string | null> => {
     const savingRevision = editRevisionRef.current;
@@ -807,6 +856,11 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
       }
       if (!silent && docType === "tiles_quotation" && !address) {
         toast.show("Enter the address before saving or generating the quotation");
+        return null;
+      }
+      const transportationAmount = docType === "tiles_quotation" ? enteredTransportationAmount(header) : null;
+      if (Number.isNaN(transportationAmount)) {
+        if (!silent) toast.show("Enter a valid transportation amount or leave it blank.");
         return null;
       }
       const hasInvalidQuantity = rows.some((row) => row.productId && (!Number.isFinite(Number(row.totalBox)) || Number(row.totalBox) <= 0));
@@ -890,7 +944,12 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
         address_snapshot: address || null,
         doc_date: header.docDate.trim() || null,
         doc_number: header.docNumber.trim() || null,
-        transportation_fee: docType === "tiles_quotation" ? num(header.transportationFee) : 0,
+        transportation_fee: transportationAmount ?? 0,
+        ...(docType === "tiles_quotation" ? { transportation: {
+          status: header.transportationStatus || null,
+          amount: transportationAmount,
+          note: header.transportationNote.trim(),
+        } } : {}),
       };
       const referenceEdited = partnerEditVersion > partnerSavedVersion.current;
       if (referenceEdited) { payload.referrer_id = partner?.id || ""; payload.referrer_type = partner?.type || null; }
@@ -997,7 +1056,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
 
   const generatePdf = useCallback(async () => {
     if (busy) return;
-    if (rows.some((row) => row.productId && !row.image?.trim())) {
+    if (docType === "tiles_selection" && rows.some((row) => row.productId && !row.image?.trim())) {
       toast.error("Every selected tile needs a product image before generating the PDF.");
       return;
     }
@@ -1009,7 +1068,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
     } finally {
       setBusy(null);
     }
-  }, [busy, documentForExport, header.customerName, header.docDate, rows]);
+  }, [busy, documentForExport, header.customerName, header.docDate, rows, docType]);
 
   const generateExcel = useCallback(async () => {
     if (busy || docType !== "tiles_quotation") return;
@@ -1254,7 +1313,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
 
   return {
     followupError, retryFollowup: () => setFollowupAttempt(value => value + 1),
-    docId, docNumberServer, loading, restoreError, retryRestore: () => setRestoreAttempt((value) => value + 1), header, setHeaderField, rows,
+    docId, docNumberServer, loading, restoreError, retryRestore: () => setRestoreAttempt((value) => value + 1), header, setHeaderField, setTransportationStatus, rows,
     hasDraft: Boolean(docId || header.customerName || header.address || header.phone || rows.some(row => row.productId)),
     updateRow, addRow, removeRow, applyProduct, selectRowSize, selectRowFinish, loadRowSizes,
     customers, customerId, pickCustomer, setCustomerId, setCustomerLookupActive, partner, legacyPartnerLabel, referenceScope: documentScope,
@@ -1673,6 +1732,7 @@ const TILES_TERMS = [
   "On confirmation of purchase order, material will be delivered within 15 days.",
   "Labour cost is extra and not included in this quotation.",
 ];
+const QUOTED_FREIGHT_TERMS = "Freight follows the quoted transportation terms. Unloading charges are as per actuals.";
 
 function SectionHeader({ title, subtitle }: { title: string; subtitle: string }) {
   return (
@@ -1781,7 +1841,7 @@ function BrandPartnersGrid() {
   );
 }
 
-function TermsAndSignatureBlock() {
+function TermsAndSignatureBlock({ hasTransportTerms = false }: { hasTransportTerms?: boolean }) {
   return (
     <View style={{ marginTop: 14 }}>
       <Text style={sectionStyles.title}>OUR BRAND PARTNERS</Text>
@@ -1789,7 +1849,7 @@ function TermsAndSignatureBlock() {
       <Text style={[sectionStyles.title, { marginTop: 14 }]}>TERMS &amp; CONDITIONS</Text>
       <View style={{ marginTop: 4, gap: 2 }}>
         {TILES_TERMS.map((term, i) => (
-          <Text key={i} style={sectionStyles.term}>{i + 1}. {term}</Text>
+          <Text key={i} style={sectionStyles.term}>{i + 1}. {hasTransportTerms && i === 3 ? QUOTED_FREIGHT_TERMS : term}</Text>
         ))}
       </View>
       <Text style={sectionStyles.contact}>
@@ -1932,7 +1992,7 @@ function SelectionPaper(doc: ReturnType<typeof useTilesDoc>) {
           ]}>
             <View style={[selStyles.td, flex(0)]}><Text style={selStyles.cellText}>{index + 1}</Text></View>
             <View style={[selStyles.td, flex(1), { padding: 2 }]}>
-              {row.image ? <TileImageCell uri={row.image} /> : null}
+              {row.image ? <TileImageCell uri={rowPhotoSources(row)} sku={row.sku} /> : null}
             </View>
             <View style={[selStyles.td, flex(2)]}>
               <CellInput value={row.area} onChangeText={(t) => doc.updateRow(row.key, { area: t })} placeholder="Area" multiline testID={`tiles-area-${index}`} />
@@ -2039,7 +2099,7 @@ function QuotationPaper(doc: ReturnType<typeof useTilesDoc>) {
         rates for premium tiles and sanitaryware, prepared as per your selection.
       </Text>
       <PriceSummary totals={totals} />
-      <TermsAndSignatureBlock />
+      <TermsAndSignatureBlock hasTransportTerms={Boolean(doc.header.transportationStatus || doc.header.transportationNote.trim())} />
       </View>
 
       <View style={paperStyles.paper}>
@@ -2061,7 +2121,7 @@ function QuotationPaper(doc: ReturnType<typeof useTilesDoc>) {
           ]}>
             <View style={[quoStyles.td, flex(0)]}><Text style={quoStyles.cellText}>{index + 1}</Text></View>
             <View style={[quoStyles.td, flex(1), { padding: 2 }]}>
-              {row.image ? <TileImageCell uri={row.image} /> : null}
+              {row.productId ? <TileImageCell uri={rowPhotoSources(row)} sku={row.sku} /> : null}
             </View>
             <View style={[quoStyles.td, flex(2)]}>
               <CellInput value={row.area} onChangeText={(t) => doc.updateRow(row.key, { area: t })} placeholder="Area" multiline testID={`tiles-area-${index}`} />
@@ -2113,11 +2173,8 @@ function QuotationPaper(doc: ReturnType<typeof useTilesDoc>) {
             />
           </View>
         ))}
-        <View style={[quoStyles.tr, { backgroundColor: HEAD_GREY }]} testID="tiles-transportation-row">
-          <View style={[quoStyles.td, quoStyles.summaryLabel]}><Text style={quoStyles.th}>TRANSPORTATION (₹)</Text></View>
-          <View style={[quoStyles.td, flex(10), { borderRightWidth: 0 }]}>
-            <CellInput value={doc.header.transportationFee} onChangeText={(value) => doc.setHeaderField("transportationFee", value)} keyboardType="decimal-pad" testID="tiles-transportation-fee" />
-          </View>
+        <View style={[quoStyles.tr, { padding: spacing.md }]} testID="tiles-transportation-row">
+          <TransportationFields doc={doc} />
         </View>
         {[
           { label: "SUBTOTAL", value: totals.subtotal },
@@ -2165,6 +2222,47 @@ const quoStyles = StyleSheet.create({
 function boxRateText(row: TileRow): string {
   const rate = tileQuotationBoxRate(row);
   return rate == null ? "—" : money(rate);
+}
+
+function TransportationFields({ doc, compact = false }: { doc: ReturnType<typeof useTilesDoc>; compact?: boolean }) {
+  const { transportationStatus, transportationFee, transportationNote } = doc.header;
+  return (
+    <View style={[{ minWidth: 0, gap: spacing.md }, !compact && { flex: 1 }]}>
+      <Text style={type.titleSm}>Transportation</Text>
+      <View style={{ flexDirection: compact ? "column" : "row", alignItems: compact ? "stretch" : "flex-start", gap: spacing.md }}>
+        <View style={{ flex: compact ? undefined : 1, gap: spacing.sm }}>
+          <Text style={type.label}>Status or arrangement</Text>
+          <Dropdown
+            label={transportationStatus ? TRANSPORTATION_STATUSES[transportationStatus] : "Choose transportation status"}
+            testID="tiles-transportation-status"
+            items={(Object.entries(TRANSPORTATION_STATUSES) as [TransportationStatus, string][]).map(([status, label]) => ({
+              label,
+              onPress: () => doc.setTransportationStatus(status),
+            }))}
+          />
+        </View>
+        {transportationAcceptsAmount(transportationStatus) ? <TextField
+          containerStyle={{ flex: compact ? undefined : 1 }}
+          label="Transportation amount (₹, optional)"
+          value={transportationFee}
+          onChangeText={(value: string) => doc.setHeaderField("transportationFee", value)}
+          keyboardType="decimal-pad"
+          error={Number.isNaN(enteredTransportationAmount(doc.header)) ? "Enter a valid amount or leave it blank." : null}
+          testID={compact ? "mobile-transportation-fee" : "tiles-transportation-fee"}
+        /> : null}
+      </View>
+      <TextField
+        label="Transportation note (optional)"
+        value={transportationNote}
+        onChangeText={(value: string) => doc.setHeaderField("transportationNote", value)}
+        multiline
+        scrollEnabled={false}
+        maxLength={500}
+        style={Platform.OS === "web" ? { overflow: "hidden" } : undefined}
+        testID="tiles-transportation-note"
+      />
+    </View>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -2247,11 +2345,7 @@ function MobileRowCard({
       <View style={mobileStyles.productHeader}>
       {row.productId ? (
       <Pressable accessibilityRole="button" onPress={onOpenPicker} style={mobileStyles.productImage} testID={`mobile-thumb-${index}`} accessibilityLabel={row.productId ? "Change product image" : "Select product image"}>
-          {row.image ? (
-            <ProductImage source={row.image} contentFit="contain" frameInset={0} borderRadius={radius.md} disableSkeleton frameBackground={colors.surface} style={{ width: "100%", height: "100%" }} accessibilityLabel="Quotation product image" />
-          ) : (
-            <Feather name="image" size={18} color={colors.onSurfaceMuted} />
-          )}
+        <ProductImage source={rowPhotoSources(row)} contentFit="contain" frameInset={0} borderRadius={radius.md} disableSkeleton frameBackground={colors.surface} style={{ width: "100%", height: "100%" }} accessibilityLabel="Quotation product image" fallbackLabel={row.sku} />
       </Pressable>
       ) : null}
       <View style={mobileStyles.rowHeading}>
@@ -2449,7 +2543,7 @@ function MobileTilesEditor({
 
             {!isSelection ? (
               <Card padding={spacing.md} style={{ gap: 2 }}>
-                <TextField label="Transportation fee" value={doc.header.transportationFee} onChangeText={(t: string) => doc.setHeaderField("transportationFee", t)} keyboardType="decimal-pad" testID="mobile-transportation-fee" />
+                <TransportationFields doc={doc} compact />
                 <SummaryLine label="Total boxes" value={totals.boxes ? String(Math.round(totals.boxes * 100) / 100) : "—"} />
                 <SummaryLine label="Subtotal" value={money(totals.subtotal)} />
                 {totals.discount ? <SummaryLine label="Discount" value={`−${money(totals.discount)}`} /> : null}

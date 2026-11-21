@@ -10,11 +10,12 @@ const compiled = ts.transpileModule(source, { compilerOptions: {
   module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX,
 } }).outputText;
 const plain = value => JSON.parse(JSON.stringify(value));
+const requestKey = number => `00000000-0000-4000-8000-${String(number).padStart(12, '0')}`;
 
 function fixture(floorId) {
   const hooks = [], effects = [], writes = [], navigation = [], timers = new Map();
   const floors = [{ id: floorId, name: 'Selected floor' }];
-  let cursor = 0, dirty = false, tree, nextTimer = 0, failure = null;
+  let cursor = 0, dirty = false, tree, nextTimer = 0, nextRequestKey = 0, failure = null;
   let duplicateMatches = { high: [], medium: [], low: [] };
   const same = (a, b) => a && b && a.length === b.length && a.every((item, i) => Object.is(item, b[i]));
   const react = {
@@ -31,6 +32,7 @@ function fixture(floorId) {
       if (!same(hooks[slot]?.deps, deps)) hooks[slot] = { value: callback(), deps };
       return hooks[slot].value;
     },
+    useRef(initial) { return hooks[cursor++] ||= { current: initial }; },
     useEffect(callback, deps) {
       const slot = cursor++;
       if (!same(hooks[slot]?.deps, deps)) {
@@ -47,8 +49,10 @@ function fixture(floorId) {
     'react/jsx-runtime': { jsx, jsxs: jsx, Fragment: 'Fragment' },
     'react-native': { Platform: { OS: 'web' }, ScrollView: 'ScrollView', View: 'View', KeyboardAvoidingView: 'KeyboardAvoidingView', StyleSheet: { create: x => x, hairlineWidth: 1 } },
     'react-native-safe-area-context': { SafeAreaView: 'SafeAreaView' },
+    'expo-crypto': { randomUUID: () => requestKey(++nextRequestKey) },
     'expo-router': { useLocalSearchParams: () => ({}), useRouter: () => ({ replace: path => navigation.push(path), push() {}, back() {} }) },
     '@/src/components/AppText': { Text: 'Text' },
+    '@/src/components/customer/CustomerIdentityChoice': { CustomerIdentityChoice: 'CustomerIdentityChoice' },
     '@/src/utils/phone': { formatDepartmentPhone },
     '@/src/components/ui': ui,
     '@/src/design/Disclosure': { Disclosure: 'Disclosure' },
@@ -87,6 +91,12 @@ function fixture(floorId) {
     fail(message) { failure = message; },
     async matches(value) { duplicateMatches = value; for (const callback of timers.values()) callback(); timers.clear(); await settle(); },
     async save() { await byId('walkin-save-btn').onPress(); await settle(); },
+    async continueWithoutMatch() {
+      const identity = nodes().find(node => node?.type === 'CustomerIdentityChoice');
+      assert.equal(identity?.props.autoContinueIfNoMatches, true);
+      identity.props.onSeparate();
+      await settle();
+    },
   };
 }
 
@@ -102,10 +112,10 @@ for (const floorId of ['ground-floor', 'first-floor', 'third-floor']) {
     await f.save(); assert.equal(f.writes.length, 0);
     assert.equal(f.byId('walkin-submit-error').children, 'Address is required');
     assert.equal(f.byId('walkin-address').error, 'Address is required');
-    await f.fill('walkin-address', ' 12 Showroom Road, Mumbai '); await f.save();
+    await f.fill('walkin-address', ' 12 Showroom Road, Mumbai '); await f.save(); await f.continueWithoutMatch();
     assert.equal(f.writes.length, 1);
     assert.deepEqual(f.writes[0], { customer_name: 'Customer', customer_phone: '9000000000', address: '12 Showroom Road, Mumbai', source: 'Walk-in', salesperson_id: 'worker', floor_id: floorId,
-      interested_floor_ids: [floorId], assignments: [{ floor_id: floorId, user_id: 'worker', user_name: 'Worker' }], force_new_customer: false });
+      interested_floor_ids: [floorId], assignments: [{ floor_id: floorId, user_id: 'worker', user_name: 'Worker' }], force_new_customer: true, customer_request_key: requestKey(1) });
     assert.deepEqual(f.navigation, [`/(admin)/walkins/saved?floor_id=${floorId}`]);
   });
 }
@@ -115,6 +125,7 @@ test('failed save preserves the three fields and explicit existing-customer sele
   await f.fill('walkin-name', 'Returning customer'); await f.fill('walkin-phone', '9000000000');
   await f.fill('walkin-address', '12 Showroom Road'); await f.assign();
   await f.matches({ high: [], medium: [{ id: 'existing', name: 'Returning customer' }], low: [] });
+  f.byId('walkin-review-matches').onPress(); await f.settle();
   f.byId('walkin-use-existing-existing').onPress(); await f.settle();
   f.fail('Please retry'); await f.save();
   assert.equal(f.byId('walkin-submit-error').children, 'Please retry');

@@ -81,6 +81,9 @@ function PickerCardImpl({ product, onQuickAdd, onLongPress, onOpenDetails }: Pro
           <Text style={type.caption} numberOfLines={1}>
             {selectedSku}{variantDescriptor(selectedVariant ?? product) ? ` · ${variantDescriptor(selectedVariant ?? product)}` : ""}
           </Text>
+          {selectedImages.isFallback && selectedImages.images.length > 0 ? (
+            <Text style={type.caption}>Representative photo</Text>
+          ) : null}
           {(hasAutomaticPart || hasConcealedPart) ? (
             <Text testID={`automatic-parts-${product.id}`} style={styles.automaticPart} numberOfLines={1}>
               {hasAutomaticPart ? "Seat cover added automatically" : "Concealed part added automatically"}

@@ -26,6 +26,8 @@ export function parseTileDraft(raw: string | null, accountId: string, docType: s
       || !Number.isFinite(draft.at) || draft.at > now + 60_000 || now - draft.at > DRAFT_TTL_MS
       || typeof draft.clientDraftId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(draft.clientDraftId)
       || !draft.header || !["customerName", "phone", "reference", "docDate", "attendedBy", "preparedBy", "address", "docNumber", "transportationFee"].every(key => typeof draft.header[key] === "string")
+      || (draft.header.transportationStatus !== undefined && typeof draft.header.transportationStatus !== "string")
+      || (draft.header.transportationNote !== undefined && (typeof draft.header.transportationNote !== "string" || draft.header.transportationNote.length > 500))
       || !Array.isArray(draft.rows) || !draft.rows.length || draft.rows.length > 300
       || !draft.rows.every((row: any) => row && typeof row.key === "string" && (row.productId === null || typeof row.productId === "string")
         && (row.image === null || typeof row.image === "string") && ["name", "sku", "area", "size", "rateSqft", "boxSqft", "offerRate", "rateBox", "totalBox", "pcsBox", "total"].every(key => typeof row[key] === "string")

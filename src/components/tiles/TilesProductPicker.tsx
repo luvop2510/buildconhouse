@@ -264,7 +264,7 @@ function TileCatalogCard({
   const packaging = alternateRates.some(hasDifferentPackaging) ? product.variant_label : null;
   const selectVariant = (variant: ProductVariant & { id: string }) => onPickVariant({
     ...product, ...variant, name: variant.name || product.name,
-    hero_image_url: variant.image || null, images: variant.image ? [variant.image] : [], gallery: [],
+    hero_image_url: variant.image || null, images: [...(variant.image ? [variant.image] : []), ...(variant.image_candidates || [])], gallery: [],
   });
   return (
     <View style={[styles.card, { width: cardWidth }]}>

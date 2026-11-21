@@ -70,6 +70,7 @@ async function fixtureCatalog(page: Page, baseURL: string, overrides: Record<str
     '/api/categories': [{ id: product.category_id, name: 'Basins' }],
     '/api/catalog/facets': {},
     '/api/catalog/hierarchy': { tree: [{ brand: { id: product.brand_id, name: 'Performance Brand' }, product_count: 1, categories: [{ category: { id: product.category_id, name: 'Basins' }, subcategories: [] }] }] },
+    '/api/catalog/product-order': { version: 0, can_reorder: true },
     '/api/products/families': { total: 1, items: [family] },
     '/api/products': { total: 1, items: [product] },
     ...overrides,

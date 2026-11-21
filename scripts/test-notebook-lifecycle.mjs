@@ -49,6 +49,7 @@ function fixture() {
   } });
   const modules = {
     react,
+    'expo-crypto': { randomUUID: () => '00000000-0000-4000-8000-000000000001' },
     'react-native': { StyleSheet: { create: value => value, hairlineWidth: 1 }, Linking: { openURL: url => { links.push(url); return Promise.resolve(); } } },
     '@/src/api/notebook': { notebookApi: api },
     '@/src/hooks/use-permissions': { useActionAccess: () => true },
@@ -89,7 +90,7 @@ test('completed creation from an abandoned notebook produces no stale success no
   const view = fixture();
   view.state.setDraft({ customer_name: 'Old draft', customer_phone: '9000000000', kitchen_type: 'GI', interested_floor_ids: ['second-floor'], assignments: [{ floor_id: 'second-floor', user_id: 'kitchen-worker' }] });
   await view.settle();
-  const create = view.state.create();
+  const create = view.state.create(undefined, true);
   view.unmount();
   view.mutation.resolve({ id: 'old-lead' });
   await create;
@@ -102,7 +103,7 @@ test('successful creation reloads the latest active query instead of inserting a
   const view = fixture();
   view.state.setDraft({ customer_name: 'New draft', customer_phone: '9000000000', kitchen_type: 'GI', interested_floor_ids: ['second-floor'], assignments: [{ floor_id: 'second-floor', user_id: 'kitchen-worker' }] });
   await view.settle();
-  const create = view.state.create();
+  const create = view.state.create(undefined, true);
   view.state.setSearch('Different customer'); view.state.setFilter('pending');
   await view.settle();
   view.mutation.resolve({ id: 'new-lead', status: 'new', is_converted: false });
@@ -119,7 +120,7 @@ test('a duplicate converted customer reloads canonical walk-ins and reports its 
   const view = fixture();
   view.state.setDraft({ customer_name: 'Existing customer', customer_phone: '9000000000', kitchen_type: 'GI', interested_floor_ids: ['second-floor'], assignments: [{ floor_id: 'second-floor', user_id: 'kitchen-worker' }] });
   await view.settle();
-  const create = view.state.create();
+  const create = view.state.create(undefined, true);
   view.mutation.resolve({ id: 'existing-lead', is_converted: true });
   await create;
   assert.equal(view.requests.filter(request => request.method === 'list').length, 1);

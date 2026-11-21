@@ -153,7 +153,7 @@ def test_tiles_quotation_portrait_media_uses_landscape(monkeypatch):
     portrait = BytesIO()
     Image.new("RGB", (60, 120), "#306090").save(portrait, format="PNG")
     monkeypatch.setattr(pdf_generator, "_remote_image_bytes", lambda _url: portrait.getvalue())
-    original_img = pdf_tiles._img
+    original_img = pdf_generator._img
     rendered_sources: list[tuple[int, int]] = []
 
     def capture_img(*args, **kwargs):
@@ -161,7 +161,7 @@ def test_tiles_quotation_portrait_media_uses_landscape(monkeypatch):
         rendered_sources.append((image.source_width, image.source_height))
         return image
 
-    monkeypatch.setattr(pdf_tiles, "_img", capture_img)
+    monkeypatch.setattr(pdf_generator, "_img", capture_img)
     pdf = build_tiles_quotation_pdf({
         "customer_name": "Portrait Tile Contract",
         "items": [{"image": "https://example.test/portrait.png", "name": "Tile", "size": "600x600", "qty": 1, "unit_price": 100}],

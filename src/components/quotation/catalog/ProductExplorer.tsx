@@ -12,7 +12,7 @@ import { Text, TextInput } from "@/src/components/AppText";
 import { Button, EmptyState, ErrorState } from "@/src/components/ui";
 import { toast } from "@/src/components/Toast";
 import { ProductImage } from "@/src/components/ProductImage";
-import { colors, money, PRODUCT_IMAGE_ASPECT_RATIO, radius, spacing } from "@/src/theme/tokens";
+import { colors, money, PRODUCT_IMAGE_ASPECT_RATIO, radius, spacing, type } from "@/src/theme/tokens";
 import { color as ds } from "@/src/design/tokens";
 import { storage } from "@/src/utils/storage";
 import { useBuilder, type BuilderCatalogSort } from "../context/BuilderContext";
@@ -396,6 +396,11 @@ function ProductGridCardImpl({ product, compact, width, favourite, addedQty, onT
         <Pressable accessibilityRole="button" accessibilityLabel={`View ${product.name}`} onPress={() => onOpenModal(product)} style={styles.thumb}>
           <ProductImage source={selectedImages.images} style={styles.thumb} contentFit="contain" fallbackLabel={selectedSku} disableSkeleton />
         </Pressable>
+        {selectedImages.isFallback && selectedImages.images.length > 0 ? (
+          <View pointerEvents="none" style={styles.representativePhoto}>
+            <Text style={type.caption}>Representative photo</Text>
+          </View>
+        ) : null}
         {/* Overlay: badges + fav heart */}
         <View pointerEvents="none" style={styles.badgeRow}>
           {badges.slice(0, 1).map((bg) => (
@@ -566,6 +571,7 @@ const styles = StyleSheet.create({
   // image as tall as the card width. Touch controls retain their 44px size.
   cardMediaCompact: { height: 120, aspectRatio: undefined },
   thumb: { width: "100%", height: "100%" },
+  representativePhoto: { position: "absolute", bottom: 4, left: 4, backgroundColor: colors.surface, borderRadius: radius.sm, paddingHorizontal: 4 },
   badgeRow: { position: "absolute", top: 8, left: 8, flexDirection: "row", gap: 4 },
   badge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999 },
   badgeText: { fontSize: 10, fontWeight: "700", letterSpacing: 0.2 },

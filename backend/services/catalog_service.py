@@ -604,6 +604,7 @@ def _variant_summary(product: dict, snapshot: CatalogSnapshot) -> dict:
     """
     product = _normalise_tile_price_unit(product)
     colour = product.get("colour") or product.get("color")
+    photos = product_photo_urls(product, snapshot)
     summary = {
         "id": product["id"], "sku": product.get("sku"), "name": product.get("name"),
         "finish": product.get("finish"), "finish_code": product.get("finish_code"),
@@ -615,9 +616,11 @@ def _variant_summary(product: dict, snapshot: CatalogSnapshot) -> dict:
         "seat_cover_image_urls": product.get("seat_cover_image_urls") or [],
         "material": product.get("material"), "warranty": product.get("warranty"),
         "specs": product.get("specs") or {}, "description": product.get("description"),
-        "image": _primary_product_image(snapshot, product["id"], product.get("family_key")),
+        "image": photos[0] if photos else None,
         "configuration_options": _configuration_options(product, snapshot),
     }
+    if len(photos) > 1:
+        summary["image_candidates"] = photos[1:]
     if product.get("catalog_mrp_override"):
         summary["catalog_mrp_override"] = True
     if product.get("price_status") is not None:
@@ -774,6 +777,32 @@ def product_hero_image(product: dict, snapshot: CatalogSnapshot) -> Optional[str
     preview = dict(product)
     _apply_media(preview, snapshot)
     return preview.get("hero_image_url")
+
+
+def product_photo_urls(product: dict, snapshot: CatalogSnapshot) -> list[str]:
+    """Use the catalogue's preview order and then any surviving legacy URLs."""
+    hero = _primary_product_image(snapshot, product["id"])
+    gallery: dict[str, dict] = {}
+    for row in snapshot.media_rows_by_product.get(product["id"], ()):
+        if row.get("public_url") and row.get("role") not in ("dimension", "seat-cover"):
+            gallery.setdefault(row["public_url"], row)
+
+    # Match productImageList in the catalogue UI: family, quality, resolution,
+    # primary flag, then the original catalogue order. Only exact-SKU rows
+    # enter this list, including when catalogue variants share a family key.
+    quality = {"excellent": 4, "good": 3, "acceptable": 2, "poor": 1}
+    family = product.get("family_key")
+
+    def priority(url: str) -> tuple[int, int, int, bool]:
+        row = gallery.get(url, {})
+        image_family = row.get("family_key")
+        family_match = (1 if family == image_family else -1) if family and image_family else 0
+        pixels = max(0, int(row.get("width") or 0)) * max(0, int(row.get("height") or 0))
+        return family_match, quality.get(row.get("quality", "acceptable"), 0), pixels, url == hero or bool(row.get("is_primary"))
+
+    candidates = dict.fromkeys(url for url in (hero, *gallery) if url)
+    ordered = sorted(candidates, key=priority, reverse=True)
+    return list(dict.fromkeys([*ordered, *(url for url in product.get("images") or [] if isinstance(url, str) and url.strip())]))
 
 
 def hydrate_product(product: dict, snapshot: CatalogSnapshot) -> dict:

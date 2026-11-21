@@ -141,7 +141,7 @@ async def get_po_final_pdf(customer_id: str, quotation_id: str | None = Query(No
     quotation = await get_floor_scoped_or_404(
         db.quotations, data["quotation_id"], user, not_found="Quotation not found", projection={"_id": 0},
     )
-    items = await _canonicalize_item_images(quotation.get("items") or [], quotation.get("floor_id"))
+    items = await _canonicalize_item_images(quotation.get("items") or [], quotation.get("floor_id"), include_candidates=True)
     if data.get("doc_type") not in {"tiles_selection", "tiles_quotation"}:
         items = await _diagram_items(items, quotation.get("floor_id"))
     quotation = {**quotation, "items": items}
