@@ -42,6 +42,7 @@ class _Recorder:
         self.updates.append(update)
         if "$set" in update:
             self._doc.update(update["$set"])
+        return type("_Res", (), {"matched_count": 1})()
 
     async def update_many(self, _query, update, **_kwargs):
         self.updates.append(update)
@@ -65,6 +66,7 @@ def _selection_doc(status: str = "approved") -> dict:
     return {
         "id": "q-1", "number": "FQ-2026-0100", "doc_type": "tiles_selection",
         "status": status, "floor_id": "ground-floor", "customer_id": "cust-1",
+        "created_at": "2026-11-01T10:00:00+00:00",
         "items": [{"id": "line-1", "product_id": "prod-1", "sku": "SKU-1", "name": "Tile A", "room": "Living", "qty": 1, "unit_price": 0}],
     }
 
@@ -83,6 +85,9 @@ def test_move_to_quotation_flips_doc_type_and_resets_status(monkeypatch, status)
 
     assert result["doc_type"] == "tiles_quotation"
     assert result["status"] == "draft"
+    assert result["created_at"] == "2026-11-01T10:00:00+00:00"
+    assert result["quotation_created_at"] == result["updated_at"]
+    assert result["quotation_created_at"] != result["created_at"]
     # Promotion is metadata-only — items carried over byte-for-byte, nothing transformed.
     assert result["items"] == _selection_doc("approved")["items"]
 

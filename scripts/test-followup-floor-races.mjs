@@ -23,7 +23,9 @@ vm.runInNewContext(ts.transpileModule(readFileSync(new URL('../src/utils/filters
 function fixture(floor = 'first-floor') {
   const hooks = [], effects = [], requests = [], links = [], notices = [];
   let index = 0, dirty = false, state;
-  const routeParams = {};
+  // These hook fixtures exercise the existing task queue. The default planner
+  // has its own browser regression coverage.
+  const routeParams = { workspace: 'queue' };
   const router = { setParams(patch) { Object.assign(routeParams, patch); dirty = true; } };
   const same = (a, b) => a && b && a.length === b.length && a.every((v, i) => Object.is(v, b[i]));
   const react = {

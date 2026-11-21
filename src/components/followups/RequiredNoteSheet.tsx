@@ -45,7 +45,7 @@ export function RequiredNoteSheet({ action, onClose }: {
       {error ? <Alert tone="error" title={error} /> : null}
       <TextField label="Follow-up note *" helper="Required — explain this change. It is saved in the follow-up history."
         value={notes} onChangeText={setNotes} placeholder="What happened, and why are you making this change?"
-        multiline autoFocus editable={!saving} testID="followup-change-note" />
+        multiline maxLength={2000} autoFocus editable={!saving} testID="followup-change-note" />
     </ScrollView>
   </Sheet>;
 }

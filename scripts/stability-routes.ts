@@ -145,6 +145,12 @@ export const requiredStabilityScenarios: Record<string, string[]> = {
   'redesign-sanitary-followups.spec.ts': [
     ...['first-floor', 'ground-floor'].map(floor => `critical ${floor} follow-ups keeps draft source and salesperson without summary or priority clutter`),
   ],
+  'redesign-followup-planner.spec.ts': [
+    'critical Follow-ups planner groups today’s work and opens the next Monday schedule',
+    'critical Follow-ups planner combines reporting filters, preserves focus and drills into quotations',
+    'critical Follow-ups planner keeps a postponement draft and reconciles the saved schedule on reload',
+    'critical Follow-ups planner retains an unsaved note and reuses the exact retry key',
+  ],
   'redesign-followup-notes.spec.ts': [
     'critical Won orders shows orders attributed to the current team member',
   ],

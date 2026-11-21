@@ -57,12 +57,25 @@ def test_loss_commits_quotation_and_all_its_reminders_together(monkeypatch, floo
     assert session.transactions == 1
     assert len(writes) == 3
     assert quote["customer_outcome"] == "lost"
+    assert quote["outcome_at"] == row["completed_at"] == patch["completed_at"]
     assert quote["outcome_reason"] == row["lost_reason"] == "Another supplier"
     assert quote["status"] == "draft"  # preserve document and commercial history
     assert row["completed_outcome"] == "lost"
     with pytest.raises(HTTPException) as error:
         quotation_routes._require_active_sales_quotation(quote)
     assert error.value.status_code == 409
+
+
+@pytest.mark.parametrize("quote_status,explicit", [("won", None), ("lost", None), ("rejected", None), ("cancelled", None), ("draft", "lost")])
+def test_closed_quotation_keeps_its_original_reporting_date_and_reason(monkeypatch, quote_status, explicit):
+    row, quote, patch, user, _, writes = _fixture(monkeypatch, quote_status=quote_status)
+    quote.update(customer_outcome=explicit, outcome_at="earlier", outcome_reason="Previously recorded")
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(followup_routes._record_lost_quotation_followup(row.copy(), {"$set": patch}, user))
+    assert error.value.status_code == 409
+    assert quote["outcome_at"] == "earlier"
+    assert quote["outcome_reason"] == "Previously recorded"
+    assert writes == []
 
 
 @pytest.mark.parametrize("quote_status,changed", [("ordered", False), ("draft", True)])

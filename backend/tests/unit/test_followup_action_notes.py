@@ -10,11 +10,16 @@ from models import (FollowupCallOutcomePayload, FollowupCompletePayload, Followu
     FollowupSnoozePayload, FollowupUpdate, NotebookCellPatchPayload, NotebookConversionPayload,
     NotebookOutcomePayload, NotebookReferrerPayload, UserPublic)
 from routes import followup_routes as routes
+from services.access_grants import action_for_api_request
 
 
 def user():
     return UserPublic(email="manager@example.com", full_name="Manager", role="manager",
         floor_ids=["first-floor", "second-floor"], active_floor_id="first-floor")
+
+
+def test_record_note_uses_update_permission():
+    assert action_for_api_request("POST", "/api/followups/followup-1/notes") == "update"
 
 
 @pytest.mark.parametrize("action,payload", [

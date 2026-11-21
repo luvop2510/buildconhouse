@@ -888,6 +888,8 @@ class Quotation(TimestampedModel):
     # Tiles Selection / Quotation pages (their PDFs replicate the official
     # printed formats and use the tiles fields below).
     doc_type: Literal["standard", "tiles_selection", "tiles_quotation"] = "standard"
+    # A Tiles Selection retains its ID and created_at when it becomes a quote.
+    quotation_created_at: Optional[str] = None
     attended_by: Optional[str] = None
     prepared_by: Optional[str] = None
     # Required for tiles_quotation documents; optional for standard and
@@ -913,6 +915,7 @@ class Quotation(TimestampedModel):
     # won/lost quotations must not create purchase/payment projections.
     customer_outcome: Optional[Literal["won", "lost"]] = None
     outcome_reason: Optional[str] = None
+    outcome_at: Optional[str] = None
     # Stamped once, when status first becomes "ordered", and never rewritten.
     # EVERY revenue calculation dates by this field. updated_at cannot be used:
     # it is re-stamped on every edit, so editing an old order would move its

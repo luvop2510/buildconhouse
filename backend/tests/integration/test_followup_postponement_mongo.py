@@ -73,6 +73,25 @@ def test_send_schedule_postpone_history_and_contact_outcome(monkeypatch):
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://qa") as http:
                 initial = (await http.get(path)).json()
                 assert initial["followup"]["bucket"] == "overdue"
+                note = {"note": "Discuss amended delivery", "request_key": "notes-qa-first"}
+                assert (await http.post(path + "/notes", json={**note, "note": "  "})).status_code == 422
+                actor = foreign_employee
+                assert (await http.post(path + "/notes", json=note)).status_code == 404
+                actor = employee
+                note_writes = await asyncio.gather(*[http.post(path + "/notes", json=note) for _ in range(2)])
+                assert [response.status_code for response in note_writes] == [200, 200]
+                assert (await http.post(path + "/notes", json={**note, "note": "New content"})).status_code == 409
+                latest = (await http.get(path)).json()["followup"]
+                assert latest["status"] == "open"
+                assert latest["latest_note"] == note["note"]
+                assert len(latest["note_history"]) == 1
+                saved_note = latest["note_history"][0]
+                assert saved_note["note"] == note["note"]
+                assert saved_note["actor_name"] == employee.full_name
+                assert saved_note["recorded_at"]
+                actor = employee.model_copy(update={"role": "manager"})
+                assert (await http.delete(path)).status_code == 409
+                actor = employee
                 first = {
                     "expected_due_at": original["due_at"],
                     "new_due_date": (today + timedelta(days=1)).isoformat(),

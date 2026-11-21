@@ -149,7 +149,7 @@ POST_UPDATE_ROUTE_PATTERNS = (
     r"/api/kitchen-projects/[^/]+/attachments",
     r"/api/kitchen-projects/[^/]+/file-transfers(?:/[^/]+/finish(?:-async)?)?",
     r"/api/followups/notebook/[^/]+/[^/]+/(?:convert|outcome)",
-    r"/api/followups/[^/]+/(?:contact|snooze|postpone|complete|log-call)",
+    r"/api/followups/[^/]+/(?:contact|snooze|postpone|complete|log-call|notes)",
     r"/api/walkins/[^/]+/(?:contact|visit-showroom)",
     r"/api/customers/[^/]+/(?:send-invite|reset-password)",
     r"/api/godown-stock/[^/]+/allocate",
@@ -349,8 +349,8 @@ async def request_resource(database: Any, path: str, query: Any = None) -> str |
     access to a converted quotation. Generic contact uses the same resolver.
     """
     notebook = fullmatch(r"/api/followups/notebook/([^/]+)(?:/([^/]+)(?:/[^/]+)?)?", path)
-    generic = fullmatch(r"/api/followups/([^/]+)(?:/(snooze|postpone|complete|contact|log-call|interests))?", path)
-    if generic and generic.group(1) in {"reconcile", "stats", "mission", "insights", "export", "saved-views", "page", "assignments", "assignees", "team-assign"}:
+    generic = fullmatch(r"/api/followups/([^/]+)(?:/(snooze|postpone|complete|contact|log-call|interests|notes))?", path)
+    if generic and generic.group(1) in {"reconcile", "stats", "mission", "insights", "export", "saved-views", "page", "planner", "assignments", "assignees", "team-assign"}:
         generic = None
     if notebook and not notebook.group(2):
         return "notebook_quotations" if query and query.get("view") == "quotation" else "notebook_walkins"

@@ -627,6 +627,8 @@ async def create_quotation(
         floor_id=quotation_floor_id,
         **totals,
     )
+    if quot.doc_type == "tiles_quotation":
+        quot.quotation_created_at = quot.created_at
     # A builder can be opened from a godown-stock card.  Claim the requested
     # lot exactly once, at the same boundary that creates the quotation; the
     # resulting allocation id comes back with later autosaves and therefore
@@ -1527,10 +1529,15 @@ async def move_to_quotation(
             detail="Only an editable Tiles Selection can be moved to the Quotation stage",
         )
     _require_valid_quotation_financials(doc)
-    await db.quotations.update_one(
-        {"id": quotation_id},
-        {"$set": {"doc_type": "tiles_quotation", "status": "draft", "updated_at": now_iso()}},
+    created_at = now_iso()
+    result = await db.quotations.update_one(
+        {"id": quotation_id, "floor_id": TILES_FLOOR_ID, "doc_type": "tiles_selection",
+         "status": doc.get("status"), "updated_at": doc.get("updated_at")},
+        {"$set": {"doc_type": "tiles_quotation", "status": "draft", "updated_at": created_at,
+                  "quotation_created_at": created_at}},
     )
+    if result.matched_count != 1:
+        raise HTTPException(409, "This selection changed. Reopen it before moving it to quotation.")
     from services.walkin_service import on_moved_to_quotation
     await on_moved_to_quotation(quotation_id, doc.get("number"))
     asyncio.create_task(reconcile_followups_admitted())

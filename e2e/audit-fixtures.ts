@@ -28,6 +28,8 @@ export async function mockSession(page: Page, path: string, failures = true, opt
     else if(p==='/api/settings/access-grants/me' && options.grants !== undefined) body={grants:options.grants};
     else if(p==='/api/settings/permission-matrix') body={modules:[],roles:[],matrix:{owner:{}}};
     else if(p==='/api/settings/roles') body=[];
+    // Older workflow fixtures exercise the inbox against a pre-planner API.
+    else if(p==='/api/followups/planner') return route.fulfill({status:404,json:{detail:'Not Found'}});
     else if(!failures && p==='/api/customers') body=[];
     else if(p==='/api/customer-search/candidates') body=[];
     else if(!failures && p==='/api/auth/sessions') body=[];

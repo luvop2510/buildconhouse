@@ -18,7 +18,7 @@ const exports = {};
 const scope = {
   exports, require: () => ({ jsx: (component, props) => ({ component, ...props }), jsxs: (component, props) => ({ component, ...props }), Fragment: 'Fragment' }),
   isPhone: false, followupView: 'active', outcomeCounts: {}, staff: { role: 'sales' },
-  workspace: 'all', hasTileFollowupWorkspaces: false, stats: null, mission: null,
+  workspace: 'queue', plannerUnavailable: false, hasTileFollowupWorkspaces: false, stats: null, mission: null,
   loading: false, rawItems: [], q: '', filtered: [], priorityFilter: 'all', categoryFilter: 'all', ownerFilter: 'all',
   priorityCounts: {}, assignees: [{ id: 'worker-1', full_name: 'Worker' }], activeFilterCount: 0, kpiFilter: 'all',
   CATEGORY_OPTIONS: [], selectedIds: new Set(), type: { caption: {} }, spacing: { sm: 8, md: 16 }, pagePad: 16,

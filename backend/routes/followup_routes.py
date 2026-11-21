@@ -56,6 +56,7 @@ from services.followup_engine import (
     compute_bucket, ist_day_bounds_utc, money_short, parse_iso,
     reason_factors_for, reconcile_followups, score_followup,
 )
+from services.followup_planner import Category as PlannerCategory, Period as PlannerPeriod, Scope as PlannerScope, load_planner
 from services.followup_notebook import (
     NotebookConflictError, NotebookValidationError, complete_notebook_row, convert_notebook_row,
     notebook_query, notebook_search_query, normalize_mobile, patch_notebook_row,
@@ -1240,6 +1241,30 @@ async def list_assignments(
 # ─────────────────────────────────────────────────────────────────────────────
 # Detail — powers the Customer Context Panel
 # ─────────────────────────────────────────────────────────────────────────────
+@router.get("/planner")
+async def followup_planner(
+    category: PlannerCategory = "all",
+    scope: PlannerScope = "all",
+    period: PlannerPeriod = "all_time",
+    start: date | None = None,
+    end: date | None = None,
+    day: date | None = None,
+    week: int = Query(0, ge=0, le=104),
+    assigned_to: str | None = Query(None, max_length=128),
+    brand: str | None = Query(None, max_length=128),
+    department: str | None = Query(None, max_length=128),
+    q: str | None = Query(None, max_length=120),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=100),
+    user: UserPublic = Depends(get_current_user),
+):
+    return await load_planner(
+        db, user, category=category, period=period, start=start, end=end, day=day,
+        week=week, assigned_to=assigned_to, brand=brand, department=department,
+        q=q, page=page, page_size=page_size, scope=scope,
+    )
+
+
 @router.get("/{followup_id}")
 async def get_detail(followup_id: str, user: UserPublic = Depends(get_current_user)):
     f = await _selected_followup_or_404(followup_id, user)
@@ -1467,10 +1492,11 @@ async def delete_followup(
     """Permanently remove a follow-up during manager data cleanup."""
     _reject_action_note(notes)
     f = await _selected_followup_or_404(followup_id, user)
-    if f.get("postponement_history") or f.get("call_history"):
+    if f.get("postponement_history") or f.get("call_history") or f.get("note_history"):
         raise HTTPException(409, "This follow-up has recorded history. Complete or dismiss it to keep the record.")
     result = await db.followups.delete_one(floor_query(user, {
-        "id": followup_id, "postponement_history.0": {"$exists": False}, "call_history.0": {"$exists": False},
+        "id": followup_id, "postponement_history.0": {"$exists": False},
+        "call_history.0": {"$exists": False}, "note_history.0": {"$exists": False},
     }))
     if result.deleted_count == 0:
         raise HTTPException(409, "This follow-up changed. Refresh and try again.")
@@ -1491,6 +1517,38 @@ async def delete_followup(
 # ─────────────────────────────────────────────────────────────────────────────
 # Actions — snooze / complete / contact / call outcome
 # ─────────────────────────────────────────────────────────────────────────────
+class FollowupNotePayload(BaseModel):
+    note: str = Field(max_length=2000)
+    request_key: str = Field(min_length=8, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$")
+
+
+@router.post("/{followup_id}/notes")
+async def record_note(followup_id: str, body: FollowupNotePayload, user: UserPublic = Depends(get_current_user)):
+    note = body.note.strip()
+    if not note:
+        raise HTTPException(422, "Enter a follow-up note")
+    current = await _selected_followup_or_404(followup_id, user)
+    if current.get("category") in lead_scope.POST_ORDER_CATEGORIES or current.get("rule_type") in lead_scope.POST_ORDER_RULES or current.get("purchase_id"):
+        raise HTTPException(404, "This activity belongs in Orders")
+
+    request_hash = hashlib.sha256(f"{user.id}:{body.request_key}".encode()).hexdigest()
+    now = now_iso()
+    entry = {"note": note, "recorded_at": now, "actor_id": user.id, "actor_name": user.full_name,
+             "request_hash": request_hash}
+    lookup = {"id": followup_id, "floor_id": current["floor_id"]}
+    updated = await db.followups.find_one_and_update(
+        {**lookup, "note_history.request_hash": {"$ne": request_hash}},
+        {"$set": {"latest_note": note, "updated_at": now}, "$push": {"note_history": entry}},
+        projection={"_id": 0}, return_document=ReturnDocument.AFTER,
+    )
+    if updated is None:
+        updated = await _selected_followup_or_404(followup_id, user)
+        receipt = next((item for item in updated.get("note_history", []) if item.get("request_hash") == request_hash), None)
+        if not receipt or receipt["note"] != note:
+            raise HTTPException(409, "This note request has already been used or the follow-up changed")
+    return {**updated, "bucket": compute_bucket(updated)}
+
+
 class FollowupPostponePayload(BaseModel):
     new_due_date: date
     expected_due_at: str = Field(min_length=1, max_length=64)
@@ -1677,11 +1735,14 @@ async def _record_lost_quotation_followup(followup: dict, update: dict, user: Us
         quotation = await db.quotations.find_one(quotation_query, {"_id": 0}, session=session)
         if not quotation or quotation.get("customer_id") != current.get("customer_id"):
             raise HTTPException(404, "Linked quotation not found on this floor")
-        if quotation.get("status") == "ordered" or quotation.get("customer_outcome") == "won":
+        if quotation.get("status") in {"ordered", "won"} or quotation.get("customer_outcome") == "won":
             raise HTTPException(409, "This quotation already has a placed order or won outcome and cannot be marked lost")
+        if quotation.get("status") in {"lost", "rejected", "cancelled"} or quotation.get("customer_outcome") == "lost":
+            raise HTTPException(409, "This quotation is already closed. Refresh the follow-up to see the recorded outcome.")
         patch = update["$set"]
         await db.quotations.update_one(quotation_query, {"$set": {
-            "customer_outcome": "lost", "outcome_reason": patch["lost_reason"], "updated_at": patch["updated_at"],
+            "customer_outcome": "lost", "outcome_reason": patch["lost_reason"],
+            "outcome_at": patch["completed_at"], "updated_at": patch["updated_at"],
         }}, session=session)
         await db.followups.update_one(query, update, session=session)
         # Retire other reminders for this document while retaining their assignments/history.
