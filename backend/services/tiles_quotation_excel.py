@@ -7,6 +7,7 @@ from openpyxl.utils import get_column_letter
 
 from services.pricing import saved_tile_unit_price
 from services.product_display import tile_product_name
+from services.tile_transportation import transportation_details
 
 
 _RUPEES = '"₹"#,##0.00'
@@ -90,8 +91,23 @@ def build_tiles_quotation_excel(doc: dict, customer: dict) -> bytes:
 
     # These document totals already reflect the saved pricing and transportation.
     summary_row = header_row + len(items) + 1
+    transport_status, transport_amount, transport_note = transportation_details(doc)
+    if transport_status or transport_note:
+        row = _write_row(sheet, summary_row, (
+            "Transportation", None, transport_status, None, transport_note or None, *(None,) * 6, transport_amount,
+        ))
+        for start, end in (("A", "B"), ("C", "D"), ("E", "K")):
+            sheet.merge_cells(f"{start}{summary_row}:{end}{summary_row}")
+        for index in (0, 2, 4, 11):
+            row[index].alignment = Alignment(wrap_text=True, vertical="center")
+        row[0].font = Font(bold=True)
+        row[11].number_format = _RUPEES
+        note_lines = sum(max(1, (len(line) + 99) // 100) for line in transport_note.splitlines())
+        sheet.row_dimensions[summary_row].height = min(400, 15 * max(2, note_lines + 1))
+        summary_row += 1
+        transport_amount = None
     for label, amount in (
-        ("Transportation", doc.get("transportation_fee") or None),
+        ("Transportation", transport_amount),
         ("Subtotal", doc.get("subtotal")),
         ("Discount", doc.get("discount_total") or None),
         ("Grand Total", doc.get("grand_total")),

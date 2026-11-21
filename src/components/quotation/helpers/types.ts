@@ -28,6 +28,7 @@ export type ProductVariant = {
   // Populated dynamically by the backend from family-sibling products —
   // lets a finish/colour chip switch the main image, not just the price.
   id?: string | null; image?: string | null;
+  image_candidates?: string[];
   concealed_part?: ConcealedPart | null;
   configuration_options?: ProductConfigurationOption[];
 };
@@ -119,6 +120,7 @@ export type RecentQuotation = {
 
 export type Line = {
   id: string; product_id: string; sku: string; name: string; image?: string | null;
+  image_candidates?: string[];
   category_id?: string | null; room?: string; area?: string | null;
   qty: number; unit_price: number; mrp?: number | null;
   discount_pct: number | null;

@@ -32,6 +32,15 @@ def test_image_url_requires_allowlisted_https_host_and_public_dns():
     assert not loader.validate_image_url("https://cdn.example.test/a.png", allowed_hosts=allowed, resolver=_resolver(["8.8.8.8", "10.0.0.1"]))
 
 
+def test_configured_storage_origins_keep_the_same_public_dns_requirement(monkeypatch):
+    monkeypatch.setenv("R2_PUBLIC_URL", "https://public-media.example.test")
+    monkeypatch.setenv("SUPABASE_URL", "https://historical-media.example.test")
+    monkeypatch.delenv("PDF_IMAGE_ALLOWED_HOSTS", raising=False)
+    assert loader.validate_image_url("https://public-media.example.test/photo.png", resolver=_resolver(["8.8.8.8"]))
+    assert loader.validate_image_url("https://historical-media.example.test/photo.png", resolver=_resolver(["8.8.8.8"]))
+    assert not loader.validate_image_url("https://public-media.example.test/photo.png", resolver=_resolver(["10.0.0.1"]))
+
+
 def test_image_validation_rejects_animated_gif_unsupported_mime_and_bombs():
     assert not loader._valid_image(_image_bytes("GIF"), "image/gif")
     assert not loader._valid_image(_image_bytes(), "text/html")

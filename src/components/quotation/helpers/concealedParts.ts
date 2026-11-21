@@ -22,6 +22,7 @@ type VariantLike = {
 
 type LineLike = {
   id: string; product_id: string; sku: string; name: string; image?: string | null;
+  image_candidates?: string[];
   category_id?: string | null; room?: string; qty: number; unit_price: number;
   mrp?: number | null; discount_pct: number | null; finish?: string | null;
   family_key?: string | null; description?: string | null;
@@ -85,7 +86,7 @@ export function syncDefaultIncludedParts<T extends LineLike>(
 
 export function addProductAndConcealedPart<T extends LineLike>(
   lines: T[], product: ProductLike, variant: VariantLike | undefined, room: string,
-  newLineId: (productId: string) => string, primaryImage: string | null,
+  newLineId: (productId: string) => string, photoUrls: string[],
   quantity = 1, notes?: string,
 ): T[] {
   if (!Number.isFinite(quantity) || quantity <= 0) return lines;
@@ -119,12 +120,13 @@ export function addProductAndConcealedPart<T extends LineLike>(
     parentId = current[index].id;
     const next = [...current];
     next[index] = { ...next[index], qty: next[index].qty + line.qty,
+      ...(line.image ? { image: line.image, image_candidates: line.image_candidates } : {}),
       ...(notes?.trim() ? { notes: notes.trim() } : {}) };
     return next;
   };
   const next = addOrIncrease(lines, {
     id: newLineId(productId), product_id: productId, sku, name: displayName,
-    image: variant?.image || primaryImage, category_id: product.category_id, room,
+    image: photoUrls[0] ?? null, image_candidates: photoUrls.slice(1), category_id: product.category_id, room,
     qty: quantity, unit_price: variant?.price ?? product.price, mrp: variant?.mrp ?? product.mrp,
     discount_pct: null, finish, family_key: product.family_key || null,
     description: variant?.description ?? product.description ?? null,

@@ -291,7 +291,7 @@ def test_customer_and_quotation_views_follow_actual_fulfillment_and_reopen(mongo
         monkeypatch.setattr(customer_routes, "db", db)
         monkeypatch.setattr(quotation_routes, "db", db)
         monkeypatch.setattr(tracker, "db", db)
-        async def identity_images(items, _floor):
+        async def identity_images(items, _floor, **_options):
             return items
         monkeypatch.setattr(quotation_routes, "_canonicalize_item_images", identity_images)
         try:
@@ -374,7 +374,7 @@ def test_record_floor_completion_and_tile_list_ignore_owner_ambient_workspace(mo
         db = client.completion
         monkeypatch.setattr(customer_routes, "db", db)
         monkeypatch.setattr(quotation_routes, "db", db)
-        async def images(items, _floor): return items
+        async def images(items, _floor, **_options): return items
         monkeypatch.setattr(quotation_routes, "_canonicalize_item_images", images)
         owner = UserPublic(id="owner", email="owner@example.com", full_name="Owner", role="owner", active_floor_id="first-floor")
         try:

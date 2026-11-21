@@ -26,7 +26,7 @@ from db import db
 from models import (
     CustomerPublic,
     Quotation, QuotationCreate, QuotationLineItem, QuotationRevision,
-    QuotationUpdate, RoomDiscountCfg, UserPublic, now_iso,
+    QuotationUpdate, RoomDiscountCfg, TileTransportation, UserPublic, now_iso,
 )
 from pdf_generator import build_quotation_pdf, quotation_pdf_filename
 from pdf_tiles import build_tiles_quotation_pdf, build_tiles_selection_pdf, tiles_pdf_filename
@@ -35,6 +35,7 @@ from services.quotation_ppt import build_product_ppt, presentation_filename
 from services.quotation_excel import build_quotation_excel, quotation_excel_filename
 from services.tiles_quotation_excel import build_tiles_quotation_excel
 from services.quotation_list import list_projection, list_search
+from services.quotation_media import canonicalize_item_images as _canonicalize_item_images
 from services import catalog_service
 from services.customer_completion import completed_customer_ids
 from services.activity_log import log_event
@@ -131,107 +132,6 @@ def _quotation_view_query(view: str | None) -> dict:
             {"status": {"$in": ["lost", "rejected"]}, "customer_outcome": {"$ne": "won"}},
         ]}
     return {}
-
-
-async def _canonicalize_item_images(items, floor_id: str | None = None) -> list[dict]:
-    """Resolve line-item images from current product media with snapshot fallback.
-
-    Quotation rows intentionally retain an image snapshot for audit/history, but
-    that snapshot can be the only image left after a catalog product or its
-    media is removed. Current media is eligible only for the document's exact
-    product SKU and floor; historic foreign-floor references are cleared.
-    The warmed catalog supplies ownership and media without a database roundtrip.
-    Retired/manual products retain their snapshots as a fallback. The PDF
-    image pipeline normalizes old portrait assets before placing them.
-    """
-    raw_items = [item.model_dump() if isinstance(item, QuotationLineItem) else dict(item) for item in (items or [])]
-    product_ids = {str(item.get("product_id")) for item in raw_items if item.get("product_id")}
-    if not product_ids:
-        return raw_items
-    eligible_ids = product_ids
-    snapshot = None
-    if floor_id:
-        # Reuse a warm catalog, or read only these products on a cold process.
-        # Include foreign IDs so their historical snapshots can be cleared.
-        snapshot = await catalog_service.snapshot_for_product_ids(list(product_ids))
-        eligible_ids = set()
-        for item in raw_items:
-            product = snapshot.product_by_id.get(str(item.get("product_id")))
-            if product and product.get("floor_id") != floor_id:
-                # Malformed historic references must not render even their
-                # persisted snapshot of another department's product.
-                item.update(image=None, seat_cover_image_urls=[], dimension_image_urls=[])
-            elif product and str(product.get("sku") or "").strip() == str(item.get("sku") or "").strip():
-                eligible_ids.add(str(item.get("product_id")))
-        media_rows = [row for product_id in eligible_ids
-                      for row in snapshot.media_rows_by_product.get(product_id, ()) if row.get("public_url")]
-    else:
-        media_rows = await db.product_media.find(
-            {"product_id": {"$in": list(product_ids)}, "public_url": {"$nin": [None, ""]}},
-            {"_id": 0, "product_id": 1, "public_url": 1, "is_primary": 1,
-             "role": 1, "sort_order": 1, "source_type": 1, "quality": 1},
-        ).to_list(max(len(product_ids) * 8, 100))
-    priority = {"manufacturer": 0, "supplier": 1, "internal": 2}
-    quality_rank = {"excellent": 4, "good": 3, "acceptable": 2, "poor": 1, "missing": 0}
-    grouped: dict[str, list[dict]] = {}
-    cover_fallback: dict[str, str] = {}
-    for row in media_rows:
-        if row.get("role") == "seat-cover":
-            cover_fallback.setdefault(str(row.get("product_id")), str(row.get("public_url")))
-            continue
-        if row.get("role") == "dimension":
-            continue
-        grouped.setdefault(str(row.get("product_id")), []).append(row)
-    for rows in grouped.values():
-        rows.sort(key=lambda row: (
-            0 if row.get("is_primary") else 1,
-            0 if row.get("role") == "hero" else 1,
-            priority.get(row.get("source_type"), 3),
-            int(row.get("sort_order", 100) or 100),
-        ))
-
-    def best_current_media(rows: list[dict]) -> dict:
-        """Prefer real detail over an outdated low-resolution primary image.
-
-        The explicit primary/hero remains authoritative when it is at least as
-        detailed as its alternatives. A better current image from the same
-        product is safer for a customer-facing PDF than enlarging a thumbnail.
-        """
-        preferred = rows[0]
-        best = max(
-            rows,
-            key=lambda row: (
-                quality_rank.get(str(row.get("quality") or "missing").lower(), 0),
-                1 if row.get("is_primary") else 0,
-                1 if row.get("role") == "hero" else 0,
-                -priority.get(row.get("source_type"), 3),
-                -int(row.get("sort_order", 100) or 100),
-            ),
-        )
-        preferred_quality = quality_rank.get(str(preferred.get("quality") or "missing").lower(), 0)
-        best_quality = quality_rank.get(str(best.get("quality") or "missing").lower(), 0)
-        return best if best_quality > preferred_quality else preferred
-
-    def resolved_image(item: dict):
-        product_id = str(item.get("product_id"))
-        if snapshot is not None:
-            product = snapshot.product_by_id.get(product_id)
-            if not product or product.get("floor_id") != floor_id or str(product.get("sku") or "").strip() != str(item.get("sku") or "").strip():
-                # Retired/manual products retain historical photos, but never
-                # acquire current media from an unverified or renamed SKU.
-                return item.get("image")
-            if not grouped.get(product_id):
-                # A removed snapshot URL must not mask the exact catalog's
-                # surviving legacy or seat-cover photo. Ownership/SKU checks
-                # above apply before using the current product preview.
-                return catalog_service.product_hero_image(product, snapshot) or item.get("image")
-        return (
-            best_current_media(grouped[str(item.get("product_id"))]).get("public_url")
-            if grouped.get(str(item.get("product_id")))
-            else cover_fallback.get(product_id) or item.get("image")
-        )
-
-    return [{**item, "image": resolved_image(item)} for item in raw_items]
 
 
 def _require_tiles_quotation_address(doc_type: str, address: str | None, *, historical_source: bool = False) -> None:
@@ -625,6 +525,10 @@ async def create_quotation(
     user: UserPublic = Depends(require_min_role("sales")),
 ):
     # Incomplete details are valid drafts. Address validation belongs to PDF/order actions.
+    transportation = body.transportation
+    if transportation is not None and body.doc_type != "tiles_quotation":
+        raise HTTPException(status_code=400, detail="Transportation arrangements are only supported for Ground Floor Tiles quotations")
+    transportation_fee = (transportation.amount or 0) if transportation is not None else body.transportation_fee
     draft_receipt_id = None
     receipt_floor = "first-floor" if body.doc_type == "standard" else TILES_FLOOR_ID
     if body.client_draft_id:
@@ -678,7 +582,7 @@ async def create_quotation(
 
     totals = _tile_totals(
         _recalc(items, body.project_discount_pct or 0, body.category_discounts or {}, body.room_discounts or {}),
-        body.transportation_fee, body.doc_type,
+        transportation_fee, body.doc_type,
     )
     # Denormalize each line's post-discount total so analytics can sum one
     # field instead of re-deriving the discount cascade per report.
@@ -691,7 +595,7 @@ async def create_quotation(
         "project_discount_pct": body.project_discount_pct,
         "category_discounts": body.category_discounts,
         "room_discounts": body.room_discounts,
-        "transportation_fee": body.transportation_fee,
+        "transportation_fee": transportation_fee,
         **totals,
     })
     quot = Quotation(
@@ -716,7 +620,8 @@ async def create_quotation(
         address_snapshot=body.address_snapshot,
         doc_date=body.doc_date,
         doc_number=body.doc_number,
-        transportation_fee=body.transportation_fee if body.doc_type in TILES_DOC_TYPES else 0,
+        transportation_fee=transportation_fee if body.doc_type in TILES_DOC_TYPES else 0,
+        transportation=transportation,
         created_by=user.id,
         created_by_name=user.full_name,
         floor_id=quotation_floor_id,
@@ -823,17 +728,26 @@ async def floor_reset_generation(user: UserPublic = Depends(get_current_user)):
     return {"generation": (row or {}).get("generation", "")}
 
 
-@router.get("/{quotation_id}", response_model=Quotation)
+class QuotationLineItemWithMedia(QuotationLineItem):
+    image_candidates: list[str] = []
+
+
+class QuotationWithMedia(Quotation):
+    items: list[QuotationLineItemWithMedia] = []
+
+
+@router.get("/{quotation_id}", response_model=QuotationWithMedia)
 async def get_quotation(quotation_id: str, with_completion: bool = False, user: UserPublic = Depends(get_current_user)):
     doc = await get_floor_scoped_or_404(db.quotations, quotation_id, user, not_found="Quotation not found", projection={"_id": 0})
-    doc = {**doc, "items": await _canonicalize_item_images(doc.get("items", []), floor_inherit(doc))}
+    items = await _canonicalize_item_images(doc.get("items", []), floor_inherit(doc), include_candidates=True)
+    doc = {**doc, "items": items}
     if doc.get("doc_type") == "tiles_quotation" and doc.get("floor_id") == TILES_FLOOR_ID:
         doc["items"] = [_with_saved_tile_unit_price(item) for item in doc["items"]]
     if with_completion:
         completion_user = user.model_copy(update={"active_floor_id": doc["floor_id"]})
         complete_ids = await completed_customer_ids(db, completion_user, [doc.get("customer_id")])
         doc["purchase_completion_status"] = "completed" if doc.get("customer_id") in complete_ids else "active"
-    return Quotation(**doc)
+    return QuotationWithMedia(**doc)
 
 
 def _ordered_at_patch(doc: dict, new_status: str) -> dict:
@@ -1133,6 +1047,10 @@ async def update_quotation(
             for key in ("catalog_price", "catalog_mrp", "catalog_version"):
                 setattr(it, key, snapshot.get(key))
         canonical_items = await _canonicalize_item_images(items_typed, floor_inherit(doc))
+        for item in canonical_items:
+            old = previous_by_id.get(item["id"])
+            if old and old.get("image") and item.get("image") and old.get("product_id") == item.get("product_id") and old.get("sku") == item.get("sku"):
+                item["image"] = old["image"]
         update["items"] = canonical_items if is_ground_tiles_quote else [i.model_dump() for i in _normalize_tile_items(
             [QuotationLineItem(**item) for item in canonical_items], doc.get("doc_type", "standard")
         )]
@@ -1197,10 +1115,22 @@ async def update_quotation(
         update["doc_date"] = body.doc_date
     if body.doc_number is not None:
         update["doc_number"] = body.doc_number
-    if body.transportation_fee is not None:
+    if is_ground_tiles_quote and "transportation" in body.model_fields_set:
+        transportation = body.transportation
+        update["transportation"] = transportation.model_dump() if transportation is not None else None
+        update["transportation_fee"] = (transportation.amount or 0) if transportation is not None else 0
+    elif body.transportation is not None:
+        raise HTTPException(status_code=400, detail="Transportation arrangements are only supported for Ground Floor Tiles quotations")
+    elif body.transportation_fee is not None:
         if doc.get("doc_type") not in TILES_DOC_TYPES:
             raise HTTPException(status_code=400, detail="Transportation Fee is only supported for Ground Floor tile documents")
         update["transportation_fee"] = float(body.transportation_fee)
+        existing_transportation = doc.get("transportation")
+        if is_ground_tiles_quote and existing_transportation is not None and body.transportation_fee != doc.get("transportation_fee", 0):
+            # Older clients can edit the fee without replacing saved terms.
+            transportation = TileTransportation(**{**existing_transportation, "amount": body.transportation_fee or None})
+            update["transportation"] = transportation.model_dump()
+            update["transportation_fee"] = transportation.amount or 0
     if body.ui_state is not None:
         update["ui_state"] = body.ui_state
 
@@ -1260,7 +1190,7 @@ async def update_quotation(
             reason=body.reason,
             snapshot={k: doc.get(k) for k in (
                 "items", "rooms", "notes", "status", "grand_total", "project_discount_pct",
-                "category_discounts", "room_discounts", "customer_id", "customer_name", "transportation_fee",
+                "category_discounts", "room_discounts", "customer_id", "customer_name", "transportation_fee", "transportation",
             )},
         )
         update["revisions"] = revisions + [rev.model_dump()]
@@ -1555,6 +1485,7 @@ async def duplicate_quotation(
         prepared_by=src.get("prepared_by"),
         address_snapshot=src.get("address_snapshot"),
         transportation_fee=src.get("transportation_fee", 0),
+        transportation=src.get("transportation"),
     )
     # Build fresh line items so ids are regenerated by the default_factory.
     body.items = [
@@ -1694,6 +1625,7 @@ async def quotation_breakdown(quotation_id: str, user: UserPublic = Depends(get_
         "category_discounts": cat_discs,
         "room_discounts": room_discs_raw,
         "transportation_fee": doc.get("transportation_fee", 0),
+        "transportation": doc.get("transportation"),
     }
 
 
@@ -1714,7 +1646,8 @@ def _enriched_items_for_pdf(doc: dict) -> list[dict]:
 
 async def _pdf_items(doc: dict) -> list[dict]:
     """Return discount-enriched rows with current media URLs."""
-    return _enriched_items_for_pdf({**doc, "items": await _canonicalize_item_images(doc.get("items", []), floor_inherit(doc))})
+    items = await _canonicalize_item_images(doc.get("items", []), floor_inherit(doc), include_candidates=True)
+    return _enriched_items_for_pdf({**doc, "items": items})
 
 
 async def _diagram_items(items: list[dict], floor_id: str) -> list[dict]:
@@ -1802,7 +1735,7 @@ async def _build_quotation_file(doc: dict, customer: dict, include_dimensions: b
     pdf_items = await _pdf_items(doc)
     if doc_type not in TILES_DOC_TYPES:
         pdf_items = await _diagram_items(pdf_items, doc.get("floor_id"))
-    if doc_type in TILES_DOC_TYPES:
+    if doc_type == "tiles_selection":
         _require_tile_item_images(pdf_items)
     if doc_type == "tiles_selection":
         pdf_bytes = await _render_pdf(build_tiles_selection_pdf, {**doc, "items": pdf_items}, customer, branding)

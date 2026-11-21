@@ -627,7 +627,6 @@ def test_sanitary_keeps_portrait_while_tile_pdfs_retain_existing_presentation(mo
         return image
 
     monkeypatch.setattr(pdf_generator, "_img", capture_img)
-    monkeypatch.setattr(pdf_tiles, "_img", capture_img)
     item = {
         "image": "https://example.test/portrait.png", "sku": "UPRIGHT-1",
         "name": "Upright Product", "room": "Living", "qty": 1,

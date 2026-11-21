@@ -6,8 +6,8 @@ printed forms supplied by the business (Selection / Tile Quotation):
   PARTNERS grid, 12 Terms & Conditions, a contact line and a customer
   signature box.
 * Page 2+ — PRODUCT DETAILS: a flowing product grid with repeating headers.
-  Quotations show the saved offer and box rates, followed by Transportation
-  when charged and the quotation totals.
+  Quotations show the saved offer and box rates, followed by the saved
+  transportation details and quotation totals.
 
 Both reuse the shared image fetch/placeholder/escaping/footer helpers from
 pdf_generator so there is exactly one implementation of those in the codebase.
@@ -17,6 +17,7 @@ from services.product_display import tile_product_name
 from services.phone_format import format_department_phone
 from services.pricing import saved_tile_unit_price
 from services.referrer_identity import pdf_reference_label
+from services.tile_transportation import transportation_details
 
 import functools
 from datetime import datetime
@@ -33,7 +34,7 @@ from reportlab.platypus import (
 )
 
 from pdf_generator import (
-    LOGO_PATH, LOGO_RATIO, _draw_footer, _draw_room_watermark, _escape, _img, _money, _currency_symbol, _SingleLineParagraph,
+    LOGO_PATH, LOGO_RATIO, _draw_footer, _draw_room_watermark, _escape, _item_img, _money, _currency_symbol, _SingleLineParagraph,
     PORTRAIT_A4, QUOTATION_SERIAL_GREY, QUOTATION_WATERMARK_INK_STRENGTH, WATERMARK_INK_STRENGTH,
     quotation_pdf_filename, _po_final_payment_table, brand_partners_table, prefetch_product_images,
 )
@@ -116,6 +117,7 @@ TILES_TERMS = [
     "On confirmation of purchase order, material will be delivered within 15 days.",
     "Labour cost is extra and not included in this quotation.",
 ]
+QUOTED_FREIGHT_TERMS = "Freight follows the quoted transportation terms. Unloading charges are as per actuals."
 
 
 def _parse_doc_date(doc: dict) -> datetime:
@@ -271,7 +273,7 @@ def _meta_grid(quotation: dict, customer: dict, styles: dict, *, include_staff: 
     return table
 
 
-def _brand_terms_signature_block(styles: dict, branding: dict, *, density: str = "standard") -> list:
+def _brand_terms_signature_block(styles: dict, branding: dict, *, density: str = "standard", has_transport_terms: bool = False) -> list:
     """Terms, contact line and customer signature box.
 
     Selection covers have room to breathe, while quotation covers also carry
@@ -302,8 +304,11 @@ def _brand_terms_signature_block(styles: dict, branding: dict, *, density: str =
         Paragraph("TERMS &amp; CONDITIONS", styles["sectionTitle"]),
         Spacer(1, before_terms_gap * mm),
     ]
+    term_texts = TILES_TERMS.copy()
+    if has_transport_terms:
+        term_texts[3] = QUOTED_FREIGHT_TERMS
     term_rows = [
-        [Paragraph(f"{left}. {TILES_TERMS[left - 1]}", term_style), Paragraph(f"{right}. {TILES_TERMS[right - 1]}", term_style)]
+        [Paragraph(f"{left}. {term_texts[left - 1]}", term_style), Paragraph(f"{right}. {term_texts[right - 1]}", term_style)]
         for left, right in zip(range(1, 7), range(7, 13))
     ]
     terms = Table(term_rows, colWidths=[PAGE_W_MM / 2 * mm] * 2)
@@ -423,8 +428,8 @@ def build_tiles_selection_pdf(quotation: dict, customer: dict, branding: dict | 
     for index, item in enumerate(items, 1):
         rows.append([
             Paragraph(str(index), styles["cell"]),
-            _img(
-                item.get("image"), image_bytes=image_bytes, force_landscape=True,
+            _item_img(
+                item, image_bytes=image_bytes, force_landscape=True,
                 width_mm=SELECTION_PRODUCT_IMAGE_WIDTH_MM,
                 height_mm=SELECTION_PRODUCT_IMAGE_HEIGHT_MM,
                 cover=True,
@@ -512,6 +517,7 @@ def build_tiles_quotation_pdf(quotation: dict, customer: dict, branding: dict | 
     if item_subtotal is None:
         item_subtotal = round(sum(gross_amounts), 2)
     transportation_fee = float(quotation.get("transportation_fee") or 0)
+    transport_status, transport_amount, transport_note = transportation_details(quotation)
     discount_total = quotation.get("discount_total")
     if discount_total is None:
         discount_total = round(sum(gross_amounts) - sum(line_totals), 2)
@@ -556,7 +562,7 @@ def build_tiles_quotation_pdf(quotation: dict, customer: dict, branding: dict | 
             _price_summary_table(total_quantity, item_subtotal, None, total_quote, styles),
             Spacer(1, 2.5 * mm),
         ]
-        story.extend(_brand_terms_signature_block(styles, b, density="compact"))
+        story.extend(_brand_terms_signature_block(styles, b, density="compact", has_transport_terms=bool(transport_status or transport_note)))
 
     # --- PRODUCT DETAILS (page 2+) — one flowing table, auto-paginates ------
     story.append(PageBreak())
@@ -588,8 +594,8 @@ def build_tiles_quotation_pdf(quotation: dict, customer: dict, branding: dict | 
         size = Paragraph(_escape(item.get("size") or ""), styles["cell"])
         row = [
             Paragraph(str(index), serial_style),
-            _img(
-                item.get("image"), image_bytes=image_bytes, force_landscape=True,
+            _item_img(
+                item, image_bytes=image_bytes, force_landscape=True,
                 width_mm=QUOTATION_PRODUCT_IMAGE_WIDTH_MM,
                 height_mm=QUOTATION_PRODUCT_IMAGE_HEIGHT_MM,
                 cover=True,
@@ -628,14 +634,22 @@ def build_tiles_quotation_pdf(quotation: dict, customer: dict, branding: dict | 
             style_cmds.append(("BACKGROUND", (0, r), (0, r), ZEBRA))
     row_heights = [12 * mm] + [32 * mm] * len(items)
     if product_quotation:
+        summary_start = len(rows)
+        if transport_status or transport_amount is not None or transport_note:
+            label = "TRANSPORTATION"
+            if transport_status:
+                label += f"<br/>{_escape(transport_status)}"
+            detail = Paragraph(label, styles["sumLabel"])
+            if transport_note:
+                detail = [detail, Paragraph(_escape(transport_note), styles["cell"])]
+            amount = _SingleLineParagraph(_money(transport_amount), styles["sumValue"]) if transport_amount is not None else ""
+            rows.append([detail, *([""] * (len(head) - 2)), amount])
+            row_heights.append(8 * mm)
         summary = []
-        if transportation_fee:
-            summary.append(("TRANSPORTATION", transportation_fee))
         summary.append(("SUBTOTAL", item_subtotal))
         if discount_total:
             summary.append(("DISCOUNT", discount_total))
         summary.append(("TOTAL QUOTE", total_quote))
-        summary_start = len(rows)
         for label, value in summary:
             rows.append([
                 Paragraph(label, styles["sumLabel"]), *([""] * (len(head) - 2)),

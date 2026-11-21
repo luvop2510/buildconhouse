@@ -87,7 +87,7 @@ def test_all_product_quotation_downloads_and_shares_omit_staff(monkeypatch, floo
         event_outbox=SimpleNamespace(find_one=AsyncMock(return_value={"id": "existing-event"})),
     ))
     monkeypatch.setattr(quotation_routes, "get_floor_scoped_or_404", AsyncMock(return_value=doc))
-    monkeypatch.setattr(quotation_routes, "_canonicalize_item_images", AsyncMock(side_effect=lambda items, _: items))
+    monkeypatch.setattr(quotation_routes, "_canonicalize_item_images", AsyncMock(side_effect=lambda items, _, **kwargs: items))
     monkeypatch.setattr(quotation_routes, "_pdf_branding", AsyncMock(return_value={}))
     monkeypatch.setattr(quotation_routes, "dispatch_event", AsyncMock())
     monkeypatch.setattr(pdf_generator, "prefetch_product_images", lambda _items: {})

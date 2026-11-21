@@ -89,26 +89,34 @@ test('critical saved box rate and transportation stay in sync with the quotation
   await fixtures(page);
   const doc = {
     id: 'boxed-quote', number: 'T-3', doc_type: 'tiles_quotation', floor_id: 'ground-floor', status: 'draft',
-    customer_id: 'customer', customer_name: 'Customer', updated_at: '2026-11-01T00:00:00Z',
+    customer_id: 'customer', customer_name: 'Customer', address_snapshot: '12 Ring Road', updated_at: '2026-11-01T00:00:00Z',
     subtotal: 8500, discount_total: 500, grand_total: 8100, transportation_fee: 100,
     items: [{ id: 'line', product_id: matt.id, sku: matt.sku, name: matt.name, image, size: matt.size, finish: 'Matt', rate_sqft: 140, offer_rate: 120, rate_box: 1700, unit_price: 1700, box_sqft: 16, qty: 5, net_amount: 8000, quantity_unit: 'Box', price_basis: 'sqft' }],
   };
   let saves = 0;
+  let saved = { ...doc, transportation: null as { status: string | null; amount: number | null; note: string } | null };
   await page.route(/\/api\/quotations\/boxed-quote(?:\?.*)?$/, async route => {
     if (route.request().method() === 'PATCH') {
       saves += 1;
       const payload = route.request().postDataJSON();
       expect(payload).not.toHaveProperty('items');
-      expect(payload.transportation_fee).toBe(240);
-      await route.fulfill({ json: { ...doc, transportation_fee: 240, grand_total: 8240 } });
-    } else {
-      await route.fulfill({ json: doc });
+      expect(payload.transportation_fee).toBe(payload.transportation.amount ?? 0);
+      saved = { ...saved,
+        transportation: payload.transportation,
+        transportation_fee: payload.transportation_fee,
+        grand_total: 8000 + payload.transportation_fee,
+        updated_at: new Date(Date.UTC(2026, 10, 1, 0, 0, saves)).toISOString(),
+      };
     }
+    await route.fulfill({ json: saved });
   });
   await page.route('**/api/quotations/boxed-quote/xlsx', route => route.fulfill({ contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', body: 'mock workbook' }));
+  await page.route('**/api/quotations/boxed-quote/pdf', route => route.fulfill({ contentType: 'application/pdf', body: '%PDF-1.4 mock document' }));
   await page.goto('/tiles/quotation?id=boxed-quote');
   const boxRate = page.locator('[data-testid="tiles-rate-box-0"], [data-testid="mobile-rate-box-0"]');
   const transportation = page.locator('[data-testid="tiles-transportation-fee"], [data-testid="mobile-transportation-fee"]');
+  const status = page.getByTestId('tiles-transportation-status');
+  const note = page.getByTestId('tiles-transportation-note');
   const grandTotal = page.getByText(/₹\s*8,100/).last();
   await expect(boxRate).toContainText(/₹\s*1,700/);
   await expect(transportation).toHaveValue('100');
@@ -124,7 +132,34 @@ test('critical saved box rate and transportation stay in sync with the quotation
   await transportation.fill('240');
   await expect(page.getByText(/₹\s*8,240/).last()).toBeVisible();
   await expect.poll(() => saves).toBe(1);
+  expect(saved.transportation).toEqual({ status: null, amount: 240, note: '' });
   await expect(boxRate).toContainText(/₹\s*1,700/);
+
+  for (const scenario of [
+    { label: 'Not Paid / Pending', status: 'pending', amount: 2500, note: '', total: '10,500' },
+    { label: 'Paid', status: 'paid', amount: 1500, note: '', total: '9,500' },
+    { label: 'Charges To Be Decided', status: 'to_be_decided', amount: null, note: 'Charges depend on the final delivery location.', total: '8,000' },
+    { label: 'Customer Will Arrange Transportation', status: 'customer_arranged', amount: null, note: 'Customer will arrange delivery.', total: '8,000' },
+    { label: 'Custom', status: 'custom', amount: null, note: 'Transportation extra as per actual delivery charges.', total: '8,000' },
+  ]) {
+    await status.click();
+    await page.getByRole('menuitem', { name: scenario.label, exact: true }).click();
+    if (scenario.amount !== null) await transportation.fill(String(scenario.amount));
+    if (scenario.note) await note.fill(scenario.note);
+    await expect.poll(() => saved.transportation).toEqual({ status: scenario.status, amount: scenario.amount, note: scenario.note });
+    await expect(page.getByText(new RegExp(`₹\\s*${scenario.total}`)).last()).toBeVisible();
+  }
+
+  await page.reload();
+  await expect(status).toHaveAccessibleName('Custom');
+  await expect(note).toHaveValue('Transportation extra as per actual delivery charges.');
+  await expect(transportation).toHaveValue('');
+  for (const [name, extension] of [[/^(Download PDF|Generate quotation PDF)$/, 'pdf'], [/^Download Excel$/, 'xlsx']] as const) {
+    const event = page.waitForEvent('download');
+    await page.getByRole('button', { name }).click();
+    expect((await event).suggestedFilename()).toMatch(new RegExp(`\\.${extension}$`));
+  }
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
 });
 
 test('critical offer changes replace a manually entered total', async ({ page }) => {

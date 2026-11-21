@@ -6,7 +6,7 @@
 // component that renders a product photo should go through this helper so
 // there's exactly one fallback order, matching what the standalone Catalog
 // page already does.
-import type { Product, ProductVariant } from "./types";
+import type { Line, Product, ProductVariant } from "./types";
 
 export function productImageList(
   p: Pick<Product, "images" | "hero_image_url" | "gallery" | "family_key"> | null | undefined,
@@ -56,6 +56,21 @@ export function productImageList(
     .map((candidate) => candidate.url);
 }
 
+export function quotationProductImages(
+  product: Pick<Product, "id" | "sku" | "images" | "hero_image_url" | "gallery" | "family_key">,
+  variant?: Pick<ProductVariant, "id" | "sku" | "image" | "image_candidates"> | null,
+): string[] {
+  const variantPhotos = variant?.image ? [variant.image, ...(variant.image_candidates ?? [])] : [];
+  if (variant && (variant.sku !== product.sku || (variant.id && variant.id !== product.id))) {
+    return variantPhotos;
+  }
+  return [...new Set([...variantPhotos, ...productImageList(product)])];
+}
+
+export function quotationLineImages(line: Pick<Line, "image" | "image_candidates">): string[] {
+  return line.image ? [line.image, ...(line.image_candidates ?? [])] : line.image_candidates ?? [];
+}
+
 // Resolves which images to show for the currently-selected finish/variant.
 // Some supplier source files ship a finish with no photo of its own (e.g. a
 // row the supplier simply never photographed) — when that happens we must
@@ -66,26 +81,17 @@ export function productImageList(
 // the displayed photo is a stand-in for a different finish, so the UI can say
 // so rather than silently implying it's the exact selected finish's own photo.
 export function resolveVariantImages(
-  product: Pick<Product, "images" | "hero_image_url" | "gallery" | "variants" | "sku">,
-  selectedVariant?: Pick<ProductVariant, "sku" | "image"> | null,
+  product: Pick<Product, "id" | "images" | "hero_image_url" | "gallery" | "variants" | "sku">,
+  selectedVariant?: Pick<ProductVariant, "id" | "sku" | "image" | "image_candidates"> | null,
 ): { images: string[]; isFallback: boolean } {
-  const base = productImageList(product);
-  // A selected variant is a different SKU, not simply a visual option on the
-  // representative card. Its own primary image is therefore the only honest
-  // hero candidate. Appending the representative card's gallery here meant a
-  // failed/slow selected image could quietly become a Chrome or black sibling
-  // image even while the label said Brown Red.
-  if (selectedVariant?.image) {
-    return { images: [selectedVariant.image], isFallback: false };
-  }
-  if (!selectedVariant && base.length) {
-    return { images: base, isFallback: false };
-  }
+  const ownImages = quotationProductImages(product, selectedVariant);
+  if (ownImages.length) return { images: ownImages, isFallback: false };
 
   // Only variants without an image use a representative photo. Keep this
   // explicit so the UI can label it honestly rather than implying it is the
   // chosen finish. Prefer the representative product's own media; if that is
   // genuinely absent, use the first real sibling image as the final fallback.
+  const base = selectedVariant ? productImageList(product) : [];
   if (base.length) return { images: base, isFallback: true };
   const currentSku = selectedVariant?.sku ?? product.sku;
   const sibling = (product.variants || []).find((v) => v.sku !== currentSku && v.image);

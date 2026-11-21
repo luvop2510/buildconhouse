@@ -7,6 +7,8 @@ network workers for each PDF.
 """
 from __future__ import annotations
 
+from base64 import b64decode
+from binascii import Error as Base64Error
 from collections import OrderedDict
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from dataclasses import dataclass
@@ -106,12 +108,12 @@ _metrics_lock = Lock()
 def _allowed_hosts() -> set[str]:
     """Return configured storage/CDN hosts without importing application settings.
 
-    Keeping this environment-only avoids pulling database configuration into
-    report-generation unit tests.  SUPABASE_URL is required by runtime config;
-    PDF_IMAGE_ALLOWED_HOSTS is an optional comma-separated CDN extension.
+    Use the configured public origins for current and historical product media.
+    PDF_IMAGE_ALLOWED_HOSTS remains available for additional approved CDNs.
     """
     hosts: set[str] = set()
-    for raw in (os.environ.get("SUPABASE_URL", ""), *os.environ.get("PDF_IMAGE_ALLOWED_HOSTS", "").split(",")):
+    origins = (os.environ.get("R2_PUBLIC_URL", ""), os.environ.get("SUPABASE_URL", ""))
+    for raw in (*origins, *os.environ.get("PDF_IMAGE_ALLOWED_HOSTS", "").split(",")):
         candidate = raw.strip()
         if not candidate:
             continue
@@ -189,6 +191,21 @@ def _valid_image(data: bytes, content_type: str) -> bool:
         return True
     except Exception:
         return False
+
+
+def embedded_image_bytes(reference: str) -> bytes | None:
+    """Decode old catalogue raster data URLs under the PDF image-size limits."""
+    header, _, encoded = reference.partition(",")
+    mime = header.removeprefix("data:").removesuffix(";base64").lower()
+    if not header.endswith(";base64") or mime not in ALLOWED_IMAGE_MIME_TYPES:
+        return None
+    if len(encoded) > 4 * ((MAX_IMAGE_BYTES + 2) // 3):
+        return None
+    try:
+        data = b64decode(encoded, validate=True)
+    except (Base64Error, ValueError):
+        return None
+    return data if len(data) <= MAX_IMAGE_BYTES and _valid_image(data, mime) else None
 
 
 def _fetch_uncached(url: str) -> bytes | None:

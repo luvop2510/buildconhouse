@@ -13,6 +13,7 @@ import { colors, font, money, radius, type } from "@/src/theme/tokens";
 import { color as ds } from "@/src/design/tokens";
 
 import { useBuilder } from "../context/BuilderContext";
+import { quotationLineImages } from "../helpers/media";
 import { effectivePct, sourceBadge } from "../helpers/pricing";
 import { FinishSwatch } from "../shared/VariantChip";
 import { grabCursor } from "../shared/grabCursor";
@@ -108,7 +109,7 @@ function LineRowImpl({
         <Feather name="menu" size={14} color={colors.onSurfaceMuted} />
       </Pressable>
       <ProductImage
-        source={l.image}
+        source={quotationLineImages(l)}
         style={isPhone ? [styles.thumb, styles.thumbPhone] : styles.thumb}
         fallbackLabel={l.sku}
         frameInset={0}

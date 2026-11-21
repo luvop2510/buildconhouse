@@ -848,6 +848,27 @@ class ReferrerUpdate(ReferrerCreate):
     updated_at: str
 
 
+class TileTransportation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: Optional[Literal["paid", "pending", "to_be_decided", "customer_arranged", "custom"]] = None
+    amount: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
+    note: str = Field(default="", max_length=500)
+
+    @field_validator("note")
+    @classmethod
+    def normalize_note(cls, value: str) -> str:
+        if any(ord(char) < 32 and char not in "\t\r\n" for char in value):
+            raise ValueError("Transportation note contains unsupported characters")
+        return value.strip()
+
+    @model_validator(mode="after")
+    def clear_unbillable_amount(self):
+        if self.status in {"to_be_decided", "customer_arranged"}:
+            self.amount = None
+        return self
+
+
 class Quotation(TimestampedModel):
     # Response-only recovery metadata; create receipts hold the original revision.
     create_replayed: bool = False
@@ -905,9 +926,9 @@ class Quotation(TimestampedModel):
     subtotal: float = 0
     discount_total: float = 0            # total of all discounts (item + cat + project)
     grand_total: float = 0
-    # Ground Floor Tiles only. Kept on the quotation aggregate so it is
-    # persisted, recalculated, rendered in the PDF, and survives reloads.
+    # Keep the billable fee for existing totals consumers and older clients.
     transportation_fee: float = Field(default=0, ge=0)
+    transportation: Optional[TileTransportation] = None
     # Cached sum of the immutable additional-cost history below. Kept separate
     # from grand_total so the original printed quotation remains intact.
     payment_extra_amount: float = Field(default=0, ge=0)
@@ -952,6 +973,7 @@ class QuotationCreate(_QuotationWritePayload):
     doc_date: Optional[str] = None
     doc_number: Optional[str] = None
     transportation_fee: float = Field(default=0, ge=0)
+    transportation: Optional[TileTransportation] = None
 
 
 class QuotationUpdate(_QuotationWritePayload):
@@ -978,6 +1000,7 @@ class QuotationUpdate(_QuotationWritePayload):
     doc_date: Optional[str] = None
     doc_number: Optional[str] = None
     transportation_fee: Optional[float] = Field(default=None, ge=0)
+    transportation: Optional[TileTransportation] = None
     reason: Optional[str] = None         # for revision log
     silent: bool = False                 # if true, skip revision snapshot (autosave)
 
