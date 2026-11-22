@@ -25,6 +25,9 @@ def test_assigned_walkin_transfer_is_visible_in_its_floor_showroom_inbox(monkeyp
                 patch.setattr(followup_routes, "db", env["db"])
                 env["app"].include_router(walkin_routes.router, prefix="/api")
                 env["app"].include_router(followup_routes.router, prefix="/api")
+                await env["db"].floors.update_one(
+                    {"id": floor}, {"$setOnInsert": {"name": floor, "active": True}}, upsert=True,
+                )
                 walkin_id, customer_id, lead_id, worker = (str(uuid4()) for _ in range(4))
                 at = now_iso()
                 assignments = [{"floor_id": floor, "user_id": worker, "user_name": "Selected worker"}]
@@ -62,6 +65,15 @@ def test_assigned_walkin_transfer_is_visible_in_its_floor_showroom_inbox(monkeyp
                 page = await env["api"].get("/api/followups/page?origin=visit_showroom", headers=request_headers)
                 assert page.status_code == 200, page.text
                 assert [row["id"] for row in page.json()["items"]] == [lead_id]
+                if floor != "second-floor":
+                    workspace = await env["api"].get(
+                        "/api/followups/planner?operational=true&workspace=visit_showroom", headers=request_headers,
+                    )
+                    assert workspace.status_code == 200, workspace.text
+                    result = workspace.json()
+                    assert result["summary"]["all"]["count"] == 1
+                    cards = [row["task"] for group in result["items"] for row in group["records"]]
+                    assert [(card["id"], card["origin"]) for card in cards] == [(lead_id, "visit_showroom")]
                 saved = await env["db"].followups.find_one({"id": lead_id}, {"_id": 0})
                 assert saved["origin"] == "visit_showroom"
                 for field in ("assigned_to", "assignments", "lead_group_id", "status", "completed_at", "due_at", "contact_attempts"):

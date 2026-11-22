@@ -56,7 +56,9 @@ from services.followup_engine import (
     compute_bucket, ist_day_bounds_utc, money_short, parse_iso,
     reason_factors_for, reconcile_followups, score_followup,
 )
-from services.followup_planner import Category as PlannerCategory, Period as PlannerPeriod, Scope as PlannerScope, load_planner
+from services.followup_planner import (
+    Category as PlannerCategory, Period as PlannerPeriod, Scope as PlannerScope, Workspace as PlannerWorkspace, load_planner,
+)
 from services.followup_notebook import (
     NotebookConflictError, NotebookValidationError, complete_notebook_row, convert_notebook_row,
     notebook_query, notebook_search_query, normalize_mobile, patch_notebook_row,
@@ -1249,20 +1251,31 @@ async def followup_planner(
     start: date | None = None,
     end: date | None = None,
     day: date | None = None,
-    week: int = Query(0, ge=0, le=104),
-    assigned_to: str | None = Query(None, max_length=128),
+    week: int = Query(0, ge=-104, le=104),
+    assigned_to: str | None = Query(None, max_length=4_000),
     brand: str | None = Query(None, max_length=128),
     department: str | None = Query(None, max_length=128),
     q: str | None = Query(None, max_length=120),
     page: int = Query(1, ge=1),
     page_size: int = Query(25, ge=1, le=100),
+    operational: bool = False,
+    workspace: PlannerWorkspace = "all",
+    priority: str | None = Query(None, max_length=128),
+    task_category: str | None = Query(None, max_length=256),
+    legacy_bucket: str | None = Query(None, max_length=128),
     user: UserPublic = Depends(get_current_user),
 ):
-    return await load_planner(
+    result = await load_planner(
         db, user, category=category, period=period, start=start, end=end, day=day,
         week=week, assigned_to=assigned_to, brand=brand, department=department,
-        q=q, page=page, page_size=page_size, scope=scope,
+        q=q, page=page, page_size=page_size, scope=scope, operational=operational,
+        workspace=workspace, priority=priority, task_category=task_category, legacy_bucket=legacy_bucket,
     )
+    if operational:
+        tasks = [record["task"] for group in result["items"] for record in group["records"] if "task" in record]
+        if tasks:
+            await _enrich_followup_references(tasks, user)
+    return result
 
 
 @router.get("/{followup_id}")

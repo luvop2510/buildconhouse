@@ -80,7 +80,9 @@ def test_planner_calculations_filters_and_permissions(monkeypatch):
                  "quotation_id": "converted-tile", "customer_id": "wrong-client", "created_at": "2026-10-03"},
             ])
             await db.followups.insert_many([
-                task("today", latest_note="Revised delivery discussed"),
+                task("today", latest_note="Revised delivery discussed", origin="visit_showroom", walkin_id="showroom-lead",
+                     priority_level="low", manual_priority_override="high", rule_type="manual", category="general",
+                     pending_call_id="private", note_history=[{"note": "Revised delivery discussed", "request_hash": "private"}]),
                 task("overdue", due_at="2026-11-20T18:29:00+00:00"),
                 task("monday", due_at="2026-11-23", assigned_to="manoj", assigned_to_name="Manoj"),
                 task("done", status="done", due_at="2026-11-17", completed_at="2026-11-20"),
@@ -134,6 +136,36 @@ def test_planner_calculations_filters_and_permissions(monkeypatch):
                 assert brand_outcomes["summary"]["outcomes"]["count"] == 2
                 assert brand_outcomes["summary"]["outcomes"]["amounts"] == [{"currency": "INR", "value": 200}]
 
+                operational = await report(operational=True, department="all")
+                rows = [row for group in operational["items"] for row in group["records"]]
+                assert operational["operational"] is True
+                assert len(rows) == operational["summary"]["all"]["count"] == 6
+                assert all(row["kind"] == "followup" for row in rows)
+                assert rows[0]["task"]["bucket"] == "overdue"
+                assert operational["summary"]["all"]["customers"] == len(operational["items"]) == 2
+                assert next(row for row in rows if row["id"] == "today")["task"]["has_history"] is True
+
+                filtered = await report(operational=True, workspace="visit_showroom", period="last_30_days",
+                                        category="today", assigned_to="nikhil,manoj", brand="grohe",
+                                        priority="critical,high", task_category="general", q="FQ-pending")
+                card = filtered["items"][0]["records"][0]["task"]
+                assert (card["id"], card["walkin_id"], card["value"], card["bucket"]) == ("today", "showroom-lead", 100, "today")
+                assert card["latest_note"] == "Revised delivery discussed"
+                assert card["effective_priority_level"] == "high"
+                assert "pending_call_id" not in card and "note_history" not in card
+                assert filtered["summary"]["today"]["count"] == filtered["brands"][0]["today"] == 1
+                assert filtered["summary"]["today"]["amounts"] == filtered["brands"][0]["workload_amounts"]
+                assert filtered["summary"]["today"]["amounts"] == filtered["employees"][0]["amounts"]
+
+                scheduled = await report(operational=True, day="2026-11-20")
+                assert scheduled["items"][0]["records"][0]["id"] == "overdue"
+                assert scheduled["schedule"][4]["day"] == "2026-11-20"
+                assert scheduled["schedule"][4]["count"] == 1
+                previous_week = await report(operational=True, week=-1)
+                assert previous_week["schedule"][0]["day"] == "2026-11-09"
+                saved_completed_today = await report(operational=True, legacy_bucket="completed_today")
+                assert [row["id"] for group in saved_completed_today["items"] for row in group["records"]] == ["later-legacy-loss"]
+
                 work = await report(category="overdue", scope="work")
                 assert work["reports_available"] is False and "won" not in work["summary"]
                 assert work["items"][0]["records"][0]["id"] == "overdue"
@@ -147,14 +179,57 @@ def test_planner_calculations_filters_and_permissions(monkeypatch):
                 grant = build_grant(user_id=actor.id, resource="followups", actions=["view"], floor_id=floor,
                                     expires_at=None, actor_id="owner", actor_name="Owner")
                 await db.users.update_one({"id": actor.id}, {"$set": {"delegation_grants": [grant]}})
+                await db.quotations.update_one({"id": "pending"}, {"$set": {
+                    "doc_number": "QA-QUOTATION-ONLY", "doc_type": "standard", "grand_total": 700,
+                }})
+                await db.followups.update_one({"id": "today"}, {"$set": {"value": 19}})
                 delegated = await report(department="all")
                 assert delegated["summary"]["created"]["count"] == 0
                 assert delegated["summary"]["today"]["count"] == 2
+                denied = await report(operational=True, category="today", q="FQ-pending")
+                visible_reminder = denied["items"][0]["records"][0]
+                assert visible_reminder["quotation_number"] == visible_reminder["task"]["quotation_number"] == "FQ-pending"
+                assert visible_reminder["value"] is None and visible_reminder["task"]["value"] == 19
+                assert visible_reminder["doc_type"] is None and visible_reminder["brands"] == []
+                assert denied["summary"]["today"]["amounts"] == denied["options"]["brands"] == []
+                assert not (await report(operational=True, q="QA-QUOTATION-ONLY"))["items"]
+                assert not (await report(category="today", q="FQ-pending"))["summary"]["today"]["amounts"]
+                assert not (await report(operational=True, brand="grohe", scope="work"))["items"]
+
                 actor = actor.model_copy(update={"role": "owner", "custom_access": False, "active_floor_id": "ground-floor"})
                 legacy_conversion = await report(category="created", period="this_week", q="FQ-converted-tile")
                 assert legacy_conversion["summary"]["created"]["count"] == 1
                 record = legacy_conversion["items"][0]["records"][0]
                 assert record["id"] == "converted-tile" and record["date"] == "2026-11-19"
+
+                await db.floors.insert_one({"id": "third-floor", "name": "Furniture"})
+                await db.users.insert_one({"id": "former-owner", "full_name": "Former Owner", "active": False, "role": "owner"})
+                await db.followups.insert_one(task("furniture", floor_id="third-floor", customer_id="furniture-client",
+                                                   quotation_id=None, assigned_to="former-owner", assigned_to_name="Former Owner"))
+                furniture = await report(operational=True, department="third-floor")
+                assert [(owner["id"], owner["today"]) for owner in furniture["employees"]] == [("unassigned", 1)]
+                assert furniture["items"][0]["records"][0]["task"]["assigned_to_name"] is None
+                assert (await report(operational=True, department="third-floor", assigned_to="unassigned"))["items"]
+
+                grants = [
+                    build_grant(user_id=actor.id, resource=resource, actions=["view"], floor_id="third-floor",
+                                expires_at=None, actor_id="owner", actor_name="Owner")
+                    for resource in ("followups", "furniture_quotations")
+                ]
+                await db.users.update_one({"id": actor.id}, {"$set": {"delegation_grants": grants, "floor_ids": ["third-floor"]}})
+                await db.quotations.insert_one(quote("private-standard", floor_id="third-floor", customer_id="furniture-client"))
+                await db.furniture_quotations.insert_one({
+                    "id": "accessible-rnb", "floor_id": "third-floor", "customer_id": "furniture-client",
+                    "created_at": "2026-11-19", "total_payable_rmb": 230,
+                })
+                await db.followups.update_one({"id": "furniture"}, {"$set": {"quotation_id": "private-standard", "quotation_number": "Saved reference"}})
+                actor = actor.model_copy(update={"role": "sales", "custom_access": True, "active_floor_id": "third-floor",
+                                                 "floor_ids": ["third-floor"]})
+                scoped_furniture = await report(operational=True, category="created")
+                assert scoped_furniture["summary"]["created"]["amounts"] == [{"currency": "RNB", "value": 230}]
+                assert [row["id"] for group in scoped_furniture["items"] for row in group["records"]] == ["accessible-rnb"]
+                scoped_reminder = (await report(operational=True, category="today"))["items"][0]["records"][0]
+                assert scoped_reminder["quotation_number"] == "Saved reference" and scoped_reminder["brands"] == []
         finally:
             await mongo.drop_database(db.name)
             mongo.close()

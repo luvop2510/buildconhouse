@@ -5,7 +5,7 @@ import asyncio
 import re
 from calendar import monthrange
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Literal
@@ -18,12 +18,14 @@ from auth import accessible_floor_ids, authorize_staff_resource
 from models import QuotationLineItem, RoomDiscountCfg
 from services import lead_scope
 from services.canonical_customers import LIVE_CUSTOMER, canonical_customer_ids, identity_group_token, normalized_phone
-from services.followup_engine import IST, parse_iso
+from services.followup_engine import IST, _followup_sort_key, compute_bucket, parse_iso
+from services.multi_filters import values
 from services.pricing import net_amount_list
 from services.sanitary_sales_source import PRINTED_DATE_FORMATS
 
 Category = Literal["all", "today", "overdue", "upcoming", "completed", "won", "lost", "created", "active", "outcomes"]
 Scope = Literal["all", "work"]
+Workspace = Literal["all", "visit_showroom", "selection", "quotation_tiles"]
 Period = Literal["all_time", "today", "this_week", "last_week", "last_7_days", "this_month",
                  "last_month", "last_30_days", "last_3_months", "last_6_months", "custom"]
 CATEGORIES = ("today", "overdue", "upcoming", "completed", "won", "lost", "created")
@@ -36,16 +38,32 @@ MAX_QUOTE_LINES = 120_000
 BATCH = 500
 PAISE = Decimal("0.01")
 UNAVAILABLE = "This Follow-ups view exceeds its reporting limit. Narrow the dates, customer or department."
+WORKSPACE_FILTERS = {
+    "all": {},
+    "visit_showroom": {"origin": "visit_showroom"},
+    "selection": {"rule_type": "selection_waiting"},
+    "quotation_tiles": {"rule_type": "quotation_tiles_waiting"},
+}
 
 FOLLOWUP_FIELDS = """id floor_id customer_id customer_name customer_phone quotation_id quotation_number
 assigned_to assigned_to_name assignments due_at completed_at completed_outcome status notebook_status
 consolidated_order_id consolidated_order_floor_id is_converted converted_at quotation_price
 latest_note notes latest_response resolution_note lost_reason reason""".split()
+TASK_CARD_FIELDS = """id floor_id customer_id customer_name customer_phone customer_tier
+interested_floor_ids assignments.floor_id assignments.user_id assignments.user_name reference_source
+referrer_id referrer_name referrer_type architect_interior_designer referred_by architect_name
+interior_designer_name architect quotation_id quotation_number quotation_doc_type project_name
+assigned_to assigned_to_name due_at completed_at completed_outcome status snoozed_until date_only_due
+latest_note notes resolution_note rule_type category reason reason_factors next_action next_action_reason
+suggested_channel priority_level priority_score manual_priority_override value is_automated auto_resolved
+tags last_contacted_at contact_attempts origin walkin_id created_at updated_at""".split()
+TASK_HISTORIES = ("postponement_history", "call_history", "note_history")
 QUOTE_FIELDS = """id floor_id customer_id customer_name phone_snapshot number doc_number doc_type
 created_at quotation_created_at historical_import.batch_id quotation_import.batch_id doc_date status customer_outcome
 outcome_at outcome_reason ordered_at created_by created_by_name grand_total project_discount_pct
 category_discounts room_discounts items.id items.brand_id items.brand_name items.product_id items.sku
 items.name items.qty items.unit_price items.net_amount items.discount_pct items.category_id items.room""".split()
+QUOTE_STATE_FIELDS = ("id", "floor_id", "customer_id", "status", "customer_outcome")
 FURNITURE_FIELDS = """id floor_id customer_id customer_name customer_phone created_at created_by
 total_payable_rmb""".split()
 
@@ -103,10 +121,11 @@ def _coarse_window(field_name, bounds):
     return {"$or": [{field_name: string_bounds}, {field_name: {"$not": {"$regex": r"^\d{4}-\d\d-\d\d"}}}]}
 
 
-async def _bounded(collection, query, fields, *, cap=RECORD_LIMIT):
+async def _bounded(collection, query, fields, *, cap=RECORD_LIMIT, slices=()):
     if not query:
         return []
-    cursor = collection.find(query, {"_id": 0, **dict.fromkeys(fields, 1)}).max_time_ms(5_000).limit(cap + 1)
+    projection = {"_id": 0, **dict.fromkeys(fields, 1), **{key: {"$slice": 1} for key in slices}}
+    cursor = collection.find(query, projection).max_time_ms(5_000).limit(cap + 1)
     rows, line_count = [], 0
     try:
         async for row in cursor:
@@ -149,8 +168,8 @@ async def _authorized_departments(database, user):
     return await _bounded(database.floors, {"id": {"$in": candidates}, "active": {"$ne": False}}, ["id", "name"], cap=10)
 
 
-async def _can_read_quotes(user, floor):
-    path = "/api/furniture-quotations" if floor == "third-floor" else "/api/quotations"
+async def _can_read_quotes(user, floor, *, furniture=False):
+    path = "/api/furniture-quotations" if furniture else "/api/quotations"
     if not profile_allows_request(user.access_profile, "GET", path):
         return False
     try:
@@ -270,6 +289,33 @@ def _task_category(task, quote, due_day, today):
     return "today" if due_day == today else "overdue" if due_day < today else "upcoming"
 
 
+def _active_task(task, now):
+    until = parse_iso(task.get("snoozed_until"))
+    if task.get("status") == "snoozed" and until and until <= now:
+        return {**task, "status": "open", "snoozed_until": None}
+    return task
+
+
+def _legacy_bucket_match(task, bucket, today):
+    if bucket == "completed_today":
+        return task.get("status") in {"done", "dismissed"} and report_date(task.get("completed_at")) == today
+    if bucket in {"expiring", "waiting"}:
+        rule = "quotation_expiring" if bucket == "expiring" else "payment_partial"
+        return task.get("status") == "open" and task.get("rule_type") == rule
+    return compute_bucket(task, today=today) == bucket
+
+
+def _task_card(task, today):
+    card = {key: task[key] for key in TASK_CARD_FIELDS if key in task}
+    card["assignments"] = task.get("assignments") or []
+    if isinstance(task.get("due_at"), datetime):
+        card["due_at"] = task["due_at"].isoformat()
+    card["bucket"] = compute_bucket(task, today=today)
+    card["effective_priority_level"] = task.get("manual_priority_override") or task.get("priority_level") or "medium"
+    card["has_history"] = any(task.get(key) for key in TASK_HISTORIES)
+    return card
+
+
 @dataclass
 class Record:
     fields: dict
@@ -284,12 +330,15 @@ class Record:
     value: Decimal | None
     brands: dict = field(default_factory=dict)
     identity: str = ""
+    task: dict | None = None
+    search_terms: tuple = ()
 
     def amount(self, brand):
         return self.brands.get(brand) if brand else self.value
 
     def public(self, brand, names, staff):
         primary_id = self.fields.get("assigned_to")
+        amount = self.amount(brand)
         return {
             **self.fields, "date": self.day.isoformat() if self.day else None,
             "assigned_to_name": staff.get(primary_id) or self.assigned.get(primary_id),
@@ -297,7 +346,10 @@ class Record:
             "customer_id": self.customer_id, "customer_name": self.display_name, "customer_phone": self.phone,
             "brands": [{"id": identity, "name": names[identity]} for identity in self.brands],
             "currency": self.currency,
-            "value": float(amount) if (amount := self.amount(brand)) is not None else None,
+            "value": float(amount) if amount is not None else None,
+            **({"task": {**self.task, "customer_name": self.display_name, "customer_phone": self.phone,
+                         **({"value": float(amount) if amount is not None else None} if amount is not None or brand else {}),
+                         "quotation_number": self.fields.get("quotation_number")}} if self.task else {}),
         }
 
 
@@ -320,11 +372,12 @@ def _quote_record(doc, category, day, linked, brands, *, furniture=False):
         doc.get("customer_phone") or doc.get("phone_snapshot"), assigned, doc_key(doc),
         "RNB" if furniture else "INR",
         _money(doc.get("total_payable_rmb") if furniture else doc.get("grand_total")), brands,
+        search_terms=(doc.get("number"),),
     )
 
 
-def _task_record(task, quote, brands, category, day):
-    assigned = _assigned(task)
+def _task_record(task, quote, brands, category, day, card=None, *, owner_ids=()):
+    assigned = {identity: name for identity, name in _assigned(task).items() if identity not in owner_ids}
     return Record(
         {"id": task["id"], "kind": "followup", "floor_id": task["floor_id"],
          "quotation_id": task.get("quotation_id"),
@@ -337,7 +390,7 @@ def _task_record(task, quote, brands, category, day):
         category, day, task.get("customer_id"), task.get("customer_name") or "Customer", task.get("customer_phone"),
         assigned, doc_key(quote) if quote else doc_key(task) if task.get("is_converted") else None, "INR",
         _money(quote.get("grand_total") if quote else task.get("quotation_price") if task.get("is_converted") else None),
-        brands,
+        brands, task=card, search_terms=(task.get("quotation_number"), (quote or {}).get("number")),
     )
 
 
@@ -387,18 +440,24 @@ def _employee_summary(rows, staff, brand):
 
 
 def _brand_summary(rows, names, selected_brand):
-    grouped = defaultdict(lambda: {"won": [], "lost": []})
+    categories = (*ACTIVE, "won", "lost")
+    grouped = defaultdict(lambda: defaultdict(list))
     for row in rows:
-        if row.category in {"won", "lost"}:
+        if row.category in categories:
             for brand in row.brands:
                 if not selected_brand or brand == selected_brand:
                     grouped[brand][row.category].append(row)
-    return [
-        {"id": brand, "name": names[brand], "won": len(outcomes["won"]), "lost": len(outcomes["lost"]),
-         "won_amounts": _metric(outcomes["won"], brand)["amounts"], "lost_amounts": _metric(outcomes["lost"], brand)["amounts"],
-         "missing_values": sum(_metric(value, brand)["missing_values"] for value in outcomes.values())}
-        for brand, outcomes in sorted(grouped.items(), key=lambda pair: (names[pair[0]].casefold(), pair[0]))
-    ]
+    result = []
+    for brand, categories_rows in sorted(grouped.items(), key=lambda pair: (names[pair[0]].casefold(), pair[0])):
+        won = _metric(categories_rows["won"], brand)
+        lost = _metric(categories_rows["lost"], brand)
+        workload = _metric([row for category in ACTIVE for row in categories_rows[category]], brand)
+        result.append({
+            "id": brand, "name": names[brand], **{category: len(categories_rows[category]) for category in categories},
+            "won_amounts": won["amounts"], "lost_amounts": lost["amounts"], "workload_amounts": workload["amounts"],
+            "missing_values": won["missing_values"] + lost["missing_values"],
+        })
+    return result
 
 
 def _and(*conditions):
@@ -433,15 +492,15 @@ def _text_search(term, name, phone_names, *, other_names=(), customer_selectors=
 def _matches_search(row, term):
     if not term:
         return True
-    strings = (row.display_name, row.phone, row.fields.get("quotation_number"))
+    strings = (row.display_name, row.phone, row.fields.get("quotation_number"), *row.search_terms)
     if any(term.casefold() in str(value or "").casefold() for value in strings):
         return True
     digits = re.sub(r"\D", "", row.phone or "")
     return any(value in digits for value in _phone_terms(term))
 
 
-def _assignment_filter(row, employee):
-    return not employee or (not row.assigned if employee == NO_ASSIGNEE else employee in row.assigned)
+def _assignment_filter(row, employees):
+    return not employees or any(employee in (row.assigned or {NO_ASSIGNEE}) for employee in employees)
 
 
 def _in_period(day, bounds):
@@ -449,9 +508,13 @@ def _in_period(day, bounds):
     return (start is None and end is None) if day is None else (start is None or start <= day <= end)
 
 
-def _group_page(records, page, page_size, brand, brand_names, staff):
+def _group_page(records, page, page_size, brand, brand_names, staff, *, actor=None):
     grouped = defaultdict(list)
-    for row in sorted(records, key=lambda row: (row.day is None, row.day or date.max, row.fields["floor_id"], row.fields["id"])):
+    def sort_key(row):
+        work_order = _followup_sort_key(row.task, actor) if row.task and actor else (1, 1, 1, 0, "")
+        return (*work_order, row.day is None, row.day or date.max, row.fields["floor_id"], row.fields["id"])
+
+    for row in sorted(records, key=sort_key):
         grouped[row.identity].append(row)
     offset = (page - 1) * page_size
     selected = list(grouped.items())[offset:offset + page_size]
@@ -533,7 +596,7 @@ async def _quote_closure_events(database, docs, reminders):
     return events
 
 
-async def _planner_source(database, user, floors, term, bounds, include_reports):
+async def _planner_source(database, floors, term, bounds, quotation_floors, furniture_reports, include_reports, operational):
     staff_task_match = {"floor_id": {"$in": floors}, "category": {"$nin": sorted(lead_scope.POST_ORDER_CATEGORIES)},
                         "rule_type": {"$nin": sorted(lead_scope.POST_ORDER_RULES)}, "purchase_id": None}
     customer_matches = await _bounded(
@@ -545,23 +608,21 @@ async def _planner_source(database, user, floors, term, bounds, include_reports)
     customer_selectors = _floor_ids((row["floor_id"], row["id"]) for row in customer_matches)
     quote_search = _text_search(term, "customer_name", ["phone_snapshot"],
                                 other_names=["number", "doc_number"], customer_selectors=customer_selectors)
-    quotation_floors = [floor for floor, can_read in zip(floors, await asyncio.gather(
-        *(_can_read_quotes(user, floor) for floor in floors)
-    ), strict=True) if can_read] if include_reports else []
     quote_window = {"$or": [
         _coarse_window("created_at", bounds),
         {"customer_outcome": {"$in": ["won", "lost"]}},
         {"status": {"$in": ["ordered", "won", "lost", "rejected"]}},
         {"doc_type": "tiles_quotation"}, {"quotation_import": {"$exists": True}},
-    ]} if bounds[0] else {}
+    ]} if bounds[0] and not term else {}
     quote_base = {"floor_id": {"$in": quotation_floors}, "source": {"$ne": "transfer"},
                   "doc_type": {"$ne": "tiles_selection"}}
     quote_candidates, furniture_docs = await asyncio.gather(
-        _bounded(database.quotations, _and(quote_base, quote_search, quote_window) if quotation_floors else {}, QUOTE_FIELDS),
+        _bounded(database.quotations, _and(quote_base, quote_search, quote_window)
+                 if include_reports and quotation_floors else {}, QUOTE_FIELDS),
         _bounded(database.furniture_quotations,
                  _and({"floor_id": "third-floor"}, _coarse_window("created_at", bounds),
                       _text_search(term, "customer_name", ["customer_phone"], customer_selectors=customer_selectors))
-                 if "third-floor" in quotation_floors else {}, FURNITURE_FIELDS),
+                 if furniture_reports else {}, FURNITURE_FIELDS),
     )
     quote_keys = {doc_key(doc) for doc in quote_candidates}
     search_extras = [*customer_selectors]
@@ -579,19 +640,34 @@ async def _planner_source(database, user, floors, term, bounds, include_reports)
         _and({"status": {"$in": ["done", "dismissed"]}}, _coarse_window("completed_at", bounds)),
         {"completed_outcome": {"$in": ["won", "lost"]}}, {"notebook_status": {"$in": ["won", "lost"]}},
     ]} if bounds[0] else {}
-    tasks = await _bounded(database.followups, _and(staff_task_match, task_search, task_window), FOLLOWUP_FIELDS)
+    task_fields = [*FOLLOWUP_FIELDS, "origin", "rule_type", "category", "snoozed_until", "manual_priority_override", "priority_level"]
+    projection_fields = [field for field in task_fields if field != "assignments"] + TASK_CARD_FIELDS if operational else task_fields
+    tasks = await _bounded(database.followups, _and(staff_task_match, task_search, task_window),
+                           projection_fields, slices=TASK_HISTORIES if operational else ())
     linked_keys = {(row["floor_id"], row["quotation_id"]) for row in tasks if row.get("quotation_id")}
     quotes = {doc_key(doc): doc for doc in quote_candidates}
-    async for doc in _related(database.quotations, linked_keys - quote_keys, QUOTE_FIELDS):
+    allowed_linked = {key for key in linked_keys - quote_keys if key[0] in quotation_floors}
+    async for doc in _related(database.quotations, allowed_linked, QUOTE_FIELDS):
+        quotes[doc_key(doc)] = doc
+    # A hidden quotation may retire a stale reminder. Read only the state
+    # needed for that decision under a Follow-ups-only grant.
+    async for doc in _related(database.quotations, linked_keys - quote_keys - allowed_linked, QUOTE_STATE_FIELDS):
         quotes[doc_key(doc)] = doc
     if sum(len(doc.get("items") or []) for doc in quotes.values()) > MAX_QUOTE_LINES:
         raise HTTPException(422, UNAVAILABLE)
     # Query links separately for reporting. Their attribution and closure
     # evidence must not vary when the employee changes the reporting window.
     reminders = defaultdict(list)
-    if quote_keys:
-        async for task in _related(database.followups, quote_keys, FOLLOWUP_FIELDS, field_name="quotation_id",
-                                   extra={key: value for key, value in staff_task_match.items() if key != "floor_id"}):
+    if not term and not bounds[0]:
+        for task in tasks:
+            key = task["floor_id"], task.get("quotation_id")
+            quote = quotes.get(key)
+            if key in quote_keys and quote.get("customer_id") and quote["customer_id"] == task.get("customer_id"):
+                reminders[key].append(task)
+    elif quote_keys:
+        base = {key: value for key, value in staff_task_match.items() if key != "floor_id"}
+        async for task in _related(database.followups, quote_keys, task_fields, field_name="quotation_id",
+                                   extra=base):
             key = task["floor_id"], task["quotation_id"]
             quote = quotes[key]
             if quote.get("customer_id") and quote["customer_id"] == task.get("customer_id"):
@@ -601,8 +677,11 @@ async def _planner_source(database, user, floors, term, bounds, include_reports)
 
 async def load_planner(database, user, *, category: Category, period: Period, start: date | None, end: date | None,
                        day: date | None, week: int, assigned_to: str | None, brand: str | None,
-                       department: str | None, q: str | None, page: int, page_size: int, scope: Scope = "all", now: datetime | None = None):
-    today = (now or datetime.now(timezone.utc)).astimezone(IST).date()
+                       department: str | None, q: str | None, page: int, page_size: int, scope: Scope = "all",
+                       operational: bool = False, workspace: Workspace = "all", priority: str | None = None,
+                       task_category: str | None = None, legacy_bucket: str | None = None, now: datetime | None = None):
+    now = now or datetime.now(timezone.utc)
+    today = now.astimezone(IST).date()
     bounds = period_bounds(period, today, start, end)
     include_reports = scope == "all"
     if not include_reports and category in {"won", "lost", "created", "outcomes"}:
@@ -614,7 +693,27 @@ async def load_planner(database, user, *, category: Category, period: Period, st
         raise HTTPException(403, "You do not have Follow-ups access to this department.")
     floors = allowed if chosen == "all" else [chosen]
     term = (q or "").strip()
-    tasks, quote_candidates, quotes, furniture_docs, reminders = await _planner_source(database, user, floors, term, bounds, include_reports)
+    task_priorities = values(priority)
+    task_categories = values(task_category)
+    task_buckets = values(legacy_bucket)
+    workspace_match = WORKSPACE_FILTERS[workspace]
+    task_filter_active = bool(task_priorities or task_categories or task_buckets or workspace_match)
+
+    def matches_task_filter(task):
+        effective = task.get("manual_priority_override") or task.get("priority_level") or "medium"
+        return (
+            all(task.get(key) == value for key, value in workspace_match.items())
+            and (not task_priorities or effective in task_priorities)
+            and (not task_categories or task.get("category") in task_categories)
+            and (not task_buckets or any(_legacy_bucket_match(task, bucket, today) for bucket in task_buckets))
+        )
+
+    quotation_access = await asyncio.gather(*(_can_read_quotes(user, floor) for floor in floors))
+    quotation_floors = [floor for floor, allowed in zip(floors, quotation_access, strict=True) if allowed]
+    furniture_reports = include_reports and "third-floor" in floors and await _can_read_quotes(user, "third-floor", furniture=True)
+    tasks, quote_candidates, quotes, furniture_docs, reminders = await _planner_source(
+        database, floors, term, bounds, quotation_floors, furniture_reports, include_reports, operational,
+    )
 
     customer_keys = {(row["floor_id"], row.get("customer_id")) for row in [*tasks, *quote_candidates, *furniture_docs]}
     product_keys = {(doc["floor_id"], item.get("product_id")) for doc in quotes.values()
@@ -626,22 +725,29 @@ async def load_planner(database, user, *, category: Category, period: Period, st
     async def products():
         return {doc_key(row): row async for row in _related(database.products, product_keys, ["id", "floor_id", "brand_id"])}
 
-    customer_docs, product_docs, brand_docs, people, legacy_tiles, closures, identities = await asyncio.gather(
+    furniture_assignees = {identity for task in tasks if operational and task["floor_id"] == "third-floor" for identity in _assigned(task)}
+    customer_docs, product_docs, brand_docs, people, legacy_tiles, closures, identities, owners = await asyncio.gather(
         customers(), products(),
-        _bounded(database.brands, {"floor_id": {"$in": floors}}, ["id", "name"], cap=2_000),
+        _bounded(database.brands, {"floor_id": {"$in": quotation_floors}} if quotation_floors else {}, ["id", "name"], cap=2_000),
         lead_scope.eligible_staff(database, floors),
         _tile_creation_evidence(database, quote_candidates),
         _quote_closure_events(database, quote_candidates, reminders),
         canonical_customer_ids(database, (identity for _, identity in customer_keys)),
+        _bounded(database.users, {"id": {"$in": list(furniture_assignees)}, "role": "owner"} if furniture_assignees else {}, ["id"]),
     )
+    furniture_owner_ids = {owner["id"] for owner in owners}
     brand_names = {doc["id"]: doc.get("name") or doc["id"] for doc in brand_docs}
     brand_values = {key: _brand_values(doc, product_docs, brand_names) for key, doc in quotes.items()}
     rows = []
     report_keys = {doc_key(doc) for doc in quote_candidates}
-    for task in tasks:
+    operational_rows = []
+    for raw_task in tasks:
+        task = _active_task(raw_task, now)
+        if not matches_task_filter(task):
+            continue
         key = (task["floor_id"], task.get("quotation_id"))
         quote = quotes.get(key)
-        if quote and quote.get("customer_id") != task.get("customer_id"):
+        if quote and (not task.get("customer_id") or quote.get("customer_id") != task.get("customer_id")):
             quote = None
         bucket = _task_category(task, quote, report_date(task.get("due_at")), today)
         if bucket is None:
@@ -650,58 +756,82 @@ async def load_planner(database, user, *, category: Category, period: Period, st
             if quote and key not in report_keys and _task_outcome(task):
                 bucket = _task_outcome(task)
             else:
-                continue
-        if not include_reports and bucket in {"won", "lost"}:
-            continue
-        timestamp = task.get("completed_at") if bucket in {"won", "lost", "completed"} else task.get("due_at")
-        rows.append(_task_record(task, quote, brand_values.get(key, {}) if quote else {}, bucket, report_date(timestamp)))
+                if not operational or task.get("status") not in {"done", "dismissed"}:
+                    continue
+        timestamp = task.get("completed_at") if bucket in {"won", "lost", "completed", None} else task.get("due_at")
+        card = _task_card(task, today) if operational else None
+        owner_ids = furniture_owner_ids if task["floor_id"] == "third-floor" else ()
+        record = _task_record(
+            task, quote, brand_values.get(key, {}) if quote else {},
+            bucket or "all", report_date(timestamp), card, owner_ids=owner_ids,
+        )
+        if operational:
+            operational_rows.append(record)
+        if bucket is not None and (include_reports or bucket not in {"won", "lost"}):
+            rows.append(record)
         if include_reports and not task.get("quotation_id") and task.get("is_converted"):
-            rows.append(_task_record(task, None, {}, "created", report_date(task.get("converted_at"))))
+            rows.append(_task_record(task, None, {}, "created", report_date(task.get("converted_at")), card, owner_ids=owner_ids))
     for doc in quote_candidates:
         key = doc_key(doc)
-        attributed = reminders[key]
+        original_reminders = reminders[key]
+        attributed = [task for raw in original_reminders if matches_task_filter(task := _active_task(raw, now))]
+        if task_filter_active and not attributed:
+            continue
         outcome = _outcome(doc)
         if not doc.get("historical_import"):
             rows.append(_quote_record(doc, "created", _created_day(doc, legacy_tiles), attributed, brand_values[key]))
         if outcome:
             closed_at = _first_day(doc.get("outcome_at"), doc.get("ordered_at") if outcome == "won" else None,
-                                   _earliest_task_outcome(doc, attributed, outcome), closures.get(key, {}).get(outcome))
+                                   _earliest_task_outcome(doc, original_reminders, outcome), closures.get(key, {}).get(outcome))
             rows.append(_quote_record(doc, outcome, closed_at, [task for task in attributed if _task_outcome(task) == outcome] or attributed, brand_values[key]))
-    for doc in furniture_docs:
-        rows.append(_quote_record(doc, "created", report_date(doc.get("created_at")), [], {}, furniture=True))
+    if not task_filter_active:
+        for doc in furniture_docs:
+            rows.append(_quote_record(doc, "created", report_date(doc.get("created_at")), [], {}, furniture=True))
 
     staff = {person["id"]: person["full_name"] for person in people if person["eligible_floor_ids"] and person.get("full_name")}
-    unique = {}
-    for row in rows:
+    staff[NO_ASSIGNEE] = "Unassigned"
+    employee_filter = values(assigned_to)
+
+    def public_basis(row):
         floor = row.fields["floor_id"]
         auth_customer = customer_docs.get((floor, row.customer_id), {})
         row.display_name = auth_customer.get("name") or row.display_name
         row.phone = auth_customer.get("phone") or row.phone
         row.identity = identities.get(row.customer_id) or row.customer_id or f"record:{floor}:{row.fields['kind']}:{row.fields['id']}"
+        if row.task:
+            row.task["customer_group"] = identity_group_token(row.identity)
         for identity, name in row.assigned.items():
             staff.setdefault(identity, name or "Former employee")
-        if not _matches_search(row, term) or (brand and brand not in row.brands):
+        return _matches_search(row, term) and (not brand or brand in row.brands)
+
+    unique = {}
+    for row in rows:
+        if not public_basis(row):
             continue
         # Multiple legacy reminders linked to the same quotation can carry
         # the same outcome after the single transaction. Count that quote once.
         reference = row.quote_key if row.category in {"won", "lost", "created"} else None
-        key = (row.category, reference or (floor, row.fields["kind"], row.fields["id"]))
+        key = (row.category, reference or (row.fields["floor_id"], row.fields["kind"], row.fields["id"]))
         existing = unique.get(key)
         if existing:
-            existing.assigned.update(row.assigned)
-            existing.day = min((stamp for stamp in (existing.day, row.day) if stamp), default=None)
+            unique[key] = replace(existing, assigned={**existing.assigned, **row.assigned},
+                                  day=min((stamp for stamp in (existing.day, row.day) if stamp), default=None))
         else:
             unique[key] = row
 
-    staff[NO_ASSIGNEE] = "Unassigned"
-    matching = [row for row in unique.values() if _assignment_filter(row, assigned_to)]
+    matching = [row for row in unique.values() if _assignment_filter(row, employee_filter)]
     in_period = [row for row in matching if _in_period(row.day, bounds)]
     grouped = {name: [row for row in in_period if row.category == name] for name in CATEGORIES}
     grouped["active"] = [row for row in in_period if row.category in ACTIVE]
     grouped["outcomes"] = grouped["won"] + grouped["lost"]
-    grouped["all"] = [row for row in in_period if row.category != "created"]
-    already_listed = {row.quote_key for row in grouped["all"] if row.quote_key is not None}
-    grouped["all"].extend(row for row in grouped["created"] if row.quote_key not in already_listed)
+    if operational:
+        all_matches = [row for row in operational_rows if public_basis(row) and _assignment_filter(row, employee_filter)]
+        grouped["all"] = [row for row in all_matches if _in_period(row.day, bounds)]
+    else:
+        all_matches = [row for row in matching if row.category != "created"]
+        grouped["all"] = [row for row in in_period if row.category != "created"]
+        already_listed = {row.quote_key for row in grouped["all"] if row.quote_key is not None}
+        grouped["all"].extend(row for row in grouped["created"] if row.quote_key not in already_listed)
     summary = {name: _metric(records, brand) for name, records in grouped.items()}
     if bounds[0]:
         for row in matching:
@@ -711,21 +841,20 @@ async def load_planner(database, user, *, category: Category, period: Period, st
                 summary[row.category]["missing_dates"] += 1
             if row.category in {"won", "lost"}:
                 summary["outcomes"]["missing_dates"] += 1
-            if row.category != "created":
-                summary["all"]["missing_dates"] += 1
+        summary["all"]["missing_dates"] += sum(row.day is None for row in all_matches)
     if not include_reports:
         for report in ("created", "won", "lost", "outcomes"):
             summary.pop(report)
     selected = grouped[category]
-    if category == "upcoming" and day:
-        selected = [row for row in selected if row.day == day]
-    items, more = _group_page(selected, page, page_size, brand, brand_names, staff)
+    if day and (operational or category == "upcoming"):
+        selected = [row for row in selected if row.category in ACTIVE and row.day == day]
+    items, more = _group_page(selected, page, page_size, brand, brand_names, staff, actor=user.id if operational else None)
     monday = today - timedelta(days=today.weekday()) + timedelta(weeks=week)
     return {
-        "today": today.isoformat(), "summary": summary, "reports_available": include_reports,
-        "schedule": _schedule(grouped["upcoming"], monday, brand),
+        "today": today.isoformat(), "summary": summary, "reports_available": include_reports, "operational": operational,
+        "schedule": _schedule(grouped["active"] if operational else grouped["upcoming"], monday, brand),
         "employees": _employee_summary(grouped["active"], staff, brand),
-        "brands": _brand_summary(in_period, brand_names, brand) if include_reports else [],
+        "brands": _brand_summary(in_period if operational else grouped["outcomes"], brand_names, brand) if include_reports else [],
         "options": {
             "employees": [{"id": key, "name": value} for key, value in sorted(staff.items(), key=lambda pair: (pair[1].casefold(), pair[0]))],
             "brands": [{"id": key, "name": value} for key, value in sorted(brand_names.items(), key=lambda pair: (pair[1].casefold(), pair[0]))],

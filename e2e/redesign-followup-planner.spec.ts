@@ -4,12 +4,14 @@ import { captureRuntimeHealth } from './runtime-health';
 
 const TODAY = '2026-11-21';
 const MONDAY = '2026-11-23';
+const TUESDAY = '2026-11-24';
 const FLOOR = 'first-floor';
 const NIKHIL = { id: 'nikhil', name: 'Nikhil' };
 const MANOJ = { id: 'manoj', name: 'Manoj' };
 const GROHE = { id: 'grohe', name: 'Grohe' };
 const VITRA = { id: 'vitra', name: 'Vitra' };
 type Category = 'all' | 'today' | 'overdue' | 'upcoming' | 'completed' | 'won' | 'lost' | 'created' | 'active' | 'outcomes';
+type Bucket = 'today' | 'overdue' | 'later' | 'completed';
 type HistoryEntry = { previous_due_at: string; new_due_at: string; reason: string; actor_name: string; changed_at: string };
 type NoteEntry = { note: string; actor_name: string; recorded_at: string };
 
@@ -30,6 +32,8 @@ function task(id: string, customerId: string, name: string, date: string, quotat
     reason_factors: [], tags: [], priority_score: 50, priority_level: 'medium',
     contact_attempts: 0, postponement_history: [] as HistoryEntry[],
     latest_note: null as string | null, note_history: [] as NoteEntry[],
+    origin: null as string | null, completed_outcome: null as string | null,
+    is_automated: false,
   };
 }
 
@@ -43,9 +47,31 @@ function quote(id: string, status: 'won' | 'lost' | 'created', date: string, val
 
 type RecordRow = ReturnType<typeof task> | ReturnType<typeof quote>;
 
-function group(...records: RecordRow[]) {
-  const { customer_id, customer_name, customer_phone } = records[0];
-  return { key: customer_id, customer_id, customer_name, customer_phone, records };
+function bucket(row: ReturnType<typeof task>): Bucket {
+  return row.status === 'done' ? 'completed' : row.date === TODAY ? 'today' : row.date < TODAY ? 'overdue' : 'later';
+}
+
+function amountFor(row: RecordRow, brand: string | null) {
+  if (row.quotation_number !== 'Q-Won Customer' || !brand) return row.value;
+  return brand === GROHE.id ? 240_000 : 120_000;
+}
+
+function groupRecords(rows: RecordRow[], brand: string | null) {
+  return [...Map.groupBy(rows, row => row.customer_id)].map(([key, records]) => {
+    const { customer_id, customer_name, customer_phone } = records[0];
+    return {
+      key, customer_id, customer_name, customer_phone,
+      records: records.map(row => row.kind === 'quotation'
+        ? { ...row, value: amountFor(row, brand) }
+        : { ...row, task: { ...row, bucket: bucket(row) } }),
+    };
+  });
+}
+
+function summarize(rows: RecordRow[], brand: string | null) {
+  const quotations = new Map(rows.map(row => [row.quotation_id, row]));
+  const value = [...quotations.values()].reduce((total, row) => total + amountFor(row, brand), 0);
+  return metric(rows.length, value, new Set(rows.map(row => row.customer_id)).size);
 }
 
 async function mockPlanner(page: Page, limited = false) {
@@ -63,18 +89,32 @@ async function mockPlanner(page: Page, limited = false) {
 
   let callToday = task('call-today', 'today-client', 'QA Today Customer', TODAY, 'Q-250', 250_000);
   const secondCallToday = task('second-call', 'today-client', 'QA Today Customer', TODAY, 'Q-250', 250_000);
-  let late = task('late-call', 'late-client', 'QA Overdue Customer', '2026-11-20', 'Q-80', 80_000);
-  const monday = task('monday-call', 'monday-client', 'QA Monday Customer', MONDAY, 'Q-125', 125_000);
+  let late = { ...task('late-call', 'late-client', 'QA Overdue Customer', '2026-11-20', 'Q-80', 80_000), customer_phone: '8765432109' };
+  let monday = task('monday-call', 'monday-client', 'QA Monday Customer', MONDAY, 'Q-125', 125_000);
+  const showroom = {
+    ...task('showroom-visit', 'showroom-client', 'QA Showroom Customer', '2026-11-20', 'Q-SHOW', 85_000),
+    assigned_to: MANOJ.id, assigned_to_name: MANOJ.name, brands: [VITRA], origin: 'visit_showroom',
+  };
   const won = quote('Won Customer', 'won', '2026-11-15', 360_000, [GROHE, VITRA]);
   const lost = quote('Lost Customer', 'lost', '2026-07-27', 80_000);
   const created = quote('New Customer', 'created', '2026-11-19', 95_000);
+  let closedLate: ReturnType<typeof quote> | undefined;
+  let closedMonday: ReturnType<typeof quote> | undefined;
+  let nextCall: ReturnType<typeof task> | undefined;
   const reads: URLSearchParams[] = [];
+  const legacyReads: string[] = [];
   const postponements: unknown[] = [];
   const notes: { note: string; request_key: string }[] = [];
+  const outcomes: unknown[] = [];
+  const orders: unknown[] = [];
   const abandonedSearch = Promise.withResolvers<void>();
   const abandonedResponse = Promise.withResolvers<void>();
   let completions = 0;
 
+  await page.route('**/api/followups/page?**', route => {
+    legacyReads.push(route.request().url());
+    return route.fulfill({ json: { items: [], page: 1, page_size: 25, has_more: false } });
+  });
   await page.route('**/api/followups/call-today/complete', route => {
     completions++;
     callToday = { ...callToday, status: 'done' };
@@ -103,80 +143,122 @@ async function mockPlanner(page: Page, limited = false) {
       ...late, notes: body.note, latest_note: body.note,
       note_history: [...late.note_history, { note: body.note, actor_name: NIKHIL.name, recorded_at: TODAY + 'T07:00:00Z' }],
     };
-    return route.fulfill({ json: { ...late, bucket: 'overdue' } });
+    return route.fulfill({ json: { ...late, bucket: bucket(late) } });
   });
-  await page.route(/\/api\/followups\/(call-today|late-call)(?:\?|$)/, route => {
-    const row = new URL(route.request().url()).pathname.endsWith('call-today') ? callToday : late;
-    const bucket = row.status === 'done' ? 'completed' : row.date === TODAY ? 'today' : row.date < TODAY ? 'overdue' : 'later';
+  await page.route('**/api/followups/late-call/log-call', route => {
+    const body = route.request().postDataJSON();
+    outcomes.push(body);
+    if (body.outcome === 'lost') {
+      closedLate = { ...quote('Closed Customer', 'lost', TODAY, late.value), quotation_id: late.quotation_id,
+        quotation_number: late.quotation_number, customer_id: late.customer_id, customer_name: late.customer_name, lost_reason: body.notes };
+    } else if (body.next_followup_at) {
+      nextCall = task('next-call', late.customer_id, late.customer_name, body.next_followup_at.slice(0, 10), late.quotation_id, late.value);
+      nextCall.due_at = body.next_followup_at;
+    }
+    late = { ...late, status: 'done', completed_outcome: body.outcome };
+    return route.fulfill({ json: { ...late, bucket: bucket(late) } });
+  });
+  await page.route(/\/api\/followups\/(call-today|late-call|showroom-visit|monday-call)(?:\?|$)/, route => {
+    const id = new URL(route.request().url()).pathname.split('/').at(-1);
+    const row = id === 'call-today' ? callToday : id === 'showroom-visit' ? showroom : id === 'monday-call' ? monday : late;
     return route.fulfill({
       json: {
-        followup: { ...row, bucket },
+        followup: { ...row, bucket: bucket(row) },
         customer: { id: row.customer_id, name: row.customer_name, tier: 'retail', phone: row.customer_phone },
         quotations: [], purchases: [], payments: [], timeline: [],
         stats: { risk_level: 'low', pending_quotations: 0 },
       },
     });
   });
+  const line = { id: 'line-125', sku: 'G-125', name: 'Basin', qty: 1, unit_price: 125_000, discount_pct: 0, room: 'Bathroom' };
+  const supplier = { id: 'grohe-supplier', name: 'Fixture supplier', brand_id: GROHE.id };
+  await page.route(/\/api\/quotations\/Q-125(?:\?|$)/, route => route.fulfill({ json: {
+    id: 'Q-125', number: 'Q-125', status: closedMonday ? 'ordered' : 'sent', floor_id: FLOOR, customer_name: monday.customer_name,
+    items: [line], rooms: ['Bathroom'], subtotal: monday.value, discount_total: 0, grand_total: monday.value, created_at: '2026-11-19T10:00:00Z',
+  } }));
+  await page.route('**/api/quotations/Q-125/breakdown', route => route.fulfill({ json: {
+    lines: [], totals: { subtotal: monday.value, discount_total: 0, grand_total: monday.value }, project_discount_pct: 0, category_discounts: {},
+  } }));
+  await page.route('**/api/activity/quotation/Q-125', route => route.fulfill({ json: [] }));
+  await page.route('**/api/purchase-orders?quotation_id=Q-125', route => route.fulfill({ json: [] }));
+  await page.route('**/api/suppliers', route => route.fulfill({ json: [supplier] }));
+  await page.route('**/api/quotations/Q-125/place-order/preview', route => route.fulfill({ json: {
+    quotation_id: 'Q-125', quotation_number: 'Q-125', doc_type: 'standard', customer_id: monday.customer_id,
+    customer_name: monday.customer_name, total_value: monday.value, brands: [{
+      brand_id: GROHE.id, brand_name: GROHE.name, subtotal: monday.value, item_count: 1, default_supplier: supplier,
+      items: [{ line_id: line.id, product_id: 'basin-125', sku: line.sku, name: line.name, qty: 1, unit_cost: monday.value }],
+    }],
+  } }));
+  await page.route('**/api/quotations/Q-125/place-order/confirm', route => {
+    orders.push(route.request().postDataJSON());
+    monday = { ...monday, status: 'done', completed_outcome: 'won' };
+    closedMonday = { ...quote('Monday Order', 'won', TODAY, monday.value), quotation_id: monday.quotation_id,
+      quotation_number: monday.quotation_number, customer_id: monday.customer_id, customer_name: monday.customer_name };
+    return route.fulfill({ json: { purchase_orders: [{ id: 'po-125' }], count: 1 } });
+  });
   await page.route(/\/api\/followups\/planner(?:\?|$)/, async route => {
     const query = new URL(route.request().url()).searchParams;
     reads.push(query);
     const category = (query.get('category') || 'all') as Category;
     const period = query.get('period') || 'all_time';
-    const groheOnly = query.get('brand') === GROHE.id;
-    const mondayLate = late.date === MONDAY;
-    const todayTasks = callToday.status === 'open' ? [callToday, secondCallToday] : [secondCallToday];
-    const summary = {
-      all: metric(4, 455_000, 3),
-      today: metric(todayTasks.length, 250_000, 1),
-      overdue: mondayLate ? metric() : metric(1, 80_000),
-      upcoming: mondayLate ? metric(2, 205_000) : metric(1, 125_000),
-      completed: callToday.status === 'done' ? metric(1, 250_000) : metric(),
-      won: period === 'all_time' || period === 'last_30_days' ? metric(1, groheOnly ? 240_000 : 360_000) : metric(),
-      lost: period === 'all_time' || period === 'last_6_months' ||
-        (period === 'custom' && query.get('start') === '2026-07-01' && query.get('end') === '2026-07-31') ?
-        metric(1, 80_000) : metric(),
-      created: period === 'all_time' || period === 'this_week' ? metric(1, 95_000) : metric(),
-    };
-    const wonGroups = summary.won.count ? [group({ ...won, value: groheOnly ? 240_000 : 360_000 })] : [];
-    const lostGroups = summary.lost.count ? [group(lost)] : [];
-    const groupsByCategory = {
-      all: [group(...todayTasks), group(late), group(monday)],
-      active: [group(...todayTasks), group(late), group(monday)],
-      outcomes: [...wonGroups, ...lostGroups],
-      today: [group(...todayTasks)],
-      overdue: mondayLate ? [] : [group(late)],
-      upcoming: mondayLate ? [group(monday), group(late)] : [group(monday)],
-      completed: callToday.status === 'done' ? [group(callToday)] : [],
-      won: wonGroups,
-      lost: lostGroups,
-      created: summary.created.count ? [group(created)] : [],
-    };
-    const week = Number(query.get('week') || '0');
-    const days = week === 0 ? [16, 17, 18, 19, 20, 21, 22] : [23, 24, 25, 26, 27, 28, 29];
+    const brand = query.get('brand');
     const search = (query.get('q') || '').toLowerCase();
-    const items = groupsByCategory[category].filter(customer =>
-      customer.records.some(record => (!query.get('day') || query.get('day') === record.date)
-        && (!query.get('assigned_to') || query.get('assigned_to') === record.assigned_to)
-        && (!query.get('department') || query.get('department') === 'all' || query.get('department') === record.floor_id)
-        && [record.customer_name, record.customer_phone, record.quotation_number].some(value => value.toLowerCase().includes(search))));
+    const workspace = query.get('workspace') || 'all';
+    const day = query.get('day');
+    const inPeriod = (date: string) => {
+      if (period === 'last_30_days') return date >= '2026-10-23' && date <= TODAY;
+      if (period === 'this_week') return date >= '2026-11-16' && date <= '2026-11-22';
+      if (period === 'custom') return date >= query.get('start')! && date <= query.get('end')!;
+      return true;
+    };
+    const inScope = (row: RecordRow) => {
+      const department = query.get('department');
+      return (workspace === 'all' || (workspace === 'visit_showroom' && row.origin === 'visit_showroom'))
+        && (!query.get('assigned_to') || query.get('assigned_to') === row.assigned_to)
+        && (!department || department === 'all' || department === row.floor_id)
+        && [row.customer_name, row.customer_phone, row.quotation_number].some(value => value.toLowerCase().includes(search))
+        && inPeriod(row.date);
+    };
+    const tasks = [callToday, secondCallToday, late, monday, showroom, ...(nextCall ? [nextCall] : [])].filter(inScope);
+    const quotes = [won, lost, created, closedLate, closedMonday].filter((row): row is ReturnType<typeof quote> => row !== undefined).filter(inScope);
+    const withBrand = (rows: RecordRow[], brandId: string | null) =>
+      rows.filter(row => !brandId || row.brands.some(entry => entry.id === brandId));
+    const work = withBrand(tasks, brand);
+    const outcomes = withBrand(quotes, brand);
+    const active = work.filter(row => row.status === 'open');
+    const rowsByCategory = {
+      all: work, active, today: active.filter(row => row.date === TODAY),
+      overdue: active.filter(row => row.date < TODAY), upcoming: active.filter(row => row.date > TODAY),
+      completed: work.filter(row => row.status === 'done'),
+      won: outcomes.filter(row => row.status === 'won'), lost: outcomes.filter(row => row.status === 'lost'),
+      created: outcomes.filter(row => row.status === 'created'),
+      outcomes: outcomes.filter(row => row.status === 'won' || row.status === 'lost'),
+    };
+    const summary = Object.fromEntries(Object.entries(rowsByCategory).map(([name, rows]) => [name, summarize(rows, brand)]));
+    const week = Number(query.get('week') || '0');
+    const days = Array.from({ length: 7 }, (_, offset) => new Date(Date.UTC(2026, 10, 16 + week * 7 + offset)).toISOString().slice(0, 10));
+    const items = groupRecords(rowsByCategory[category].filter(row => !day || (row.status === 'open' && day === row.date)), brand);
+    const workload = (rows: RecordRow[], brandId: string | null) => ({
+      today: rows.filter(row => row.date === TODAY).length,
+      overdue: rows.filter(row => row.date < TODAY).length,
+      upcoming: rows.filter(row => row.date > TODAY).length,
+      amounts: summarize(rows, brandId).amounts,
+    });
     const response = {
       json: {
-        today: TODAY, summary: {
-          ...summary, active: metric(todayTasks.length + 2, 455_000, 3),
-          outcomes: metric(wonGroups.length + lostGroups.length, (summary.won.amounts[0]?.value || 0) + (summary.lost.amounts[0]?.value || 0)),
-        }, items, page: 1, page_size: 25, has_more: false,
-        schedule: days.map(day => ({ day: '2026-11-' + day, ...(day === 23 ? summary.upcoming : metric()) })),
-        employees: [{
-          ...NIKHIL, today: summary.today.count, overdue: summary.overdue.count,
-          upcoming: summary.upcoming.count, amounts: [{ currency: 'INR', value: 455_000 }],
-        }],
-        brands: [{
-          ...GROHE, won: summary.won.count, lost: summary.lost.count,
-          won_amounts: summary.won.count ? [{ currency: 'INR', value: 240_000 }] : [], lost_amounts: summary.lost.amounts,
-        }, {
-          ...VITRA, won: summary.won.count, lost: 0,
-          won_amounts: summary.won.count ? [{ currency: 'INR', value: 120_000 }] : [], lost_amounts: [],
-        }],
+        today: TODAY, summary, items, page: 1, page_size: 25, has_more: false, operational: true,
+        schedule: days.map(date => ({ day: date, ...summarize(active.filter(row => row.date === date), brand) })),
+        employees: [NIKHIL, MANOJ].map(employee => ({
+          ...employee, ...workload(active.filter(row => row.assigned_to === employee.id), brand),
+        })),
+        brands: [GROHE, VITRA].filter(company => !brand || company.id === brand).map(company => {
+          const records = withBrand(quotes, company.id);
+          const wonTotals = summarize(records.filter(row => row.status === 'won'), company.id);
+          const lostTotals = summarize(records.filter(row => row.status === 'lost'), company.id);
+          const { amounts, ...counts } = workload(withBrand(active, company.id), company.id);
+          return { ...company, ...counts, workload_amounts: amounts, won: wonTotals.count, lost: lostTotals.count,
+            won_amounts: wonTotals.amounts, lost_amounts: lostTotals.amounts };
+        }),
         options: { employees: limited ? [NIKHIL] : [NIKHIL, MANOJ], brands: [GROHE, VITRA], departments: accessible },
         reports_available: true,
       },
@@ -191,7 +273,7 @@ async function mockPlanner(page: Page, limited = false) {
     return route.fulfill(response);
   });
   return {
-    lastRead: () => reads.at(-1), postponements, notes, completions: () => completions,
+    lastRead: () => reads.at(-1), postponements, notes, outcomes, orders, legacyReads, completions: () => completions,
     async releaseAbandonedSearch() {
       abandonedSearch.resolve();
       if (reads.some(query => query.get('q') === 'abandoned-search')) await abandonedResponse.promise;
@@ -204,53 +286,91 @@ async function expectQuery(fixture: Awaited<ReturnType<typeof mockPlanner>>, par
 }
 
 async function choose(page: Page, filter: string, value: string) {
-  await page.getByTestId('planner-' + filter).click();
+  const control = page.getByTestId('planner-' + filter);
+  if (!await control.isVisible()) await page.getByTestId('planner-filter-toggle').click();
+  await control.click();
   await page.getByTestId('planner-' + filter + '-' + value).click();
 }
 
 test('critical Follow-ups planner groups today’s work and opens the next Monday schedule', async ({ page }, info) => {
   const runtime = captureRuntimeHealth(page);
   const fixture = await mockPlanner(page);
-  await page.goto('/followups');
-  const planner = page.getByTestId('followup-planner');
-  const today = planner.getByTestId('planner-card-today');
+  await page.goto('/customers');
+  await page.getByTestId(page.viewportSize()!.width < 768 ? 'bottom-nav-followups' : 'nav-followups').click();
+  await expect(page).toHaveURL(/\/followups$/);
+  await expectQuery(fixture, { operational: 'true', category: 'all' });
+  await expect(page.getByRole('heading', { name: 'Follow-ups', exact: true })).toBeVisible();
+  await expect(page.getByTestId('new-followup-btn')).toBeVisible();
+  const today = page.getByTestId('planner-card-today');
   await expect(today).toContainText(/₹\s*2,50,000/);
-  await expect(today).toContainText('1 customer');
+  const first = page.getByTestId('followup-call-today');
+  const second = page.getByTestId('followup-second-call');
+  const mondayCard = page.getByTestId('followup-monday-call');
+  await expect(first).toBeVisible();
+  await expect(page.getByTestId('followup-late-call')).toBeInViewport();
+  await expect(page.getByText('QA Today Customer', { exact: true })).toHaveCount(1);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+  expect(fixture.legacyReads).toEqual([]);
   await today.click();
   await expectQuery(fixture, { category: 'today' });
-  const customer = planner.getByTestId('planner-customer-today-client');
-  await expect(customer).toHaveCount(1);
-  await expect(planner.getByText('QA Monday Customer')).toHaveCount(0);
+  await expect(first).toBeVisible();
+  await expect(second).toBeVisible();
+  await expect(mondayCard).toHaveCount(0);
   if (process.env.FOLLOWUP_PLANNER_SCREENSHOTS === '1') {
-    await page.screenshot({ path: info.outputPath('follow-up-planner.png') });
+    await page.screenshot({ path: info.outputPath('follow-up-workspace.png') });
   }
-  await customer.click();
-  await expect(page.getByTestId('planner-open-call-today')).toBeVisible();
-  await expect(page.getByTestId('planner-open-second-call')).toBeVisible();
-  await page.getByTestId('planner-open-call-today').click();
+  await first.click();
   const detail = page.getByRole('dialog', { name: 'QA Today Customer', exact: true });
+  await expect(detail).toContainText('Q-250');
   await detail.getByRole('button', { name: /^(Done|Complete follow-up|Mark follow-up complete)$/ }).click();
   await expect.poll(fixture.completions).toBe(1);
-  await expect(planner.getByTestId('planner-result-metric')).toContainText(/\b1 record\b/);
   if (await detail.isVisible()) await detail.getByRole('button', { name: 'Close', exact: true }).click();
-  await customer.click();
-  await expect(page.getByTestId('planner-open-call-today')).toHaveCount(0);
-  await expect(page.getByTestId('planner-open-second-call')).toBeVisible();
-  await detail.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(first).toHaveCount(0);
+  await expect(second).toBeVisible();
+  await expect(page.getByTestId('planner-result-metric')).toContainText(/\b1 record\b/);
 
-  await planner.getByTestId('planner-workload-toggle').click();
-  await planner.getByTestId('planner-workload-nikhil').click();
+  await page.getByTestId('planner-workload-toggle').click();
+  const nikhil = page.getByTestId('planner-workload-nikhil');
+  await expect(nikhil).toContainText(/₹\s*4,55,000/);
+  await expect(page.getByTestId('planner-workload-nikhil-today')).toContainText('Today 1');
+  await expect(page.getByTestId('planner-workload-nikhil-overdue')).toContainText('Overdue 1');
+  await expect(page.getByTestId('planner-workload-nikhil-upcoming')).toContainText('Upcoming 1');
+  await nikhil.click();
   await expectQuery(fixture, { category: 'active', assigned_to: NIKHIL.id });
-  await expect(planner.getByTestId('planner-result-metric')).toContainText(/₹\s*4,55,000/);
-  await planner.getByTestId('planner-card-upcoming').click();
-  await planner.getByTestId('planner-next-week').click();
-  const monday = planner.getByTestId('planner-day-' + MONDAY);
+  await expect(second).toBeVisible();
+  await expect(page.getByTestId('followup-showroom-visit')).toHaveCount(0);
+  await page.getByTestId('planner-card-upcoming').click();
+  await page.getByTestId('planner-next-week').click();
+  const monday = page.getByTestId('planner-day-' + MONDAY);
   await expect(monday).toContainText(/Mon/i);
   await expect(monday).toContainText(/23/);
   await monday.click();
-  await expectQuery(fixture, { category: 'upcoming', day: MONDAY, week: '1' });
-  await expect(planner.getByTestId('planner-customer-monday-client')).toBeVisible();
-  await expect(planner.getByTestId('planner-customer-late-client')).toHaveCount(0);
+  await expectQuery(fixture, { category: 'all', day: MONDAY, week: '1' });
+  await expect(mondayCard).toBeVisible();
+  await expect(page.getByTestId('followup-late-call')).toHaveCount(0);
+  await page.getByTestId('planner-previous-week').click();
+  await expectQuery(fixture, { week: '0' });
+  await page.getByTestId('planner-previous-week').click();
+  await expectQuery(fixture, { week: '-1' });
+  await expect(page.getByTestId('planner-day-2026-11-09')).toContainText(/Mon/i);
+  await expect(page).toHaveURL(/\/followups$/);
+
+  await page.getByTestId('planner-card-upcoming').click();
+  await mondayCard.click();
+  const mondayDetail = page.getByRole('dialog', { name: 'QA Monday Customer', exact: true });
+  await mondayDetail.getByRole('button', { name: /open quotation/i }).click();
+  await expect(page).toHaveURL(/\/quotations\/Q-125$/);
+  await page.getByTestId('place-order-btn').click();
+  await page.getByTestId('confirm-place-order').click();
+  await expect.poll(() => fixture.orders.length).toBe(1);
+  await expect(page).toHaveURL(/\/purchases/);
+  await page.goto('/followups');
+  const won = page.getByTestId('planner-card-won');
+  await expect(won).toContainText(/₹\s*4,85,000/);
+  await won.click();
+  await expect(page.getByText('QA Monday Customer', { exact: true })).toBeVisible();
+  await expect(page.getByTestId('planner-open-record-Monday Order')).toBeVisible();
+  expect(fixture.legacyReads).toEqual([]);
   await runtime.assertHealthy();
 });
 
@@ -258,58 +378,76 @@ test('critical Follow-ups planner combines reporting filters, preserves focus an
   const runtime = captureRuntimeHealth(page);
   const fixture = await mockPlanner(page, true);
   await page.goto('/followups');
-  const planner = page.getByTestId('followup-planner');
-  const won = planner.getByTestId('planner-card-won');
+  const won = page.getByTestId('planner-card-won');
   await expect(won).toContainText(/₹\s*3,60,000/);
-  await won.click();
-  const filterToggle = planner.getByTestId('planner-filter-toggle');
-  const period = planner.getByTestId('planner-period');
-  if (!await period.isVisible()) await filterToggle.click();
+  await page.getByTestId('planner-brand-toggle').click();
+  await expect(page.getByTestId('planner-brand-vitra-won')).toContainText(/₹\s*1,20,000/);
+  await page.getByTestId('planner-brand-toggle').click();
+  await page.getByTestId('planner-card-overdue').click();
+  await expect(page.getByTestId('followup-late-call')).toBeVisible();
   await choose(page, 'period', 'last_30_days');
   await choose(page, 'employee', NIKHIL.id);
-  await planner.getByTestId('planner-brand-toggle').click();
-  await planner.getByTestId('planner-brand-grohe').click();
+  await choose(page, 'company', GROHE.id);
+  await expectQuery(fixture, { category: 'overdue', period: 'last_30_days', assigned_to: NIKHIL.id, brand: GROHE.id });
+  await expect(page.getByTestId('followup-late-call')).toBeVisible();
+  await expect(page.getByTestId('followup-showroom-visit')).toHaveCount(0);
+  await expect(page.getByTestId('planner-card-overdue')).toContainText(/₹\s*80,000/);
+  await expect(page).toHaveURL(/\/followups$/);
+  const search = page.getByTestId('planner-search');
+  await search.fill('8765');
+  await expectQuery(fixture, { q: '8765' });
+  await expect(page.getByTestId('followup-late-call')).toBeVisible();
+  await search.fill('');
+  await expect.poll(() => fixture.lastRead()?.get('q')).toBeNull();
+
+  await won.click();
+  await page.getByTestId('planner-brand-toggle').click();
+  await page.getByTestId('planner-brand-grohe').click();
   await expectQuery(fixture, { category: 'outcomes', brand: GROHE.id });
-  await expect(planner.getByTestId('planner-customer-Won Customer')).toBeVisible();
-  const brandWon = planner.getByTestId('planner-brand-grohe-won');
+  const brandWon = page.getByTestId('planner-brand-grohe-won');
   await expect(brandWon).toContainText(/₹\s*2,40,000/);
   await brandWon.click();
-  await planner.getByTestId('planner-department').click();
+  const department = page.getByTestId('planner-department');
+  if (!await department.isVisible()) await page.getByTestId('planner-filter-toggle').click();
+  await department.click();
   await expect(page.getByTestId('planner-department-ground-floor')).toHaveCount(0);
   await expect(page.getByTestId('planner-department-second-floor')).toHaveCount(0);
   await page.getByTestId('planner-department-' + FLOOR).click();
-  const search = planner.getByTestId('planner-search');
   try {
     await search.fill('abandoned-search');
     await expectQuery(fixture, { q: 'abandoned-search' });
     await search.fill('Q-Won');
     await expectQuery(fixture, { category: 'won', period: 'last_30_days', assigned_to: NIKHIL.id, brand: GROHE.id, department: FLOOR, q: 'Q-Won' });
-    await expect(planner.getByTestId('planner-customer-Won Customer')).toBeVisible();
+    await expect(page.getByText('QA Won Customer', { exact: true })).toBeVisible();
   } finally {
     await fixture.releaseAbandonedSearch();
   }
   await expect(search).toBeFocused();
   await expect(won).toContainText(/₹\s*2,40,000/);
-  await expect(planner.getByTestId('planner-customer-Won Customer')).toBeVisible();
-  await expect(planner.getByText('QA Lost Customer')).toHaveCount(0);
+  await expect(page.getByTestId('planner-open-record-Won Customer')).toBeVisible();
+  await expect(page.getByText(/won · .*Grohe.*₹\s*2,40,000/i)).toBeVisible();
+  await expect(page.getByText('QA Lost Customer', { exact: true })).toHaveCount(0);
   const box = (await search.boundingBox())!;
   expect(box.x).toBeGreaterThanOrEqual(0);
   expect(box.x + box.width).toBeLessThanOrEqual(page.viewportSize()!.width);
 
-  await planner.getByTestId('planner-reset').click();
-  await planner.getByTestId('planner-card-lost').click();
-  if (!await period.isVisible()) await filterToggle.click();
+  await page.getByTestId('planner-reset').click();
+  await expectQuery(fixture, { category: 'all', period: 'all_time' });
+  await expect(page.getByTestId('followup-call-today')).toBeVisible();
+  await page.getByTestId('planner-card-lost').click();
   await choose(page, 'period', 'last_6_months');
   await expectQuery(fixture, { category: 'lost', period: 'last_6_months' });
-  await expect(planner.getByTestId('planner-card-lost')).toContainText(/₹\s*80,000/);
-  await planner.getByTestId('planner-customer-Lost Customer').click();
+  await page.getByTestId('planner-brand-grohe-lost').click();
+  await expectQuery(fixture, { category: 'lost', period: 'last_6_months', brand: GROHE.id });
+  await expect(page.getByTestId('planner-card-lost')).toContainText(/₹\s*80,000/);
+  await expect(page.getByTestId('planner-open-record-Lost Customer')).toBeVisible();
   await expect(page.getByText('Customer changed plans')).toBeVisible();
-  await page.getByRole('dialog', { name: 'QA Lost Customer' }).getByRole('button', { name: 'Close', exact: true }).click();
   await choose(page, 'period', 'custom');
-  await planner.getByTestId('planner-start-date').fill('2026-07-01');
-  await planner.getByTestId('planner-end-date').fill('2026-07-31');
+  await page.getByTestId('planner-start-date').fill('2026-07-01');
+  await page.getByTestId('planner-end-date').fill('2026-07-31');
   await expectQuery(fixture, { category: 'lost', period: 'custom', start: '2026-07-01', end: '2026-07-31' });
-  await expect(planner.getByTestId('planner-customer-Lost Customer')).toBeVisible();
+  await expect(page.getByText('QA Lost Customer', { exact: true })).toBeVisible();
+  expect(fixture.legacyReads).toEqual([]);
   await runtime.assertHealthy();
 });
 
@@ -317,15 +455,14 @@ test('critical Follow-ups planner keeps a postponement draft and reconciles the 
   const runtime = captureRuntimeHealth(page);
   const fixture = await mockPlanner(page);
   await page.goto('/followups');
-  const planner = page.getByTestId('followup-planner');
-  const overdue = planner.getByTestId('planner-card-overdue');
+  const overdue = page.getByTestId('planner-card-overdue');
   await overdue.click();
   await expectQuery(fixture, { category: 'overdue' });
-  const lateCustomer = planner.getByTestId('planner-customer-late-client');
-  await expect(lateCustomer).toContainText('Overdue by 1 day');
+  const lateCustomer = page.getByTestId('followup-late-call');
+  await expect(lateCustomer).toContainText(/Overdue/i);
   await lateCustomer.click();
-  await page.getByTestId('planner-open-late-call').click();
-  await page.getByRole('button', { name: 'Postpone follow-up', exact: true }).click();
+  const detail = page.getByRole('dialog', { name: 'QA Overdue Customer', exact: true });
+  await detail.getByRole('button', { name: 'Postpone follow-up', exact: true }).click();
   const sheet = page.getByRole('dialog', { name: 'Postpone follow-up', exact: true });
   const confirm = sheet.getByTestId('confirm-postponement');
   const reason = sheet.getByRole('textbox', { name: 'Reason for postponement', exact: true });
@@ -343,21 +480,43 @@ test('critical Follow-ups planner keeps a postponement draft and reconciles the 
   await expect(sheet).toHaveCount(0);
   const body = { expected_due_at: '2026-11-19T18:30:00.000Z', new_due_date: MONDAY, reason: 'Customer asked for a Monday call' };
   expect(fixture.postponements).toEqual([body, body]);
-  await expect(overdue).not.toContainText(/₹\s*80,000/);
+  await expect(overdue).toContainText(/₹\s*85,000/);
   await page.reload();
-  await planner.getByTestId('planner-card-upcoming').click();
-  await planner.getByTestId('planner-next-week').click();
-  await planner.getByTestId('planner-day-' + MONDAY).click();
-  await expect(planner.getByTestId('planner-customer-late-client')).toHaveCount(1);
-  await expect(planner.getByTestId('planner-customer-monday-client')).toHaveCount(1);
+  await page.getByTestId('planner-card-upcoming').click();
+  await page.getByTestId('planner-next-week').click();
+  await page.getByTestId('planner-day-' + MONDAY).click();
+  await expect(lateCustomer).toHaveCount(1);
+  await expect(page.getByTestId('followup-monday-call')).toHaveCount(1);
+  await lateCustomer.click();
+  await expect(detail.getByText('Customer asked for a Monday call')).toBeVisible();
+  await expect(detail.getByText(/Nikhil/).last()).toBeVisible();
+  await detail.getByRole('button', { name: 'Record outcome', exact: true }).click();
+  const outcome = page.getByRole('dialog', { name: 'Record contact outcome', exact: true });
+  await outcome.getByTestId('outcome-call_back').click();
+  await outcome.getByTestId('pending-next-followup-at').fill(TUESDAY);
+  await outcome.getByTestId('save-call-outcome').click();
+  await expect(outcome).toHaveCount(0);
+  expect(fixture.outcomes).toEqual([{ outcome: 'call_back', next_followup_at: TUESDAY + 'T09:00:00+05:30', request_key: expect.any(String) }]);
+  await expect(lateCustomer).toHaveCount(0);
+  await page.getByTestId('planner-day-' + TUESDAY).click();
+  await expect(page.getByTestId('followup-next-call')).toHaveCount(1);
 
-  const period = planner.getByTestId('planner-period');
-  if (!await period.isVisible()) await planner.getByTestId('planner-filter-toggle').click();
   await choose(page, 'category', 'created');
   await choose(page, 'period', 'this_week');
   await expectQuery(fixture, { category: 'created', period: 'this_week' });
-  await expect(planner.getByTestId('planner-result-metric')).toContainText(/₹\s*95,000/);
-  await expect(planner.getByTestId('planner-customer-New Customer')).toBeVisible();
+  await expect(page.getByTestId('planner-open-record-New Customer')).toBeVisible();
+  await expect(page.getByText('QA New Customer', { exact: true })).toBeVisible();
+
+  await page.getByTestId('planner-reset').click();
+  await choose(page, 'workspace', 'visit_showroom');
+  await expectQuery(fixture, { workspace: 'visit_showroom', category: 'all' });
+  await expect(page.getByTestId('followup-showroom-visit')).toBeVisible();
+  await expect(lateCustomer).toHaveCount(0);
+  await expect(page).toHaveURL(/\/followups(?:\?|$)/);
+  await page.goto('/followups?workspace=visit_showroom');
+  await expect(page.getByTestId('followup-showroom-visit')).toBeVisible();
+  await expect(lateCustomer).toHaveCount(0);
+  expect(fixture.legacyReads).toEqual([]);
   await runtime.assertHealthy();
 });
 
@@ -365,12 +524,10 @@ test('critical Follow-ups planner retains an unsaved note and reuses the exact r
   const runtime = captureRuntimeHealth(page);
   const fixture = await mockPlanner(page);
   await page.goto('/followups');
-  const planner = page.getByTestId('followup-planner');
-  const overdue = planner.getByTestId('planner-card-overdue');
-  const customer = planner.getByTestId('planner-customer-late-client');
+  const overdue = page.getByTestId('planner-card-overdue');
+  const customer = page.getByTestId('followup-late-call');
   await overdue.click();
   await customer.click();
-  await page.getByTestId('planner-open-late-call').click();
   await page.getByTestId('planner-record-note').click();
   const sheet = page.getByRole('dialog', { name: 'Record follow-up note', exact: true });
   const note = sheet.getByTestId('followup-change-note');
@@ -389,6 +546,23 @@ test('critical Follow-ups planner retains an unsaved note and reuses the exact r
   await page.reload();
   await overdue.click();
   await customer.click();
-  await expect(page.getByText(written)).toBeVisible();
+  const detail = page.getByRole('dialog', { name: 'QA Overdue Customer', exact: true });
+  await expect(detail.getByText(written).last()).toBeVisible();
+  await detail.getByRole('button', { name: /mark (as )?lost/i }).click();
+  const outcome = page.getByRole('dialog', { name: 'Record contact outcome', exact: true });
+  const saveOutcome = outcome.getByTestId('save-call-outcome');
+  const lossReason = 'Customer awarded the package elsewhere';
+  await expect(saveOutcome).toBeDisabled();
+  await outcome.getByTestId('outcome-notes').fill(lossReason);
+  await saveOutcome.click();
+  await expect(outcome).toHaveCount(0);
+  expect(fixture.outcomes).toEqual([{ outcome: 'lost', notes: lossReason, request_key: expect.any(String) }]);
+  if (await detail.isVisible()) await detail.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(overdue).toContainText(/₹\s*85,000/);
+  await expect(customer).toHaveCount(0);
+  await page.reload();
+  await page.getByTestId('planner-card-lost').click();
+  await expect(page.getByTestId('planner-card-lost')).toContainText(/₹\s*1,60,000/);
+  await expect(page.getByText(lossReason, { exact: true })).toBeVisible();
   await runtime.assertHealthy();
 });

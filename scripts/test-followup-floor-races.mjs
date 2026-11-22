@@ -20,12 +20,10 @@ const filters = {};
 vm.runInNewContext(ts.transpileModule(readFileSync(new URL('../src/utils/filters.ts', import.meta.url), 'utf8'), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
 }).outputText, { exports: filters });
-function fixture(floor = 'first-floor') {
+function fixture(floor = 'first-floor', plannerAvailable = true) {
   const hooks = [], effects = [], requests = [], links = [], notices = [];
   let index = 0, dirty = false, state;
-  // These hook fixtures exercise the existing task queue. The default planner
-  // has its own browser regression coverage.
-  const routeParams = { workspace: 'queue' };
+  const routeParams = {};
   const router = { setParams(patch) { Object.assign(routeParams, patch); dirty = true; } };
   const same = (a, b) => a && b && a.length === b.length && a.every((v, i) => Object.is(v, b[i]));
   const react = {
@@ -49,6 +47,18 @@ function fixture(floor = 'first-floor') {
     './followup-assignments': { MANAGER_ROLES: ['owner'] },
     '@/src/theme/tokens': { colors: {}, spacing: {}, type: new Proxy({}, { get: () => ({}) }), radius: {}, elevation: {} },
     '@/src/api/client': { api: { get: request, post: request, patch: request, delete: request } },
+    '@/src/components/followups/followupDates': { followupCalendarDay: () => '2026-11-01' },
+    '@/src/components/followups/FollowupPlanner': {
+      defaultPlannerFilters: { category: 'all', period: 'all_time', week: 0 },
+      isMissingPlanner: error => error.status === 404,
+      async fetchPlanner(params, _category, floorId, signal) {
+        if (!plannerAvailable) throw { status: 404 };
+        const result = await request(`/followups/planner?${params}`, { floorId, signal });
+        return { ...result, operational: true, summary: {}, items: result.items.map(task => ({
+          key: task.id, records: [{ kind: 'followup', floor_id: floorId, task }],
+        })) };
+      },
+    },
     '@/src/utils/filters': filters,
     '@/src/components/useDeletionConfirmation': { useDeletionConfirmation: () => ({}) },
     '@/src/components/Toast': { toast: { success: text => notices.push(text), error: text => notices.push(text) } },
@@ -65,10 +75,10 @@ function fixture(floor = 'first-floor') {
 test('an abandoned floor cannot publish a late list, detail or summary into the shared inbox', async () => {
   const old = fixture();
   void old.state.loadDetail('sanitary-one');
-  void old.state.refreshStatsQuiet();
+  void old.state.refreshStatsQuiet(true);
   old.unmount();
   const current = fixture('third-floor');
-  for (const pending of old.requests) pending.resolve(pending.path.includes('/page?')
+  for (const pending of old.requests) pending.resolve(pending.path.includes('/planner?')
     ? { items: [{ id: 'sanitary-one' }], page: 1, has_more: false }
     : pending.path.includes('/stats') ? { today_tasks: 99 } : { followup: { id: 'sanitary-one' } });
   await old.settle(); await current.settle();
@@ -86,14 +96,14 @@ test('a floor-keyed owner inbox discards Furniture Mine before Ground or Sanitar
     previous.state.setOwnerFilter('mine');
     await previous.settle();
     assert.equal(previous.state.ownerFilter, 'mine');
-    const mineRead = previous.requests.filter(request => request.path.includes('/followups/page?')).at(-1);
+    const mineRead = previous.requests.filter(request => request.path.includes('/followups/planner?')).at(-1);
     assert.equal(new URLSearchParams(mineRead.path.split('?')[1]).get('assigned_to'), 'owner');
     // FollowupsScreen keys this hook instance by selectedFloorId.
     previous.unmount();
     const current = fixture(floor);
     await current.settle();
     assert.equal(current.state.ownerFilter, 'all');
-    for (const request of current.requests.filter(request => request.path.includes('/followups/page?'))) {
+    for (const request of current.requests.filter(request => request.path.includes('/followups/planner?'))) {
       assert.equal(request.options.floorId, floor);
       assert.equal(new URLSearchParams(request.path.split('?')[1]).has('assigned_to'), false);
     }
@@ -122,9 +132,9 @@ test('a mounted inbox accepts showroom transfer navigation and clears filters th
   await h.settle();
   assert.equal(h.state.workspace, 'visit_showroom');
   assert.equal(h.state.q, ''); assert.equal(h.state.followupView, 'active'); assert.equal(h.state.priorityFilter, 'all');
-  const latest = h.requests.filter(request => request.path.includes('/followups/page?')).at(-1);
+  const latest = h.requests.filter(request => request.path.includes('/followups/planner?')).at(-1);
   const query = new URLSearchParams(latest.path.split('?')[1]);
-  assert.equal(query.get('origin'), 'visit_showroom'); assert.equal(query.get('view'), 'active');
+  assert.equal(query.get('workspace'), 'visit_showroom'); assert.equal(query.get('category'), 'all');
   assert.equal(query.has('q'), false); assert.equal(query.has('priority'), false);
   h.unmount();
 });
@@ -136,6 +146,17 @@ test('follow-up workspace tabs publish a route that survives navigation and relo
   assert.equal(h.state.workspace, 'quotation_tiles');
   h.state.setWorkspace('all'); await h.settle();
   assert.equal(h.routeParams.workspace, 'all');
+  h.unmount();
+});
+
+test('a rolling backend release keeps the original task queue available', async () => {
+  const h = fixture('first-floor', false);
+  await h.settle();
+  const fallback = h.requests.find(request => request.path.startsWith('/followups/page?'));
+  assert.ok(fallback);
+  fallback.resolve({ items: [followup()], page: 1, has_more: false });
+  await h.settle();
+  assert.equal(h.state.rawItems[0].id, 'one');
   h.unmount();
 });
 
@@ -227,7 +248,7 @@ test('saved view responses cannot restore data or notices in an abandoned worksp
 const followup = (id = 'one') => ({ id, status: 'open', bucket: 'today', customer_name: 'Fixture', customer: { name: 'Fixture' }, due_at: '2026-11-01T00:00:00Z', next_action: 'Call' });
 async function loadedInbox() {
   const h = fixture();
-  h.requests.find(row => row.path.includes('/page?')).resolve({ items: [followup()], page: 1, has_more: false });
+  h.requests.find(row => row.path.includes('/planner?')).resolve({ items: [followup()], page: 1, has_more: false });
   await h.settle(); return h;
 }
 for (const [action, args, status, bucket] of [
@@ -307,7 +328,7 @@ test('pending follow-up overlays survive concurrent refresh and discard work aft
 test('bulk optimistic completion reconciles successes and restores only failed rows', async () => {
   const h = fixture();
   const first = followup('one'), second = followup('two');
-  h.requests.find(row => row.path.includes('/page?')).resolve({ items: [first, second], page: 1, has_more: false });
+  h.requests.find(row => row.path.includes('/planner?')).resolve({ items: [first, second], page: 1, has_more: false });
   await h.settle(); h.state.setSelectedIds(new Set(['one', 'two'])); await h.settle();
   h.state.bulkComplete(); await h.settle();
   assert.equal(h.state.pendingPatches.size, 2);

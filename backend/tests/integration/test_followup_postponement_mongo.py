@@ -47,6 +47,7 @@ def test_send_schedule_postpone_history_and_contact_outcome(monkeypatch):
             "automation_key": "quotation-generated:qa-quotation:revision:1:followup", "notes": "Historical review note",
         }
         try:
+            await database.floors.insert_one({"id": "first-floor", "name": "Sanitary"})
             await database.quotations.insert_one(quote.copy())
             await database.followups.insert_one(legacy.copy())
             await database.users.insert_one({
@@ -71,8 +72,16 @@ def test_send_schedule_postpone_history_and_contact_outcome(monkeypatch):
 
             path = f"/api/followups/{original['id']}"
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://qa") as http:
+                async def workspace(**params):
+                    response = await http.get("/api/followups/planner", params={
+                        "operational": True, "q": quote["number"], **params,
+                    })
+                    assert response.status_code == 200, response.text
+                    return response.json()
+
                 initial = (await http.get(path)).json()
                 assert initial["followup"]["bucket"] == "overdue"
+                assert (await workspace())["summary"]["overdue"]["count"] == 1
                 note = {"note": "Discuss amended delivery", "request_key": "notes-qa-first"}
                 assert (await http.post(path + "/notes", json={**note, "note": "  "})).status_code == 422
                 actor = foreign_employee
@@ -89,6 +98,8 @@ def test_send_schedule_postpone_history_and_contact_outcome(monkeypatch):
                 assert saved_note["note"] == note["note"]
                 assert saved_note["actor_name"] == employee.full_name
                 assert saved_note["recorded_at"]
+                card = (await workspace(category="overdue"))["items"][0]["records"][0]["task"]
+                assert card["latest_note"] == note["note"] and card["has_history"]
                 actor = employee.model_copy(update={"role": "manager"})
                 assert (await http.delete(path)).status_code == 409
                 actor = employee
@@ -110,6 +121,10 @@ def test_send_schedule_postpone_history_and_contact_outcome(monkeypatch):
                 assert first_saved["bucket"] == "tomorrow"
                 assert len(first_saved["postponement_history"]) == 1
                 assert first_saved["original_due_at"] == original["due_at"]
+                postponed = await workspace(day=first["new_due_date"])
+                assert postponed["summary"]["overdue"]["count"] == 0
+                assert postponed["summary"]["upcoming"]["count"] == 1
+                assert postponed["items"][0]["records"][0]["task"]["due_at"] == first_saved["due_at"]
                 # An older reminder may have the audit entries without the explicit original field.
                 await database.followups.update_one({"id": original["id"]}, {"$unset": {"original_due_at": ""}})
 
@@ -149,6 +164,41 @@ def test_send_schedule_postpone_history_and_contact_outcome(monkeypatch):
                 assert (await http.post(path + "/postpone", json=first)).status_code == 409
                 completed_successor = await http.post(f"/api/followups/{successor['id']}/complete", json={})
                 assert completed_successor.json()["bucket"] == "completed"
+                resolved = await workspace(category="completed")
+                assert resolved["summary"]["upcoming"]["count"] == 0
+                assert {row["id"] for group in resolved["items"] for row in group["records"]} == {original["id"], successor["id"]}
+
+                await database.quotations.update_one({"id": quote["id"]}, {"$set": {
+                    "status": "ordered", "ordered_at": now.isoformat(), "grand_total": 200,
+                    "items": [{"id": "won-line", "brand_id": "qa-brand", "net_amount": 150}],
+                }})
+                loss_quote = {
+                    **quote, "id": "qa-loss-quotation", "number": "FQ-QA-002", "grand_total": 100,
+                    "items": [{"id": "lost-line", "brand_id": "qa-brand", "net_amount": 75}],
+                }
+                await database.quotations.insert_one(loss_quote)
+                active = {key: value for key, value in original.items() if key not in {"_id", "source_key"}}
+                await database.followups.insert_many([
+                    {**active, "id": "qa-won-followup"},
+                    {**active, "id": "qa-lost-followup", "quotation_id": loss_quote["id"],
+                     "quotation_number": loss_quote["number"]},
+                ])
+                won = await http.post("/api/followups/qa-won-followup/log-call", json={"outcome": "won"})
+                assert won.status_code == 200, won.text
+                assert won.json()["completed_outcome"] == "won"
+                lost = await http.post("/api/followups/qa-lost-followup/log-call", json={
+                    "outcome": "lost", "notes": "Project paused",
+                })
+                assert lost.status_code == 200, lost.text
+                assert lost.json()["completed_outcome"] == "lost"
+                for outcome, number, amount in [("won", quote["number"], 150), ("lost", loss_quote["number"], 75)]:
+                    report = await workspace(category=outcome, q=number, brand="qa-brand", period="today")
+                    assert report["summary"][outcome]["count"] == 1
+                    assert report["summary"][outcome]["amounts"] == [{"currency": "INR", "value": amount}]
+                    record = report["items"][0]["records"][0]
+                    assert (record["kind"], record["status"], record["quotation_number"]) == ("quotation", outcome, number)
+                    assert record["date"] == today.isoformat()
+                assert report["items"][0]["records"][0]["lost_reason"] == "Project paused"
         finally:
             await client.drop_database(database.name)
             client.close()

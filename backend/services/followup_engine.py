@@ -211,20 +211,22 @@ def ist_day_bounds_utc(offset_days: int = 0) -> tuple[datetime, datetime]:
     return start_ist.astimezone(timezone.utc), end_ist.astimezone(timezone.utc)
 
 
-def compute_bucket(f: dict) -> str:
+def compute_bucket(f: dict, *, today: date | None = None) -> str:
     """Overdue | today | tomorrow | this_week | later | completed | snoozed."""
     status = f.get("status")
     if status in ("done", "dismissed"):
         return "completed"
     if status == "snoozed" and f.get("snoozed_until"):
         return "snoozed"
-    due = parse_iso(f.get("due_at"))
+    due = f.get("due_at")
+    if isinstance(due, datetime):
+        due = due if due.tzinfo else due.replace(tzinfo=timezone.utc)
+    else:
+        due = parse_iso(due)
     if not due:
         return "later"
-    now = datetime.now(timezone.utc)
     due_date = due.astimezone(IST).date()
-    today_date = now.astimezone(IST).date()
-    delta = (due_date - today_date).days
+    delta = (due_date - (today or datetime.now(IST).date())).days
     if delta < 0:
         return "overdue"
     if delta == 0:
