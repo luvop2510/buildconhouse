@@ -127,6 +127,9 @@ async def import_accepted(
     blob_map: dict[str, str] | None = None,
     floor_id: str | None = None,
     force_landscape_images: bool = False,
+    *,
+    category_docs: list[dict] | None = None,
+    supplier_asset_scope: str | None = None,
 ) -> dict:
     """Persist all rows in job['rows'] with status == 'accepted' into products.
 
@@ -151,7 +154,10 @@ async def import_accepted(
         await db.brands.insert_one(b.model_dump())
         brand_doc = b.model_dump()
 
-    cats = await db.categories.find({"floor_id": floor_id}, {"_id": 0}).to_list(80)
+    # Operator imports may supply their preflighted categories for this floor.
+    cats = category_docs
+    if cats is None:
+        cats = await db.categories.find({"floor_id": floor_id}, {"_id": 0}).to_list(80)
     cat_by_name = {c["name"].lower(): c for c in cats}
     from models import Category
 
@@ -342,6 +348,7 @@ async def import_accepted(
                     product_id=existing["id"], family_key=family_key,
                     brand_id=row_brand["id"], brand_slug=row_brand.get("slug") or supplier.lower(), floor_id=floor_id,
                     force_landscape_images=force_landscape_images,
+                    supplier_asset_scope=supplier_asset_scope,
                 )
                 version_filter = {"catalog_version": existing["catalog_version"]} if "catalog_version" in existing else {"catalog_version": {"$exists": False}}
                 result = await db.products.update_one(
@@ -372,6 +379,7 @@ async def import_accepted(
                 product_id=p.id, family_key=family_key,
                 brand_id=row_brand["id"], brand_slug=row_brand.get("slug") or supplier.lower(), floor_id=floor_id,
                 force_landscape_images=force_landscape_images,
+                supplier_asset_scope=supplier_asset_scope,
             )
             if raw_images:
                 await db.products.update_one({"id": p.id, "floor_id": floor_id}, {"$set": {"catalog_image_fingerprint": hashlib.sha256(json.dumps(raw_images, sort_keys=True).encode()).hexdigest()}})
@@ -390,6 +398,7 @@ async def _upload_supplier_images(
     images: list[str], metas: list[dict], quality: str, *,
     product_id: str, family_key: str | None, brand_id: str, brand_slug: str, floor_id: str,
     force_landscape_images: bool = False,
+    supplier_asset_scope: str | None = None,
 ) -> None:
     """Import base64 supplier images into Supabase via the MediaStorage layer.
 
@@ -424,6 +433,7 @@ async def _upload_supplier_images(
                 source_type="supplier", role=role,
                 is_primary=(i == 0), sort_order=i * 10,
                 force_landscape=force_landscape_images,
+                supplier_asset_scope=supplier_asset_scope,
             )
         except Exception as e:  # noqa: BLE001
             logger.warning("Supplier image upload failed product=%s index=%d error_type=%s", product_id, i, type(e).__name__)

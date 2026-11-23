@@ -97,6 +97,7 @@ async def upload_and_register(
     actor: Optional[UserPublic] = None,
     force_landscape: bool = False,
     registration_id: Optional[str] = None,
+    supplier_asset_scope: Optional[str] = None,
 ) -> ProductMedia:
     """Upload bytes to storage and persist metadata.
 
@@ -144,8 +145,10 @@ async def upload_and_register(
 
     width, height, quality = _detect_dims_and_quality(data, mime)
     bucket = private_bucket() if private else public_bucket()
+    # A workbook can share the same bytes across families. Only the object
+    # path is shared, while ownership stays bound to each product variant.
     key = make_storage_key(
-        brand_slug=brand_slug, family_key=family_key, product_id=product_id,
+        brand_slug=brand_slug, family_key=supplier_asset_scope or family_key, product_id=product_id,
         source_type=source_type, role=role, sha1=sha1, mime=mime,
     )
 

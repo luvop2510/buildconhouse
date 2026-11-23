@@ -103,7 +103,8 @@ async def test_failed_duplicate_restore_preserves_existing_metadata(media_fakes)
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("present", [True, False])
-async def test_supplier_siblings_reuse_one_object_and_own_separate_references(media_fakes, monkeypatch, present):
+@pytest.mark.parametrize("storage_scope", [None, "first-floor-workbook-assets"])
+async def test_supplier_siblings_reuse_one_object_and_own_separate_references(media_fakes, monkeypatch, present, storage_scope):
     collection, storage, _ = media_fakes
     collection.find_one.side_effect = [None, {"id": "sibling"}]
     storage.exists = AsyncMock(return_value=present)
@@ -111,8 +112,12 @@ async def test_supplier_siblings_reuse_one_object_and_own_separate_references(me
     monkeypatch.setattr(service, "public_bucket", lambda: "public")
     saved = await service.upload_and_register(data=b"<svg xmlns='http://www.w3.org/2000/svg'/>",
         mime="image/svg+xml", brand_slug="qutone", brand_id="qutone-id", floor_id="ground-floor",
-        product_id="variant", family_key="qutone:progetto:sample", source_type="supplier", role="hero")
+        product_id="variant", family_key="qutone:progetto:sample", source_type="supplier", role="hero",
+        supplier_asset_scope=storage_scope)
     assert saved.public_url == "https://example.test/image.png"
     assert collection.insert_one.call_args.args[0]["product_id"] == "variant"
+    assert saved.family_key == "qutone:progetto:sample"
+    if storage_scope:
+        assert saved.storage_key.startswith(f"qutone/{storage_scope}/supplier/")
     assert collection.find_one.call_args.args[0]["storage_key"] == saved.storage_key
     assert storage.upload.await_count == int(not present)
