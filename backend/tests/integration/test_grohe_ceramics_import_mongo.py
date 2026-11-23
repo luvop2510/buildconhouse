@@ -44,6 +44,8 @@ class LocalStorage:
 @pytest.mark.asyncio
 async def test_grohe_ceramics_import_preserves_catalogue_identity_and_history(tile_replica, monkeypatch):
     from services import catalog_database, catalog_service
+    from services.mutation_admission import AdmissionBusy, admission
+    from services.mutation_scopes import CATALOG
 
     pdf_path = os.environ.get("GROHE_TEST_PDF")
     if not pdf_path:
@@ -101,7 +103,12 @@ async def test_grohe_ceramics_import_preserves_catalogue_identity_and_history(ti
         assert await database.categories.count_documents({"name": "Basin"}) == 0
 
         storage.fail_upload = False
-        job_id = await publish(initial)
+        async with admission(database, scope=CATALOG):
+            with pytest.raises(AdmissionBusy):
+                await publish(initial)
+        assert await database.products.count_documents({}) == len(unrelated) + 1
+        async with admission(database, scope={"quotations": None}):
+            job_id = await publish(initial)
         assert job_id
         assert (await database.catalog_import_snapshots.count_documents({"job_id": job_id})) == 82
         products = {product["sku"]: product async for product in database.products.find(namespace, {"_id": 0})}
