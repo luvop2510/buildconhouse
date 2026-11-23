@@ -620,7 +620,13 @@ export default function Catalog() {
         }
       />
       <CreateCatalogProduct visible={createOpen} floorId={selectedFloorId} brands={brands} categories={categories}
-        onClose={() => setCreateOpen(false)} onCreated={() => { void load(); }} />
+        onClose={() => setCreateOpen(false)} onCreated={product => {
+          resetFilters();
+          setBrandIdValues([product.brand_id]);
+          setCatValues([product.category_id]);
+          setQ(product.sku);
+          setSearchQuery(product.sku);
+        }} />
 
       <BottomSheet visible={categoryDeleteOpen} onClose={() => setCategoryDeleteOpen(false)} title="Delete category" testID="delete-category-sheet">
         <View style={{ gap: spacing.md }}>
@@ -793,6 +799,9 @@ function FamilyCard({ family: f, brandName, onPress }: { family: Family; brandNa
             {[f.catalog_entry?.source_sku || representative.sku, representative.size, representative.finish].filter(Boolean).join(" · ")}
           </Text>
         ) : null}
+        {f.variants.length > 0 && f.variants.every(variant => variant.specs?.availability === "Coming Soon")
+          ? <Text style={type.caption}>Coming Soon</Text>
+          : null}
 
         {/* swatch row — reserved height always, so family cards with and
             without multiple variants sit at identical row heights (same
@@ -866,6 +875,7 @@ function ProductCard({ product: p, brandName, onPress }: { product: Product; bra
         <Text numberOfLines={2} style={styles.title}>{name}</Text>
         {size ? <Text style={type.caption} numberOfLines={1}>{[size, p.finish].filter(Boolean).join(" · ")}</Text> : null}
         <Text style={type.caption} numberOfLines={1}>{p.catalog_entry?.source_sku || p.sku}{!size && p.finish ? ` · ${p.finish}` : ""}</Text>
+        {p.specs?.availability === "Coming Soon" ? <Text style={type.caption}>Coming Soon</Text> : null}
         {p.must_buy_concealed && (p.concealed_skus?.length || p.concealed_sku) ? (
           <Text numberOfLines={1} style={{ fontSize: 10, fontWeight: "700", color: "#B45309" }}>
             Must Buy Concealed · {(p.concealed_skus?.length ? p.concealed_skus : [p.concealed_sku]).filter(Boolean).join(", ")}

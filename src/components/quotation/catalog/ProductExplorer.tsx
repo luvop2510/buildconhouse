@@ -20,6 +20,7 @@ import { ProductFilterSheet } from "../sheets/ProductFilterSheet";
 import { VariantSwatchStrip } from "../shared/VariantChip";
 import { QuickAddButton } from "../shared/QuickAddButton";
 import { resolveVariantImages } from "../helpers/media";
+import { catalogAvailability, defaultIncludedParts } from "../helpers/concealedParts";
 import { variantDescriptor } from "../helpers/pricing";
 import { quotationGridColumns } from "../helpers/responsive";
 import type { Product, ProductVariant } from "../helpers/types";
@@ -386,6 +387,8 @@ function ProductGridCardImpl({ product, compact, width, favourite, addedQty, onT
   const selectedPrice = selectedVariant?.price ?? product.price;
   const selectedMrp = selectedVariant?.mrp ?? product.mrp;
   const mrpOverride = selectedVariant ? selectedVariant.catalog_mrp_override : product.catalog_mrp_override;
+  const availability = catalogAvailability(product, selectedVariant);
+  const hasSeatCover = defaultIncludedParts(product, selectedVariant).some(part => part.role === "seat_cover");
 
   return (
     <View
@@ -442,6 +445,8 @@ function ProductGridCardImpl({ product, compact, width, favourite, addedQty, onT
           {selectedSku}{product.brand_name ? ` · ${product.brand_name}` : ""}
         </Text>
 
+        {availability ? <Text style={type.caption}>{availability}</Text> : null}
+        {hasSeatCover ? <Text style={type.caption}>Seat cover added automatically</Text> : null}
         <View style={styles.priceRow}>
           <View style={styles.priceCol}>
             <Text style={styles.price} numberOfLines={1} ellipsizeMode="clip">{catalogPriceUnknown(product, selectedVariant) ? "Price unavailable" : money(selectedPrice)}</Text>

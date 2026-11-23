@@ -32,23 +32,41 @@ for (const floor of ['first-floor', 'ground-floor']) {
     await page.route('**/api/categories**', route => route.fulfill({ json: [] }));
     await page.route('**/api/catalog/facets**', route => route.fulfill({ json: {} }));
     await page.route('**/api/catalog/hierarchy**', route => route.fulfill({ json: { tree: [] } }));
-    await page.route('**/api/products/families**', route => route.fulfill({ json: { items: [], total: 0 } }));
-    let created = 0;
+    let saved = false;
+    const attempts: string[] = [];
+    await page.route('**/api/products/families**', route => route.fulfill({
+      json: saved && new URL(route.request().url()).searchParams.get('q') === 'CUSTOM-1' ? { total: 1, items: [{
+      family_key: null, family_name: 'Synthetic product', brand_id: 'brand', category_id: 'category',
+      sample_product_id: 'new', floor_id: floor, min_price: 120, max_price: 120,
+      product_count: 1, variants: [{ id: 'new', sku: 'CUSTOM-1', price: 120, mrp: 120 }],
+      }] } : { items: [], total: 0 },
+    }));
     await page.route('**/api/products/catalog-custom', route => {
       const body = route.request().postDataJSON();
       expect(body.name).toBe('Synthetic product');
       expect(body.price).toBe(120);
       expect(route.request().headers()['x-floor-id']).toBe(floor);
-      created++;
-      return route.fulfill({ json: { id: 'new', floor_id: floor } });
+      attempts.push(body.request_id);
+      if (attempts.length === 1) return route.fulfill({ status: 503, json: { detail: 'Product save is temporarily unavailable' } });
+      saved = true;
+      return route.fulfill({ json: { id: 'new', sku: 'CUSTOM-1', brand_id: 'brand', category_id: 'category', floor_id: floor, active: true } });
     });
     await page.goto('/catalog');
+    await page.getByTestId('catalog-search').fill('Previously searched SKU');
     await page.getByTestId('add-catalog-product').click();
     await page.getByTestId('custom-catalog-name').fill('Synthetic product');
     await page.getByTestId('custom-catalog-price').fill('120');
     await page.getByTestId('save-catalog-custom-product').click();
-    await expect.poll(() => created).toBe(1);
+    await expect(page.getByRole('alert')).toHaveText('Product save is temporarily unavailable');
+    await expect(page.getByTestId('custom-catalog-name')).toHaveValue('Synthetic product');
+    await expect(page.getByTestId('custom-catalog-price')).toHaveValue('120');
+    await expect(page.getByTestId('family-new')).toHaveCount(0);
+    await page.getByTestId('save-catalog-custom-product').click();
+    await expect.poll(() => attempts.length).toBe(2);
+    expect(attempts[0]).toBe(attempts[1]);
     await expect(page.getByTestId('save-catalog-custom-product')).toHaveCount(0);
+    await expect(page.getByTestId('catalog-search')).toHaveValue('CUSTOM-1');
+    await expect(page.getByTestId('family-new')).toBeVisible();
   });
 }
 

@@ -115,13 +115,15 @@ def test_create_product_allows_same_sku_under_different_floor_brand(monkeypatch)
     existing = {"id": "p-existing", "sku": "SKU1", "floor_id": "first-floor", "brand_id": "brand-sanitary"}
     fake_db = _FakeDb([existing])
     monkeypatch.setattr(catalog_routes, "db", fake_db)
-    monkeypatch.setattr(catalog_routes.catalog_service, "schedule_catalog_refresh", lambda: None)
+    refreshes = []
+    monkeypatch.setattr(catalog_routes.catalog_service, "schedule_catalog_refresh", lambda: refreshes.append("scheduled"))
 
     body = _product_body(sku="SKU1", brand_id="brand-tile")
     result = asyncio.run(catalog_routes.create_product(body, user=_user("purchase", "ground-floor")))
 
     assert result.sku == "SKU1"
     assert len(fake_db.products.inserted) == 1
+    assert refreshes == ["scheduled"]
 
 
 def test_create_product_rejects_same_sku_under_same_floor_brand(monkeypatch):
@@ -144,13 +146,15 @@ def test_create_custom_product_allows_same_sku_under_different_floor_brand(monke
     existing = {"id": "p-existing", "sku": "SKU1", "floor_id": "first-floor", "brand_id": "brand-sanitary"}
     fake_db = _FakeDb([existing])
     monkeypatch.setattr(catalog_routes, "db", fake_db)
-    monkeypatch.setattr(catalog_routes.catalog_service, "schedule_catalog_refresh", lambda: None)
+    refresh = AsyncMock()
+    monkeypatch.setattr(catalog_routes.catalog_service, "refresh_after_product_creation", refresh)
 
     body = _product_body(sku="SKU1", brand_id="brand-tile", is_custom=False)
     result = asyncio.run(catalog_routes.create_custom_product(body, user=_user("sales", "ground-floor")))
 
     assert result.sku == "SKU1"
     assert len(fake_db.products.inserted) == 1
+    refresh.assert_awaited_once()
 
 
 def test_create_custom_product_rejects_same_sku_under_same_floor_brand(monkeypatch):

@@ -9,6 +9,7 @@ import inspect
 import re
 from dataclasses import replace
 from fastapi import HTTPException
+from catalog_policy import STAFF_CATALOG_SOURCES
 from db import db
 
 MAX_CONTEXT_PRODUCTS = 2500
@@ -94,7 +95,13 @@ def listing_pipeline(filters=None, *, floor_ids=None, q=None, per_category=False
         {"$lookup": {"from": "brands", "localField": "brand_id", "foreignField": "id", "as": "_brand"}},
         {"$set": {"_brand": {"$arrayElemAt": ["$_brand", 0]}}},
         {"$match": {"_brand.name": {"$not": {"$regex": r"^\s*axor\s*$", "$options": "i"}}, "_brand.slug": {"$not": {"$regex": r"^\s*axor\s*$", "$options": "i"}}, "$expr": {"$or": [
-            {"$eq": ["$catalog_source", "godown_intake"]},
+            {"$in": [{"$ifNull": ["$catalog_source", None]}, list(STAFF_CATALOG_SOURCES)]},
+            {"$and": [
+                {"$eq": [{"$ifNull": ["$catalog_source", None]}, None]},
+                {"$eq": ["$custom_keep_in_catalog", True]},
+                {"$eq": [{"$type": "$custom_created_by"}, "string"]},
+                {"$ne": ["$custom_created_by", ""]},
+            ]},
             {"$ne": [{"$ifNull": ["$_brand.catalog_authoritative", False]}, True]},
             {"$and": [{"$eq": ["$catalog_source", "$_brand.catalog_source"]}, {"$gt": [{"$size": {"$ifNull": ["$catalog_entries", []]}}, 0]}]},
         ]}}},

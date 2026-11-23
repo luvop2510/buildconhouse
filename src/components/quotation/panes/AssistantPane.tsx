@@ -27,6 +27,7 @@ import { Badge, EmptyState } from "@/src/components/ui";
 import { colors, money, PRODUCT_IMAGE_ASPECT_RATIO, radius, spacing, type } from "@/src/theme/tokens";
 
 import { useBuilder } from "../context/BuilderContext";
+import { catalogAvailability } from "../helpers/concealedParts";
 import { effectivePct } from "../helpers/pricing";
 import { productImageList, quotationLineImages, quotationProductImages, resolveVariantImages } from "../helpers/media";
 import { VariantChip } from "../shared/VariantChip";
@@ -146,34 +147,25 @@ export function AssistantPane({ onClose }: { onClose?: () => void }) {
     ...(focusedLine ? quotationLineImages(focusedLine) : []),
   ]));
   const price = focusedLine?.unit_price ?? activeVariant?.price ?? product.price;
-  const mrp = activeVariant?.mrp ?? product.mrp ?? product.price;
+  const mrp = focusedLine?.mrp ?? activeVariant?.mrp ?? product.mrp ?? product.price;
   const brand = product.brand_name || product.brand_id;
   const series = product.series || product.collection || null;
+  const availability = focusedLine?.availability ?? catalogAvailability(product, activeVariant);
+  const stock = activeVariant?.stock ?? product.stock;
+  const inStock = !availability && typeof stock === "number" && stock > 0;
 
   // If it's a line, discount + line total
   const eff = focusedLine ? effectivePct(focusedLine, b.s.roomDiscounts, b.s.categoryDiscounts, b.s.projectDiscount) : null;
-  const lineTotal = focusedLine ? focusedLine.qty * focusedLine.unit_price * (1 - (eff?.pct ?? 0) / 100) : null;
+  const lineTotal = focusedLine ? b.lineBreakdownById[focusedLine.id]?.net : null;
+  const linkedSeat = focusedLine?.included_part_role === "seat_cover" && !!focusedLine.included_for_line_id;
 
   // Variant change:
   // - If a line is focused, swap the line to that variant (via commit-style update).
   // - Otherwise (product-only focus), just refocus the assistant on that variant's sku.
   const onPickVariant = (v: ProductVariant) => {
     Haptics.selectionAsync();
-  if (focusedLine) {
-      const finish = v.finish ?? v.color ?? v.size ?? product.finish ?? null;
-      const displayName = (v.finish || v.color || v.size)
-        ? `${product.name} · ${v.finish || v.color || v.size}`
-        : product.name;
-      const photos = quotationProductImages(product, v);
-      b.updateLine(focusedLine.id, {
-        product_id: v.id ?? focusedLine.product_id,
-        sku: v.sku,
-        name: displayName,
-        unit_price: v.price ?? product.price,
-        finish,
-        image: photos[0] ?? null,
-        image_candidates: photos.slice(1),
-      });
+    if (focusedLine) {
+      b.replaceLineProduct(focusedLine.id, product, v);
     } else if (v.id) {
       b.setAssistantFocus({ kind: "product", product_id: v.id, product });
     }
@@ -219,7 +211,7 @@ export function AssistantPane({ onClose }: { onClose?: () => void }) {
         </View>
 
         {/* --- Variants --- */}
-        {(product.variants || []).length > 0 ? (
+        {!linkedSeat && (product.variants || []).length > 0 ? (
           <View style={{ gap: 8 }}>
             <Text style={type.overline}>Finish / Variant</Text>
             <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
@@ -258,13 +250,15 @@ export function AssistantPane({ onClose }: { onClose?: () => void }) {
         </View>
 
         {/* --- Qty controls (line-only) --- */}
-        {focusedLine ? (
+        {focusedLine && linkedSeat ? (
+          <Text style={type.body}>{focusedLine.qty} · Quantity follows WC</Text>
+        ) : focusedLine ? (
           <View style={{ gap: 8 }}>
             <Text style={type.overline}>Quantity</Text>
             <View style={styles.qtyRow}>
               <Pressable
                 testID="assist-qty-minus"
-                onPress={() => b.updateLine(focusedLine.id, { qty: Math.max(0, focusedLine.qty - 1) }, "qty")}
+                onPress={() => b.updateLine(focusedLine.id, { qty: Math.max(1, focusedLine.qty - 1) }, "qty")}
                 style={styles.qtyBtn}
               >
                 <Feather name="minus" size={16} color={colors.onSurface} />
@@ -344,17 +338,15 @@ export function AssistantPane({ onClose }: { onClose?: () => void }) {
         ) : null}
 
         {/* --- Stock --- */}
-        {typeof (activeVariant?.stock ?? product.stock) === "number" ? (
+        {(availability || typeof stock === "number") ? (
           <View style={styles.stockPill}>
             <Feather
-              name={((activeVariant?.stock ?? product.stock) || 0) > 0 ? "check-circle" : "alert-circle"}
+              name={inStock ? "check-circle" : "alert-circle"}
               size={13}
-              color={((activeVariant?.stock ?? product.stock) || 0) > 0 ? colors.success : colors.warning}
+              color={inStock ? colors.success : colors.warning}
             />
             <Text style={{ fontSize: 12, color: colors.onSurfaceSecondary, fontWeight: "600" }}>
-              {((activeVariant?.stock ?? product.stock) || 0) > 0
-                ? `In stock · ${activeVariant?.stock ?? product.stock} units`
-                : "Out of stock"}
+              {availability ?? (inStock ? `In stock · ${stock} units` : "Out of stock")}
             </Text>
           </View>
         ) : null}

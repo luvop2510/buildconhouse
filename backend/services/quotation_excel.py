@@ -24,7 +24,7 @@ from models import QuotationLineItem, RoomDiscountCfg
 from services.pdf_image_loader import prefetch_urls, remote_image_bytes
 from services.phone_format import PLAIN_INDIAN_MOBILE_FLOORS, format_department_phone
 from services.pricing import _resolve_line_rows
-from services.quotation_item_order import ordered_room_items
+from services.quotation_item_order import ordered_room_items, quotation_item_description, wc_seat_links
 
 TEMPLATE = Path(__file__).with_name("quotation_template.xlsx")
 S = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
@@ -132,6 +132,7 @@ def build_quotation_excel(doc: dict, customer: dict) -> bytes:
     if (doc.get("doc_type") or "standard") != "standard":
         raise ValueError("Quotation Excel is available for sanitary quotations")
     raw_items = list(doc.get("items") or [])
+    wc_seats = wc_seat_links(raw_items)
     final = doc.get("_po_final") or {}
     if final:
         costs = [(str(cost.get("name") or "Additional cost"), float(cost.get("amount") or 0)) for cost in final.get("additional_costs") or []]
@@ -246,7 +247,7 @@ def build_quotation_excel(doc: dict, customer: dict) -> bytes:
             mrp = float(raw.get("mrp") or raw.get("unit_price") or 0)
             net = price["gross"] - price["disc"]
             effective_pct = 100 * (1 - net / (mrp * qty)) if mrp and qty else 0
-            values = {"A": index+1, "B": str(raw.get("sku") or ""), "C": str(raw.get("description") or raw.get("name") or ""),
+            values = {"A": index+1, "B": str(raw.get("sku") or ""), "C": quotation_item_description(raw, wc_seats),
                 "D": None, "E": mrp if raw else None, "F": qty if raw else None, "H": effective_pct if raw else None}
             for column, value in values.items():
                 _set(root, f"{column}{number}", value)

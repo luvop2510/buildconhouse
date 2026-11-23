@@ -35,7 +35,7 @@ import { catalogPageProgress, catalogReferences, CATALOG_PAGE_SIZE, clearCatalog
 import { downloadApiFile } from "@/src/utils/downloadFile";
 
 import { computeTotals, computeLineBreakdown, type LineBreakdown } from "../helpers/pricing";
-import { QuotationMutations } from "../helpers/autosave";
+import { confirmQuotationLineCancellation, QuotationMutations } from "../helpers/autosave";
 import { quotationProductImages } from "../helpers/media";
 import { moveQuotationLine, reorderQuotationRoom } from "../helpers/reorder";
 import { cloneRoomProducts, hasReservedStock, matchesSavedRoomSnapshot, previewQuantityIncrease, quotationRoom, quotationRoomLines, validQuantityIncrease, type SavedRoomSnapshot } from "../helpers/roomProducts";
@@ -43,7 +43,7 @@ import { restoreSingleCatalogChoice } from "../helpers/catalogFilters";
 import { suggestedProductArea } from "../helpers/areas";
 import { godownQuotationPrice } from "../helpers/godown";
 import type { GodownLot } from "@/src/api/godownStock";
-import { addProductAndConcealedPart, syncDefaultIncludedParts } from "../helpers/concealedParts";
+import { addProductAndConcealedPart, catalogAvailability, syncDefaultIncludedParts, wcCombinations } from "../helpers/concealedParts";
 import {
   Brand, BuilderRow, BuilderState, Category, Customer, DEFAULT_ROOMS, DescSheetState, DiscountSheetState,
   INITIAL_BUILDER_STATE, Line, PickerTab, Product, ProductVariant,
@@ -54,6 +54,8 @@ import { catalogPriceUnknown, catalogProductDetailPath } from "../helpers/catalo
 
 export type BuilderCatalogSort = Exclude<CatalogSort, "source" | "default">;
 const BUILDER_CATALOG_SORTS = new Set<unknown>(["popular", "recent", "price_asc", "price_desc", "name", "custom"]);
+
+type CancelledQuotation = SavedRoomSnapshot & { id: string; updated_at: string; items: Line[] };
 
 type CatalogFamily = {
   family_key?: string | null; family_name?: string | null; brand_id: string; category_id: string;
@@ -211,6 +213,7 @@ export type BuilderApi = {
   usedCategoryIds: string[];
   flatRows: BuilderRow[];
   lineBreakdownById: Record<string, LineBreakdown>;
+  wcCombinationsById: ReturnType<typeof wcCombinations<Line>>;
   recoveryDraft: BuilderDraft | null;
   recoveryBusy: boolean;
   recoveryError: string | null;
@@ -248,6 +251,7 @@ export type BuilderApi = {
   referrerSwitcherOpen: boolean; setReferrerSwitcherOpen: (v: boolean) => void;
   addFromProduct: (p: Product, variant?: ProductVariant, quantity?: number, notes?: string) => void;
   updateLine: (id: string, patch: Partial<Line>, coalesceKey?: string) => void;
+  replaceLineProduct: (id: string, product: Product, variant?: ProductVariant) => void;
   removeLine: (id: string) => void;
   /** Cancel a product with an auditable order-line adjustment when saved. */
   cancelLine: (id: string) => Promise<boolean>;
@@ -960,13 +964,13 @@ export function BuilderProvider({ onFinalize, onStartNew, initialProductId, init
     } catch {}
   }, [activeFloorId, workspace]);
 
-  const restoreQuotation = useCallback(async (id: string, announce = true, initial = false) => {
-    if (!canUpdateQuotation) { toast.error("You don't have access to edit saved quotations"); return; }
+  const restoreQuotation = useCallback(async (id: string, announce = true, initial = false, confirmed?: CancelledQuotation) => {
+    if (!canUpdateQuotation) { toast.error("You don't have access to edit saved quotations"); return false; }
     const request = ++restoreRequest.current;
     try {
-      const doc = await api.get<any>(`/quotations/${id}?with_completion=true`, { floorId: activeFloorId });
-      if (request !== restoreRequest.current) return;
-      if (doc.id !== id) throw new Error("Unexpected quotation data.");
+      const doc = confirmed ?? await api.get<any>(`/quotations/${id}?with_completion=true`, { floorId: activeFloorId });
+      if (request !== restoreRequest.current) return false;
+      if (doc.id !== id || (confirmed && typeof doc.customer_id !== "string")) throw new Error("Unexpected quotation data.");
       setOutcomeSnapshot(doc.customer_outcome === "won" || doc.customer_outcome === "lost" ? { id: doc.id, floorId: activeFloorId, outcome: doc.customer_outcome } : null);
       documentGeneration.current += 1;
       if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -974,6 +978,7 @@ export function BuilderProvider({ onFinalize, onStartNew, initialProductId, init
       for (const r of doc.collapsed_rooms || []) collapsed[r] = true;
       const ui: any = doc.ui_state || {};
       const rooms: string[] = doc.rooms?.length ? doc.rooms : [DEFAULT_ROOMS[0]];
+      const previousLines = new Map(confirmed ? stateRef.current.lines.map(line => [line.id, line]) : []);
       const restored: BuilderState = {
         customerId: doc.customer_id,
         header: {
@@ -985,26 +990,34 @@ export function BuilderProvider({ onFinalize, onStartNew, initialProductId, init
           referrerId: doc.referrer_id || null,
           referrerName: doc.referrer_name || "",
         },
-        lines: (doc.items || []).map((it: any) => ({
-          ...it,
-          id: it.id, product_id: it.product_id, sku: it.sku, name: it.name,
-          image: it.image, category_id: it.category_id, room: it.room, area: it.area ?? null,
-          qty: it.qty, unit_price: it.unit_price, mrp: it.mrp ?? null,
-          discount_pct: it.discount_pct ?? null,
-          description: it.description, notes: it.notes,
-          finish: it.finish ?? null, family_key: it.family_key ?? null,
-          included_for_line_id: it.included_for_line_id ?? null,
-          included_qty_per_parent: it.included_qty_per_parent ?? null,
-          // Preserve immutable godown allocation provenance when reopening a
-          // confirmed quotation. Omitting these fields would make a later
-          // unrelated edit look like a stock-source swap to the backend.
-          godown_stock_id: it.godown_stock_id ?? null,
-          godown_allocation_id: it.godown_allocation_id ?? null,
-          godown_source_customer_name: it.godown_source_customer_name ?? null,
-          godown_source_purchased_at: it.godown_source_purchased_at ?? null,
-          godown_transferred_at: it.godown_transferred_at ?? null,
-          godown_allocated_at: it.godown_allocated_at ?? null,
-        })),
+        lines: (doc.items || []).map((it: any) => {
+          const previous = previousLines.get(it.id);
+          const candidates = previous && previous.product_id === it.product_id && previous.sku === it.sku
+            ? previous.image_candidates : undefined;
+          return {
+            ...it,
+            image_candidates: it.image_candidates ?? candidates,
+            id: it.id, product_id: it.product_id, sku: it.sku, name: it.name,
+            image: it.image, category_id: it.category_id, room: it.room, area: it.area ?? null,
+            qty: it.qty, unit_price: it.unit_price, mrp: it.mrp ?? null,
+            discount_pct: it.discount_pct ?? null,
+            description: it.description, notes: it.notes,
+            finish: it.finish ?? null, family_key: it.family_key ?? null,
+            included_for_line_id: it.included_for_line_id ?? null,
+            included_qty_per_parent: it.included_qty_per_parent ?? null,
+            included_part_role: it.included_part_role ?? null,
+            availability: it.availability ?? null,
+            // Preserve immutable godown allocation provenance when reopening a
+            // confirmed quotation. Omitting these fields would make a later
+            // unrelated edit look like a stock-source swap to the backend.
+            godown_stock_id: it.godown_stock_id ?? null,
+            godown_allocation_id: it.godown_allocation_id ?? null,
+            godown_source_customer_name: it.godown_source_customer_name ?? null,
+            godown_source_purchased_at: it.godown_source_purchased_at ?? null,
+            godown_transferred_at: it.godown_transferred_at ?? null,
+            godown_allocated_at: it.godown_allocated_at ?? null,
+          };
+        }),
         rooms,
         collapsedRooms: collapsed,
         activeRoom: rooms.includes(ui.activeRoom) ? ui.activeRoom : rooms[0],
@@ -1022,7 +1035,9 @@ export function BuilderProvider({ onFinalize, onStartNew, initialProductId, init
       setQuotationNumber(doc.number);
       setQuotationStatus(doc.status || "draft");
       if (initial) setInitialReady(true);
-      setCompletionSnapshot({ id: doc.id, customerId: doc.customer_id, floorId: activeFloorId, completed: doc.purchase_completion_status === "completed" });
+      if (!confirmed || doc.purchase_completion_status) {
+        setCompletionSnapshot({ id: doc.id, customerId: doc.customer_id, floorId: activeFloorId, completed: doc.purchase_completion_status === "completed" });
+      }
       setSaveState("saved");
       setSavedAt(new Date(doc.updated_at || Date.now()));
       // Restore UI filter state too
@@ -1031,11 +1046,13 @@ export function BuilderProvider({ onFinalize, onStartNew, initialProductId, init
       setSelectedSizes(Array.isArray(ui.selectedSizes) ? ui.selectedSizes : []);
       setSortKey(BUILDER_CATALOG_SORTS.has(ui.sortKey) ? ui.sortKey : null);
       if (announce) toast.success(`Restored ${doc.number}`);
+      return true;
     } catch (e: any) {
-      if (request !== restoreRequest.current) return;
+      if (request !== restoreRequest.current) return false;
       const message = typeof e?.detail === "string" ? e.detail : "Could not open the saved quotation.";
       if (initial) setOpeningError(message);
       else toast.error(message);
+      return false;
     }
   }, [history, activeFloorId, canUpdateQuotation]);
 
@@ -1140,6 +1157,8 @@ export function BuilderProvider({ onFinalize, onStartNew, initialProductId, init
   const lineBreakdownById = useMemo(() => Object.fromEntries(
     computeLineBreakdown(s.lines, s.projectDiscount, s.categoryDiscounts, s.roomDiscounts).map(row => [row.line.id, row]),
   ), [s.lines, s.projectDiscount, s.categoryDiscounts, s.roomDiscounts]);
+
+  const wcCombinationsById = useMemo(() => wcCombinations(s.lines, lineBreakdownById), [s.lines, lineBreakdownById]);
 
   const categoryById: Record<string, string> = useMemo(
     () => Object.fromEntries(categories.map((c) => [c.id, c.name])),
@@ -1378,6 +1397,7 @@ export function BuilderProvider({ onFinalize, onStartNew, initialProductId, init
       (cur) => {
         const parent = cur.lines.find((line) => line.id === id);
         if (!parent || parent.included_for_line_id) return cur;
+        if (patch.qty != null && (!Number.isFinite(patch.qty) || patch.qty <= 0)) return cur;
         const nextParent = { ...parent, ...patch };
         return {
           ...cur,
@@ -1424,23 +1444,33 @@ export function BuilderProvider({ onFinalize, onStartNew, initialProductId, init
       toast.success("Product removed from the draft");
       return true;
     }
+    const generation = documentGeneration.current;
     try {
-      await api.post(
-        `/quotations/${quotationId}/items/${id}/cancel`,
-        { reason: "Cancelled from the customer quotation workspace" },
-        { floorId: activeFloorId },
-      );
-      await restoreQuotation(quotationId, false);
-      toast.success("Product cancelled and customer balance refreshed");
-      return true;
+      if (!(await persistSnapshot(stateRef.current))) return false;
+      return !!(await mutations.save(quotationMutationKey(quotationId), async () => {
+        if (generation !== documentGeneration.current) return null;
+        const linkedIds = stateRef.current.lines.filter(line => line.included_for_line_id === id).map(line => line.id);
+        const options = { floorId: activeFloorId };
+        const confirmed = await confirmQuotationLineCancellation(
+          quotationId, id, linkedIds,
+          () => api.post<CancelledQuotation>(`/quotations/${quotationId}/items/${id}/cancel`, {
+            reason: "Cancelled from the customer quotation workspace",
+            expected_updated_at: serverSavedAtRef.current || undefined,
+          }, options),
+          () => api.get<CancelledQuotation>(`/quotations/${quotationId}?with_completion=true`, { ...options, cacheMs: 0 }),
+        );
+        if (generation !== documentGeneration.current || !(await restoreQuotation(quotationId, false, false, confirmed))) return null;
+        toast.success("Product cancelled and customer balance refreshed");
+        return quotationId;
+      }));
     } catch (error: any) {
       // A fulfilled purchase line or completed-payment reconciliation needs a
       // purchasing/refund adjustment. Surface the API's concrete instruction
       // rather than locally changing the quotation and losing that context.
-      toast.error(error?.detail || "Could not cancel this product");
+      toast.error(error?.detail || error?.message || "Could not cancel this product");
       return false;
     }
-  }, [quotationId, activeFloorId, removeLine, restoreQuotation, history.state.lines]);
+  }, [quotationId, activeFloorId, removeLine, restoreQuotation, history.state.lines, persistSnapshot, mutations, quotationMutationKey]);
 
   const duplicateLine = useCallback((id: string) => {
     Haptics.selectionAsync();
@@ -1451,9 +1481,11 @@ export function BuilderProvider({ onFinalize, onStartNew, initialProductId, init
       if (original.included_for_line_id) return cur;
       const copy = { ...original, id: `${original.product_id}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, included_for_line_id: null, included_qty_per_parent: null };
       const includedCopies = cur.lines.filter((line) => line.included_for_line_id === original.id)
-        .map((line, itemIdx) => ({ ...line, id: `${line.product_id}-${Date.now()}-included-copy-${itemIdx}`, included_for_line_id: copy.id }));
-      const next = [...cur.lines]; next.splice(idx + 1, 0, copy);
-      next.splice(idx + 2, 0, ...includedCopies);
+        .map((line, itemIdx) => ({ ...line, id: `${copy.id}-part-${itemIdx}`, included_for_line_id: copy.id }));
+      const after = cur.lines.reduce((position, line, index) =>
+        line.included_for_line_id === original.id ? Math.max(position, index) : position, idx);
+      const next = [...cur.lines];
+      next.splice(after + 1, 0, copy, ...includedCopies);
       return { ...cur, lines: next };
     });
   }, [history]);
@@ -1659,26 +1691,24 @@ export function BuilderProvider({ onFinalize, onStartNew, initialProductId, init
     }
   }, [activeFloorId]);
 
-  const commitSwap = useCallback((target: Product, variant?: ProductVariant) => {
-    const cur = swapSheet;
-    if (!cur) return;
+  const replaceLineProduct = useCallback((id: string, target: Product, variant?: ProductVariant) => {
     Haptics.selectionAsync();
     history.apply((c) => {
-      const idx = c.lines.findIndex((l) => l.id === cur.line_id);
-      if (idx < 0) return c;
+      const idx = c.lines.findIndex((l) => l.id === id);
+      if (idx < 0 || c.lines[idx].included_for_line_id) return c;
       const src = c.lines[idx];
       const variantColour = variant?.colour ?? variant?.color;
       const finish = variant?.finish ?? variantColour ?? variant?.size ?? target.finish ?? target.colour ?? null;
-      const displayName = variant && (variant.finish || variantColour || variant.size)
-        ? `${target.name} · ${variant.finish || variantColour || variant.size}`
-        : target.name;
-      const next = [...c.lines];
+      const displayName = variant?.name || target.name;
       const selectedProductId = variant?.id ?? target.id;
+      const sku = variant?.sku ?? target.sku;
+      if (src.product_id === selectedProductId && src.sku === sku) return c;
+      const next = [...c.lines];
       const photos = quotationProductImages(target, variant);
       next[idx] = {
         ...src,
         product_id: selectedProductId,
-        sku: variant?.sku ?? target.sku,
+        sku,
         name: displayName,
         image: photos[0] ?? null,
         image_candidates: photos.slice(1),
@@ -1686,6 +1716,8 @@ export function BuilderProvider({ onFinalize, onStartNew, initialProductId, init
         unit_price: variant?.price ?? target.price,
         mrp: variant?.mrp ?? target.mrp,
         finish,
+        availability: catalogAvailability(target, variant),
+        description: variant?.description ?? target.description ?? null,
         family_key: target.family_key ?? src.family_key ?? null,
         // A godown allocation is for one exact SKU. Never carry its source
         // identifiers to a swapped product, otherwise the replacement could
@@ -1707,8 +1739,13 @@ export function BuilderProvider({ onFinalize, onStartNew, initialProductId, init
         ),
       };
     });
+  }, [history]);
+
+  const commitSwap = useCallback((target: Product, variant?: ProductVariant) => {
+    if (!swapSheet) return;
+    replaceLineProduct(swapSheet.line_id, target, variant);
     setSwapSheet(null); setSwapItems([]);
-  }, [history, swapSheet]);
+  }, [replaceLineProduct, swapSheet]);
 
   const closeSwap = useCallback(() => { setSwapSheet(null); setSwapItems([]); }, []);
 
@@ -1851,12 +1888,12 @@ export function BuilderProvider({ onFinalize, onStartNew, initialProductId, init
     productModal, openProductModal, closeProductModal, patchProduct,
     customProductSheetOpen, setCustomProductSheetOpen,
     recentQuotations, refreshRecentQuotations, deleteQuotation, startNewQuotation,
-    totals, usedCategoryIds, flatRows, lineBreakdownById, recoveryDraft, recoveryBusy, recoveryError, recoveryCheckError, retryRecoveryCheck, restoreLocalDraft, dismissRecovery,
+    totals, usedCategoryIds, flatRows, lineBreakdownById, wcCombinationsById, recoveryDraft, recoveryBusy, recoveryError, recoveryCheckError, retryRecoveryCheck, restoreLocalDraft, dismissRecovery,
     quotationId, quotationNumber, quotationStatus, refreshQuotationStatus, customerCompleted, customerOutcome, saveState, savedAt, saveLabel, persist, finalize,
     workflowBusy, generateOfficialQuotation, generateQuotationExcel, generateProductPpt, placeOrder,
     setCustomer, createCustomer, importCustomerFromGround, customerSwitcherOpen, setCustomerSwitcherOpen,
     setReferrer, clearReferrer, createReferrer, referrerSwitcherOpen, setReferrerSwitcherOpen,
-    addFromProduct, updateLine, removeLine, cancelLine, duplicateLine, moveLineToNextRoom, moveLine, moveRoom,
+    addFromProduct, updateLine, replaceLineProduct, removeLine, cancelLine, duplicateLine, moveLineToNextRoom, moveLine, moveRoom,
     addRoom, renameRoom, duplicateRoom, deleteRoom, setActiveRoom, onRoomDragEnd, onLinesDragEnd, saveRoomProducts, roomProductSaveBusy,
     setProjectDiscount, setCategoryDiscount, setRoomDiscount, setNotes,
     swapItems, swapLoading, openSwap, commitSwap, closeSwap,
@@ -1880,12 +1917,12 @@ export function BuilderProvider({ onFinalize, onStartNew, initialProductId, init
     productModal, openProductModal, closeProductModal, patchProduct,
     customProductSheetOpen, setCustomProductSheetOpen,
     recentQuotations, refreshRecentQuotations, deleteQuotation, startNewQuotation,
-    totals, usedCategoryIds, flatRows, lineBreakdownById, recoveryDraft, recoveryBusy, recoveryError, recoveryCheckError, retryRecoveryCheck, restoreLocalDraft, dismissRecovery,
+    totals, usedCategoryIds, flatRows, lineBreakdownById, wcCombinationsById, recoveryDraft, recoveryBusy, recoveryError, recoveryCheckError, retryRecoveryCheck, restoreLocalDraft, dismissRecovery,
     quotationId, quotationNumber, quotationStatus, refreshQuotationStatus, customerCompleted, customerOutcome, saveState, savedAt, saveLabel, persist, finalize,
     workflowBusy, generateOfficialQuotation, generateQuotationExcel, generateProductPpt, placeOrder,
     setCustomer, createCustomer, importCustomerFromGround, customerSwitcherOpen, setCustomerSwitcherOpen,
     setReferrer, clearReferrer, createReferrer, referrerSwitcherOpen, setReferrerSwitcherOpen,
-    addFromProduct, updateLine, removeLine, cancelLine, duplicateLine, moveLineToNextRoom, moveLine, moveRoom,
+    addFromProduct, updateLine, replaceLineProduct, removeLine, cancelLine, duplicateLine, moveLineToNextRoom, moveLine, moveRoom,
     addRoom, renameRoom, duplicateRoom, deleteRoom, setActiveRoom, onRoomDragEnd, onLinesDragEnd, saveRoomProducts, roomProductSaveBusy,
     setProjectDiscount, setCategoryDiscount, setRoomDiscount, setNotes,
     swapItems, swapLoading, openSwap, commitSwap, closeSwap,

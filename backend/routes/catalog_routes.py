@@ -16,7 +16,7 @@ from auth import floor_for_write, floor_inherit, floor_query, floor_scope_ids, g
 from db import db, strip_ids
 from pymongo.read_concern import ReadConcern
 from pymongo.write_concern import WriteConcern
-from catalog_policy import removed_brand_document
+from catalog_policy import MANUAL_CATALOG_SOURCE, removed_brand_document
 from models import Brand, BrandCreate, Category, CategoryCreate, ConcealedPart, Product, ProductCreate, ProductPatch, SizeVariantResolution, UserPublic
 from services import catalog_service, media_service
 from services import catalog_product_order as product_order
@@ -46,7 +46,7 @@ async def _require_product_relations_on_floor(brand_id: str, category_id: str, f
     """Keep a product's denormalized catalog hierarchy within one floor."""
     brand, category = await asyncio.gather(
         db.brands.find_one({"id": brand_id, "floor_id": floor_id}, {"_id": 0, "id": 1, "name": 1, "slug": 1}),
-        db.categories.find_one({"id": category_id, "floor_id": floor_id}, {"_id": 0, "id": 1}),
+        db.categories.find_one({"id": category_id, "floor_id": floor_id}, {"_id": 0, "id": 1, "brand_id": 1}),
     )
     if brand and removed_brand_document(brand):
         raise HTTPException(status_code=400, detail="This brand is no longer distributed")
@@ -55,6 +55,8 @@ async def _require_product_relations_on_floor(brand_id: str, category_id: str, f
             status_code=400,
             detail="Product brand_id and category_id must belong to the same floor as the product.",
         )
+    if category.get("brand_id") and category["brand_id"] != brand_id:
+        raise HTTPException(status_code=400, detail="This category belongs to a different brand.")
 
 
 # ---------- Brands ----------
@@ -674,7 +676,8 @@ async def create_custom_product(
     rejection.
     """
     prod = await _create_custom_record(body, user, keep_in_catalog=body.keep_in_catalog)
-    catalog_service.schedule_catalog_refresh()
+    if prod["active"]:
+        await catalog_service.refresh_after_product_creation()
     return Product(**prod)
 
 
@@ -686,6 +689,8 @@ class CatalogCustomProductInput(BaseModel):
     mrp: float = Field(ge=0)
     brand_id: str = ""
     category_id: str = ""
+    size: Optional[str] = Field(default=None, max_length=200)
+    finish: Optional[str] = Field(default=None, max_length=200)
     request_id: str = Field(min_length=8, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
 
 
@@ -706,8 +711,7 @@ async def _custom_reference(collection, model, floor_id):
     return row["id"]
 
 
-@router.post("/products/catalog-custom", response_model=Product)
-async def create_catalog_custom_product(body: CatalogCustomProductInput, user: UserPublic = Depends(require_min_role("purchase"))):
+async def _catalog_custom_body(body: CatalogCustomProductInput, user: UserPublic) -> ProductCreate:
     name = body.name.strip()
     if not name:
         raise HTTPException(422, "Enter a product name")
@@ -716,10 +720,17 @@ async def create_catalog_custom_product(body: CatalogCustomProductInput, user: U
         raise HTTPException(403, "Custom catalog addition is available on the Ground and Sanitary floors")
     brand_id = body.brand_id or await _custom_reference(db.brands, Brand, floor_id)
     category_id = body.category_id or await _custom_reference(db.categories, Category, floor_id)
-    product = await _create_custom_record(ProductCreate(name=name, sku=body.sku.strip(), brand_id=brand_id,
-        category_id=category_id, price=body.price, mrp=body.mrp, is_custom=True,
-        keep_in_catalog=True, request_id=body.request_id), user, keep_in_catalog=True)
-    await catalog_service.refresh_catalog_snapshot()
+    return ProductCreate(
+        name=name, sku=body.sku.strip(), brand_id=brand_id, category_id=category_id,
+        price=body.price, mrp=body.mrp, size=(body.size or "").strip() or None,
+        finish=(body.finish or "").strip() or None, is_custom=True, request_id=body.request_id,
+    )
+
+
+@router.post("/products/catalog-custom", response_model=Product)
+async def create_catalog_custom_product(body: CatalogCustomProductInput, user: UserPublic = Depends(require_min_role("purchase"))):
+    product = await _create_custom_record(await _catalog_custom_body(body, user), user)
+    await catalog_service.refresh_after_product_creation()
     return Product(**product)
 
 
@@ -766,6 +777,8 @@ async def _create_custom_record(body: ProductCreate, user: UserPublic, *, keep_i
     payload["tags"] = list(set([*(payload.get("tags") or []), "custom"]))
     payload["floor_id"] = floor_id
     payload["active"] = keep_in_catalog and not pending_media
+    if keep_in_catalog:
+        payload["catalog_source"] = MANUAL_CATALOG_SOURCE
     if product_id:
         payload["id"] = product_id
     prod = Product(**payload)
@@ -795,8 +808,10 @@ async def create_product(
         raise HTTPException(status_code=409, detail="SKU already exists")
     payload = body.model_dump()
     payload["floor_id"] = floor_id
+    payload["catalog_source"] = MANUAL_CATALOG_SOURCE
     prod = Product(**payload)
     await db.products.insert_one(prod.model_dump())
+    # This legacy API has no request key to recover a committed write.
     catalog_service.schedule_catalog_refresh()
     return prod
 

@@ -14,7 +14,7 @@ import { Text } from "@/src/components/AppText";
 import { ProductImage } from "@/src/components/ProductImage";
 import { StatusBadge } from "@/src/components/ui";
 
-import { colors, radius, spacing, type } from "@/src/theme/tokens";
+import { colors, money, radius, spacing, type } from "@/src/theme/tokens";
 import { color as ds } from "@/src/design/tokens";
 import { BottomSheet } from "@/src/components/BottomSheet";
 import { RecentQuotationsPanel } from "../panes/RecentQuotationsPanel";
@@ -241,19 +241,25 @@ export function BuilderTopbar({
       <BottomSheet visible={previewOpen} onClose={() => setPreviewOpen(false)} title="Quotation preview" testID="quotation-preview-sheet">
         <View style={{ gap: 12 }} accessibilityLiveRegion="polite">
           <Text style={type.caption}>{b.s.customerId ? "Review items before generating the PDF or placing the order." : "Choose a customer before saving this quotation."}</Text>
-          {b.s.lines.map(line => (
-            <View key={line.id} style={styles.previewRow}>
-              <ProductImage
-                source={quotationLineImages(line)} style={styles.previewPhoto} fallbackLabel={line.sku}
-                accessibilityLabel={`${line.name} product image`} testID={`quotation-preview-photo-${line.id}`} disableSkeleton
-              />
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={styles.previewName} numberOfLines={2}>{line.name}</Text>
-                <Text style={type.caption}>{line.sku}{line.godown_stock_id ? ` · From godown${line.godown_source_customer_name ? ` · ${line.godown_source_customer_name}` : ""}` : ""}</Text>
+          {b.s.lines.map(line => {
+            const combination = b.wcCombinationsById[line.id];
+            const linkedCover = line.included_for_line_id && line.included_part_role === "seat_cover";
+            return (
+              <View key={line.id} style={[styles.previewRow, (combination || linkedCover) && styles.previewCombination, linkedCover && styles.previewLinkedCover]}>
+                <ProductImage
+                  source={quotationLineImages(line)} style={styles.previewPhoto} fallbackLabel={line.sku}
+                  accessibilityLabel={`${line.name} product image`} testID={`quotation-preview-photo-${line.id}`} disableSkeleton
+                />
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={styles.previewName} numberOfLines={2}>{line.name}</Text>
+                  <Text style={type.caption}>{line.sku}{line.availability ? ` · ${line.availability}` : ""}{line.godown_stock_id ? ` · From godown${line.godown_source_customer_name ? ` · ${line.godown_source_customer_name}` : ""}` : ""}</Text>
+                  {linkedCover ? <Text style={type.caption}>Linked seat cover</Text> : null}
+                  {combination ? <Text style={type.caption}>Combined MRP {money(combination.mrp)} · Quoted total {money(combination.net)}</Text> : null}
+                </View>
+                <Text style={styles.previewQty}>{line.qty} × ₹{line.unit_price.toLocaleString("en-IN")}</Text>
               </View>
-              <Text style={styles.previewQty}>{line.qty} × ₹{line.unit_price.toLocaleString("en-IN")}</Text>
-            </View>
-          ))}
+            );
+          })}
           <View style={styles.previewTotal}><Text style={type.titleMd}>Total</Text><Text style={type.titleLg}>₹{b.totals.grand.toLocaleString("en-IN")}</Text></View>
         </View>
       </BottomSheet>
@@ -287,6 +293,8 @@ const styles = StyleSheet.create({
   actionRow: { minHeight: 48, flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 12 },
   actionLabel: { fontSize: 15, fontWeight: "600", color: colors.onSurface },
   previewRow: { minHeight: 48, flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: colors.border },
+  previewCombination: { borderLeftWidth: 3, borderLeftColor: ds.brassLine, paddingLeft: 8 },
+  previewLinkedCover: { marginLeft: 10 },
   previewPhoto: { width: 48, height: 42 },
   previewName: { fontSize: 14, fontWeight: "600", color: colors.onSurface },
   previewQty: { fontSize: 12, fontWeight: "600", color: colors.onSurfaceMuted },

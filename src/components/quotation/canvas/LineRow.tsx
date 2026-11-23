@@ -40,6 +40,8 @@ function LineRowImpl({
   const [hovered, setHovered] = useState(false);
   const l = line;
   const isIncluded = !!l.included_for_line_id;
+  const seatCover = isIncluded && l.included_part_role === "seat_cover";
+  const wcCombination = b.wcCombinationsById[l.id];
   // Native number inputs emit an empty string while a salesperson replaces a
   // value. Do not turn that transient state into a persisted zero: it makes a
   // normal edit look like the line has vanished and can autosave bad totals.
@@ -88,6 +90,8 @@ function LineRowImpl({
         styles.row,
         isPhone && styles.rowPhone,
         hovered && !isActive && !focused && styles.rowHovered,
+        (seatCover || wcCombination) && styles.wcGroup,
+        seatCover && styles.wcSeatCover,
         focused && { borderColor: ds.brassLine, backgroundColor: ds.brassTint },
         // Dragging should read as an in-progress reordering state, not a
         // generic card-press animation. Color and opacity preserve the row's
@@ -119,13 +123,19 @@ function LineRowImpl({
         <View style={[styles.heading, isPhone && { flexDirection: "column", gap: 4 }]}>
           <View style={styles.nameGroup}>
             <Text style={styles.name} numberOfLines={isPhone ? 2 : 1}>{l.name}</Text>
-            {isIncluded ? <Badge tone="success" label="Included" /> : null}
+            {isIncluded ? <Badge tone="success" label={seatCover ? "Linked seat cover" : "Included"} /> : null}
             {l.finish ? <FinishSwatch finish={l.finish} size={10} /> : null}
             {badge ? <Badge tone={badge.tone} label={badge.label} /> : null}
           </View>
           <Text style={styles.total} numberOfLines={1}>{money(total)}</Text>
         </View>
-        <Text style={type.caption} numberOfLines={1}>{l.sku}</Text>
+        <Text style={type.caption} numberOfLines={1}>{l.sku}{l.availability ? ` · ${l.availability}` : ""}</Text>
+        {(wcCombination || seatCover) && l.mrp != null ? <Text style={type.caption}>MRP {money(l.mrp)}</Text> : null}
+        {wcCombination ? (
+          <Text testID={`wc-combination-${l.id}`} style={styles.wcTotal}>
+            Combined MRP {money(wcCombination.mrp)} · Quoted total {money(wcCombination.net)}
+          </Text>
+        ) : null}
         <View style={styles.areaRow}>
           <Feather name="layers" size={13} color={colors.onSurfaceMuted} />
           <TextInput
@@ -159,7 +169,7 @@ function LineRowImpl({
         {l.description ? <Text style={type.caption} numberOfLines={2}>{l.description}</Text> : null}
         <View style={styles.controls}>
           {isIncluded ? (
-            <Text style={styles.includedHint}>Quantity follows its selected product</Text>
+            <Text style={styles.includedHint}>{seatCover ? `${l.qty} × ${money(l.unit_price)} · Quantity follows WC` : "Quantity follows its selected product"}</Text>
           ) : <>
             <View {...(Platform.OS === "web" ? { dataSet: { fieldShell: "true" } } : {})} style={styles.mini}>
               <Text style={styles.miniLabel}>QTY</Text>
@@ -255,6 +265,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceSecondary, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
   },
   rowHovered: { borderColor: colors.brandBorder, backgroundColor: colors.surface, transform: [{ translateY: -1 }] },
+  wcGroup: { borderLeftWidth: 3, borderLeftColor: ds.brassLine },
+  wcSeatCover: { marginLeft: 10 },
+  wcTotal: { ...type.caption, color: colors.onSurface, fontFamily: font.semibold },
   rowPhone: { padding: 12, gap: 8, alignItems: "flex-start" },
   dragHandle: {
     width: 44, height: 44, alignItems: "center", justifyContent: "center",

@@ -335,7 +335,8 @@ async function mutate<T>(method: string, path: string, body?: unknown, opts?: Re
   try { const result = await request<T>(method, path, body, opts); committed = true; return result; }
   finally {
     clearApiResponseCache();
-    if (committed && ((method === "DELETE" && (path.startsWith("/products/") || path.startsWith("/categories/"))) || (method === "POST" && path === "/products/catalog-custom"))) {
+    const catalogAddition = method === "POST" && /^\/products(?:\/(?:catalog-)?custom(?:-with-media)?)?$/.test(path);
+    if (committed && (catalogAddition || (method === "DELETE" && (path.startsWith("/products/") || path.startsWith("/categories/"))))) {
       catalogMutationListeners.forEach(listener => listener(opts?.floorId));
     }
     if (deleting) updateDeletionProgress(-1);

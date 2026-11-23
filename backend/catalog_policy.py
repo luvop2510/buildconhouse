@@ -1,6 +1,9 @@
 """Exclude the discontinued catalog brand without modifying other suppliers."""
 from collections.abc import Mapping
 
+MANUAL_CATALOG_SOURCE = "manual_entry"
+STAFF_CATALOG_SOURCES = ("godown_intake", MANUAL_CATALOG_SOURCE)
+
 
 def removed_brand_identity(value) -> bool:
     """Match a brand identity only; descriptions and family names are unrelated."""

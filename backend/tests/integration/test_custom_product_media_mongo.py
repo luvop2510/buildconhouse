@@ -19,15 +19,17 @@ from services import activity_log, catalog_database, catalog_service, media_serv
 from tests.integration.test_purchase_completion_mongo import mongo_url  # noqa: F401
 
 
-@pytest.mark.parametrize("keep", [True, False])
-def test_photo_retry_real_bytes_and_quotation_reorder_reload(mongo_url, tmp_path, monkeypatch, keep):
+@pytest.mark.parametrize("keep, from_catalog", [(True, False), (False, False), (True, True)])
+def test_photo_retry_real_bytes_and_quotation_reorder_reload(mongo_url, tmp_path, monkeypatch, keep, from_catalog):
     async def run():
         client = AsyncIOMotorClient(mongo_url)
         db = client.custom_media
-        user = UserPublic(id="sales-photo", email="sales@example.test", full_name="Sales", role="sales", floor_ids=["first-floor"], active_floor_id="first-floor")
+        user = UserPublic(id="sales-photo", email="sales@example.test", full_name="Sales",
+                          role="purchase" if from_catalog else "sales", floor_ids=["first-floor"], active_floor_id="first-floor")
         for module in (catalog_routes, media_routes, quotation_routes, activity_log, catalog_database, media_service, sequence):
             monkeypatch.setattr(module, "db", db)
         monkeypatch.setattr(catalog_service, "schedule_catalog_refresh", lambda: None)
+        monkeypatch.setattr(catalog_service, "refresh_after_product_creation", AsyncMock())
         monkeypatch.setattr(quotation_routes, "_track_product_usage", AsyncMock())
         monkeypatch.setattr(quotation_routes, "reconcile_followups", AsyncMock())
 
@@ -59,18 +61,26 @@ def test_photo_retry_real_bytes_and_quotation_reorder_reload(mongo_url, tmp_path
         # Authentication uses a disposable identity; normal route role gates,
         # floor validation, multipart parsing and persistence remain active.
         try:
-            await db.brands.insert_one({"id": "brand", "name": "Test", "slug": "test", "floor_id": "first-floor"})
+            await db.brands.insert_one({"id": "brand", "name": "Test", "slug": "test", "floor_id": "first-floor",
+                                        "catalog_authoritative": True, "catalog_source": "supplier.xlsx"})
             await db.categories.insert_one({"id": "category", "name": "Basins", "floor_id": "first-floor"})
             await db.customers.insert_one({"id": "customer", "name": "Disposable buyer", "floor_id": "first-floor"})
             await db.products.create_index([("floor_id", 1), ("brand_id", 1), ("sku", 1)], unique=True)
             output = io.BytesIO()
             Image.new("RGB", (640, 480), "navy").save(output, "PNG")
             photo = output.getvalue()
-            body = {"name": "Test photo product", "sku": "PHOTO-1", "brand_id": "brand", "category_id": "category", "price": 450, "mrp": 450, "is_custom": True}
-            data = {"product": json.dumps(body), "request_id": "photo-integration-1", "keep_in_catalog": str(keep).lower()}
+            body = {"name": "Test photo product", "sku": "PHOTO-1", "brand_id": "brand", "category_id": "category",
+                    "price": 450, "mrp": 500, "is_custom": True, "size": "500 mm", "finish": "White"}
+            request_id = "photo-integration-1"
+            if from_catalog:
+                path = "/api/products/catalog-custom-with-media"
+                data = {"product": json.dumps({**body, "request_id": request_id})}
+            else:
+                path = "/api/products/custom-with-media"
+                data = {"product": json.dumps(body), "request_id": request_id, "keep_in_catalog": str(keep).lower()}
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as api:
                 async def upload():
-                    response = await api.post("/api/products/custom-with-media", data=data, files={"file": ("photo.png", photo, "image/png")})
+                    response = await api.post(path, data=data, files={"file": ("photo.png", photo, "image/png")})
                     assert response.status_code == 200, response.text
                     return response.json()
                 results = await asyncio.gather(upload(), upload())
@@ -84,8 +94,16 @@ def test_photo_retry_real_bytes_and_quotation_reorder_reload(mongo_url, tmp_path
                 assert hashlib.sha1(stored).hexdigest() == media["sha1"]
                 assert len(stored) == media["size_bytes"]
                 assert media["is_primary"] is True and media["floor_id"] == "first-floor"
-                assert (await db.products.find_one({"id": first["id"]}))["active"] is keep
+                saved_product = await db.products.find_one({"id": first["id"]})
+                assert saved_product["active"] is keep
+                assert saved_product["size"] == "500 mm" and saved_product["finish"] == "White"
+                assert saved_product["price"] == 450 and saved_product["mrp"] == 500
                 assert (first["id"] in (await snapshot()).product_by_id) is keep
+                matches = await api.get("/api/products", params={"q": first["sku"], "brand_id": "brand"})
+                assert matches.status_code == 200
+                assert matches.json()["total"] == int(keep)
+                if keep:
+                    assert matches.json()["items"][0]["hero_image_url"] == media["public_url"]
                 user = user.model_copy(update={"role": "purchase"})
                 edited = await api.patch(f'/api/products/{first["id"]}', json={"description": "Edited after custom addition"})
                 assert edited.status_code == 200, edited.text

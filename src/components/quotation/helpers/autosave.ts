@@ -46,3 +46,38 @@ export class QuotationMutations {
     return operation;
   }
 }
+
+type CancellationSnapshot = {
+  id: string;
+  updated_at: string;
+  items: { id: string; included_for_line_id?: string | null }[];
+};
+
+/** A lost cancellation response is confirmed by one fresh read, without replaying the write. */
+export async function confirmQuotationLineCancellation<T extends CancellationSnapshot>(
+  quotationId: string,
+  lineId: string,
+  linkedIds: readonly string[],
+  cancel: () => Promise<T>,
+  load: () => Promise<T>,
+): Promise<T> {
+  const removedIds = new Set([lineId, ...linkedIds]);
+  const confirmed = (doc: T) => doc?.id === quotationId && !!doc.updated_at && Array.isArray(doc.items)
+    && doc.items.every(line => typeof line?.id === "string" && !removedIds.has(line.id) && line.included_for_line_id !== lineId);
+  let failure: unknown;
+  try {
+    const doc = await cancel();
+    if (confirmed(doc)) return doc;
+  } catch (error) {
+    const status = (error as { status?: number })?.status;
+    if (status && status < 500 && status !== 404 && status !== 408) throw error;
+    failure = error;
+  }
+  try {
+    const doc = await load();
+    if (confirmed(doc)) return doc;
+  } catch (error) {
+    failure ??= error;
+  }
+  throw failure ?? new Error("Could not confirm the product removal. Reopen the saved quotation before retrying.");
+}

@@ -71,7 +71,7 @@ export function matchesSavedRoomSnapshot(state: BuilderState, saved: SavedRoomSn
   const lineFields = [
     "id", "product_id", "sku", "name", "room", "area", "qty", "unit_price", "mrp", "discount_pct",
     "description", "notes", "dimension", "exclude_dimension", "finish", "included_for_line_id",
-    "included_qty_per_parent", "godown_stock_id", "godown_allocation_id",
+    "included_qty_per_parent", "included_part_role", "availability", "godown_stock_id", "godown_allocation_id",
   ] satisfies (keyof Line)[];
   return Object.keys(categories).length === Object.keys(state.categoryDiscounts).length
     && Object.entries(categories).every(([id, pct]) => pct === state.categoryDiscounts[id])

@@ -3,7 +3,7 @@
 // both quick-add; both flash the same success confirmation (row tint + toast)
 // so the feedback is identical regardless of which hit-target the user used.
 import * as Haptics from "expo-haptics";
-import { productConcealedPart } from "../helpers/concealedParts";
+import { catalogAvailability, defaultIncludedParts, productConcealedPart } from "../helpers/concealedParts";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { Text } from "@/src/components/AppText";
@@ -57,8 +57,8 @@ function PickerCardImpl({ product, onQuickAdd, onLongPress, onOpenDetails }: Pro
   const selectedImages = useMemo(() => resolveVariantImages(product, selectedVariant), [product, selectedVariant]);
   const selectedSku = selectedVariant?.sku ?? product.sku;
   const selectedPrice = selectedVariant?.price ?? product.price;
-  const automaticParts = selectedVariant?.specs?.default_included_parts ?? product.specs?.default_included_parts;
-  const hasAutomaticPart = Array.isArray(automaticParts) && automaticParts.length > 0;
+  const hasAutomaticPart = defaultIncludedParts(product, selectedVariant).length > 0;
+  const availability = catalogAvailability(product, selectedVariant);
   const hasConcealedPart = !!productConcealedPart(product, selectedVariant)?.sku;
 
   return (
@@ -81,6 +81,7 @@ function PickerCardImpl({ product, onQuickAdd, onLongPress, onOpenDetails }: Pro
           <Text style={type.caption} numberOfLines={1}>
             {selectedSku}{variantDescriptor(selectedVariant ?? product) ? ` · ${variantDescriptor(selectedVariant ?? product)}` : ""}
           </Text>
+          {availability ? <Text style={type.caption}>{availability}</Text> : null}
           {selectedImages.isFallback && selectedImages.images.length > 0 ? (
             <Text style={type.caption}>Representative photo</Text>
           ) : null}

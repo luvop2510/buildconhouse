@@ -2,7 +2,7 @@
 from __future__ import annotations
 from services.phone_format import format_department_phone
 from services.referrer_identity import pdf_reference_label
-from services.quotation_item_order import ordered_room_items
+from services.quotation_item_order import ordered_room_items, quotation_item_description, wc_seat_links
 
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -805,6 +805,7 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
         (standard and floor_id in ("first-floor", "ground-floor")) or doc_type == "tiles_quotation"
     )
     items = quotation.get("items") or []
+    wc_seats = wc_seat_links(items)
     media_urls = [
         url for item in items
         for url in (
@@ -1105,7 +1106,7 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
                 # Normal selections wrap naturally; caps are deliberately
                 # high enough that ellipsis is a true final safeguard against
                 # unbounded pasted catalogue copy, not the normal rendering.
-                description_parts = [str(item.get("description") or item.get("name") or "")]
+                description_parts = [quotation_item_description(item, wc_seats)]
                 finish = item.get("finish") or item.get("colour") or ""
                 if finish:
                     description_parts.append(f"Finish: {finish}")

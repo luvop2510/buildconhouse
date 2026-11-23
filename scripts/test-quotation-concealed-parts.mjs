@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { addProductAndConcealedPart, syncDefaultIncludedParts } from "../src/components/quotation/helpers/concealedParts.ts";
+import { addProductAndConcealedPart, catalogAvailability, syncDefaultIncludedParts, wcCombinations } from "../src/components/quotation/helpers/concealedParts.ts";
 
 const product = {
   id: "trim", sku: "TRIM-1", name: "Wall mixer trim", price: 9000, mrp: 10000,
@@ -87,3 +87,38 @@ const variantDescription = addProductAndConcealedPart([], { ...product, descript
 }, "Master Bath", id, []);
 assert.equal(variantDescription[0].description, "Exact variant specification");
 console.log("quotation concealed-part and custom-description contract passed");
+
+const essence = {
+  id: "essence-wc", sku: "105536SH00",
+  name: "Essence Toilet Wall-Hung Rimless without Seat Cover",
+  price: 36270, mrp: 36270, category_id: "wc", finish: "White",
+  specs: { default_included_parts: [{
+    role: "seat_cover", sku: "39577001", product_id: "essence-seat",
+    name: "Essence Toilet Seat Cover Soft Close", image: "https://fixture.test/white-seat.png",
+    finish: "White", category_id: "wc", unit_price: 8730, mrp: 8730, qty: 1,
+  }] },
+};
+const whitePhoto = "https://fixture.test/white-wc.png";
+const [wc, cover] = addProductAndConcealedPart([], essence, undefined, "Master Bath", id, [whitePhoto], 3);
+assert.deepEqual([wc, cover].map(line => [line.sku, line.qty, line.mrp, line.finish, line.image]), [
+  ["105536SH00", 3, 36270, "White", whitePhoto],
+  ["39577001", 3, 8730, "White", "https://fixture.test/white-seat.png"],
+]);
+assert.equal(cover.included_part_role, "seat_cover");
+assert.equal(cover.included_for_line_id, wc.id);
+assert.deepEqual(wcCombinations([wc, cover], { [wc.id]: { net: 108810 }, [cover.id]: { net: 26190 } })[wc.id], {
+  cover, mrp: 135000, net: 135000,
+});
+const independent = { ...cover, id: "standalone-cover", included_for_line_id: null, included_part_role: null, qty: 9 };
+const readded = addProductAndConcealedPart([wc, independent, cover], essence, undefined, "Master Bath", id, [whitePhoto]);
+assert.deepEqual(readded.map(line => [line.id, line.qty]), [[wc.id, 4], [cover.id, 4], [independent.id, 9]]);
+const includedInBox = { id: "matte-inclusive", sku: "MATTE-BUNDLED", price: 39999, mrp: 39999, finish: "Matte Black" };
+assert.deepEqual(addProductAndConcealedPart([], essence, includedInBox, "Master Bath", id, []).map(line => line.sku), ["MATTE-BUNDLED"]);
+const swapped = { ...wc, product_id: includedInBox.id, sku: includedInBox.sku };
+assert.deepEqual(syncDefaultIncludedParts(
+  [swapped, cover, independent], swapped, essence, includedInBox, id,
+).map(line => line.id), [wc.id, independent.id]);
+const comingSoon = { ...essence, specs: { ...essence.specs, availability: "Coming Soon" } };
+assert.equal(addProductAndConcealedPart([], comingSoon, undefined, "Master Bath", id, [whitePhoto])[0].availability, "Coming Soon");
+assert.equal(catalogAvailability(comingSoon, includedInBox), null);
+console.log("GROHE WC combination identity, exact sibling safety, images, availability and prices passed");
