@@ -315,6 +315,7 @@ async def apply_import(database, storage, bucket, private, manifest, assets, sou
     from pymongo.read_concern import ReadConcern
     from pymongo.write_concern import WriteConcern
     from services.mutation_admission import admission, finish_on_cancel
+    from services.mutation_scopes import CATALOG
 
     for collection, fields in ((database.categories, {"floor_id", "slug"}),
                                (database.products, {"floor_id", "brand_id", "sku"})):
@@ -360,7 +361,7 @@ async def apply_import(database, storage, bucket, private, manifest, assets, sou
 
     if all(item["change"] == "unchanged" for item in initial[3].values()) and not initial[4]:
         return None
-    async with admission(database, exclusive=True, operation=ACTOR):
+    async with admission(database, exclusive=True, operation=ACTOR, scope=CATALOG):
         return await finish_on_cancel(transaction())
 
 
