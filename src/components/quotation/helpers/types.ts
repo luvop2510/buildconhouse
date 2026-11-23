@@ -52,7 +52,7 @@ export type Product = {
   hero_image_url?: string | null;
   gallery?: {
     url: string; role?: string; source_type?: string; quality?: string; family_key?: string | null;
-    width?: number | null; height?: number | null; is_primary?: boolean;
+    width?: number | null; height?: number | null; is_primary?: boolean; catalogue_image?: boolean;
   }[] | null;
   // Optional metadata used by the Assistant (family, brand name, series, stock).
   family_key?: string | null;
@@ -82,7 +82,7 @@ export type Product = {
 
 export type Brand = { id: string; name: string; slug?: string; product_count?: number };
 
-export type Category = { id: string; name: string; product_count?: number };
+export type Category = { id: string; name: string; product_count?: number; brand_id?: string | null };
 
 export type Customer = {
   id: string; name: string; company?: string | null; email?: string | null; phone?: string | null; address?: string | null;
@@ -134,6 +134,8 @@ export type Line = {
   /** Catalog-controlled line automatically supplied with a selected parent. */
   included_for_line_id?: string | null;
   included_qty_per_parent?: number | null;
+  included_part_role?: "seat_cover" | null;
+  availability?: "Coming Soon" | null;
 };
 
 export type SaveState = "idle" | "saving" | "saved" | "error";

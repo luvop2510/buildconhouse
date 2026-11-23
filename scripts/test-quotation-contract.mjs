@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 
 import { computeQuotationTotals } from "../src/components/quotation/helpers/totals.ts";
 import { godownQuotationPrice } from "../src/components/quotation/helpers/godown.ts";
-import { enqueueQuotationPersist, QuotationMutations } from "../src/components/quotation/helpers/autosave.ts";
+import { confirmQuotationLineCancellation, enqueueQuotationPersist, QuotationMutations } from "../src/components/quotation/helpers/autosave.ts";
 
 const totals = computeQuotationTotals([
   { qty: 2, unitPrice: 2170 },
@@ -56,6 +56,29 @@ for (const writeFails of [false, true]) {
   assert.equal(mutations.isDeleting("this-quotation"), false);
   await assert.rejects(mutations.remove("this-quotation", async () => { throw Error("Connection lost"); }), /Connection lost/);
   assert.equal(await mutations.remove("this-quotation", async () => true), true);
+}
+
+const confirmedCancellation = {
+  id: "quotation", updated_at: "2026-11-23T12:00:00Z", items: [{ id: "independent-cover" }],
+};
+const confirm = (write, read) => confirmQuotationLineCancellation("quotation", "wc", ["seat"], write, read);
+assert.equal(await confirm(async () => confirmedCancellation, async () => assert.fail("No read after a confirmed write")), confirmedCancellation);
+for (const status of [undefined, 404, 502]) {
+  let writes = 0;
+  let reads = 0;
+  assert.equal(await confirm(
+    async () => { writes++; throw Object.assign(new Error("Cancelled response lost"), { status }); },
+    async () => { reads++; return confirmedCancellation; },
+  ), confirmedCancellation);
+  assert.deepEqual([writes, reads], [1, 1]);
+}
+await assert.rejects(confirm(
+  async () => { throw Object.assign(new Error("This quotation changed elsewhere"), { status: 409 }); },
+  async () => assert.fail("No reconciliation after a known conflict"),
+), /changed elsewhere/);
+for (const item of [{ id: "wc" }, { id: "seat" }, { id: "new-seat", included_for_line_id: "wc" }]) {
+  const unconfirmed = { ...confirmedCancellation, items: [item] };
+  await assert.rejects(confirm(async () => unconfirmed, async () => unconfirmed), /Could not confirm/);
 }
 
 // Keep unavailable or unpriced physical lots out of quotation creation.

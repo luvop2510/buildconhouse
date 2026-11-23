@@ -71,6 +71,7 @@ def isolated(monkeypatch):
     monkeypatch.setattr(media_service, "get_media_storage", lambda: storage)
     monkeypatch.setattr(media_service, "log_event", AsyncMock())
     monkeypatch.setattr(catalog_routes.catalog_service, "schedule_catalog_refresh", lambda: None)
+    monkeypatch.setattr(catalog_routes.catalog_service, "refresh_after_product_creation", AsyncMock())
     return database, objects, storage
 async def create_photo(product=None, user=None, keep=True, request="request-123456", file=None):
     return await media_routes.create_custom_product_with_media(
@@ -161,6 +162,34 @@ async def test_invalid_media_cannot_write_product(isolated):
     with pytest.raises(HTTPException) as rejected: await create_photo(file=upload(b"not a PNG"))
     assert rejected.value.status_code == 400 and not isolated[0].products.rows
 
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("from_catalog", [False, True])
+async def test_unreadable_png_does_not_reserve_article_number(isolated, from_catalog):
+    database, objects, _ = isolated
+    article = "MANUAL-PHOTO-1"
+    source = image_bytes()
+    truncated = source[:source.index(b"IDAT") + 12]
+    with Image.open(io.BytesIO(truncated)) as header:
+        assert header.size == (600, 400)
+
+    async def submit(photo, request_id):
+        product = body(sku=article, request_id=request_id)
+        if from_catalog:
+            return await media_routes.create_catalog_custom_product_with_media(
+                product.model_dump_json(), upload(photo), staff(role="purchase"),
+            )
+        return await create_photo(product, request=request_id, file=upload(photo))
+
+    with pytest.raises(HTTPException) as rejected:
+        await submit(truncated, "broken-image-request")
+    assert rejected.value.status_code == 400 and "decoded" in rejected.value.detail
+    assert not database.products.rows and not database.product_media.rows and not objects
+    corrected = await submit(source, "corrected-image-request")
+    assert corrected.sku == article and corrected.active
+    assert len(database.products.rows) == len(database.product_media.rows) == len(objects) == 1
+
+
 @pytest.mark.asyncio
 async def test_inactive_custom_detail_and_media_read_saved_photo_before_refresh(isolated, monkeypatch):
     created = await create_photo(keep=False)
@@ -220,3 +249,15 @@ def test_exact_creation_grants_and_profiles(path):
         assert granted_floor_ids([grant], user_id="sales-1", path=path, action="create", method="POST") == [floor]
         assert granted_floor_ids([grant], user_id="sales-1", path="/api/products/regular/media", action="create", method="POST") == []
         assert granted_floor_ids([grant], user_id="sales-1", path=path, action="delete", method="DELETE") == []
+
+
+@pytest.mark.parametrize("floor, quotation_resource, profile", [
+    ("first-floor", "quotations", SANITARY_QUOTATIONS_FOLLOWUPS),
+    ("ground-floor", "tiles", GROUND_TILE_QUOTATIONS_FOLLOWUPS),
+])
+def test_catalog_photo_creation_uses_catalog_grant(floor, quotation_resource, profile):
+    path = "/api/products/catalog-custom-with-media"
+    grant = {"user_id": "staff", "resource": "catalog", "floor_id": floor, "actions": ["create"], "scope": "all"}
+    assert granted_floor_ids([grant], user_id="staff", path=path, action="create", method="POST") == [floor]
+    assert granted_floor_ids([{**grant, "resource": quotation_resource}], user_id="staff", path=path, action="create", method="POST") == []
+    assert not profile_allows_request(profile, "POST", path)

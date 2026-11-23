@@ -29,14 +29,17 @@ def _require_image_budget(width: int, height: int) -> None:
         raise ProductImageNormalizationError("The uploaded image exceeds the decoded image size limit")
 
 
-def normalize_product_image(data: bytes, mime: str, *, force_landscape: bool = False) -> tuple[bytes, str]:
+def normalize_product_image(
+    data: bytes, mime: str, *, force_landscape: bool = False, verify_decode: bool = False,
+) -> tuple[bytes, str]:
     """Bake EXIF orientation and optionally place an image on a wide canvas.
 
     A forced landscape asset is *never* rotated or cropped: doing either can
     change the intended orientation of a tile design.  Portrait and square
     rasters are centred on a neutral 16:10 white canvas instead, so the stored
     product asset itself is genuinely horizontal while retaining every source
-    pixel.
+    pixel. Uploads that provision a new product verify decoding even when the
+    original bytes need no orientation change.
     """
     normalized_mime = "image/jpeg" if mime == "image/jpg" else mime
     if normalized_mime not in NORMALIZABLE_IMAGE_MIMES:
@@ -49,6 +52,8 @@ def normalize_product_image(data: bytes, mime: str, *, force_landscape: bool = F
             _require_image_budget(opened.width, opened.height)
             if normalized_mime == "image/gif":
                 # Preserve animations after validating their canvas budget.
+                if verify_decode:
+                    opened.load()
                 return data, mime
             orientation = opened.getexif().get(274, 1)
             width, height = opened.size
@@ -57,6 +62,8 @@ def normalize_product_image(data: bytes, mime: str, *, force_landscape: bool = F
             if force_landscape and width <= height:
                 _require_image_budget(ceil(height * PRODUCT_IMAGE_ASPECT_RATIO), height)
             if orientation == 1 and not force_landscape:
+                if verify_decode:
+                    opened.load()
                 return data, mime
             image = ImageOps.exif_transpose(opened)
             image.load()

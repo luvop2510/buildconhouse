@@ -4,6 +4,7 @@ All binaries go through the MediaStorage abstraction — this module never
 imports the supabase driver directly.
 """
 from __future__ import annotations
+import asyncio
 import logging
 import hashlib
 from typing import Optional, get_args
@@ -16,7 +17,7 @@ from auth import floor_inherit, floor_query, get_current_user, require_min_role
 from db import db
 from models import MediaRole, Product, ProductCreate, ProductMedia, UserPublic
 from services import catalog_service, media_service
-from services.product_image_normalizer import ProductImageNormalizationError
+from services.product_image_normalizer import ProductImageNormalizationError, normalize_product_image
 
 logger = logging.getLogger("forge.media_routes")
 router = APIRouter(tags=["media"])
@@ -117,7 +118,6 @@ async def create_custom_product_with_media(
     modify another creator's item or bypass ordinary catalog media permissions.
     A stable request key resumes incomplete uploads and dedupes lost responses.
     """
-    from routes.catalog_routes import _create_custom_record
     try:
         body = ProductCreate.model_validate_json(product)
         body = ProductCreate.model_validate({**body.model_dump(), "is_custom": True, "request_id": request_id})
@@ -126,23 +126,51 @@ async def create_custom_product_with_media(
         Product(**{**body.model_dump(), "floor_id": "validation"})
     except ValidationError:
         raise HTTPException(status_code=422, detail="Enter a valid custom product and request identifier") from None
+    return await _create_product_with_photo(body, keep_in_catalog, await _prepare_product_photo(file), user)
+
+
+@router.post("/products/catalog-custom-with-media", response_model=Product)
+async def create_catalog_custom_product_with_media(
+    product: str = Form(...), file: UploadFile = File(...),
+    user: UserPublic = Depends(require_min_role("purchase")),
+):
+    from routes.catalog_routes import CatalogCustomProductInput, _catalog_custom_body
+    try:
+        catalog_body = CatalogCustomProductInput.model_validate_json(product)
+    except ValidationError:
+        raise HTTPException(status_code=422, detail="Enter a valid catalog product and request identifier") from None
+    photo = await _prepare_product_photo(file)
+    return await _create_product_with_photo(await _catalog_custom_body(catalog_body, user), True, photo, user)
+
+
+async def _prepare_product_photo(file: UploadFile) -> tuple[bytes, str, str]:
     data = await _read_bounded_upload(file)
     mime = file.content_type or "application/octet-stream"
     if not mime.startswith("image/"):
         raise HTTPException(status_code=422, detail="Choose a product image")
-    record = await _create_custom_record(body, user, keep_in_catalog=keep_in_catalog,
-                                         pending_media=True, image_sha1=hashlib.sha1(data).hexdigest())
-    brand = await db.brands.find_one({"id": record["brand_id"], "floor_id": record["floor_id"]}, {"_id": 0, "slug": 1}) if record["brand_id"] else None
+    original_sha1 = hashlib.sha1(data).hexdigest()
     try:
-        media = await media_service.upload_and_register(
-            data=data, mime=mime, brand_slug=(brand or {}).get("slug") or "custom",
-            product_id=record["id"], brand_id=record["brand_id"] or None, floor_id=record["floor_id"],
-            source_type="internal", role="hero", is_primary=True, sort_order=0,
-            uploaded_by=user.id, actor=user,
-            registration_id=str(uuid5(NAMESPACE_URL, f"forge-custom-photo:{record['id']}")),
-        )
+        data, mime = await asyncio.to_thread(normalize_product_image, data, mime, verify_decode=True)
     except ProductImageNormalizationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return data, mime, original_sha1
+
+
+async def _create_product_with_photo(
+    body: ProductCreate, keep_in_catalog: bool, photo: tuple[bytes, str, str], user: UserPublic,
+) -> Product:
+    from routes.catalog_routes import _create_custom_record
+    data, mime, original_sha1 = photo
+    record = await _create_custom_record(body, user, keep_in_catalog=keep_in_catalog,
+                                         pending_media=True, image_sha1=original_sha1)
+    brand = await db.brands.find_one({"id": record["brand_id"], "floor_id": record["floor_id"]}, {"_id": 0, "slug": 1}) if record["brand_id"] else None
+    media = await media_service.upload_and_register(
+        data=data, mime=mime, brand_slug=(brand or {}).get("slug") or "custom",
+        product_id=record["id"], brand_id=record["brand_id"] or None, floor_id=record["floor_id"],
+        source_type="internal", role="hero", is_primary=True, sort_order=0,
+        uploaded_by=user.id, actor=user, already_normalized=True,
+        registration_id=str(uuid5(NAMESPACE_URL, f"forge-custom-photo:{record['id']}")),
+    )
     if not media.public_url:
         raise HTTPException(status_code=503, detail="The product photo could not be published. Please retry.")
     saved = await db.products.update_one({"id": record["id"], "floor_id": record["floor_id"], "custom_created_by": user.id},
@@ -151,7 +179,8 @@ async def create_custom_product_with_media(
         raise HTTPException(status_code=404, detail="Custom product no longer exists")
     record["active"] = keep_in_catalog
     media_service._apply_media_to_product(record, [media])
-    catalog_service.schedule_catalog_refresh()
+    if keep_in_catalog:
+        await catalog_service.refresh_after_product_creation()
     return Product(**record)
 
 

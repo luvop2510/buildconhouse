@@ -15,6 +15,10 @@ const catalogExports = {};
 vm.runInNewContext(ts.transpileModule(readFileSync(new URL('../src/services/catalogService.ts', import.meta.url), 'utf8'), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
 }).outputText, { exports: catalogExports, require: () => ({}), URLSearchParams });
+const includedPartsExports = {};
+vm.runInNewContext(ts.transpileModule(readFileSync(new URL('../src/components/quotation/helpers/concealedParts.ts', import.meta.url), 'utf8'), {
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+}).outputText, { exports: includedPartsExports });
 
 const specs = {
   payments: ['../app/(admin)/payments.tsx', '  const customerCollections =', 'orders, stats, loadingList, q, setQ'],
@@ -96,6 +100,7 @@ function screen(kind, width = 'desktop') {
     '@/src/hooks/use-customer-delete-access': { useCustomerDeleteAccess: () => true },
     '@/src/state/auth': { useAuth: () => ({ staff: { role: 'owner' } }) },
     '@/src/constants/roles': { canManageDestructiveData: () => true },
+    '@/src/components/quotation/helpers/concealedParts': includedPartsExports,
     '@/src/design/responsive': { useBp: () => bp },
     '@/src/hooks/use-breakpoint': { useBreakpoint: () => bp },
     '@/src/theme/tokens': { colors: {}, spacing: {}, radius: {}, icon: {}, type: new Proxy({}, { get: () => ({}) }) },

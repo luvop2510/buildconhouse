@@ -697,6 +697,8 @@ class QuotationLineItem(BaseModel):
     # actions remain coherent after a draft is reopened.
     included_for_line_id: Optional[str] = None
     included_qty_per_parent: Optional[float] = Field(default=None, gt=0)
+    included_part_role: Literal["seat_cover"] | None = None
+    availability: Literal["Coming Soon"] | None = None
     sort_order: int = 0
     # Tiles document fields (Ground Floor → Tiles Selection / Quotation).
     # On tiles docs `room` doubles as the free-text AREA cell, `unit_price` is

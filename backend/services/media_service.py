@@ -96,6 +96,7 @@ async def upload_and_register(
     private: bool = False,
     actor: Optional[UserPublic] = None,
     force_landscape: bool = False,
+    already_normalized: bool = False,
     registration_id: Optional[str] = None,
     supplier_asset_scope: Optional[str] = None,
 ) -> ProductMedia:
@@ -109,9 +110,9 @@ async def upload_and_register(
     just-uploaded object rather than leaving an untracked file behind in
     Supabase with no `product_media` row pointing at it.
     """
-    # Every ingestion path (manual upload, replacement and catalog import)
-    # passes here, so normalize once before hashing/deduplicating/storing.
-    data, mime = await asyncio.to_thread(normalize_product_image, data, mime, force_landscape=force_landscape)
+    # Custom creation decodes and normalizes before reserving an article.
+    if not already_normalized or force_landscape:
+        data, mime = await asyncio.to_thread(normalize_product_image, data, mime, force_landscape=force_landscape)
     sha1 = hashlib.sha1(data).hexdigest()
 
     # Dedupe check
@@ -349,17 +350,23 @@ def _apply_media_to_product(product: dict, media: list[ProductMedia]) -> None:
     hero_url: Optional[str] = None
     hero_quality: Optional[str] = None
     gallery: list[dict] = []
+    source_digest = (product.get("specs") or {}).get("grohe_ceramics_image_sha1")
     for m in media:
         if not m.public_url:
             continue
         if m.role in ("dimension", "seat-cover"):
             continue
-        gallery.append({
+        entry = {
             "id": m.id, "family_key": m.family_key, "url": m.public_url, "role": m.role,
             "source_type": m.source_type, "width": m.width, "height": m.height,
             "quality": m.quality, "is_primary": m.is_primary,
-        })
-        if not hero_url and (m.is_primary or m.role == "hero"):
+        }
+        is_source = bool(source_digest and m.source_type == "supplier" and m.sha1 == source_digest)
+        if is_source:
+            gallery.insert(0, {**entry, "catalogue_image": True})
+        else:
+            gallery.append(entry)
+        if is_source or (not hero_url and (m.is_primary or m.role == "hero")):
             hero_url = m.public_url
             hero_quality = m.quality
     if not hero_url and gallery:

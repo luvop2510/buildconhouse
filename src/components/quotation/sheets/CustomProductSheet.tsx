@@ -35,6 +35,7 @@ export function CustomProductSheet() {
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [price, setPrice] = useState("");
   const [mrp, setMrp] = useState("");
+  const [size, setSize] = useState("");
   const [finish, setFinish] = useState("");
   const [description, setDescription] = useState("");
   const [saveToCatalog, setSaveToCatalog] = useState(true);
@@ -53,13 +54,21 @@ export function CustomProductSheet() {
     if (!open) { initialized.current = false; return; }
     if (initialized.current) return;
     initialized.current = true;
-    setName(""); setSku(""); setPrice(""); setMrp(""); setFinish(""); setDescription("");
-    setBrandId(b.selectedBrandId ?? b.brands[0]?.id ?? null);
-    setCategoryId(b.selectedCategoryId ?? b.categories[0]?.id ?? null);
+    setName(""); setSku(""); setPrice(""); setMrp(""); setSize(""); setFinish(""); setDescription("");
+    const initialBrand = b.selectedBrandId ?? b.brands[0]?.id ?? null;
+    const availableCategories = b.categories.filter(c => !c.brand_id || c.brand_id === initialBrand);
+    setBrandId(initialBrand);
+    setCategoryId(availableCategories.find(c => c.id === b.selectedCategoryId)?.id ?? availableCategories[0]?.id ?? null);
     setSaveToCatalog(true);
     setPhoto(null);
     request.current = null;
   }, [open, b.activeFloorId, b.selectedBrandId, b.selectedCategoryId, b.brands, b.categories]);
+
+  const selectBrand = (id: string) => {
+    setBrandId(id);
+    const owner = b.categories.find(c => c.id === categoryId)?.brand_id;
+    if (owner && owner !== id) setCategoryId(null);
+  };
 
   const pickPhoto = async () => {
     const controller = lifecycle.current;
@@ -85,7 +94,8 @@ export function CustomProductSheet() {
     try {
       const payload = {
         name: name.trim(), sku: sku.trim(), brand_id: brandId || "", category_id: categoryId || "",
-        price: p, mrp: catalogueMrp, finish: finish.trim() || null, description: description.trim() || null, is_custom: true,
+        price: p, mrp: catalogueMrp, size: size.trim() || null, finish: finish.trim() || null,
+        description: description.trim() || null, is_custom: true,
       };
       const fingerprint = JSON.stringify({ payload, saveToCatalog, photo: photo?.uri });
       if (request.current?.fingerprint !== fingerprint) {
@@ -147,7 +157,7 @@ export function CustomProductSheet() {
                   {b.brands.map((br) => {
                     const on = brandId === br.id;
                     return (
-                      <Pressable key={br.id} accessibilityRole="button" accessibilityState={{ selected: on }} onPress={() => setBrandId(br.id)} style={[styles.pill, on && styles.pillActive]}>
+                      <Pressable key={br.id} accessibilityRole="button" accessibilityState={{ selected: on }} onPress={() => selectBrand(br.id)} style={[styles.pill, on && styles.pillActive]}>
                         <Text style={[styles.pillLabel, on && styles.pillLabelActive]}>{br.name}</Text>
                       </Pressable>
                     );
@@ -159,7 +169,7 @@ export function CustomProductSheet() {
             <View>
               <Text style={styles.label}>Category *</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, paddingVertical: 2 }}>
-                {b.categories.map((c) => {
+                {b.categories.filter(c => !c.brand_id || c.brand_id === brandId).map((c) => {
                   const on = categoryId === c.id;
                   return (
                     <Pressable key={c.id} accessibilityRole="button" accessibilityState={{ selected: on }} onPress={() => setCategoryId(c.id)} style={[styles.pill, on && styles.pillActive]}>
@@ -169,6 +179,10 @@ export function CustomProductSheet() {
                 })}
               </ScrollView>
             </View>
+
+            <Field label="Size">
+              <TextInput accessibilityLabel="Custom product size" value={size} onChangeText={setSize} style={styles.input} />
+            </Field>
 
             <View style={[styles.grid, isPhone && styles.phoneGrid]}>
               <Field label="Price *" flex={1}>

@@ -20,8 +20,9 @@ import { useRequireFloorAccess } from "@/src/hooks/use-floor-access";
 import { useActionAccess } from "@/src/hooks/use-permissions";
 import { useAuth } from "@/src/state/auth";
 import { quotationDisplayStatus } from "@/src/utils/quotationStatus";
+import { wcCombinations } from "@/src/components/quotation/helpers/concealedParts";
 
-type Line = { id: string; sku: string; name: string; qty: number; unit_price: number; discount_pct: number | null; room?: string; description?: string | null; category_id?: string | null; godown_stock_id?: string | null; godown_source_customer_name?: string | null; godown_source_purchased_at?: string | null; godown_allocated_at?: string | null };
+type Line = { id: string; product_id: string; sku: string; name: string; qty: number; unit_price: number; mrp?: number | null; net_amount?: number | null; discount_pct: number | null; room?: string; description?: string | null; category_id?: string | null; godown_stock_id?: string | null; godown_source_customer_name?: string | null; godown_source_purchased_at?: string | null; godown_allocated_at?: string | null; included_for_line_id?: string | null; included_part_role?: "seat_cover" | null; availability?: "Coming Soon" | null };
 type Quotation = {
   id: string; number: string; customer_name: string; status: string; floor_id?: string;
   purchase_completion_status?: "active" | "completed";
@@ -95,6 +96,9 @@ export default function QuotationDetail() {
   const context = `${id}:${floorReady}`;
   contextRef.current = context;
   const breakdownByLine = useMemo(() => new Map(breakdown?.lines.map(line => [line.line_id, line]) || []), [breakdown]);
+  const wcGroups = useMemo(() => wcCombinations(q?.items ?? [], Object.fromEntries((q?.items ?? []).map(item => [
+    item.id, { net: breakdownByLine.get(item.id)?.net ?? item.net_amount ?? item.qty * item.unit_price },
+  ]))), [q?.items, breakdownByLine]);
 
   const load = useCallback(async (background = false) => {
     if (!activeRef.current || !id || !floorReady || contextRef.current !== context) return;
@@ -319,13 +323,17 @@ export default function QuotationDetail() {
             {q.items.map((it, i) => {
               const br = breakdownByLine.get(it.id);
               const pct = br?.discount_pct ?? (it.discount_pct ?? 0);
+              const combination = wcGroups[it.id];
+              const linkedSeat = it.included_for_line_id && it.included_part_role === "seat_cover";
               const source = br?.discount_source ?? (it.discount_pct != null ? "product" : "none");
               return (
-                <View key={it.id} style={styles.tableRow}>
+                <View key={it.id} style={[styles.tableRow, (combination || linkedSeat) && styles.wcGroup, linkedSeat && styles.wcSeat]}>
                   <Text style={[type.mono, { width: 40 }]}>{String(i + 1).padStart(2, "0")}</Text>
                   <View style={{ flex: 1 }}>
                     <Text style={{ fontSize: 14, fontFamily: type.titleMd.fontFamily, fontWeight: "600", color: colors.onSurface }} numberOfLines={2}>{it.name}</Text>
-                    <Text style={type.caption}>{it.sku}{it.room ? ` · ${it.room}` : ""}</Text>
+                    <Text style={type.caption}>{it.sku}{it.room ? ` · ${it.room}` : ""}{it.availability ? ` · ${it.availability}` : ""}</Text>
+                    {linkedSeat ? <Text style={type.caption}>Linked seat cover</Text> : null}
+                    {combination ? <Text style={type.caption}>Combined MRP {money(combination.mrp)} · Quoted total {money(combination.net)}</Text> : null}
                     <GodownProvenance item={it} />
                   </View>
                   <Text style={[type.mono, { width: 60, textAlign: "right" }]} numberOfLines={1}>{it.qty}</Text>
@@ -346,16 +354,20 @@ export default function QuotationDetail() {
             {q.items.map((it, i) => {
               const br = breakdownByLine.get(it.id);
               const pct = br?.discount_pct ?? (it.discount_pct ?? 0);
+              const combination = wcGroups[it.id];
+              const linkedSeat = it.included_for_line_id && it.included_part_role === "seat_cover";
               const lineTotal = it.qty * it.unit_price * (1 - pct / 100);
               return (
-                <View key={it.id} style={styles.mobileLineCard} testID={`quotation-line-${it.id}`}>
+                <View key={it.id} style={[styles.mobileLineCard, (combination || linkedSeat) && styles.wcGroup, linkedSeat && styles.wcSeat]} testID={`quotation-line-${it.id}`}>
                   <View style={{ flexDirection: "row", gap: spacing.sm, alignItems: "flex-start" }}>
                     <View style={styles.lineIdx}>
                       <Text style={styles.lineIdxText}>{String(i + 1).padStart(2, "0")}</Text>
                     </View>
                     <View style={{ flex: 1, minWidth: 0 }}>
                       <Text style={{ fontSize: 14, fontFamily: type.titleMd.fontFamily, fontWeight: "600", color: colors.onSurface }} numberOfLines={2}>{it.name}</Text>
-                      <Text style={[type.caption, { marginTop: 2 }]}>{it.sku}{it.room ? ` · ${it.room}` : ""}</Text>
+                      <Text style={[type.caption, { marginTop: 2 }]}>{it.sku}{it.room ? ` · ${it.room}` : ""}{it.availability ? ` · ${it.availability}` : ""}</Text>
+                      {linkedSeat ? <Text style={type.caption}>Linked seat cover</Text> : null}
+                      {combination ? <Text style={type.caption}>Combined MRP {money(combination.mrp)} · Quoted total {money(combination.net)}</Text> : null}
                       <GodownProvenance item={it} />
                     </View>
                   </View>
@@ -531,6 +543,8 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg,
     alignItems: "center", gap: 8,
   },
+  wcGroup: { borderLeftWidth: 3, borderLeftColor: colors.brandBorder },
+  wcSeat: { marginLeft: 8 },
   tableRow: {
     flexDirection: "row", padding: spacing.md, alignItems: "center", gap: 8,
     borderTopWidth: StyleSheet.hairlineWidth, borderColor: colors.divider,

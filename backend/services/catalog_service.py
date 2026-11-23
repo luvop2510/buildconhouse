@@ -25,7 +25,7 @@ from time import monotonic
 from typing import Optional
 
 from db import db
-from catalog_policy import removed_brand_document
+from catalog_policy import STAFF_CATALOG_SOURCES, removed_brand_document
 from models import ProductMedia
 
 _SNAPSHOT_MAX_AGE_SECONDS = 300.0
@@ -348,6 +348,14 @@ def schedule_catalog_refresh() -> None:
     # Don't lose an invalidation when a prior refresh is already in flight.
     _refresh_generation += 1
     _start_catalog_refresh()
+
+
+async def refresh_after_product_creation() -> None:
+    """Publish new products before acknowledging a write in snapshot mode."""
+    global _refresh_generation
+    _refresh_generation += 1
+    if _snapshot is None or not _snapshot.database_backed:
+        await refresh_catalog_snapshot()
 
 
 def patch_product_in_snapshot(product_id: str, updates: dict) -> None:
@@ -792,13 +800,15 @@ def product_photo_urls(product: dict, snapshot: CatalogSnapshot) -> list[str]:
     # enter this list, including when catalogue variants share a family key.
     quality = {"excellent": 4, "good": 3, "acceptable": 2, "poor": 1}
     family = product.get("family_key")
+    source_digest = (product.get("specs") or {}).get("grohe_ceramics_image_sha1")
 
-    def priority(url: str) -> tuple[int, int, int, bool]:
+    def priority(url: str) -> tuple[bool, int, int, int, bool]:
         row = gallery.get(url, {})
+        is_source = bool(source_digest and row.get("sha1") == source_digest and row.get("source_type") == "supplier")
         image_family = row.get("family_key")
         family_match = (1 if family == image_family else -1) if family and image_family else 0
         pixels = max(0, int(row.get("width") or 0)) * max(0, int(row.get("height") or 0))
-        return family_match, quality.get(row.get("quality", "acceptable"), 0), pixels, url == hero or bool(row.get("is_primary"))
+        return is_source, family_match, quality.get(row.get("quality", "acceptable"), 0), pixels, url == hero or bool(row.get("is_primary"))
 
     candidates = dict.fromkeys(url for url in (hero, *gallery) if url)
     ordered = sorted(candidates, key=priority, reverse=True)
@@ -807,7 +817,7 @@ def product_photo_urls(product: dict, snapshot: CatalogSnapshot) -> list[str]:
 
 def hydrate_product(product: dict, snapshot: CatalogSnapshot) -> dict:
     product = _normalise_tile_price_unit(product)
-    out = {key: copy.deepcopy(value) for key, value in product.items() if not key.startswith("_")}
+    out = {key: copy.deepcopy(value) for key, value in product.items() if not key.startswith(("_", "custom_"))}
     out["price_unknown"] = product.get("price_status") == "unspecified"
     _apply_media(out, snapshot)
     _hydrate_concealed_part(out, snapshot)
@@ -820,8 +830,11 @@ def hydrate_product(product: dict, snapshot: CatalogSnapshot) -> dict:
 
 def _is_catalog_product(product: dict, snapshot: CatalogSnapshot) -> bool:
     brand = next((b for b in getattr(snapshot, "brands", ()) if b.get("id") == product.get("brand_id")), {})
-    return product.get("catalog_source") == "godown_intake" or not brand.get("catalog_authoritative") or bool(
-        product.get("catalog_source") == brand.get("catalog_source") and product.get("catalog_entries")
+    source = product.get("catalog_source")
+    creator = product.get("custom_created_by")
+    return source in STAFF_CATALOG_SOURCES or not brand.get("catalog_authoritative") or bool(
+        (source == brand.get("catalog_source") and product.get("catalog_entries"))
+        or (source is None and product.get("custom_keep_in_catalog") is True and isinstance(creator, str) and creator)
     )
 
 

@@ -51,9 +51,11 @@ export function productImageList(
   for (const g of gallery) add(g?.url, g);
   for (const im of p.images || []) add(im);
 
-  return candidates
+  const ordered = candidates
     .sort((a, b) => b.familyMatch - a.familyMatch || b.quality - a.quality || b.pixels - a.pixels || b.primary - a.primary || a.order - b.order)
     .map((candidate) => candidate.url);
+  const sourcePhoto = gallery.find(image => image?.catalogue_image)?.url;
+  return sourcePhoto ? [sourcePhoto, ...ordered.filter(url => url !== sourcePhoto)] : ordered;
 }
 
 export function quotationProductImages(

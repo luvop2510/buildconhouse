@@ -48,6 +48,14 @@ assert.deepEqual(productImageList({
   ],
   images: [],
 }), ["original", "thumbnail"]);
+assert.deepEqual(productImageList({
+  hero_image_url: "pdf-image",
+  gallery: [
+    { url: "older-photo", quality: "excellent", width: 1200, height: 900 },
+    { url: "pdf-image", quality: "poor", width: 100, height: 75, catalogue_image: true },
+  ],
+  images: [],
+}), ["pdf-image", "older-photo"]);
 const chromeBase = {
   id: "chrome", sku: "CHROME", hero_image_url: "chrome-hero", gallery: [{ url: "chrome-hero" }], images: ["chrome-hero"],
   variants: [{ sku: "BROWN-RED", image: "brown-red-hero", mrp: 1, price: 1 }],

@@ -59,6 +59,22 @@ def test_seat_cover_photo_is_exact_product_fallback_when_hero_is_missing():
     assert catalog_service._primary_product_image(snapshot, "other") is None
 
 
+def test_reviewed_grohe_photo_leads_catalogue_and_quotation_with_existing_hero_retained():
+    product = _product("a")
+    source = _media("a")
+    source.update(quality="poor", width=100, height=75)
+    older = {**source, "id": "other-photo", "source_type": "manufacturer",
+             "sha1": "unrelated", "public_url": "https://cdn.test/previous.jpg",
+             "quality": "excellent", "width": 1500, "height": 1000}
+    product["specs"] = {"grohe_ceramics_image_sha1": source["sha1"]}
+    snapshot = _build_snapshot([product], [older, source], [], [], [])
+    hydrated = hydrate_product(product, snapshot)
+    assert hydrated["hero_image_url"] == source["public_url"]
+    assert hydrated["gallery"][0]["catalogue_image"] is True
+    assert hydrated["images"] == [source["public_url"], older["public_url"]]
+    assert catalog_service.product_photo_urls(product, snapshot) == hydrated["images"]
+
+
 def test_family_card_shows_uploaded_seat_cover_photo(monkeypatch):
     cover = _product("cover")
     media = _media("cover")

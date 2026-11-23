@@ -419,6 +419,9 @@ function ProductDetailWorkspace({ floorId }: { floorId: string }) {
   }
 
   const savedPct = !p.price_unknown && p.mrp > p.price ? Math.round((1 - p.price / p.mrp) * 100) : 0;
+  const comingSoon = p.specs?.availability === "Coming Soon";
+  const inStock = !comingSoon && p.stock > 0;
+  const availabilityTone = inStock ? colors.success : colors.onSurfaceMuted;
   const showPoorHint = p.image_quality === "poor";
   const bottomBarHeight = 72;
   const quotationAction = p.price_unknown ? null : p.floor_id === "ground-floor"
@@ -576,9 +579,9 @@ function ProductDetailWorkspace({ floorId }: { floorId: string }) {
 
       {/* Availability */}
       <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-        <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: p.stock > 0 ? colors.success : colors.onSurfaceMuted }} />
-        <Text style={{ fontSize: 13, fontWeight: "600", color: p.stock > 0 ? colors.success : colors.onSurfaceMuted }}>
-          {p.stock > 0 ? `In stock · ${p.stock} available` : "Made to order"}
+        <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: availabilityTone }} />
+        <Text style={{ fontSize: 13, fontWeight: "600", color: availabilityTone }}>
+          {comingSoon ? "Coming Soon" : inStock ? `In stock · ${p.stock} available` : "Made to order"}
         </Text>
       </View>
 
@@ -738,7 +741,13 @@ function ProductDetailWorkspace({ floorId }: { floorId: string }) {
               ["Dimensions", p.dimensions],
               ["Warranty", p.warranty],
               ...((p.specs && Object.keys(p.specs).length)
-                ? Object.entries(p.specs).map(([k, v]) => [k, Array.isArray(v) ? v.join(", ") : String(v)])
+                ? Object.entries(p.specs)
+                    .filter(([key]) => key !== "grohe_ceramics_image_sha1" && key !== "default_included_parts")
+                    .map(([key, value]) => [
+                      key === "grohe_seat_cover_sku" ? "Compatible seat cover" :
+                        key === "must_buy_accessory_skus" ? "Required accessories" : key,
+                      Array.isArray(value) ? value.join(", ") : String(value),
+                    ])
                 : []),
             ] as [string, any][]
           )

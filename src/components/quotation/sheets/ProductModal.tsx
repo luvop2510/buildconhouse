@@ -26,7 +26,7 @@ import { color as ds } from "@/src/design/tokens";
 import { useBp } from "@/src/design/responsive";
 import { useBuilder } from "../context/BuilderContext";
 import { productImageList, resolveVariantImages } from "../helpers/media";
-import { productConcealedPart } from "../helpers/concealedParts";
+import { catalogAvailability, defaultIncludedParts, productConcealedPart, selectedProductSpecs } from "../helpers/concealedParts";
 import { variantDescriptor } from "../helpers/pricing";
 import type { Product, ProductVariant } from "../helpers/types";
 import { catalogPriceUnknown, manualCatalogPrice } from "../helpers/catalogSource";
@@ -50,14 +50,6 @@ function productAsVariant(product: Product): ProductVariant {
     concealed_part: product.concealed_part ?? null,
     configuration_options: product.configuration_options ?? [],
   };
-}
-
-function automaticParts(product: Product, variant: ProductVariant | null): { name?: string | null; sku: string }[] {
-  const raw = variant?.specs?.default_included_parts ?? product.specs?.default_included_parts;
-  if (!Array.isArray(raw)) return [];
-  return raw.filter((part): part is { name?: string | null; sku: string } => (
-    !!part && typeof part === "object" && typeof part.sku === "string" && !!part.sku.trim()
-  ));
 }
 
 export function ProductModal() {
@@ -148,7 +140,7 @@ export function ProductModal() {
       seat_cover_image_urls: variant.seat_cover_image_urls ?? product.seat_cover_image_urls,
       material: variant.material ?? product.material,
       warranty: variant.warranty ?? product.warranty,
-      specs: variant.specs ?? product.specs,
+      specs: selectedProductSpecs(product, variant),
       description: variant.description ?? product.description,
       concealed_part: productConcealedPart(product, variant),
       configuration_options: variant.configuration_options ?? product.configuration_options,
@@ -307,7 +299,8 @@ export function ProductModal() {
 
   if (!product || !selectedProduct) return null;
 
-  const includedParts = automaticParts(selectedProduct, selectedVariant);
+  const includedParts = defaultIncludedParts(product, selectedVariant);
+  const availability = catalogAvailability(product, selectedVariant);
   const concealedPart = productConcealedPart(selectedProduct, selectedVariant);
   const configurationOptions = selectedProduct.configuration_options || [];
 
@@ -544,7 +537,7 @@ export function ProductModal() {
                     ["Collection", selectedProduct.collection || selectedProduct.series || "—"],
                     ["Finish", variantDescriptor(selectedProduct) || "—"],
                     ["Warranty", selectedProduct.warranty || "—"],
-                    ["Stock", (selectedProduct.stock ?? "—") + ""],
+                    availability ? ["Availability", availability] : ["Stock", String(selectedProduct.stock ?? "—")],
                   ].map(([label, val]) => (
                     <View key={label} style={styles.specCell}>
                       <Text style={styles.specLabel}>{label}</Text>
