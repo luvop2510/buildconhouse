@@ -124,12 +124,14 @@ function SettingsWorkspace() {
     ] },
   ];
 
+  const catalogueManagement = staff?.role === "owner" || staff?.access_grants?.some(grant => grant.floor_id && grant.resource.startsWith("catalogue_"));
   const workspaceRows: { icon: keyof typeof Feather.glyphMap; label: string; hint: string; href: string; testId: string; roles?: string[] }[] = [
     { icon: "briefcase", label: "Company", hint: "Name, contact, logo", href: "/(admin)/settings-company", testId: "settings-nav-company" },
     { icon: "file-text", label: "PDF branding", hint: "Footer, terms, watermark", href: "/(admin)/settings-pdf", testId: "settings-nav-pdf" },
     { icon: "users", label: "Team", hint: "People, floors, pages and actions", href: "/(admin)/team", testId: "settings-nav-team", roles: ["owner"] },
     { icon: "bell", label: "Notifications", hint: "Channels & follow-up rules", href: "/(admin)/settings-notifications", testId: "settings-nav-notifications" },
     { icon: "user-plus", label: "Walk-in setup", hint: "Manage lead sources", href: "/(admin)/settings-walkins", testId: "settings-nav-walkins", roles: ["owner", "admin", "manager"] },
+    ...(catalogueManagement ? [{ icon: "package" as const, label: "Catalogue Management", hint: "Products, price workbooks and import history", href: "/(admin)/settings-catalogue-management", testId: "settings-nav-catalogue-management" }] : []),
     { icon: "database", label: "Catalog tools", hint: "Import, export, backup", href: "/(admin)/settings-catalog", testId: "settings-nav-catalog" },
     { icon: "activity", label: "System", hint: "Health, version, storage", href: "/(admin)/settings-system", testId: "settings-nav-system" },
     { icon: "file-text", label: "Privacy & data", hint: "What we collect, deletion requests", href: "/(admin)/settings-privacy", testId: "settings-nav-privacy" },
@@ -178,13 +180,14 @@ function SettingsWorkspace() {
       ))}
 
       {[
+        ...(catalogueManagement ? [{ title: "Catalogue", ids: ["catalogue-management"] }] : []),
         { title: "Business & documents", ids: ["company", "pdf", "catalog", "walkins"] },
         { title: "People & access", ids: ["team"] },
         { title: "Preferences & support", ids: ["notifications", "system", "privacy", "terms"] },
-      ].filter(group => !staff?.custom_access || group.ids.includes("privacy")).map(group => (
+      ].filter(group => !staff?.custom_access || group.ids.includes("privacy") || group.ids.includes("catalogue-management")).map(group => (
       <Card key={group.title} style={{ padding: 0 }} variant="flat">
         <Text style={[type.overline, { padding: spacing.md, paddingBottom: 8 }]}>{group.title}</Text>
-        {workspaceRows.filter(r => !staff?.custom_access || ["settings-nav-privacy", "settings-nav-terms"].includes(r.testId)).filter(r => group.ids.includes(r.testId.replace("settings-nav-", ""))).filter((r) => !r.roles || r.roles.includes(staff?.role || "")).map((r, i) => (
+        {workspaceRows.filter(r => !staff?.custom_access || ["settings-nav-privacy", "settings-nav-terms", "settings-nav-catalogue-management"].includes(r.testId)).filter(r => group.ids.includes(r.testId.replace("settings-nav-", ""))).filter((r) => !r.roles || r.roles.includes(staff?.role || "")).map((r, i) => (
           <Pressable
             key={r.href}
             testID={r.testId}

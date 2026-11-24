@@ -163,7 +163,7 @@ jobs:
       - name: Verify current customer search, delegated deletion, reusable drivers and release quantities
         env:
           TILE_WORKFLOW_TEST_MONGO_URL: mongodb://127.0.0.1:28124
-        run: python -m pytest tests/integration/test_customer_search_mongo.py tests/integration/test_kitchen_customer_soft_deletion_mongo.py tests/integration/test_customer_delete_permissions_mongo.py tests/integration/test_scoped_mutation_admission_mongo.py tests/integration/test_dispatch_drivers_mongo.py tests/integration/test_tile_release_godown_mongo.py -v
+        run: python -m pytest tests/integration/test_customer_search_mongo.py tests/integration/test_kitchen_customer_soft_deletion_mongo.py tests/integration/test_customer_delete_permissions_mongo.py tests/integration/test_scoped_mutation_admission_mongo.py tests/integration/test_dispatch_drivers_mongo.py tests/integration/test_tile_release_godown_mongo.py tests/integration/test_catalogue_management_mongo.py -v
       - name: Verify quotation send, downloads and Follow-ups planner
         env:
           KITCHEN_TEST_MONGO_URL: mongodb://127.0.0.1:28124

@@ -75,6 +75,8 @@ export function staffLandingPath(profile?: AccessProfile | null, grants?: Person
     return !targetFloor || !supportedFloors[grant.resource] || supportedFloors[grant.resource].includes(targetFloor);
   });
   if (permitted) return routeByResource[permitted.resource];
+  if (grants?.some(grant => grant.floor_id && (!floorId || grant.floor_id === floorId)
+    && grant.resource.startsWith("catalogue_"))) return "/(admin)/settings-catalogue-management";
   if (grants !== undefined) return "/(admin)/access";
   switch (profile) {
     case "ground_tile_quotations_followups": return "/(admin)/tiles";

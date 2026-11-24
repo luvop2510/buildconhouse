@@ -35,6 +35,8 @@ from routes.auth_routes import router as auth_router  # noqa: E402
 from routes.dashboard_routes import router as dashboard_router  # noqa: E402
 from routes.catalog_routes import router as catalog_router  # noqa: E402
 from routes.catalog_import_routes import router as catalog_import_router  # noqa: E402
+from routes.catalogue_management_routes import router as catalogue_management_router  # noqa: E402
+from services.catalogue_jobs import catalogue_worker, stop_catalogue_workers
 from routes.customer_routes import router as customer_router  # noqa: E402
 from routes.customer_search_routes import router as customer_search_router
 from routes.kitchen_customer_deletion_routes import router as kitchen_customer_deletion_router
@@ -204,6 +206,7 @@ async def _startup(app: FastAPI) -> None:
     app.state.optional_startup_tasks = [
         asyncio.create_task(_run_optional_startup_task("automation-rule seed", _seed_automation_rules)),
         asyncio.create_task(followup_worker()),
+        asyncio.create_task(catalogue_worker()),
     ]
     logger.info("Forge API ready; infrastructure preflight passed.")
     logger.info("Monitoring status: sentry=%s", _monitoring_status["sentry"])
@@ -230,6 +233,7 @@ async def _shutdown_resources(app: FastAPI) -> None:
                 if not task.cancelled() and (error := task.exception()):
                     logger.warning("Background worker failed during shutdown (%s)", type(error).__name__)
         await drain_mutation_admission(max(0, deadline - loop.time()))
+        await stop_catalogue_workers()
         await catalog_service.stop_catalog_refresh()
         storage = get_media_storage()
         close_storage = getattr(storage, "close", None)
@@ -450,6 +454,7 @@ api.include_router(auth_router)
 api.include_router(dashboard_router)
 api.include_router(catalog_router)
 api.include_router(catalog_import_router)
+api.include_router(catalogue_management_router)
 api.include_router(customer_search_router)
 api.include_router(kitchen_customer_deletion_router)
 api.include_router(customer_router)

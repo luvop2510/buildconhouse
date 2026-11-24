@@ -118,7 +118,10 @@ export function personalAccountPath(pathname: string | undefined): string | null
   return isPersonalAccountRoute(segments) ? `/${segments.filter((part) => !part.startsWith("("))[0]}` : null;
 }
 
+export const CATALOGUE_MANAGEMENT_ROUTE = "settings-catalogue-management";
+
 export function moduleForRoute(segments: string[]): string | null {
+  if (segments.includes(CATALOGUE_MANAGEMENT_ROUTE)) return "catalogue-management";
   if (isPersonalAccountRoute(segments) || segments.includes("customer-profile")) return null;
   if (segments.includes("notebook")) {
     if (segments.includes("furniture-quotations")) return "furniture-quotations";
@@ -141,7 +144,7 @@ export function moduleForRoute(segments: string[]): string | null {
 
 /** Catalog visibility must never delete saved compatibility grants. */
 export function isResourceAssignable(resource: DelegationResource, floorId: string): boolean {
-  if (floorId === "second-floor" && resource.key !== "kitchen_restricted" && resource.key !== "kitchen_projects" && resource.key !== "kitchen_customer_delete" && resource.key !== "customer_delete" && !KITCHEN_STAGE_NAMES.some(stage => resource.key === `kitchen_${stage}`)) return false;
+  if (floorId === "second-floor" && !resource.key.startsWith("catalogue_") && resource.key !== "kitchen_restricted" && resource.key !== "kitchen_projects" && resource.key !== "kitchen_customer_delete" && resource.key !== "customer_delete" && !KITCHEN_STAGE_NAMES.some(stage => resource.key === `kitchen_${stage}`)) return false;
   return !resource.retired && (resource.assignable_floor_ids ?? resource.floor_ids).includes(floorId);
 }
 

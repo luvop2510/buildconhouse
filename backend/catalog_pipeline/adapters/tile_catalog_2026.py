@@ -30,11 +30,11 @@ class TileCatalog2026Adapter(BrandAdapter):
     def __init__(self, brand: str) -> None:
         self.brand = brand
 
-    def extract(self, data: bytes, filename: str) -> tuple[list[ProductRow], ExtractionReport]:
+    def extract(self, data: bytes, filename: str, *, sheet=None, include_images=True) -> tuple[list[ProductRow], ExtractionReport]:
         report = ExtractionReport(brand=self.brand, filename=filename, source_type="excel")
         try:
             from openpyxl import load_workbook
-            workbook = load_workbook(io.BytesIO(data), data_only=True)
+            workbook = load_workbook(io.BytesIO(data), data_only=True, read_only=True, keep_links=False)
         except Exception as error:  # pragma: no cover - parsing boundary
             report.warnings.append(f"xlsx open failed: {error}")
             return [], report
@@ -43,6 +43,8 @@ class TileCatalog2026Adapter(BrandAdapter):
         sku_occurrences: dict[str, int] = {}
         quality_rank = {"excellent": 4, "good": 3, "acceptable": 2, "poor": 1}
         for worksheet in workbook.worksheets:
+            if sheet is not None and worksheet.title != sheet:
+                continue
             values = [list(row) for row in worksheet.iter_rows(values_only=True)]
             if not values:
                 continue
@@ -73,9 +75,9 @@ class TileCatalog2026Adapter(BrandAdapter):
             box_sqft_column = next((index for label, index in headers.items() if "box" in label and "sqft" in label), None)
             serial_column = next((index for label, index in headers.items() if label.rstrip(".") in {"sr", "serial", "sr no"}), None)
             images_by_row: dict[int, ExtractedImage] = {}
-            for sheet, row, column, image in extract_images_from_xlsx_ex(data, optimize=False):
-                if sheet != worksheet.title or (image_column is not None and column != image_column):
-                    continue
+            anchors = extract_images_from_xlsx_ex(data, optimize=False, selected_sheet=worksheet.title,
+                selected_column=image_column) if include_images else ()
+            for _, row, _, image in anchors:
                 previous = images_by_row.get(row)
                 if previous is None or quality_rank.get(image.quality, 0) > quality_rank.get(previous.quality, 0):
                     images_by_row[row] = image
@@ -134,6 +136,7 @@ class TileCatalog2026Adapter(BrandAdapter):
                     product.issues.append(f"Duplicate listing occurrence {occurrence}; SKU suffixed to retain it")
                 rows.append(product)
         report.parsed_rows = len(rows)
+        workbook.close()
         return rows, report
 
 
@@ -157,8 +160,8 @@ class MCMAdapter(TileCatalog2026Adapter):
     def __init__(self) -> None:
         super().__init__("MCM")
 
-    def extract(self, data: bytes, filename: str) -> tuple[list[ProductRow], ExtractionReport]:
-        rows, report = super().extract(data, filename)
+    def extract(self, data: bytes, filename: str, *, sheet=None, include_images=True) -> tuple[list[ProductRow], ExtractionReport]:
+        rows, report = super().extract(data, filename, sheet=sheet, include_images=include_images)
         for row in rows:
             row.name = row.name.removesuffix(f" ({row.size})")
             row.family_name = row.name

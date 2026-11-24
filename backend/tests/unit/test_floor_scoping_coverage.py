@@ -45,6 +45,7 @@ SCOPING_HELPERS = {
     "_record_quotation_sent",  # scoped quotation read before the transactional write
     "_selected_followup_or_404",  # checks the stored floor against the selected department
     "_tile_draft_receipt_id",  # requires Ground Floor access and binds actor/floor into the receipt key
+    "_floor_scoped_catalogue_job",  # exact job/floor match plus current actor grants and ownership
 }
 
 

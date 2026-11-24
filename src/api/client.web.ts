@@ -38,6 +38,11 @@ export function subscribeCatalogMutations(listener: (floorId?: string) => void) 
   catalogMutationListeners.add(listener);
   return () => { catalogMutationListeners.delete(listener); };
 }
+
+export function notifyCatalogueChanged(floorId?: string) {
+  clearApiResponseCache();
+  catalogMutationListeners.forEach(listener => listener(floorId));
+}
 function updateDeletionProgress(delta: number) {
   pendingDeletions = Math.max(0, pendingDeletions + delta);
   deletionListeners.forEach(listener => listener(pendingDeletions));

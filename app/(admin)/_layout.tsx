@@ -27,7 +27,7 @@ import { useInitialAccountRoute } from "@/src/state/initial-account-route";
 import { useAuth } from "@/src/state/auth";
 import { useModuleAccess, usePermissionMatrix } from "@/src/hooks/use-permissions";
 import { staffLandingPath } from "@/src/access-profiles";
-import { hasRouteDestination, isCustomerEditorRoute, isPersonalAccountRoute, moduleForRoute, resolveFloorRouteSegments } from "@/src/team-delegation";
+import { CATALOGUE_MANAGEMENT_ROUTE, hasRouteDestination, isCustomerEditorRoute, isPersonalAccountRoute, moduleForRoute, resolveFloorRouteSegments } from "@/src/team-delegation";
 import { useFloorAccess } from "@/src/hooks/use-floor-access";
 import { AppScaffold } from "@/src/components/mobile/AppScaffold";
 import { useInputActive } from "@/src/hooks/use-input-active";
@@ -206,7 +206,7 @@ const FLOOR_ROUTE_SEGMENTS: Record<string, string[]> = {
   [FURNITURE_FLOOR_ID]: ["furniture", "furniture-quotations"],
 };
 
-const SHARED_FLOOR_ROUTES = ["dashboard", "customer-profile", "catalog", "customers", "payments", "payments-list", "walkins", "followups", "settings", "team", "sales-data"];
+const SHARED_FLOOR_ROUTES = ["dashboard", "customer-profile", "catalog", "customers", "payments", "payments-list", "walkins", "followups", "settings", "team", "sales-data", CATALOGUE_MANAGEMENT_ROUTE];
 
 function isSharedFloorRoute(segments: string[]) {
   return SHARED_FLOOR_ROUTES.some(segment => segments.includes(segment));
@@ -218,7 +218,7 @@ function isKitchenReportingRoute(segments: string[]) {
 
 function isRouteCompatibleWithFloor(segments: string[], floorId: string) {
   if (segments.includes("notifications")) return false;
-  if (floorId === KITCHEN_FLOOR_ID && !segments.includes("kitchen") && !segments.includes("dashboard") && !segments.includes("customer-profile") && !isKitchenReportingRoute(segments) && !isPersonalAccountRoute(segments) && !isCustomerEditorRoute(segments)) return false;
+  if (floorId === KITCHEN_FLOOR_ID && !segments.includes("kitchen") && !segments.includes("dashboard") && !segments.includes("customer-profile") && !isKitchenReportingRoute(segments) && !segments.includes(CATALOGUE_MANAGEMENT_ROUTE) && !isPersonalAccountRoute(segments) && !isCustomerEditorRoute(segments)) return false;
   if (segments.includes("catalog") && ![SANITARY_FLOOR_ID, TILES_FLOOR_ID].includes(floorId)) return false;
   return !Object.entries(FLOOR_ROUTE_SEGMENTS).some(([restrictedFloor, roots]) => (
     restrictedFloor !== floorId && roots.some((root) => segments.includes(root))
@@ -486,7 +486,7 @@ function FloorAccessGate({ children }: { children: React.ReactNode }) {
 
   const retiredWorkspaceRoute = Boolean(selectedFloorId && (
     segments.includes("notifications") ||
-    (selectedFloorId === KITCHEN_FLOOR_ID && destinationReady && !segments.includes("kitchen") && !segments.includes("dashboard") && !segments.includes("customer-profile") && !isKitchenReportingRoute(segments) && !isPersonalAccountRoute(segments) && !isCustomerEditorRoute(segments)) ||
+    (selectedFloorId === KITCHEN_FLOOR_ID && destinationReady && !segments.includes("kitchen") && !segments.includes("dashboard") && !segments.includes("customer-profile") && !isKitchenReportingRoute(segments) && !segments.includes(CATALOGUE_MANAGEMENT_ROUTE) && !isPersonalAccountRoute(segments) && !isCustomerEditorRoute(segments)) ||
     (["purchases", "purchases-completed", "purchase-orders"].some(part => segments.includes(part)) && selectedFloorId !== SANITARY_FLOOR_ID) ||
     (segments.includes("catalog") && ![SANITARY_FLOOR_ID, TILES_FLOOR_ID].includes(selectedFloorId))
   ));

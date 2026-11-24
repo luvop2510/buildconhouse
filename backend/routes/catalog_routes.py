@@ -21,6 +21,7 @@ from models import Brand, BrandCreate, Category, CategoryCreate, ConcealedPart, 
 from services import catalog_service, media_service
 from services import catalog_product_order as product_order
 from services.activity_log import log_event
+from services.catalogue_changes import new_product
 from services.pagination import MAX_PAGE_LIMIT, normalize_pagination
 
 router = APIRouter(tags=["catalog"])
@@ -806,14 +807,14 @@ async def create_product(
     await _require_product_relations_on_floor(body.brand_id, body.category_id, floor_id)
     if await db.products.find_one({"sku": body.sku, "floor_id": floor_id, "brand_id": body.brand_id}):
         raise HTTPException(status_code=409, detail="SKU already exists")
-    payload = body.model_dump()
-    payload["floor_id"] = floor_id
-    payload["catalog_source"] = MANUAL_CATALOG_SOURCE
-    prod = Product(**payload)
-    await db.products.insert_one(prod.model_dump())
-    # This legacy API has no request key to recover a committed write.
-    catalog_service.schedule_catalog_refresh()
-    return prod
+    payload = body.model_dump(exclude={"sku", "brand_id", "category_id", "request_id", "keep_in_catalog"})
+    record = new_product(floor_id, body.brand_id, body.category_id, body.sku, payload)
+    try:
+        await db.products.insert_one(dict(record))
+    except DuplicateKeyError:
+        raise HTTPException(409, "SKU already exists") from None
+    await catalog_service.refresh_after_product_creation()
+    return Product(**record)
 
 
 @router.patch("/products/{product_id}", response_model=Product)

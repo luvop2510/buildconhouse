@@ -56,6 +56,11 @@ def classify_http_mutation(scope):
     if resource == "team" or (resource == "settings" and identity in {"permission-matrix", "access-grants"}):
         return False, _keys("permission-policy", "staff-auth")
 
+    if resource == "catalog" and identity == "management" and len(subpath) > 0 and subpath[0] == "jobs":
+        # Uploads, confirmations and retries only touch import metadata here.
+        # The worker separately admits the actual catalogue writes.
+        return False, _keys("catalogue-imports")
+
     if resource in {"categories", "brands", "products", "families", "media", "catalog"}:
         # Category membership, variants and related product IDs may be
         # modified from a different row. Fence the catalog domain as a unit.

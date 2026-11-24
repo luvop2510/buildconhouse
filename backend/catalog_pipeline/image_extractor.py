@@ -429,7 +429,11 @@ def extract_images_from_xlsx(xlsx_bytes: bytes) -> Iterator[tuple[str, int, str,
         yield sheet, row, img.sha1, img.data_url
 
 
-def extract_images_from_xlsx_ex(xlsx_bytes: bytes, *, optimize: bool = True) -> Iterator[tuple[str, int, int, ExtractedImage]]:
+def extract_images_from_xlsx_ex(
+    xlsx_bytes: bytes, *, optimize: bool = True,
+    selected_sheet: str | None = None, selected_rows: set[int] | None = None,
+    selected_column: int | None = None, invalid_rows: set[int] | None = None,
+) -> Iterator[tuple[str, int, int, ExtractedImage]]:
     """Yield (sheet_name, anchor_row_1based, anchor_col_0based, ExtractedImage)
     for every embedded image the supplier ships, with each image classified
     by pixel quality.
@@ -479,6 +483,8 @@ def extract_images_from_xlsx_ex(xlsx_bytes: bytes, *, optimize: bool = True) -> 
     # avoid double-adding the identical blip inside an AlternateContent tree.
 
     for sheet_name, sheet_path in sheet_map.items():
+        if selected_sheet is not None and sheet_name != selected_sheet:
+            continue
         rels_path = sheet_path.rsplit("/", 1)[0] + "/_rels/" + sheet_path.rsplit("/", 1)[1] + ".rels"
         try:
             sheet_rels = z.read(rels_path)
@@ -531,6 +537,10 @@ def extract_images_from_xlsx_ex(xlsx_bytes: bytes, *, optimize: bool = True) -> 
                     col_el = frm.find("{%s}col" % NS["xdr"])
                     if col_el is not None and col_el.text and col_el.text.isdigit():
                         col_idx = int(col_el.text)
+                if selected_rows is not None and row_idx not in selected_rows:
+                    continue
+                if selected_column is not None and col_idx != selected_column:
+                    continue
 
                 # A drawing anchor may reference multiple blips inside an
                 # AlternateContent block (Choice = modern format, Fallback =
@@ -555,6 +565,8 @@ def extract_images_from_xlsx_ex(xlsx_bytes: bytes, *, optimize: bool = True) -> 
                     candidates.append(img)
 
                 if not candidates:
+                    if invalid_rows is not None and row_idx:
+                        invalid_rows.add(row_idx)
                     continue
 
                 # Pick the highest quality by (excellent > good > acceptable > poor)

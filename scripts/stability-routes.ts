@@ -47,6 +47,10 @@ export const requiredStabilityScenarios: Record<string, string[]> = {
   'redesign-quotation-recovery.spec.ts': [
     'critical quotation retries a gateway failure and displays saved lines before related reads finish',
   ],
+  'redesign-catalogue-management.spec.ts': [
+    'critical catalogue owner previews chunked price updates, confirms once and reverses from history',
+    'critical catalogue employee sees only granted department and product creation actions',
+  ],
   'redesign-mobile-startup.spec.ts': [
     'critical owner navigation works after login while unrelated role permissions are pending',
     'critical delegated navigation works after login while unrelated role permissions are pending',

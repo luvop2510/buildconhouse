@@ -89,7 +89,9 @@ def listing_pipeline(filters=None, *, floor_ids=None, q=None, per_category=False
         {"$ne": [{"$ifNull": ["$catalog_mrp_override", False]}, True]},
         {"$ne": [{"$ifNull": ["$_placement.mrp", None]}, None]},
     ]}
-    listing_price = {"$cond": [use_supplier_price, "$_placement.mrp", "$price"]}
+    use_supplier_offer = {"$and": [use_supplier_price,
+        {"$ne": [{"$ifNull": ["$catalog_offer_override", False]}, True]}]}
+    listing_price = {"$cond": [use_supplier_offer, "$_placement.mrp", "$price"]}
     pipeline = [
         {"$match": query},
         {"$lookup": {"from": "brands", "localField": "brand_id", "foreignField": "id", "as": "_brand"}},
@@ -112,10 +114,12 @@ def listing_pipeline(filters=None, *, floor_ids=None, q=None, per_category=False
             "listing_id": {"$ifNull": ["$_placement.entry_id", "$$REMOVE"]},
             "catalog_entry": {"$ifNull": ["$_placement", "$$REMOVE"]},
             "price": listing_price,
-            "mrp": {"$cond": [use_supplier_price, "$_placement.mrp", "$mrp"]},
+            "mrp": {"$cond": [{"$and": [
+                use_supplier_price, {"$ne": [{"$ifNull": ["$catalog_mrp_only_override", False]}, True]},
+            ]}, "$_placement.mrp", "$mrp"]},
             "price_status": {"$cond": [use_supplier_price, "known", "$price_status"]},
             "source_price_unspecified": {"$and": [{"$ne": ["$_placement", None]}, {"$eq": [{"$ifNull": ["$_placement.mrp", None]}, None]}]},
-            "price_source": {"$cond": [use_supplier_price, "supplier", {"$cond": [{"$eq": ["$price_status", "unspecified"]}, "unspecified", "existing"]}]},
+            "price_source": {"$cond": [use_supplier_offer, "supplier", {"$cond": [{"$eq": ["$price_status", "unspecified"]}, "unspecified", "existing"]}]},
             "_catalog_database_listing": True,
             "_source_rank": {"$cond": [{"$ne": ["$_placement", None]}, 0, 1]},
             "_brand_order": {"$ifNull": ["$_brand.catalog_order", 999]},

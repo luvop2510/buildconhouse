@@ -42,6 +42,11 @@ export function subscribeCatalogMutations(listener: (floorId?: string) => void) 
   return () => { catalogMutationListeners.delete(listener); };
 }
 
+export function notifyCatalogueChanged(floorId?: string) {
+  clearApiResponseCache();
+  catalogMutationListeners.forEach(listener => listener(floorId));
+}
+
 export function subscribeDeletionProgress(listener: (count: number) => void) {
   deletionListeners.add(listener);
   listener(pendingDeletions);

@@ -386,7 +386,8 @@ function ProductGridCardImpl({ product, compact, width, favourite, addedQty, onT
   const selectedSku = selectedVariant?.sku ?? product.sku;
   const selectedPrice = selectedVariant?.price ?? product.price;
   const selectedMrp = selectedVariant?.mrp ?? product.mrp;
-  const mrpOverride = selectedVariant ? selectedVariant.catalog_mrp_override : product.catalog_mrp_override;
+  const pricedProduct = selectedVariant || product;
+  const mrpOverride = pricedProduct.catalog_mrp_override || pricedProduct.catalog_mrp_only_override;
   const availability = catalogAvailability(product, selectedVariant);
   const hasSeatCover = defaultIncludedParts(product, selectedVariant).some(part => part.role === "seat_cover");
 

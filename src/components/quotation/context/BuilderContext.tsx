@@ -89,6 +89,7 @@ function familyCardToProduct(family: CatalogFamily): Product | null {
     price: Number(representative.price ?? family.min_price ?? 0),
     mrp: Number(representative.mrp ?? representative.price ?? family.min_price ?? 0),
     catalog_mrp_override: representative.catalog_mrp_override,
+    catalog_mrp_only_override: representative.catalog_mrp_only_override,
     category_id: family.category_id,
     brand_id: family.brand_id,
     family_key: family.family_key || null,

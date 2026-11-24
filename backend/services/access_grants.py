@@ -35,6 +35,21 @@ RESOURCE_REGISTRY["dashboard"].update(actions=["view"], description="View today'
 RESOURCE_REGISTRY["quotations"].update(floor_ids=["first-floor"], description="Create and manage Sanitary quotations, confirm orders, and export documents.")
 RESOURCE_REGISTRY["tiles"].update(floor_ids=["ground-floor"], description="Create tile selections and quotations, confirm orders, and export documents.")
 RESOURCE_REGISTRY["catalog"].update(floor_ids=["ground-floor", "first-floor"], description="Manage the selected Ground or Sanitary Bathroom catalog.")
+CATALOGUE_FLOORS = ("ground-floor", "first-floor", "second-floor", "third-floor")
+CATALOGUE_CAPABILITIES = {
+    "catalogue_view": ("View Catalogue Management", "view"),
+    "catalogue_products_add": ("Add Products", "create"),
+    "catalogue_products_edit": ("Edit Products", "update"),
+    "catalogue_brands": ("Add Brands", "create"),
+    "catalogue_categories": ("Manage Categories", "create"),
+    "catalogue_bulk": ("Bulk Import Products", "create"),
+    "catalogue_prices": ("Update Prices", "update"),
+    "catalogue_images": ("Manage Product Images", "update"),
+    "catalogue_history": ("View Import History", "view"),
+    "catalogue_rollback": ("Rollback Imports", "update"),
+}
+for _resource, (_label, _action) in CATALOGUE_CAPABILITIES.items():
+    RESOURCE_REGISTRY[_resource] = {"label": _label, "actions": list(dict.fromkeys(("view", _action))), "floor_ids": list(CATALOGUE_FLOORS)}
 RESOURCE_REGISTRY["catalog_product_reorder"] = {"label": "Reorder catalog products", "floor_ids": ["ground-floor", "first-floor"],
     "actions": ["view", "update"], "description": "Set the shared product order for a brand and category without changing catalog products."}
 RESOURCE_REGISTRY["orders"].update(floor_ids=["ground-floor"], description="Manage tile purchase orders, dispatches, and delivery stages.")
@@ -80,7 +95,7 @@ def delegation_resource_catalog(floor_ids: list[str]) -> list[dict[str, Any]]:
         supported = [floor for floor in floor_ids
                      if not metadata.get("floor_ids") or floor in metadata["floor_ids"]]
         assignable = [] if metadata.get("retired") or metadata.get("owner_only") else [
-            floor for floor in supported if floor != "second-floor" or key in {"kitchen_projects", "kitchen_customer_delete", "customer_delete", "kitchen_restricted"} or key in KITCHEN_STAGE_RESOURCES.values()
+            floor for floor in supported if floor != "second-floor" or key in {"kitchen_projects", "kitchen_customer_delete", "customer_delete", "kitchen_restricted"} or key in KITCHEN_STAGE_RESOURCES.values() or key in CATALOGUE_CAPABILITIES
         ]
         resources.append({
             "key": key, "label": metadata["label"], "retired": metadata.get("retired", False),

@@ -1,6 +1,6 @@
 """Current page choices never erase or widen historical floor grants."""
 from services.access_grants import (
-    KITCHEN_STAGE_RESOURCES, RESOURCE_REGISTRY, build_grant, delegation_resource_catalog, grant_allows,
+    CATALOGUE_CAPABILITIES, KITCHEN_STAGE_RESOURCES, RESOURCE_REGISTRY, build_grant, delegation_resource_catalog, grant_allows,
     resource_supports,
 )
 
@@ -10,10 +10,15 @@ FLOORS = ["ground-floor", "first-floor", "second-floor", "third-floor"]
 def test_kitchen_assignment_only_offers_the_current_workspace():
     catalog = delegation_resource_catalog(FLOORS)
     kitchen = [row for row in catalog if "second-floor" in row["assignable_floor_ids"]]
-    assert [row["key"] for row in kitchen] == ["kitchen_projects", *KITCHEN_STAGE_RESOURCES.values(), "kitchen_restricted", "customer_delete"]
-    assert kitchen[0]["label"] == "All Kitchen stages"
-    assert kitchen[0]["actions"] == ["view", "create", "update", "export"]
-    assert kitchen[-1]["actions"] == ["view", "delete"]
+    workspace = [row for row in kitchen if row["key"] not in CATALOGUE_CAPABILITIES]
+    assert [row["key"] for row in workspace] == ["kitchen_projects", *KITCHEN_STAGE_RESOURCES.values(), "kitchen_restricted", "customer_delete"]
+    assert workspace[0]["label"] == "All Kitchen stages"
+    assert workspace[0]["actions"] == ["view", "create", "update", "export"]
+    assert workspace[-1]["actions"] == ["view", "delete"]
+    for row in kitchen:
+        if row["key"] in CATALOGUE_CAPABILITIES:
+            assert row["assignable_floor_ids"] == FLOORS
+            assert set(row["actions"]) == {"view", CATALOGUE_CAPABILITIES[row["key"]][1]}
     assert resource_supports("kitchen_customer_delete", "second-floor", ["view", "delete"])
     assert not resource_supports("kitchen_customer_delete", "first-floor", ["view", "delete"])
     legacy = next(row for row in catalog if row["key"] == "kitchen_customer_delete")

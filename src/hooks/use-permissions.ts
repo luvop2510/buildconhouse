@@ -94,6 +94,9 @@ export function useModuleAccess() {
       if (moduleKey === "sales-data" || moduleKey === "sanitary-sales") return staff?.role === "owner";
       if (!staff) return true;
       if (staff.role === "owner") return true;
+      if (moduleKey === "catalogue-management") {
+        return Boolean(staff.access_grants?.some(grant => grant.floor_id && grant.resource.startsWith("catalogue_")));
+      }
       if (moduleKey === "team") return false;
       if (staff.custom_access) {
         if (moduleKey === "settings") return true;

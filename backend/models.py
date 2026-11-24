@@ -434,6 +434,7 @@ class ProductVariant(BaseModel):
     variant_label: Optional[str] = None
     mrp: float
     catalog_mrp_override: bool = False
+    catalog_mrp_only_override: bool = False
     price: float
     stock: int = 0
     dimensions: Optional[str] = None
@@ -521,6 +522,7 @@ class Product(TimestampedModel):
     warranty: Optional[str] = None
     mrp: float = Field(ge=0, allow_inf_nan=False)
     catalog_mrp_override: bool = False
+    catalog_mrp_only_override: bool = False
     price: float = Field(ge=0, allow_inf_nan=False)  # trade price
     stock: int = 0
     # DEPRECATED (kept for read-back compatibility) — new media lives in

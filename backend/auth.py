@@ -254,6 +254,9 @@ async def authorize_staff_request(user: UserPublic, request: Request | None) -> 
         floor = "second-floor" if path.startswith("/api/kitchen-customer-deletion/") else user.active_floor_id
         await require_customer_delete(db, user, floor)
         return user
+    if path == "/api/catalog/management" or path.startswith("/api/catalog/management/"):
+        # Each operation re-reads the actor's department-specific Catalogue Management grants.
+        return user
     if not profile_allows_request(user.access_profile, request.method, path):
         raise HTTPException(status_code=403, detail="This account is not permitted to use this function")
     if user.custom_access and is_global_followup_admin_request(request.method, path):

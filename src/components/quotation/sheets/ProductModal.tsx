@@ -41,6 +41,7 @@ function productAsVariant(product: Product): ProductVariant {
     price: product.price, mrp: product.mrp, stock: product.stock ?? 0,
     price_unknown: product.price_unknown,
     catalog_mrp_override: product.catalog_mrp_override,
+    catalog_mrp_only_override: product.catalog_mrp_only_override,
     dimensions: product.dimensions ?? null, material: product.material ?? null,
     dimension_image_urls: product.dimension_image_urls ?? [],
     seat_cover_image_urls: product.seat_cover_image_urls ?? [],
@@ -134,6 +135,7 @@ export function ProductModal() {
       catalog_entries: variant.id === product.id ? product.catalog_entries : undefined,
       mrp: variant.mrp ?? product.mrp,
       catalog_mrp_override: variant.catalog_mrp_override,
+      catalog_mrp_only_override: variant.catalog_mrp_only_override,
       stock: variant.stock ?? product.stock,
       dimensions: variant.dimensions ?? product.dimensions,
       dimension_image_urls: variant.dimension_image_urls ?? product.dimension_image_urls,
@@ -277,6 +279,7 @@ export function ProductModal() {
     }
     return selectedVariant?.price ?? product?.price ?? 0;
   }, [priceOverride, selectedVariant, product]);
+  const explicitMrp = selectedProduct?.catalog_mrp_override || selectedProduct?.catalog_mrp_only_override;
 
   // Variant-aware gallery — when a finish/colour is selected AND that
   // sibling product has its own real photo, it takes priority; the base
@@ -428,8 +431,8 @@ export function ProductModal() {
                 <View style={styles.priceCard}>
                   <View style={{ flexDirection: "row", alignItems: "baseline", gap: 8 }}>
                     <Text style={styles.priceBig} numberOfLines={1}>{catalogPriceUnknown(product, selectedVariant) && manualCatalogPrice(priceOverride) === null ? "Price unavailable" : money(currentPrice)}</Text>
-                    {selectedProduct.catalog_mrp_override || (!catalogPriceUnknown(product, selectedVariant) && selectedProduct.mrp > currentPrice) ? (
-                      <Text style={[styles.mrpBig, selectedProduct.catalog_mrp_override && styles.currentMrp]} numberOfLines={1}>{selectedProduct.catalog_mrp_override ? "MRP " : ""}{money(selectedProduct.mrp)}</Text>
+                    {explicitMrp || (!catalogPriceUnknown(product, selectedVariant) && selectedProduct.mrp > currentPrice) ? (
+                      <Text style={[styles.mrpBig, explicitMrp && styles.currentMrp]} numberOfLines={1}>{explicitMrp ? "MRP " : ""}{money(selectedProduct.mrp)}</Text>
                     ) : null}
                   </View>
                   <Text style={styles.priceHint}>Editable selling price · MRP shown for reference</Text>

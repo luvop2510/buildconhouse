@@ -394,6 +394,30 @@ def patch_product_in_snapshot(product_id: str, updates: dict) -> None:
     schedule_catalog_refresh()
 
 
+CATALOGUE_PRICE_FIELDS = frozenset({
+    "mrp", "catalog_mrp_only_override", "catalog_version", "catalog_price_updated_at", "catalog_updated_by", "updated_at",
+})
+
+
+def patch_catalogue_price_rows(products: list[dict]) -> None:
+    """Publish confirmed price-only writes without rebuilding a warm catalogue."""
+    global _refresh_generation
+    if not products:
+        return
+    _refresh_generation += 1
+    if _snapshot is None or _snapshot.database_backed:
+        return
+    for product in products:
+        existing = _snapshot.product_by_id.get(product["id"])
+        if existing is None or (existing.get("updated_at") or "") > (product.get("updated_at") or ""):
+            continue
+        for field in CATALOGUE_PRICE_FIELDS:
+            if field in product:
+                existing[field] = product[field]
+            else:
+                existing.pop(field, None)
+
+
 async def note_product_usage(user_id: str, product_ids: list[str], at: str) -> None:
     """Keep popularity/recent/frequent reads coherent with a completed write."""
     global _snapshot
@@ -631,6 +655,8 @@ def _variant_summary(product: dict, snapshot: CatalogSnapshot) -> dict:
         summary["image_candidates"] = photos[1:]
     if product.get("catalog_mrp_override"):
         summary["catalog_mrp_override"] = True
+    if product.get("catalog_mrp_only_override"):
+        summary["catalog_mrp_only_override"] = True
     if product.get("price_status") is not None:
         summary["price_unknown"] = product["price_status"] == "unspecified"
     if product.get("catalog_entries"):
@@ -801,10 +827,14 @@ def product_photo_urls(product: dict, snapshot: CatalogSnapshot) -> list[str]:
     quality = {"excellent": 4, "good": 3, "acceptable": 2, "poor": 1}
     family = product.get("family_key")
     source_digest = (product.get("specs") or {}).get("grohe_ceramics_image_sha1")
+    catalogue_image_key = product.get("catalogue_image_key")
 
     def priority(url: str) -> tuple[bool, int, int, int, bool]:
         row = gallery.get(url, {})
-        is_source = bool(source_digest and row.get("sha1") == source_digest and row.get("source_type") == "supplier")
+        is_source = bool(
+            (catalogue_image_key and row.get("storage_key") == catalogue_image_key)
+            or (not catalogue_image_key and source_digest and row.get("sha1") == source_digest and row.get("source_type") == "supplier")
+        )
         image_family = row.get("family_key")
         family_match = (1 if family == image_family else -1) if family and image_family else 0
         pixels = max(0, int(row.get("width") or 0)) * max(0, int(row.get("height") or 0))
@@ -846,6 +876,10 @@ def _product_listing(product: dict, entry: dict) -> dict:
     row["source_price_unspecified"] = entry.get("mrp") is None
     if not product.get("catalog_mrp_override") and entry.get("mrp") is not None:
         row.update(price=entry["mrp"], mrp=entry["mrp"], price_status="known", price_source="supplier")
+        if product.get("catalog_mrp_only_override"):
+            row["mrp"] = product["mrp"]
+        if product.get("catalog_offer_override"):
+            row.update(price=product["price"], price_source="existing")
     else:
         row["price_source"] = "existing" if product.get("price_status") != "unspecified" else "unspecified"
     return row

@@ -19,7 +19,7 @@ from auth import floor_inherit
 from db import db
 from media_storage import get_media_storage, StorageError
 from media_storage.factory import public_bucket, private_bucket
-from models import ProductMedia, MediaSourceType, MediaRole, MediaQuality, UserPublic
+from models import ProductMedia, MediaSourceType, MediaRole, MediaQuality, UserPublic, now_iso
 from services.activity_log import log_event
 from services.media_quality import quality_from_dimensions
 from services.product_image_normalizer import normalize_product_image
@@ -227,6 +227,11 @@ async def _demote_other_primaries(
     else:
         return
     await db.product_media.update_many(filt, {"$set": {"is_primary": False}})
+    if product_id and brand_id:
+        # A later explicit primary selection replaces a previously imported hero.
+        await db.products.update_one({
+            "id": product_id, "floor_id": floor_id, "brand_id": brand_id, "catalogue_image_key": {"$exists": True},
+        }, {"$unset": {"catalogue_image_key": ""}, "$set": {"updated_at": now_iso()}})
 
 
 async def delete_media(media_id: str, *, actor: Optional[UserPublic] = None) -> bool:
@@ -351,6 +356,7 @@ def _apply_media_to_product(product: dict, media: list[ProductMedia]) -> None:
     hero_quality: Optional[str] = None
     gallery: list[dict] = []
     source_digest = (product.get("specs") or {}).get("grohe_ceramics_image_sha1")
+    catalogue_image_key = product.get("catalogue_image_key")
     for m in media:
         if not m.public_url:
             continue
@@ -361,7 +367,10 @@ def _apply_media_to_product(product: dict, media: list[ProductMedia]) -> None:
             "source_type": m.source_type, "width": m.width, "height": m.height,
             "quality": m.quality, "is_primary": m.is_primary,
         }
-        is_source = bool(source_digest and m.source_type == "supplier" and m.sha1 == source_digest)
+        is_source = bool(
+            (catalogue_image_key and m.storage_key == catalogue_image_key)
+            or (not catalogue_image_key and source_digest and m.source_type == "supplier" and m.sha1 == source_digest)
+        )
         if is_source:
             gallery.insert(0, {**entry, "catalogue_image": True})
         else:
