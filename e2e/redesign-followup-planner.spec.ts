@@ -181,6 +181,18 @@ async function mockPlanner(page: Page, limited = false) {
   } }));
   await page.route('**/api/activity/quotation/Q-125', route => route.fulfill({ json: [] }));
   await page.route('**/api/purchase-orders?quotation_id=Q-125', route => route.fulfill({ json: [] }));
+  const purchaseLoaded = new Set<string>();
+  await page.route(/\/api\/purchases\/(brands|stages|shortages|items\/page)(?:\?|$)/, async route => {
+    const endpoint = new URL(route.request().url()).pathname.split('/purchases/')[1];
+    const responses = {
+      brands: { all: 0, brands: [] },
+      stages: [],
+      shortages: { items: [] },
+      'items/page': { items: [], total: 0, next_skip: null, summaries: { blocked_count: 0, stage_counts: {} } },
+    };
+    await route.fulfill({ json: responses[endpoint as keyof typeof responses] });
+    purchaseLoaded.add(endpoint);
+  });
   await page.route('**/api/suppliers', route => route.fulfill({ json: [supplier] }));
   await page.route('**/api/quotations/Q-125/place-order/preview', route => route.fulfill({ json: {
     quotation_id: 'Q-125', quotation_number: 'Q-125', doc_type: 'standard', customer_id: monday.customer_id,
@@ -273,7 +285,7 @@ async function mockPlanner(page: Page, limited = false) {
     return route.fulfill(response);
   });
   return {
-    lastRead: () => reads.at(-1), postponements, notes, outcomes, orders, legacyReads, completions: () => completions,
+    lastRead: () => reads.at(-1), postponements, notes, outcomes, orders, legacyReads, completions: () => completions, purchaseLoaded,
     async releaseAbandonedSearch() {
       abandonedSearch.resolve();
       if (reads.some(query => query.get('q') === 'abandoned-search')) await abandonedResponse.promise;
@@ -364,6 +376,8 @@ test('critical Follow-ups planner groups today’s work and opens the next Monda
   await page.getByTestId('confirm-place-order').click();
   await expect.poll(() => fixture.orders.length).toBe(1);
   await expect(page).toHaveURL(/\/purchases/);
+  await expect.poll(() => fixture.purchaseLoaded.size).toBe(4);
+  await expect(page.getByText(/Loading purchases|Preparing today’s operations/)).toHaveCount(0);
   await page.goto('/followups');
   const won = page.getByTestId('planner-card-won');
   await expect(won).toContainText(/₹\s*4,85,000/);
