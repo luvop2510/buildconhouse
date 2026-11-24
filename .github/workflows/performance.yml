@@ -46,7 +46,7 @@ jobs:
         run: node scripts/run-performance-audit.mjs --ci-phase=prepare
       - name: Preserve immutable current-run export
         id: export
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: performance-export-${{ github.run_id }}-${{ github.run_attempt }}
           # Expo emits _expo/.routes.json; preserve it in the exact export.
@@ -106,7 +106,7 @@ jobs:
       - name: Preserve required stability evidence
         id: evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: performance-stability-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.shard }}
           path: |
@@ -160,7 +160,7 @@ jobs:
       - name: Preserve required timing evidence
         id: evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: performance-timing-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
@@ -212,7 +212,7 @@ jobs:
         run: node scripts/run-performance-audit.mjs --ci-phase=aggregate
       - name: Preserve combined performance evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: performance-audit-${{ github.run_id }}-${{ github.run_attempt }}
           path: output

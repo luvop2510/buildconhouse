@@ -72,7 +72,7 @@ jobs:
           PY
       - name: Retain scan evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: strix-security
           path: strix_runs
