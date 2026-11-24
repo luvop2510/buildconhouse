@@ -20,6 +20,7 @@ import { useRequireFloorAccess } from "@/src/hooks/use-floor-access";
 import { useActionAccess } from "@/src/hooks/use-permissions";
 import { useAuth } from "@/src/state/auth";
 import { quotationDisplayStatus } from "@/src/utils/quotationStatus";
+import { quotationLoadMessage, type QuotationCompletion } from "@/src/components/quotation/helpers/loadQuotation";
 import { wcCombinations } from "@/src/components/quotation/helpers/concealedParts";
 
 type Line = { id: string; product_id: string; sku: string; name: string; qty: number; unit_price: number; mrp?: number | null; net_amount?: number | null; discount_pct: number | null; room?: string; description?: string | null; category_id?: string | null; godown_stock_id?: string | null; godown_source_customer_name?: string | null; godown_source_purchased_at?: string | null; godown_allocated_at?: string | null; included_for_line_id?: string | null; included_part_role?: "seat_cover" | null; availability?: "Coming Soon" | null };
@@ -43,6 +44,12 @@ type Breakdown = {
   project_discount_pct: number;
   category_discounts: Record<string, number>;
 };
+
+function savedDiscountPercent(line: Line) {
+  const gross = line.qty * line.unit_price;
+  if (line.net_amount == null || gross <= 0) return line.discount_pct ?? 0;
+  return Math.round((1 - line.net_amount / gross) * 10_000) / 100;
+}
 
 const NEXT_STATUS: Record<string, string> = {
   pending_approval: "approved",
@@ -116,27 +123,33 @@ export default function QuotationDetail() {
       setBreakdown(null); setTimeline([]); setLinkedPos([]);
     }
     const quotationId = encodeURIComponent(id);
-    const primary = api.get<Quotation>(`/quotations/${quotationId}?with_completion=true`, options)
-      .then(doc => { if (isCurrent()) setQ(doc); })
-      .catch((e: any) => {
-        if (!isCurrent()) return;
-        if (background) setRelatedError(true);
-        else { setQ(null); setLoadError(e?.detail || "Could not load this quotation"); }
-      }).finally(() => { if (isCurrent() && !background) setLoading(false); });
-    // Render the authoritative document summary immediately; secondary reads
-    // fill their own sections without holding the whole page behind a barrier.
-    const prices = api.get<Breakdown>(`/quotations/${quotationId}/breakdown`, options)
-      .then(value => { if (isCurrent()) setBreakdown(value); })
-      .catch(() => { if (isCurrent()) setRelatedError(true); })
-      .finally(() => { if (isCurrent()) setBreakdownLoading(false); });
-    const related = <T,>(path: string, publish: (value: T) => void) => api.get<T>(path, options)
+    const path = `/quotations/${quotationId}`;
+    try {
+      const doc = await api.get<Quotation>(`${path}?view=editor`, options);
+      if (!isCurrent()) return;
+      setQ(doc);
+    } catch (error) {
+      if (!isCurrent()) return;
+      if (background) setRelatedError(true);
+      else { setQ(null); setLoadError(quotationLoadMessage(error)); }
+      setBreakdownLoading(false); setRelatedLoading(false);
+      return;
+    } finally {
+      if (isCurrent() && !background) setLoading(false);
+    }
+
+    const related = <T,>(url: string, publish: (value: T) => void) => api.get<T>(url, options)
       .then(value => { if (isCurrent()) publish(value); })
       .catch(() => { if (isCurrent()) setRelatedError(true); });
-    const history = Promise.all([
+    void related<Breakdown>(`${path}/breakdown`, setBreakdown)
+      .finally(() => { if (isCurrent()) setBreakdownLoading(false); });
+    void related<QuotationCompletion>(`${path}/completion`, completion => {
+      setQ(current => current?.id === id ? { ...current, ...completion } : current);
+    });
+    void Promise.all([
       related<TimelineEvent[]>(`/activity/quotation/${quotationId}`, setTimeline),
       related<PoStub[]>(`/purchase-orders?quotation_id=${quotationId}`, setLinkedPos),
     ]).finally(() => { if (isCurrent()) setRelatedLoading(false); });
-    await Promise.all([primary, prices, history]);
   }, [id, floorReady, context]);
   useEffect(() => {
     activeRef.current = true;
@@ -219,9 +232,10 @@ export default function QuotationDetail() {
   if (loading) return <View style={styles.centered}><ActivityIndicator color={colors.brand} /></View>;
   if (loadError || !q) return (
     <View style={styles.centered}>
-      <Text style={type.titleMd}>{loadError || "Quotation not found"}</Text>
-      <Button label="Retry" onPress={load} />
-      <Button label="Back" variant="secondary" onPress={() => router.back()} />
+      <Text accessibilityRole="alert" style={type.titleMd}>Unable to load quotation</Text>
+      <Text style={type.bodyMuted}>{loadError || "This quotation could not be found."}</Text>
+      <Button label="Retry" onPress={() => void load()} />
+      <Button label="Return to Quotations" variant="secondary" onPress={() => router.replace("/(admin)/quotations")} />
     </View>
   );
 
@@ -310,7 +324,8 @@ export default function QuotationDetail() {
         </View>
 
         {/* Line items — tablet: table, phone: stacked cards */}
-        {breakdownLoading ? <Text accessibilityLiveRegion="polite" style={type.bodyMuted}>Loading line prices…</Text> : isTablet ? (
+        {breakdownLoading ? <Text accessibilityLiveRegion="polite" style={type.bodyMuted}>Loading discount breakdown…</Text> : null}
+        {isTablet ? (
           <Card style={{ padding: 0 }} variant="flat">
             <View style={styles.tableHead}>
               <Text style={[type.overline, { width: 40 }]}>#</Text>
@@ -322,7 +337,7 @@ export default function QuotationDetail() {
             </View>
             {q.items.map((it, i) => {
               const br = breakdownByLine.get(it.id);
-              const pct = br?.discount_pct ?? (it.discount_pct ?? 0);
+              const pct = br?.discount_pct ?? savedDiscountPercent(it);
               const combination = wcGroups[it.id];
               const linkedSeat = it.included_for_line_id && it.included_part_role === "seat_cover";
               const source = br?.discount_source ?? (it.discount_pct != null ? "product" : "none");
@@ -343,7 +358,7 @@ export default function QuotationDetail() {
                     {source !== "none" && source !== "product" ? <Text style={[type.caption, { fontSize: 10 }]}>via {source}</Text> : null}
                   </View>
                   <Text style={{ width: 110, textAlign: "right", fontSize: 14, fontFamily: type.titleMd.fontFamily, fontWeight: "700", fontVariant: ["tabular-nums"], color: colors.onSurface }} numberOfLines={1}>
-                    {money(it.qty * it.unit_price * (1 - pct / 100))}
+                    {money(br?.total ?? it.net_amount ?? it.qty * it.unit_price * (1 - pct / 100))}
                   </Text>
                 </View>
               );
@@ -353,10 +368,10 @@ export default function QuotationDetail() {
           <View style={{ gap: spacing.sm }}>
             {q.items.map((it, i) => {
               const br = breakdownByLine.get(it.id);
-              const pct = br?.discount_pct ?? (it.discount_pct ?? 0);
+              const pct = br?.discount_pct ?? savedDiscountPercent(it);
               const combination = wcGroups[it.id];
               const linkedSeat = it.included_for_line_id && it.included_part_role === "seat_cover";
-              const lineTotal = it.qty * it.unit_price * (1 - pct / 100);
+              const lineTotal = br?.total ?? it.net_amount ?? it.qty * it.unit_price * (1 - pct / 100);
               return (
                 <View key={it.id} style={[styles.mobileLineCard, (combination || linkedSeat) && styles.wcGroup, linkedSeat && styles.wcSeat]} testID={`quotation-line-${it.id}`}>
                   <View style={{ flexDirection: "row", gap: spacing.sm, alignItems: "flex-start" }}>

@@ -7,6 +7,7 @@ import re
 from contextlib import asynccontextmanager
 from time import monotonic
 from typing import Any
+from uuid import uuid4
 
 from fastapi import APIRouter, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
@@ -89,7 +90,7 @@ from routes.whatsapp_routes import router as whatsapp_router  # noqa: E402
 
 # A non-sensitive marker used by the public health probe to verify that the
 # deployed service includes the current quotation-PDF renderer behaviour.
-PDF_RENDERER_REVISION = "diagonal-print-watermark-v2"
+PDF_RENDERER_REVISION = "print-resolution-images-v3"
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s :: %(message)s")
 logger = logging.getLogger("forge")
@@ -293,8 +294,18 @@ async def record_api_request_timing(request: Request, call_next):
     and only adds the response header for API calls so static/media responses
     retain their existing cache behaviour.
     """
-    if not request_timing_enabled() or not request.url.path.startswith("/api/"):
+    if not request.url.path.startswith("/api/"):
         return await call_next(request)
+
+    request_id = request.headers.get("x-request-id", "")
+    if not re.fullmatch(r"[a-f0-9-]{36}", request_id):
+        request_id = str(uuid4())
+    railway_id = request.headers.get("x-railway-request-id", "")
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", railway_id):
+        railway_id = "-"
+    timing_enabled = request_timing_enabled()
+    if timing_enabled and request.method == "GET" and re.fullmatch(r"/api/quotations/[^/]+/pdf", request.url.path):
+        logger.info("quotation_pdf_started request_id=%s railway_id=%s", request_id, railway_id)
 
     started_at = monotonic()
     response = None
@@ -305,14 +316,21 @@ async def record_api_request_timing(request: Request, call_next):
         route = request.scope.get("route")
         route_path = getattr(route, "path", None) or "<unmatched>"
         status_code = response.status_code if response is not None else 500
-        duration_ms = record_request_timing(
-            method=request.method,
-            path=route_path,
-            status_code=status_code,
-            started_at=started_at,
-        )
         if response is not None:
-            response.headers["Server-Timing"] = f'app;dur={duration_ms:.1f}'
+            response.headers["X-Request-Id"] = request_id
+        if timing_enabled:
+            duration_ms = record_request_timing(
+                method=request.method,
+                path=route_path,
+                status_code=status_code,
+                started_at=started_at,
+                request_id=request_id,
+            )
+            if status_code >= 500:
+                logger.warning("api_request_failed route=%s status=%d request_id=%s railway_id=%s",
+                               route_path, status_code, request_id, railway_id)
+            if response is not None:
+                response.headers["Server-Timing"] = f'app;dur={duration_ms:.1f}'
 
 
 @app.middleware("http")
@@ -517,4 +535,5 @@ app.add_middleware(
     allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-Request-Id"],
 )

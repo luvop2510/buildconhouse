@@ -1,4 +1,5 @@
 import { Buffer } from 'node:buffer';
+import { randomUUID } from 'node:crypto';
 import { sessionCookies } from '../scripts/session-cookies.cjs';
 
 const MAX_REQUEST_BODY_BYTES = 1_048_576;
@@ -95,8 +96,10 @@ export const config = { api: { bodyParser: false } };
 
 export function createHandler({ backendUrl = process.env.BACKEND_URL, fetchImpl = fetch, timeoutMs = UPSTREAM_TIMEOUT_MS } = {}) {
   return async function handler(req, res) {
+    const requestId = randomUUID();
     writeSecurityHeaders(res);
     res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('X-Request-Id', requestId);
     let backend;
     try { backend = validateBackendUrl(backendUrl); }
     catch (error) {
@@ -152,6 +155,7 @@ export function createHandler({ backendUrl = process.env.BACKEND_URL, fetchImpl 
       catch { return res.status(401).json({ detail: 'Invalid session. Sign in again.' }); }
     }
     headers.set('x-forwarded-proto', 'https');
+    headers.set('x-request-id', requestId);
     if (host) headers.set('x-forwarded-host', host);
 
     let upstreamResponse, upstreamBody;
@@ -161,9 +165,21 @@ export function createHandler({ backendUrl = process.env.BACKEND_URL, fetchImpl 
         method: req.method, headers, body: body?.length ? body : undefined, redirect: 'manual',
       }, { fetchImpl, timeoutMs: req.method === 'GET' && path === 'health/ready' ? Math.min(timeoutMs, READINESS_TIMEOUT_MS) : timeoutMs, consume: async (response) => ({ response, body: Buffer.from(await response.arrayBuffer()) }) }));
     } catch (error) {
-      if (error?.name === 'AbortError') return res.status(504).json({ detail: 'The upstream API timed out.' });
-      console.error('Web API proxy upstream failure:', error);
+      const timedOut = error?.name === 'AbortError';
+      console.error('Web API proxy upstream failure', { requestId, status: timedOut ? 504 : 502 });
+      if (timedOut) return res.status(504).json({ detail: 'The upstream API timed out.' });
       return res.status(502).json({ detail: 'The upstream API is unavailable.' });
+    }
+
+    if (upstreamResponse.status === 502 || upstreamResponse.status === 504) {
+      const railwayId = upstreamResponse.headers.get('x-railway-request-id') ?? '';
+      console.error('Web API proxy upstream gateway failure', {
+        requestId, status: upstreamResponse.status,
+        railwayId: /^[A-Za-z0-9_-]{1,64}$/.test(railwayId) ? railwayId : undefined,
+      });
+      return res.status(upstreamResponse.status).json({
+        detail: upstreamResponse.status === 504 ? 'The upstream API timed out.' : 'The upstream API is unavailable.',
+      });
     }
 
     // Keep backend processing time visible in browser diagnostics and preserve

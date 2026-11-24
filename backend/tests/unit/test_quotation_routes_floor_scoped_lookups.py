@@ -3,6 +3,7 @@ caller's ambient active-floor header doesn't match the quotation's floor."""
 from __future__ import annotations
 
 import asyncio
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import HTTPException
@@ -56,6 +57,45 @@ def test_get_quotation_still_404s_for_a_real_miss(monkeypatch):
         asyncio.run(quotation_routes.get_quotation("missing", user=_user()))
 
     assert exc.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_editor_read_omits_revision_history_and_skips_enrichment(monkeypatch):
+    collection = object()
+    monkeypatch.setattr(quotation_routes, "db", type("Db", (), {"quotations": collection}))
+    doc = {
+        "id": "q1", "floor_id": "first-floor", "number": "FQ-2026-0001",
+        "customer_id": "c1", "customer_name": "Test Customer",
+        "created_by": "u1", "created_by_name": "Sales Rep",
+        "created_at": "2026-07-26T00:00:00+00:00", "updated_at": "2026-07-26T00:00:00+00:00",
+        "items": [{"id": "l1", "product_id": "p1", "sku": "SKU1", "name": "Mixer", "unit_price": 400}],
+    }
+    scoped_read = AsyncMock(return_value=doc)
+    monkeypatch.setattr(quotation_routes, "get_floor_scoped_or_404", scoped_read)
+    unavailable = AsyncMock(side_effect=RuntimeError("secondary dependency unavailable"))
+    monkeypatch.setattr(quotation_routes, "_canonicalize_item_images", unavailable)
+    monkeypatch.setattr(quotation_routes, "completed_customer_ids", unavailable)
+
+    result = await quotation_routes.get_quotation("q1", user=_user(), view="editor")
+
+    assert scoped_read.call_args.kwargs["projection"] == {"_id": 0, "revisions": 0}
+    unavailable.assert_not_awaited()
+    assert result.items[0].unit_price == 400
+    assert result.purchase_completion_status is None
+
+
+@pytest.mark.asyncio
+async def test_optional_quotation_reads_preserve_deleted_record_guard(monkeypatch):
+    class DeletedQuotation:
+        async def find_one(self, query, projection, session=None):
+            doc = {"floor_id": "first-floor", "customer_id": "c1", "deleted_at": "2026-07-26"}
+            return {key: value for key, value in doc.items() if projection.get(key)}
+
+    monkeypatch.setattr(quotation_routes, "db", type("Db", (), {"quotations": DeletedQuotation()}))
+    for endpoint in [quotation_routes.quotation_completion, quotation_routes.quotation_media]:
+        with pytest.raises(HTTPException) as exc:
+            await endpoint("q1", user=_user())
+        assert exc.value.status_code == 404
 
 
 def test_place_order_preview_ignores_ambient_floor_mismatch(monkeypatch):

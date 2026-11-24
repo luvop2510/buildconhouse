@@ -109,7 +109,7 @@ def slow_request_threshold_ms() -> float:
         return 1000.0
 
 
-def record_request_timing(*, method: str, path: str, status_code: int, started_at: float) -> float:
+def record_request_timing(*, method: str, path: str, status_code: int, started_at: float, request_id: str = "-") -> float:
     """Record and, when appropriate, log a request duration without PII."""
     duration_ms = (monotonic() - started_at) * 1000
     request_latency.record(duration_ms)
@@ -117,8 +117,8 @@ def record_request_timing(*, method: str, path: str, status_code: int, started_a
         # ``path`` must be a route template supplied by the router, never a
         # raw URL path (which can include customer IDs or create high cardinality).
         logger.warning(
-            "slow_request method=%s route=%s status=%d duration_ms=%.1f",
-            method, path, status_code, duration_ms,
+            "slow_request method=%s route=%s status=%d duration_ms=%.1f request_id=%s",
+            method, path, status_code, duration_ms, request_id,
         )
     return duration_ms
 

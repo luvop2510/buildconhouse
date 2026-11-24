@@ -60,6 +60,7 @@ import { api } from "@/src/api/client";
 import { toast } from "@/src/components/Toast";
 import { ProductImage } from "@/src/components/ProductImage";
 import { productImageList } from "@/src/components/quotation/helpers/media";
+import { quotationLoadMessage, type QuotationCompletion, type QuotationMedia, type QuotationLineMedia } from "@/src/components/quotation/helpers/loadQuotation";
 import { QuotationMutations } from "@/src/components/quotation/helpers/autosave";
 import { builderDraftEpoch } from "@/src/components/quotation/helpers/draftStorage";
 import { computeQuotationTotals } from "@/src/components/quotation/helpers/totals";
@@ -337,6 +338,15 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
     attendedBy: "", preparedBy: "", address: "", docNumber: "", ...EMPTY_TRANSPORTATION,
   });
   const [rows, setRows] = useState<TileRow[]>([emptyRow()]);
+  const [lineMedia, setLineMedia] = useState<{ scope: string; items: Map<string, { row: TileRow; media: QuotationLineMedia }> } | null>(null);
+  const rowsWithMedia = useMemo(() => {
+    if (lineMedia?.scope !== documentScope) return rows;
+    return rows.map(row => {
+      const resolved = row.lineId ? lineMedia.items.get(row.lineId) : undefined;
+      if (!resolved || resolved.row.productId !== row.productId || resolved.row.sku !== row.sku || resolved.row.image !== row.image) return row;
+      return { ...row, image: resolved.media.image ?? null, imageCandidates: resolved.media.image_candidates };
+    });
+  }, [rows, lineMedia, documentScope]);
   const [saveState, setSaveState] = useState<TileSaveState>("idle");
   const [serverTotals, setServerTotals] = useState<{ subtotal: number; discount: number; grandTotal: number; transportation: number } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -447,12 +457,15 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
     setSaveState("idle");
     setRestoreError(null);
     setPartner(null); setLegacyPartnerLabel(""); setPartnerEditVersion(0); partnerSavedVersion.current = 0;
+    setLineMedia(null);
+    setCompletionSnapshot(null);
+    const path = `/quotations/${encodeURIComponent(routeId)}`;
+    const options = { floorId: TILES_FLOOR_ID, signal: controller.signal };
+    const current = () => alive && documentScopeRef.current === documentScope;
     (async () => {
       try {
-        const [doc, draft] = await Promise.all([
-          api.get<any>(`/quotations/${routeId}?with_completion=true`, { floorId: TILES_FLOOR_ID, signal: controller.signal }), local,
-        ]);
-        if (!alive || documentScopeRef.current !== documentScope) return;
+        const [doc, draft] = await Promise.all([api.get<any>(`${path}?view=editor`, options), local]);
+        if (!current()) return;
         if (doc.doc_type !== docType) {
           const canonicalRoute = doc.doc_type === "tiles_selection" ? "selection" : doc.doc_type === "tiles_quotation" ? "quotation" : null;
           toast.error(canonicalRoute ? "Opening this document in its correct workspace" : "That document is not a tile document");
@@ -464,7 +477,6 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
         setDocId(doc.id);
         setDocNumberServer(doc.number || null);
         setStatus(normalizeTilesStatus(doc.status || "draft"));
-        setCompletionSnapshot({ id: doc.id, customerId: doc.customer_id, completed: doc.purchase_completion_status === "completed" });
         setServerTotals(readTileTotals(doc));
         setCustomerId(doc.customer_id || null);
         customerIdRef.current = doc.customer_id || null;
@@ -522,12 +534,23 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
           if (tileDraftMatchesServer(draft, doc)) applyLocalDraft(draft);
           else setRecoveryDraft(draft);
         }
-      } catch (e: any) {
-        const message = e?.detail || "Couldn't open that document";
-        if (alive && documentScopeRef.current === documentScope) {
-          setRestoreError(message);
-          toast.error(message);
+        void api.get<QuotationCompletion>(`${path}/completion`, options).then(result => {
+          if (current()) setCompletionSnapshot({ id: doc.id, customerId: doc.customer_id, completed: result.purchase_completion_status === "completed" });
+        }).catch(() => {});
+        if (restored.length) {
+          void api.get<QuotationMedia>(`${path}/media`, options).then(result => {
+            if (!current() || result.updated_at !== doc.updated_at) return;
+            const savedRows = new Map<string, TileRow>(restored.map((row: TileRow) => [row.lineId || "", row]));
+            const images = new Map<string, { row: TileRow; media: QuotationLineMedia }>();
+            for (const media of result.items) {
+              const row = savedRows.get(media.id);
+              if (row) images.set(media.id, { row, media });
+            }
+            setLineMedia({ scope: documentScope, items: images });
+          }).catch(() => {});
         }
+      } catch (error) {
+        if (current()) setRestoreError(quotationLoadMessage(error, "tile document"));
       } finally {
         if (alive) { setLoading(false); setLocalReady(true); }
       }
@@ -1056,7 +1079,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
 
   const generatePdf = useCallback(async () => {
     if (busy) return;
-    if (docType === "tiles_selection" && rows.some((row) => row.productId && !row.image?.trim())) {
+    if (docType === "tiles_selection" && rowsWithMedia.some((row) => row.productId && !row.image?.trim())) {
       toast.error("Every selected tile needs a product image before generating the PDF.");
       return;
     }
@@ -1068,7 +1091,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
     } finally {
       setBusy(null);
     }
-  }, [busy, documentForExport, header.customerName, header.docDate, rows, docType]);
+  }, [busy, documentForExport, header.customerName, header.docDate, rowsWithMedia, docType]);
 
   const generateExcel = useCallback(async () => {
     if (busy || docType !== "tiles_quotation") return;
@@ -1129,7 +1152,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
     const existingVersion = serverSavedAtRef.current;
     if (dirtyRef.current || whatsappDraft?.expected_updated_at !== existingVersion) return;
     try {
-      const latest = await api.get<{ status: string; updated_at: string }>(`/quotations/${docId}`, { floorId: TILES_FLOOR_ID });
+      const latest = await api.get<{ status: string; updated_at: string }>(`/quotations/${docId}?view=editor`, { floorId: TILES_FLOOR_ID });
       if (mountedRef.current && documentGenerationRef.current === documentGeneration
         && serverSavedAtRef.current === existingVersion && !dirtyRef.current && latest.status === "sent") {
         serverSavedAtRef.current = latest.updated_at;
@@ -1228,7 +1251,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
       let asCopy = false;
       if (recoveryDraft.documentId) {
         try {
-          const server = await api.get<any>(`/quotations/${recoveryDraft.documentId}`, { floorId: TILES_FLOOR_ID });
+          const server = await api.get<any>(`/quotations/${recoveryDraft.documentId}?view=editor`, { floorId: TILES_FLOOR_ID });
           asCopy = !tileDraftMatchesServer(recoveryDraft, server);
         } catch (error: any) { if (error?.status === 404) asCopy = true; else throw error; }
       }
@@ -1313,7 +1336,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
 
   return {
     followupError, retryFollowup: () => setFollowupAttempt(value => value + 1),
-    docId, docNumberServer, loading, restoreError, retryRestore: () => setRestoreAttempt((value) => value + 1), header, setHeaderField, setTransportationStatus, rows,
+    docId, docNumberServer, loading, restoreError, retryRestore: () => setRestoreAttempt((value) => value + 1), header, setHeaderField, setTransportationStatus, rows: rowsWithMedia,
     hasDraft: Boolean(docId || header.customerName || header.address || header.phone || rows.some(row => row.productId)),
     updateRow, addRow, removeRow, applyProduct, selectRowSize, selectRowFinish, loadRowSizes,
     customers, customerId, pickCustomer, setCustomerId, setCustomerLookupActive, partner, legacyPartnerLabel, referenceScope: documentScope,

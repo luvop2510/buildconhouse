@@ -44,6 +44,9 @@ export const requiredStabilityScenarios: Record<string, string[]> = {
   'redesign-quotation-workspace.spec.ts': [
     'critical quotation workspace keeps title and actions in the padded scrolling frame',
   ],
+  'redesign-quotation-recovery.spec.ts': [
+    'critical quotation retries a gateway failure and displays saved lines before related reads finish',
+  ],
   'redesign-mobile-startup.spec.ts': [
     'critical owner navigation works after login while unrelated role permissions are pending',
     'critical delegated navigation works after login while unrelated role permissions are pending',

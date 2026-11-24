@@ -103,7 +103,7 @@ for (const path of ["../src/api/client.ts", "../src/api/client.web.ts"]) {
   const otherRecord = api.delete("/quotations/other", { floorId: "first-floor" });
   await dispatch();
   assert.equal(transports.length, 3, "only requests for the exact record and floor are coalesced");
-  transports[0].resolve({ ok: false, status: 503, text: async () => '{"detail":"Interrupted deletion"}' });
+  transports[0].resolve(new Response('{"detail":"Interrupted deletion"}', { status: 503 }));
   transports[1].resolve({ ok: true, text: async () => '{"ok":true}' });
   transports[2].resolve({ ok: true, text: async () => '{"ok":true}' });
   await assert.rejects(target, /Interrupted deletion/);

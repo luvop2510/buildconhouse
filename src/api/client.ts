@@ -191,7 +191,7 @@ export async function getRequestFloorId() {
 }
 
 export class ApiError extends Error {
-  constructor(public status: number, public detail: string, public payload?: unknown) {
+  constructor(public status: number, public detail: string, public payload?: unknown, public requestId?: string) {
     super(detail);
   }
 }
@@ -299,7 +299,7 @@ async function request<T>(method: string, path: string, body?: any, opts?: Reque
       const detail = data && typeof data === "object" && "detail" in data
         ? (data as { detail?: unknown }).detail
         : text || `HTTP ${res.status}`;
-      throw new ApiError(res.status, typeof detail === "string" ? detail : JSON.stringify(detail), data);
+      throw new ApiError(res.status, typeof detail === "string" ? detail : JSON.stringify(detail), data, res.headers.get("x-request-id") || undefined);
     }
     if (identityRead ? identityVersion !== identityContextVersion : contextVersion !== requestContextVersion) {
       throw new DOMException("Request cancelled because the signed-in account or workspace changed.", "AbortError");

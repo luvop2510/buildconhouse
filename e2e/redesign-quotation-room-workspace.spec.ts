@@ -39,6 +39,8 @@ async function fixture(page: Page, failFirstRead = false) {
   await page.route("**/api/products/**", route => route.fulfill({ json: { items: [], total: 0 } }));
   await page.route("**/api/customers**", route => route.fulfill({ json: [{ id: "customer", name: document.customer_name }] }));
   await page.route("**/api/quotations/recent?**", route => route.fulfill({ json: [] }));
+  await page.route("**/api/quotations/room-workspace/completion", route => route.fulfill({ json: { purchase_completion_status: "active" } }));
+  await page.route("**/api/quotations/room-workspace/media", route => route.fulfill({ json: { updated_at: document.updated_at, items: [] } }));
   await page.route("**/api/quotations", route => {
     if (route.request().method() === "POST") posts++;
     return route.fulfill({ status: 503, json: { detail: "An edit should never create a new quotation." } });
@@ -112,7 +114,7 @@ test("critical quotation deletion waits for an interrupted same-record autosave"
   await expect.poll(() => requests).toEqual(["save started", "save interrupted", "delete"]);
   await expect(confirmation).toHaveCount(0);
   await page.reload();
-  await expect(page.getByText("Quotation not found", { exact: true })).toBeVisible();
+  await expect(page.getByText("This quotation could not be found.", { exact: true })).toBeVisible();
 });
 
 test("critical quotation opens an individual bathroom, previews additive changes and recovers a lost save acknowledgement", async ({ page }, testInfo) => {
@@ -178,7 +180,8 @@ test("critical quotation opens an individual bathroom, previews additive changes
 
 test("critical quotation does not open a blank draft when an existing quote fails to load", async ({ page }) => {
   const fixtureData = await fixture(page, true);
-  await expect(page.getByText("The saved quotation is temporarily unavailable.")).toBeVisible();
+  await expect(page.getByText("Unable to load quotation")).toBeVisible();
+  await expect(page.getByText("Check your connection and retry in a moment.")).toBeVisible();
   await expect(page.getByTestId("quotation-workspace")).toHaveCount(0);
   await page.getByRole("button", { name: "Try again" }).click();
   await expect(page.getByTestId("room-header-Master Bathroom")).toBeAttached();

@@ -7,7 +7,6 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from starlette.concurrency import run_in_threadpool
 
 from auth import get_current_user, get_floor_scoped_or_404
 from db import db
@@ -136,7 +135,7 @@ async def get_po_final_pdf(customer_id: str, quotation_id: str | None = Query(No
     data = await _po_final(customer_id, quotation_id, user)
     if not data["quotation_id"]:
         raise HTTPException(status_code=404, detail="No quotation exists for this customer")
-    from routes.quotation_routes import _canonicalize_item_images, _diagram_items, _pdf_branding
+    from routes.quotation_routes import _canonicalize_item_images, _diagram_items, _pdf_branding, _render_pdf
 
     quotation = await get_floor_scoped_or_404(
         db.quotations, data["quotation_id"], user, not_found="Quotation not found", projection={"_id": 0},
@@ -149,7 +148,7 @@ async def get_po_final_pdf(customer_id: str, quotation_id: str | None = Query(No
         {"customer_id": customer_id, "quotation_id": data["quotation_id"], "floor_id": quotation.get("floor_id")},
         {"_id": 0},
     ).sort("created_at", 1).to_list(1000)
-    pdf = await run_in_threadpool(build_po_final_pdf, data, await _pdf_branding(), quotation, payments)
+    pdf = await _render_pdf(build_po_final_pdf, data, await _pdf_branding(), quotation, payments)
     filename = f"PO-Final-{data['quotation_number'] or customer_id}.pdf"
     return StreamingResponse(iter([pdf]), media_type="application/pdf",
                              headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}", "Cache-Control": "private, no-store"})

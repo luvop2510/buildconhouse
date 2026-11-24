@@ -12,6 +12,7 @@ from io import BytesIO
 import logging
 from math import atan2, cos, degrees, sin
 from pathlib import Path
+from threading import BoundedSemaphore
 from time import monotonic
 from typing import Iterable
 
@@ -29,7 +30,10 @@ from reportlab.platypus import (
     PageBreak, PageTemplate, Paragraph, SimpleDocTemplate,
     Spacer, Table, TableStyle,
 )
-from services.pdf_image_loader import embedded_image_bytes, image_loader_metrics, prefetch_urls, remote_image_bytes
+from services.pdf_image_loader import (
+    MAX_IMAGE_DIMENSION, MAX_IMAGE_PIXELS, embedded_image_bytes, image_loader_metrics,
+    prefetch_urls, remote_image_bytes,
+)
 
 logger = logging.getLogger("forge.pdf")
 
@@ -289,6 +293,8 @@ def quotation_pdf_filename(customer_name: object, document: dict | None = None, 
 # Kept as a local alias so quotation/PDF callers and existing tests can
 # instrument image loading without importing the security implementation.
 _remote_image_bytes = remote_image_bytes
+MAX_PRINT_IMAGE_EDGE = 420  # About 267 dpi in the widest 40 mm product cell.
+_print_image_decoders = BoundedSemaphore(2)
 
 
 def _prepare_image_bytes(data: bytes, *, force_landscape: bool = False) -> bytes:
@@ -308,9 +314,36 @@ def _prepare_image_bytes(data: bytes, *, force_landscape: bool = False) -> bytes
         return data
 
 
+def _prepare_print_image(data: bytes) -> bytes | None:
+    """Keep a print-sized copy while leaving the stored source untouched."""
+    from PIL import Image as PILImage, ImageOps
+
+    try:
+        # PNG/WebP may briefly decode the entire supplier raster.
+        with _print_image_decoders, PILImage.open(BytesIO(data)) as source:
+            if (max(source.size) > MAX_IMAGE_DIMENSION
+                    or source.width * source.height > MAX_IMAGE_PIXELS):
+                return None
+            if max(source.size) <= MAX_PRINT_IMAGE_EDGE and len(data) <= 768 * 1024:
+                source.load()
+                return data
+            if source.format == "JPEG":
+                source.draft("RGB", (MAX_PRINT_IMAGE_EDGE, MAX_PRINT_IMAGE_EDGE))
+            source.thumbnail((MAX_PRINT_IMAGE_EDGE, MAX_PRINT_IMAGE_EDGE), PILImage.Resampling.LANCZOS)
+            oriented = ImageOps.exif_transpose(source)
+            output = BytesIO()
+            if source.format == "JPEG":
+                oriented.convert("RGB").save(output, format="JPEG", quality=92)
+            else:
+                mode = "RGBA" if "A" in oriented.getbands() or "transparency" in oriented.info else "RGB"
+                oriented.convert(mode).save(output, format="PNG", compress_level=2)
+            return output.getvalue()
+    except (OSError, ValueError, PILImage.DecompressionBombError):
+        return None
+
 
 def prefetch_product_images(items: Iterable[dict], *, workers: int = 6, timeout: float = 8.0) -> dict[str, bytes | None]:
-    """Capture available image bytes concurrently under one total deadline.
+    """Capture print-sized image assets under one total deadline.
 
     Rendering uses this snapshot without starting serial network retries.
     Missing, corrupt and timed-out images retain the existing placeholder.
@@ -323,9 +356,10 @@ def prefetch_product_images(items: Iterable[dict], *, workers: int = 6, timeout:
     return {
         **prefetch_urls(
             [ref for ref in references if ref.startswith(("https://", "http://"))],
-            _remote_image_bytes, workers=workers, timeout=timeout,
+            _remote_image_bytes, workers=workers, timeout=timeout, prepare=_prepare_print_image,
         ),
-        **{ref: embedded_image_bytes(ref) for ref in references if ref.startswith("data:image/")},
+        **{ref: _prepare_print_image(data) if (data := embedded_image_bytes(ref)) else None
+           for ref in references if ref.startswith("data:image/")},
     }
 
 
@@ -378,8 +412,7 @@ class _ProductImageFrame(Flowable):
         super().__init__()
         if trim_whitespace:
             data = _trim_product_whitespace(data)
-        self.reader = ImageReader(BytesIO(data))
-        self.reader.getRGBData()
+        self.image_data = data
         self.width = width_mm * mm
         self.height = height_mm * mm
         # Match ReportLab Image's public geometry attributes so instrumentation
@@ -388,13 +421,17 @@ class _ProductImageFrame(Flowable):
         self.drawHeight = self.height
         self.source_width, self.source_height = self.reader.getSize()
 
+    @property
+    def reader(self):
+        # ReportLab caches decoded pixels on ImageReader, so create it on demand.
+        return ImageReader(BytesIO(self.image_data))
+
     def wrap(self, avail_width, avail_height):
         return self.width, self.height
 
     def draw(self):
         # A white, finely outlined frame makes every cell look consistent
-        # even when a supplier asset has a non-white background.  The source
-        # pixels remain untouched: this is strictly a contain fit.
+        # even when a supplier asset has a non-white background.
         self.canv.saveState()
         self.canv.setFillColor(WHITE)
         self.canv.setStrokeColor(colors.HexColor("#B8C1C9"))
@@ -489,6 +526,8 @@ def _img(
             data = image_bytes.get(url)
         else:
             data = embedded_image_bytes(url) if url.startswith("data:image/") else _remote_image_bytes(url)
+            if data:
+                data = _prepare_print_image(data)
         if data:
             try:
                 prepared = _prepare_image_bytes(data)

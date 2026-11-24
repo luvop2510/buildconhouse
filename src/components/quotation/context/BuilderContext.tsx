@@ -22,7 +22,7 @@ import { TextInput } from "@/src/components/AppText";
 import { QuotationPriceReviewSheet, type CatalogPriceReview } from "../QuotationPriceReviewSheet";
 import { api, subscribeCatalogMutations } from "@/src/api/client";
 import { toast } from "@/src/components/Toast";
-import { ErrorState } from "@/src/components/ui";
+import { Button, ErrorState } from "@/src/components/ui";
 import { useHistory, useUndoRedoShortcuts } from "@/src/hooks/useHistory";
 import { useActionAccess } from "@/src/hooks/use-permissions";
 import { useAuth } from "@/src/state/auth";
@@ -37,6 +37,7 @@ import { downloadApiFile } from "@/src/utils/downloadFile";
 import { computeTotals, computeLineBreakdown, type LineBreakdown } from "../helpers/pricing";
 import { confirmQuotationLineCancellation, QuotationMutations } from "../helpers/autosave";
 import { quotationProductImages } from "../helpers/media";
+import { quotationLoadMessage, type QuotationCompletion, type QuotationMedia, type QuotationLineMedia } from "../helpers/loadQuotation";
 import { moveQuotationLine, reorderQuotationRoom } from "../helpers/reorder";
 import { cloneRoomProducts, hasReservedStock, matchesSavedRoomSnapshot, previewQuantityIncrease, quotationRoom, quotationRoomLines, validQuantityIncrease, type SavedRoomSnapshot } from "../helpers/roomProducts";
 import { restoreSingleCatalogChoice } from "../helpers/catalogFilters";
@@ -317,9 +318,10 @@ export function useBuilder(): BuilderApi {
 // -----------------------------------------------------------------------------
 // Provider
 // -----------------------------------------------------------------------------
-export function BuilderProvider({ onFinalize, onStartNew, initialProductId, initialCatalogEntryId, initialGodownStockId, initialGodownVariant, initialQuotationId, children }: {
+export function BuilderProvider({ onFinalize, onStartNew, onReturnToQuotations, initialProductId, initialCatalogEntryId, initialGodownStockId, initialGodownVariant, initialQuotationId, children }: {
   onFinalize?: (quotationId: string) => void;
   onStartNew?: () => void;
+  onReturnToQuotations?: () => void;
   /** Seed the new quotation with this product on mount — used when
    *  navigating here from Catalog's "Add to quotation" CTA (product detail
    *  page / product cards) so that action actually adds the product instead
@@ -419,11 +421,11 @@ export function BuilderProvider({ onFinalize, onStartNew, initialProductId, init
   const [recoveryCheckError, setRecoveryCheckError] = useState<string | null>(null);
   const [recoveryCheckAttempt, setRecoveryCheckAttempt] = useState(0);
   const retryRecoveryCheck = useCallback(() => setRecoveryCheckAttempt(value => value + 1), []);
-  const restoredInitialQuotationRef = useRef<string | null>(null);
   const [initialReady, setInitialReady] = useState(!initialQuotationId);
   const allowCreateCopy = useRef(false);
   const [openingError, setOpeningError] = useState<string | null>(null);
   const [openingAttempt, setOpeningAttempt] = useState(0);
+  const [lineMedia, setLineMedia] = useState<Map<string, { line: Line; media: QuotationLineMedia }>>(() => new Map());
   const [roomProductSaveBusy, setRoomProductSaveBusy] = useState(false);
   const roomProductSaveRef = useRef(false);
   const roomProductIntent = useRef<{ base: BuilderState; room: string; action: number | string; snapshot: BuilderState } | null>(null);
@@ -497,6 +499,7 @@ export function BuilderProvider({ onFinalize, onStartNew, initialProductId, init
 // Refresh customers after returning from customer/quotation deletion.
 // ---------- Load reference data ----------
   useFocusEffect(useCallback(() => {
+    if (!initialReady) return;
     const controller = new AbortController();
     let current = true;
     setReferenceLoading(true);
@@ -548,12 +551,12 @@ export function BuilderProvider({ onFinalize, onStartNew, initialProductId, init
     // history is intentionally not a dependency: reference retries must not
     // restart just because the undoable quotation document changed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [referenceRetry, activeFloorId]));
+  }, [referenceRetry, activeFloorId, initialReady]));
 
   // Product shortcuts are useful but non-essential. Fetch them on first use
   // rather than making every builder launch pay for both endpoints.
   useEffect(() => {
-    if (pickerTab === "search") return;
+    if (!initialReady || pickerTab === "search") return;
     const controller = new AbortController();
     const endpoint = pickerTab === "recent" ? "/products/recent" : "/products/frequent";
     if (!activeFloorId) return;
@@ -566,12 +569,13 @@ export function BuilderProvider({ onFinalize, onStartNew, initialProductId, init
         if (error?.name !== "AbortError") console.warn(`Failed to load ${pickerTab} products`, error);
       });
     return () => controller.abort();
-  }, [pickerTab, activeFloorId, productRetry]);
+  }, [pickerTab, activeFloorId, productRetry, initialReady]);
 
   // The recent-quotation rail is intentionally deferred until the first frame
   // has painted. It remains available immediately afterwards, without
   // delaying the builder's primary controls on a slow mobile connection.
   useFocusEffect(useCallback(() => {
+    if (!initialReady) return;
     const controller = new AbortController();
     setRecentQuotations([]);
     const timer = setTimeout(() => {
@@ -584,7 +588,7 @@ export function BuilderProvider({ onFinalize, onStartNew, initialProductId, init
       });
     }, 250);
     return () => { clearTimeout(timer); controller.abort(); };
-  }, [activeFloorId]));
+  }, [activeFloorId, initialReady]));
 
   // Referrers are only needed when their sheet opens, so defer their list
   // until that user intent instead of including it in builder bootstrap.
@@ -658,7 +662,7 @@ export function BuilderProvider({ onFinalize, onStartNew, initialProductId, init
   const loadMoreController = useRef<AbortController | null>(null);
   const loadingMoreRef = useRef(false);
   useEffect(() => {
-    if (!activeFloorId) {
+    if (!initialReady || !activeFloorId) {
       setProducts([]); setProductTotal(0); setProductHasMore(false);
       return;
     }
@@ -706,7 +710,7 @@ export function BuilderProvider({ onFinalize, onStartNew, initialProductId, init
       loadMoreController.current?.abort();
       clearTimeout(t);
     };
-  }, [q, selectedBrandIds, selectedCategoryIds, selectedSizes, requestedCatalogSort, catalogOrderScopeKey, activeFloorId, productRetry, productQueryScope]);
+  }, [q, selectedBrandIds, selectedCategoryIds, selectedSizes, requestedCatalogSort, catalogOrderScopeKey, activeFloorId, productRetry, productQueryScope, initialReady]);
 
   // ---------- Infinite scroll — fetch the next page and append ----------
   const loadMoreProducts = useCallback(() => {
@@ -824,7 +828,7 @@ export function BuilderProvider({ onFinalize, onStartNew, initialProductId, init
             if (!expected || failure?.status !== 409) throw failure;
             // A previous attempt may have committed before its response was
             // interrupted. Recognize an exact saved snapshot before retrying.
-            const saved = await api.get<SavedRoomSnapshot>(`/quotations/${persistedId}`, { floorId: activeFloorId });
+            const saved = await api.get<SavedRoomSnapshot>(`/quotations/${persistedId}?view=editor`, { floorId: activeFloorId });
             if (!matchesSavedRoomSnapshot(snapshot, saved)) throw failure;
             updated = saved;
           }
@@ -918,7 +922,7 @@ export function BuilderProvider({ onFinalize, onStartNew, initialProductId, init
       let recoveredOutcome: "won" | "lost" | null = null;
       if (draft.quotationId) {
         try {
-          const server = await api.get<{ updated_at?: string; status?: string; customer_outcome?: "won" | "lost" | null }>(`/quotations/${draft.quotationId}`, { floorId: activeFloorId });
+          const server = await api.get<{ updated_at?: string; status?: string; customer_outcome?: "won" | "lost" | null }>(`/quotations/${draft.quotationId}?view=editor`, { floorId: activeFloorId });
           copy = draftNeedsCopy(draft, server);
           recoveredOutcome = server.customer_outcome || null;
           recoveredStatus = server.status || "draft";
@@ -964,12 +968,16 @@ export function BuilderProvider({ onFinalize, onStartNew, initialProductId, init
     } catch {}
   }, [activeFloorId, workspace]);
 
-  const restoreQuotation = useCallback(async (id: string, announce = true, initial = false, confirmed?: CancelledQuotation) => {
+  const { reset: resetHistory, replace: replaceHistory } = history;
+  const restoreQuotation = useCallback(async (id: string, announce = true, initial = false, confirmed?: CancelledQuotation, signal?: AbortSignal) => {
     if (!canUpdateQuotation) { toast.error("You don't have access to edit saved quotations"); return false; }
     const request = ++restoreRequest.current;
+    const current = () => !signal?.aborted && request === restoreRequest.current;
+    const path = `/quotations/${encodeURIComponent(id)}`;
+    const options = { floorId: activeFloorId, signal };
     try {
-      const doc = confirmed ?? await api.get<any>(`/quotations/${id}?with_completion=true`, { floorId: activeFloorId });
-      if (request !== restoreRequest.current) return false;
+      const doc = confirmed ?? await api.get<any>(`${path}?view=editor`, options);
+      if (!current()) return false;
       if (doc.id !== id || (confirmed && typeof doc.customer_id !== "string")) throw new Error("Unexpected quotation data.");
       setOutcomeSnapshot(doc.customer_outcome === "won" || doc.customer_outcome === "lost" ? { id: doc.id, floorId: activeFloorId, outcome: doc.customer_outcome } : null);
       documentGeneration.current += 1;
@@ -1028,15 +1036,31 @@ export function BuilderProvider({ onFinalize, onStartNew, initialProductId, init
       };
       lastSavedStateRef.current = restored;
       serverSavedAtRef.current = doc.updated_at || null;
-      history.reset();
-      history.replace(restored);
+      resetHistory();
+      replaceHistory(restored);
       setQuotationId(doc.id);
       persistedIdRef.current = doc.id;
       setQuotationNumber(doc.number);
       setQuotationStatus(doc.status || "draft");
       if (initial) setInitialReady(true);
-      if (!confirmed || doc.purchase_completion_status) {
-        setCompletionSnapshot({ id: doc.id, customerId: doc.customer_id, floorId: activeFloorId, completed: doc.purchase_completion_status === "completed" });
+      if (!confirmed) {
+        setCompletionSnapshot(null);
+        setLineMedia(new Map());
+      }
+      void api.get<QuotationCompletion>(`${path}/completion`, options).then(result => {
+        if (current()) setCompletionSnapshot({ id, customerId: doc.customer_id, floorId: activeFloorId, completed: result.purchase_completion_status === "completed" });
+      }).catch(() => {});
+      if (restored.lines.length) {
+        void api.get<QuotationMedia>(`${path}/media`, options).then(result => {
+          if (!current() || result.updated_at !== doc.updated_at) return;
+          const mediaById = new Map(result.items.map(item => [item.id, item]));
+          const images = new Map<string, { line: Line; media: QuotationLineMedia }>();
+          for (const line of restored.lines) {
+            const media = mediaById.get(line.id);
+            if (media) images.set(line.id, { line, media });
+          }
+          setLineMedia(images);
+        }).catch(() => {});
       }
       setSaveState("saved");
       setSavedAt(new Date(doc.updated_at || Date.now()));
@@ -1048,28 +1072,29 @@ export function BuilderProvider({ onFinalize, onStartNew, initialProductId, init
       if (announce) toast.success(`Restored ${doc.number}`);
       return true;
     } catch (e: any) {
-      if (request !== restoreRequest.current) return false;
-      const message = typeof e?.detail === "string" ? e.detail : "Could not open the saved quotation.";
+      if (!current()) return false;
+      const message = quotationLoadMessage(e);
       if (initial) setOpeningError(message);
       else toast.error(message);
       return false;
     }
-  }, [history, activeFloorId, canUpdateQuotation]);
+  }, [resetHistory, replaceHistory, activeFloorId, canUpdateQuotation]);
 
   // Customer and quotation detail pages enter this route with an explicit
   // quotation id. Reuse the builder's normal restore path so edits, swaps,
   // additions and removals all use the same autosave/PATCH contract.
   useEffect(() => {
-    if (!initialQuotationId || !activeFloorId || restoredInitialQuotationRef.current === initialQuotationId) return;
-    restoredInitialQuotationRef.current = initialQuotationId;
-    void restoreQuotation(initialQuotationId, false, true);
+    if (!initialQuotationId || !activeFloorId) return;
+    const controller = new AbortController();
+    void restoreQuotation(initialQuotationId, false, true, undefined, controller.signal);
+    return () => controller.abort();
   }, [initialQuotationId, activeFloorId, restoreQuotation, openingAttempt]);
 
   const refreshQuotationStatus = useCallback(async () => {
     if (!quotationId) return;
     const generation = documentGeneration.current;
     try {
-      const saved = await api.get<{ status?: string; updated_at?: string }>(`/quotations/${quotationId}`, { floorId: activeFloorId });
+      const saved = await api.get<{ status?: string; updated_at?: string }>(`/quotations/${quotationId}?view=editor`, { floorId: activeFloorId });
       if (generation !== documentGeneration.current || quotationId !== persistedIdRef.current) return;
       if (saved.status) setQuotationStatus(saved.status);
     } catch {
@@ -1178,9 +1203,13 @@ export function BuilderProvider({ onFinalize, onStartNew, initialProductId, init
     const subtotal = roomLines.reduce((sum, line) => sum + (lineBreakdownById[line.id]?.net || 0), 0);
     return [
       { kind: "room-header", id: `hdr-${room}`, roomName: room, itemCount: roomLines.length, subtotal, roomDiscount: s.roomDiscounts[room] || null },
-      ...roomLines.map((line): BuilderRow => ({ kind: "line", id: line.id, line })),
+      ...roomLines.map((line): BuilderRow => {
+        const resolved = lineMedia.get(line.id);
+        const matchesSavedLine = resolved && resolved.line.product_id === line.product_id && resolved.line.sku === line.sku && resolved.line.image === line.image;
+        return { kind: "line", id: line.id, line: matchesSavedLine ? { ...line, ...resolved.media } : line };
+      }),
     ];
-  }, [s, lineBreakdownById]);
+  }, [s, lineBreakdownById, lineMedia]);
 
   // ---------- Mutations ----------
   const setCustomer = useCallback((id: string, selected?: Customer) => {
@@ -1272,29 +1301,38 @@ export function BuilderProvider({ onFinalize, onStartNew, initialProductId, init
     }
   }, [history, activeFloorId]);
 
+  const persistReferrer = useCallback((type: "architect" | "interior_designer" | null, id: string) => {
+    if (!quotationId) return;
+    const generation = documentGeneration.current;
+    void mutations.save(quotationMutationKey(quotationId), async () => {
+      if (generation !== documentGeneration.current) return null;
+      try {
+        const saved = await api.patch<{ updated_at?: string }>(`/quotations/${quotationId}`, {
+          referrer_type: type,
+          referrer_id: id,
+          expected_updated_at: serverSavedAtRef.current || undefined,
+        }, { floorId: activeFloorId });
+        if (generation !== documentGeneration.current) return null;
+        serverSavedAtRef.current = saved.updated_at || serverSavedAtRef.current;
+        return quotationId;
+      } catch (error: any) {
+        if (generation === documentGeneration.current) {
+          toast.error(error?.status === 409 ? "This quotation changed elsewhere. Reopen it before saving." : "Could not update the referrer. Please retry.");
+        }
+        return null;
+      }
+    });
+  }, [quotationId, activeFloorId, mutations, quotationMutationKey]);
+
   const setReferrer = useCallback((type: "architect" | "interior_designer", id: string, name: string) => {
     history.apply((cur) => ({ ...cur, header: { ...cur.header, referrerType: type, referrerId: id, referrerName: name } }));
-    if (quotationId) {
-      api.patch(`/quotations/${quotationId}`, { referrer_type: type, referrer_id: id }, { floorId: activeFloorId })
-        .then(() => { setSaveState("saved"); setSavedAt(new Date()); })
-        .catch((e: any) => toast.error(e?.detail || "Could not set referrer"));
-    }
-  }, [history, quotationId, activeFloorId]);
+    persistReferrer(type, id);
+  }, [history, persistReferrer]);
 
   const clearReferrer = useCallback(() => {
     history.apply((cur) => ({ ...cur, header: { ...cur.header, referrerType: null, referrerId: null, referrerName: "" } }));
-    if (quotationId) {
-      // referrer_id: "" (not null) — the backend's update_quotation gates on
-      // `if body.referrer_id is not None`, and JSON null deserializes to
-      // Python None, which would make that check False and silently no-op
-      // the clear. An empty string passes the `is not None` gate and then
-      // hits the existing falsy-string branch that already clears all three
-      // referrer fields (see Task 2, update_quotation).
-      api.patch(`/quotations/${quotationId}`, { referrer_type: null, referrer_id: "" }, { floorId: activeFloorId })
-        .then(() => { setSaveState("saved"); setSavedAt(new Date()); })
-        .catch((e: any) => toast.error(e?.detail || "Could not clear referrer"));
-    }
-  }, [history, quotationId, activeFloorId]);
+    persistReferrer(null, "");
+  }, [history, persistReferrer]);
 
   const createReferrer = useCallback(async (data: { name: string; phone: string; address?: string; type: "architect" | "interior_designer"; company?: string }) => {
     if (referrerCreatePending.current) return null;
@@ -1457,7 +1495,7 @@ export function BuilderProvider({ onFinalize, onStartNew, initialProductId, init
             reason: "Cancelled from the customer quotation workspace",
             expected_updated_at: serverSavedAtRef.current || undefined,
           }, options),
-          () => api.get<CancelledQuotation>(`/quotations/${quotationId}?with_completion=true`, { ...options, cacheMs: 0 }),
+          () => api.get<CancelledQuotation>(`/quotations/${quotationId}?view=editor`, { ...options, cacheMs: 0 }),
         );
         if (generation !== documentGeneration.current || !(await restoreQuotation(quotationId, false, false, confirmed))) return null;
         toast.success("Product cancelled and customer balance refreshed");
@@ -1937,11 +1975,13 @@ export function BuilderProvider({ onFinalize, onStartNew, initialProductId, init
   ]);
 
   if (!initialReady) {
-    if (openingError) return <ErrorState title="Could not open quotation" subtitle={openingError} onRetry={() => {
-      restoredInitialQuotationRef.current = null;
-      setOpeningError(null);
-      setOpeningAttempt(value => value + 1);
-    }} />;
+    if (openingError) return <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+      <ErrorState title="Unable to load quotation" subtitle={openingError} onRetry={() => {
+        setOpeningError(null);
+        setOpeningAttempt(value => value + 1);
+      }} />
+      {onReturnToQuotations ? <Button label="Return to Quotations" variant="secondary" onPress={onReturnToQuotations} /> : null}
+    </View>;
     return <View accessibilityLabel="Opening saved quotation" style={{ flex: 1, alignItems: "center", justifyContent: "center" }}><ActivityIndicator /></View>;
   }
 

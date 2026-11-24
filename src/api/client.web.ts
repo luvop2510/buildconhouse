@@ -85,7 +85,7 @@ let readCacheVersion = 0;
 
 export type TokenKind = "staff" | "customer";
 export class ApiError extends Error {
-  constructor(public status: number, public detail: string, public payload?: unknown) { super(detail); }
+  constructor(public status: number, public detail: string, public payload?: unknown, public requestId?: string) { super(detail); }
 }
 type RequestOptions = { floorId?: string; signal?: AbortSignal; cacheMs?: number };
 
@@ -285,7 +285,7 @@ async function request<T>(method: string, path: string, body?: unknown, opts?: R
       const detail = data && typeof data === "object" && "detail" in data
         ? (data as { detail?: unknown }).detail
         : text || `HTTP ${response.status}`;
-      throw new ApiError(response.status, typeof detail === "string" ? detail : JSON.stringify(detail), data);
+      throw new ApiError(response.status, typeof detail === "string" ? detail : JSON.stringify(detail), data, response.headers.get("x-request-id") || undefined);
     }
     if (identityRead ? identityVersion !== identityContextVersion : contextVersion !== requestContextVersion) {
       throw new DOMException("Request cancelled because the signed-in account or workspace changed.", "AbortError");

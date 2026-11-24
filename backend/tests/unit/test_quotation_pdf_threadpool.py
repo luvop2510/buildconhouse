@@ -6,7 +6,7 @@ from io import BytesIO
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from pypdf import PdfReader
 import pytest
@@ -37,6 +37,30 @@ def test_render_pdf_dispatches_builder_to_threadpool(monkeypatch):
 
     assert result == b"%PDF-test"
     assert call == {"fn": builder, "args": (document, customer, branding)}
+
+
+@pytest.mark.asyncio
+async def test_second_pdf_does_not_start_a_second_renderer(monkeypatch):
+    active = asyncio.Event()
+    complete = asyncio.Event()
+
+    async def worker(*args):
+        active.set()
+        await complete.wait()
+        return b"%PDF-test"
+
+    monkeypatch.setattr(quotation_routes, "run_in_threadpool", worker)
+    first = asyncio.create_task(quotation_routes._render_pdf(object()))
+    await active.wait()
+    try:
+        with pytest.raises(HTTPException) as exc:
+            await quotation_routes._render_pdf(object())
+        assert exc.value.status_code == 503
+        assert exc.value.headers == {"Retry-After": "2"}
+    finally:
+        complete.set()
+        assert await first == b"%PDF-test"
+    assert await quotation_routes._render_pdf(object()) == b"%PDF-test"
 
 
 def test_portal_pdf_http_response_preserves_unicode_customer_filename(monkeypatch):

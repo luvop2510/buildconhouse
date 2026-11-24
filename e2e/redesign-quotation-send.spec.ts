@@ -16,7 +16,8 @@ for (const width of [390, 1440]) {
       items: [{ id: "item-one", sku: "TEST-SKU", name: "Basin Mixer", qty: 2, unit_price: 600, discount_pct: 10 }],
     };
     let sendRequests = 0;
-    await page.route(/\/api\/quotations\/synthetic-send\?with_completion=true$/, route => route.fulfill({ json: quotation }));
+    await page.route(/\/api\/quotations\/synthetic-send\?view=editor$/, route => route.fulfill({ json: quotation }));
+    await page.route("**/api/quotations/synthetic-send/completion", route => route.fulfill({ json: { purchase_completion_status: "active" } }));
     await page.route("**/api/quotations/synthetic-send/breakdown", route => route.fulfill({ json: { lines: [] } }));
     await page.route("**/api/activity/quotation/synthetic-send", route => route.fulfill({ json: [] }));
     await page.route("**/api/purchase-orders?quotation_id=synthetic-send", route => route.fulfill({ json: [] }));

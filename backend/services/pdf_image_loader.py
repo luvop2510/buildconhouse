@@ -309,9 +309,14 @@ def remote_image_bytes(url: str) -> bytes | None:
     return data
 
 
-def prefetch_urls(urls: Iterable[str], fetch: Callable[[str], bytes | None] = remote_image_bytes, *, workers: int = MAX_CONCURRENT_FETCHES, timeout: float = 8.0) -> dict[str, bytes | None]:
+def prefetch_urls(
+    urls: Iterable[str], fetch: Callable[[str], bytes | None] = remote_image_bytes, *,
+    workers: int = MAX_CONCURRENT_FETCHES, timeout: float = 8.0,
+    prepare: Callable[[bytes], bytes | None] | None = None,
+) -> dict[str, bytes | None]:
     """Capture available images with bounded queues and a per-document deadline."""
     results: dict[str, bytes | None] = {}
+    deadline = monotonic() + max(0.1, timeout)
     remaining = []
     for url in dict.fromkeys(urls):
         if fetch is remote_image_bytes:
@@ -329,13 +334,15 @@ def prefetch_urls(urls: Iterable[str], fetch: Callable[[str], bytes | None] = re
             if cached is not None or unavailable:
                 # These outcomes need no worker. A separate stalled dependency
                 # must not hide cached photos or delay an already-open circuit.
-                results[url] = cached
+                data = cached
+                if prepare and data is not None:
+                    data = prepare(data) if monotonic() < deadline else None
+                results[url] = data
                 with _metrics_lock:
                     _metrics["requests"] += 1
                     _metrics["cache_hits" if cached is not None else "circuit_rejections"] += 1
                 continue
         remaining.append(url)
-    deadline = monotonic() + max(0.1, timeout)
     pending = set()
     iterator = iter(remaining)
     exhausted = False
@@ -343,7 +350,11 @@ def prefetch_urls(urls: Iterable[str], fetch: Callable[[str], bytes | None] = re
 
     def run(url: str) -> None:
         if not closed.is_set() and monotonic() < deadline:
-            results[url] = fetch(url)
+            data = fetch(url)
+            if prepare and data is not None and not closed.is_set():
+                data = prepare(data)
+            if not closed.is_set():
+                results[url] = data
 
     try:
         while not exhausted or pending:

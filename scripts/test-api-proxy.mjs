@@ -37,6 +37,19 @@ function response() {
   };
 }
 
+{
+  const res = response();
+  let upstreamId;
+  await createHandler({ backendUrl: 'https://api.example.test', fetchImpl: async (_url, options) => {
+    upstreamId = options.headers.get('x-request-id');
+    return new Response('<h1>raw gateway error</h1>', { status: 502 });
+  } })(request({ path: ['quotations', 'q1'], headers: { 'x-request-id': 'untrusted' } }), res);
+  assert.match(upstreamId, /^[a-f0-9-]{36}$/);
+  assert.equal(res.headers['X-Request-Id'], upstreamId);
+  assert.equal(res.statusCode, 502);
+  assert.deepEqual(res.payload, { detail: 'The upstream API is unavailable.' });
+}
+
 // Real fetch transparently decodes gzip. The proxy must forward negotiation
 // upstream but must not label those decoded bytes as still compressed.
 {

@@ -93,9 +93,15 @@ class QuotationLineRemoval(BaseModel):
     expected_updated_at: str | None = Field(default=None, max_length=100)
 
 
-async def _render_pdf(builder, document: dict, customer: dict, branding: dict) -> bytes:
-    """Keep CPU-bound ReportLab/Pillow work off the async request loop."""
-    return await run_in_threadpool(builder, document, customer, branding)
+_pdf_render_slot = asyncio.Semaphore(1)
+
+
+async def _render_pdf(builder, *args) -> bytes:
+    """Bound concurrent ReportLab/Pillow jobs on the web process."""
+    if _pdf_render_slot.locked():
+        raise HTTPException(503, "A quotation PDF is being generated. Please try again shortly.", headers={"Retry-After": "2"})
+    async with _pdf_render_slot:
+        return await run_in_threadpool(builder, *args)
 
 
 async def _next_number() -> str:
@@ -740,17 +746,50 @@ class QuotationWithMedia(Quotation):
 
 
 @router.get("/{quotation_id}", response_model=QuotationWithMedia)
-async def get_quotation(quotation_id: str, with_completion: bool = False, user: UserPublic = Depends(get_current_user)):
-    doc = await get_floor_scoped_or_404(db.quotations, quotation_id, user, not_found="Quotation not found", projection={"_id": 0})
-    items = await _canonicalize_item_images(doc.get("items", []), floor_inherit(doc), include_candidates=True)
-    doc = {**doc, "items": items}
+async def get_quotation(
+    quotation_id: str,
+    with_completion: bool = False,
+    user: UserPublic = Depends(get_current_user),
+    *,
+    view: Literal["full", "editor"] = "full",
+):
+    projection = {"_id": 0}
+    if view == "editor":
+        projection["revisions"] = 0
+    doc = await get_floor_scoped_or_404(db.quotations, quotation_id, user, not_found="Quotation not found", projection=projection)
+    if view == "full":
+        doc["items"] = await _canonicalize_item_images(doc.get("items", []), floor_inherit(doc), include_candidates=True)
     if doc.get("doc_type") == "tiles_quotation" and doc.get("floor_id") == TILES_FLOOR_ID:
-        doc["items"] = [_with_saved_tile_unit_price(item) for item in doc["items"]]
+        doc["items"] = [_with_saved_tile_unit_price(item) for item in doc.get("items", [])]
     if with_completion:
-        completion_user = user.model_copy(update={"active_floor_id": doc["floor_id"]})
-        complete_ids = await completed_customer_ids(db, completion_user, [doc.get("customer_id")])
-        doc["purchase_completion_status"] = "completed" if doc.get("customer_id") in complete_ids else "active"
+        doc["purchase_completion_status"] = await _quotation_completion(doc, user)
     return QuotationWithMedia(**doc)
+
+
+async def _quotation_completion(doc: dict, user: UserPublic) -> Literal["active", "completed"]:
+    completion_user = user.model_copy(update={"active_floor_id": doc["floor_id"]})
+    customer_id = doc.get("customer_id")
+    complete_ids = await completed_customer_ids(db, completion_user, [customer_id])
+    return "completed" if customer_id in complete_ids else "active"
+
+
+@router.get("/{quotation_id}/completion")
+async def quotation_completion(quotation_id: str, user: UserPublic = Depends(get_current_user)):
+    doc = await get_floor_scoped_or_404(db.quotations, quotation_id, user, not_found="Quotation not found",
+        projection={"_id": 0, "floor_id": 1, "customer_id": 1, "deleted_at": 1})
+    return {"purchase_completion_status": await _quotation_completion(doc, user)}
+
+
+@router.get("/{quotation_id}/media")
+async def quotation_media(quotation_id: str, user: UserPublic = Depends(get_current_user)):
+    doc = await get_floor_scoped_or_404(db.quotations, quotation_id, user, not_found="Quotation not found",
+        projection={"_id": 0, "floor_id": 1, "deleted_at": 1, "updated_at": 1, "items.id": 1, "items.product_id": 1,
+                    "items.sku": 1, "items.image": 1})
+    items = await _canonicalize_item_images(doc.get("items", []), floor_inherit(doc), include_candidates=True)
+    return {"updated_at": doc.get("updated_at"), "items": [
+        {"id": item["id"], "image": item.get("image"), "image_candidates": item.get("image_candidates", [])}
+        for item in items if item.get("id")
+    ]}
 
 
 def _ordered_at_patch(doc: dict, new_status: str) -> dict:
@@ -1631,9 +1670,9 @@ def _breakdown_lines(doc: dict) -> list[dict]:
 @router.get("/{quotation_id}/breakdown")
 async def quotation_breakdown(quotation_id: str, user: UserPublic = Depends(get_current_user)):
     """How the final numbers were calculated — per line + summary."""
-    doc = await db.quotations.find_one(floor_query(user, {"id": quotation_id}), {"_id": 0})
-    if not doc:
-        raise HTTPException(status_code=404, detail="Quotation not found")
+    doc = await get_floor_scoped_or_404(db.quotations, quotation_id, user, not_found="Quotation not found",
+        projection={"_id": 0, "floor_id": 1, "deleted_at": 1, "items": 1, "project_discount_pct": 1,
+                    "category_discounts": 1, "room_discounts": 1, "transportation_fee": 1, "doc_type": 1})
 
     project_pct = doc.get("project_discount_pct", 0)
     cat_discs = doc.get("category_discounts", {}) or {}

@@ -1,8 +1,10 @@
 """Degraded optional image storage must not monopolize PDF network workers."""
+from io import BytesIO
 import threading
 
 import httpx
 import pytest
+from PIL import Image
 
 from services import pdf_image_loader as loader
 
@@ -202,8 +204,11 @@ def test_cached_or_open_host_images_bypass_saturated_prefetch_pool(monkeypatch, 
     entered = threading.Barrier(loader.MAX_CONCURRENT_FETCHES + 1)
     release = threading.Event()
     url = "https://slow.example.test/available-without-network"
+    output = BytesIO()
+    Image.new("RGB", (10, 10), "white").save(output, format="PNG")
+    data = output.getvalue()
     if cached:
-        loader._cache_put(url, b"cached image")
+        loader._cache_put(url, data)
     else:
         state = loader._HostCircuit(failures=3, open_until=isolated[0] + 30)
         loader._host_circuits["slow.example.test"] = state
@@ -219,7 +224,7 @@ def test_cached_or_open_host_images_bypass_saturated_prefetch_pool(monkeypatch, 
     try:
         entered.wait(timeout=2)
         snapshot = pdf_generator.prefetch_product_images([{"image": url}], timeout=0.1)
-        assert snapshot == {url: b"cached image" if cached else None}
+        assert snapshot == {url: data if cached else None}
         # The fast path must avoid even a canceled work item in the busy pool.
         assert executor._work_queue.qsize() == 0
     finally:

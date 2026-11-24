@@ -8,7 +8,7 @@ for(const name of ['client.ts','client.web.ts']) for(const scenario of ['recover
  vm.runInNewContext(ts.transpileModule(readFileSync(new URL(`../src/api/${name}`,import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{
   module,exports:module.exports,require:()=>({storage,browserStorage:storage}),__DEV__:true,process:{env:{}},document:{cookie:''},AbortController,DOMException,TypeError,
   setTimeout:(callback,ms)=>{const key=++id;timers.set(key,{callback,ms});return key;},clearTimeout:key=>timers.delete(key),
-  fetch:async(_url,{signal})=>{calls++;if(scenario==='http')return {ok:false,status:503,text:async()=>'{"detail":"Unavailable"}'};
+  fetch:async(_url,{signal})=>{calls++;if(scenario==='http')return new Response('{"detail":"Unavailable"}', {status:503,headers:{'x-request-id':'gateway-fixture'}});
    if(scenario==='timeout')return new Promise((_r,reject)=>signal.addEventListener('abort',()=>reject(new TypeError('Load failed')),{once:true}));
    if(calls===1||scenario==='persistent'||scenario==='write')throw new TypeError('Load failed');
    return {ok:true,text:async()=>'{"stage":"quotation"}'};
@@ -23,6 +23,7 @@ for(const name of ['client.ts','client.web.ts']) for(const scenario of ['recover
  const {value,error}=await outcome;
  if(scenario==='recover'){assert.equal(value.stage,'quotation');assert.equal(calls,2);}
  else {assert.ok(error);assert.equal(calls,scenario==='persistent'?2:1);assert.equal(scenario==='cancel'?error.name:error.status,scenario==='cancel'?'AbortError':scenario==='timeout'?408:503);}
+ if(scenario==='http')assert.equal(error.requestId,'gateway-fixture');
  assert.equal([...timers.values()].filter(x=>x.ms===30000).length,0,'Original deadline cleans up; no new request budget is allocated');
 }
 console.log('Kitchen native/web: one dropped read recovers, persistent failure stays bounded, cancellation/timeout never retries, HTTP errors and stage writes execute once.');

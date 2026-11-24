@@ -606,6 +606,21 @@ def test_exif_orientation_eight_is_honored_once():
         assert image.size == (120, 60)
 
 
+def test_large_pdf_photo_is_prefetched_at_print_resolution_with_exif(monkeypatch):
+    url = "https://cdn.test/large.jpg"
+    source = _jpeg_with_orientation(1200, 2400, 6)
+    monkeypatch.setattr(pdf_generator, "_remote_image_bytes", lambda _url: source)
+
+    images = pdf_generator.prefetch_product_images([{"image": url}])
+
+    with PILImage.open(BytesIO(images[url])) as image:
+        assert image.size == (pdf_generator.MAX_PRINT_IMAGE_EDGE, pdf_generator.MAX_PRINT_IMAGE_EDGE // 2)
+        assert image.getexif().get(274, 1) == 1
+    frame = pdf_generator._img(url, image_bytes=images, trim_whitespace=False)
+    assert frame.source_width == pdf_generator.MAX_PRINT_IMAGE_EDGE
+    assert frame.reader is not frame.reader
+
+
 def test_sanitary_keeps_portrait_while_tile_pdfs_retain_existing_presentation(monkeypatch):
     """Only the sanitary canvas preservation rule changes orientation policy."""
     monkeypatch.setattr(pdf_generator, "_remote_image_bytes", lambda _url: _png_bytes(60, 120))

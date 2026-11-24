@@ -20,6 +20,11 @@ vm.runInNewContext(ts.transpileModule(readFileSync(new URL('../src/components/qu
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
 }).outputText, { exports: includedPartsExports });
 
+const quotationLoadExports = {};
+vm.runInNewContext(ts.transpileModule(readFileSync(new URL('../src/components/quotation/helpers/loadQuotation.ts', import.meta.url), 'utf8'), {
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+}).outputText, { exports: quotationLoadExports });
+
 const specs = {
   payments: ['../app/(admin)/payments.tsx', '  const customerCollections =', 'orders, stats, loadingList, q, setQ'],
   walkin: ['../app/(admin)/walkins/[id].tsx', '  const updateStatus =', 'w, timeline, timelineLoading, timelineError, loadError, load'],
@@ -101,6 +106,7 @@ function screen(kind, width = 'desktop') {
     '@/src/state/auth': { useAuth: () => ({ staff: { role: 'owner' } }) },
     '@/src/constants/roles': { canManageDestructiveData: () => true },
     '@/src/components/quotation/helpers/concealedParts': includedPartsExports,
+    '@/src/components/quotation/helpers/loadQuotation': quotationLoadExports,
     '@/src/design/responsive': { useBp: () => bp },
     '@/src/hooks/use-breakpoint': { useBreakpoint: () => bp },
     '@/src/theme/tokens': { colors: {}, spacing: {}, radius: {}, icon: {}, type: new Proxy({}, { get: () => ({}) }) },
@@ -155,11 +161,13 @@ for (const width of ['phone', 'tablet', 'desktop']) {
 
   test(`quotation summary renders while history and prices are held on ${width}`, async () => {
     const fixture = screen('quotation', width); fixture.render();
-    fixture.requests.find(request => request.path.endsWith('?with_completion=true')).resolve({ id: 'fixture', number: 'Q-PRIMARY' });
+    assert.equal(fixture.requests.length, 1, 'No secondary reads before the document arrives');
+    fixture.requests.find(request => request.path.endsWith('?view=editor')).resolve({ id: 'fixture', number: 'Q-PRIMARY' });
     await fixture.settle();
     assert.equal(fixture.state.q.number, 'Q-PRIMARY');
     assert.equal(fixture.state.loading, false);
-    assert.equal(fixture.state.breakdownLoading, true, 'No approximate line prices while authoritative prices are loading');
+    assert.equal(fixture.state.breakdownLoading, true);
+    assert.ok(fixture.requests.some(request => request.path.endsWith('/completion')));
     assert.equal(fixture.state.relatedLoading, true);
   });
 
@@ -176,7 +184,7 @@ for (const kind of ['customer', 'quotation']) {
     const stale = [...fixture.requests];
     fixture.changeRoute('current'); await fixture.settle();
     const current = fixture.requests.filter(request => !stale.includes(request));
-    current.find(request => request.path.endsWith('?with_completion=true')).resolve({ id: 'current', name: 'Current', number: 'CURRENT' });
+    current.find(request => kind === 'quotation' ? request.path.endsWith('?view=editor') : request.path.startsWith('/customers/')).resolve({ id: 'current', name: 'Current', number: 'CURRENT' });
     await fixture.settle();
     for (const request of stale) {
       if (request.path.startsWith('/activity/')) request.reject({ detail: 'Old failure' });
@@ -225,7 +233,28 @@ test('quotation waits for authorized document floor before making business reads
   const fixture = screen('quotation'); fixture.setReady(false); await fixture.settle();
   assert.equal(fixture.requests.length, 0);
   fixture.setReady(true); await fixture.settle();
-  assert.equal(fixture.requests.length, 4);
+  assert.deepEqual(fixture.requests.map(request => request.path), ['/quotations/fixture?view=editor']);
+});
+
+test('quotation retry recovers after a 502 and later secondary failures', async () => {
+  const fixture = screen('quotation');
+  fixture.render();
+  fixture.requests[0].reject({ status: 502, requestId: 'request-123', detail: '{"status":"Application failed to respond"}' });
+  await fixture.settle();
+  assert.equal(fixture.state.loading, false);
+  assert.equal(fixture.state.loadError, 'Check your connection and retry in a moment. Support reference request-123.');
+  assert.equal(fixture.requests.length, 1);
+  const retry = fixture.state.load();
+  await fixture.settle();
+  assert.equal(fixture.state.loading, true);
+  fixture.requests[1].resolve({ id: 'fixture', number: 'Q-RECOVERED' });
+  await retry;
+  for (const request of fixture.requests.slice(2)) request.reject({ status: 503 });
+  await fixture.settle();
+  assert.equal(fixture.state.q.number, 'Q-RECOVERED');
+  assert.equal(fixture.state.loadError, null);
+  assert.equal(fixture.state.relatedError, true);
+  assert.equal(fixture.state.loading, false);
 });
 
 test('catalog debounces typing but immediately refetches when cleared during pending startup', async () => {

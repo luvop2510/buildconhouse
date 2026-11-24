@@ -221,6 +221,7 @@ test('quotation content renders while breakdown, purchase links and activity are
         subtotal: 200, discount_total: 0, grand_total: 200, created_at: '2026-10-01T10:00:00Z', created_by_name: 'Audit Owner',
       } });
     }
+    if (url.pathname === `/api/quotations/${quotationId}/completion`) return route.fulfill({ json: { purchase_completion_status: 'active' } });
     if (url.pathname === `/api/quotations/${quotationId}/breakdown` || url.pathname === `/api/activity/quotation/${quotationId}` || url.pathname === '/api/purchase-orders' && url.searchParams.get('quotation_id') === quotationId) {
       held.push(url.pathname);
       await pending;
@@ -236,7 +237,8 @@ test('quotation content renders while breakdown, purchase links and activity are
     await info.attach('quotation-primary-ready', { body: JSON.stringify({ device: info.project.name, readyMs, held, reads: data.reads }, null, 2), contentType: 'application/json' });
     await expect(page.getByText('Fast Quotation Customer', { exact: true })).toBeVisible();
     await expect(page.getByText('Grand total', { exact: true }).first()).toBeVisible();
-    await expect(page.getByText('Loading line prices…', { exact: true })).toBeVisible();
+    await expect(page.getByText('Loading discount breakdown…', { exact: true })).toBeVisible();
+    await expect(page.getByText('Fast Quotation Basin', { exact: true })).toBeVisible();
     await expect(page.getByTestId('edit-quotation')).toBeVisible();
     expect(held).toEqual(expect.arrayContaining([`/api/quotations/${quotationId}/breakdown`, `/api/activity/quotation/${quotationId}`, '/api/purchase-orders']));
     expect(readyMs).toBeLessThan(2500);
