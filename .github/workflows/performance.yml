@@ -22,7 +22,7 @@ jobs:
       export_id: ${{ steps.export.outputs.artifact-id }}
       export_digest: ${{ steps.export.outputs.artifact-digest }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: actions/setup-node@v4
@@ -76,7 +76,7 @@ jobs:
       PERFORMANCE_EXPORT_ARTIFACT_ID: ${{ needs.prepare.outputs.export_id }}
       PERFORMANCE_EXPORT_ARTIFACT_DIGEST: ${{ needs.prepare.outputs.export_digest }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: actions/setup-node@v4
@@ -130,7 +130,7 @@ jobs:
       PERFORMANCE_EXPORT_ARTIFACT_ID: ${{ needs.prepare.outputs.export_id }}
       PERFORMANCE_EXPORT_ARTIFACT_DIGEST: ${{ needs.prepare.outputs.export_digest }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: actions/setup-node@v4
@@ -187,7 +187,7 @@ jobs:
       PERFORMANCE_STABILITY_SHARDED: "true"
       PERFORMANCE_TIMING_RESULT: ${{ needs.timing.result }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: actions/setup-node@v4
